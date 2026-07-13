@@ -31,7 +31,9 @@ def create_draft_course(
             "You must accept the category Terms and Conditions to create a course."
         )
     if category.status != CategoryStatus.ACTIVE:
-        raise exceptions.ValidationError("This category is not currently accepting new courses.")
+        raise exceptions.ValidationError(
+            "This category is not currently accepting new courses."
+        )
 
     return Course.objects.create(
         creator=creator,
@@ -85,7 +87,9 @@ def submit_course(*, course: Course, actor: User) -> Course:
     """
 
     if course.creator_id != actor.id:
-        raise exceptions.ValidationError("Only the course creator can submit this course.")
+        raise exceptions.ValidationError(
+            "Only the course creator can submit this course."
+        )
     if course.status != CourseStatus.DRAFT:
         raise exceptions.ValidationError(
             f"Course cannot be submitted from status '{course.status}'."
@@ -151,7 +155,9 @@ def publish_course(*, course: Course, actor: User) -> Course:
     course.status = CourseStatus.PUBLISHED
     course.published_at = timezone.now()
     course.updated_by = actor
-    course.save(update_fields=["status", "published_at", "updated_by", "updated_datetime"])
+    course.save(
+        update_fields=["status", "published_at", "updated_by", "updated_datetime"]
+    )
     return course
 
 

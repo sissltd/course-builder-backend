@@ -12,7 +12,9 @@ from api.courses.views import (
 router = DefaultRouter()
 router.register("categories", category_views.CategoryViewSet, basename="category")
 router.register("courses", course_views.CourseViewSet, basename="course")
-router.register("review-queue", course_views.CourseReviewViewSet, basename="course-review")
+router.register(
+    "review-queue", course_views.CourseReviewViewSet, basename="course-review"
+)
 
 urlpatterns = router.urls + [
     path(
@@ -23,7 +25,12 @@ urlpatterns = router.urls + [
     path(
         "courses/<uuid:course_pk>/modules/<uuid:pk>/",
         module_views.ModuleViewSet.as_view(
-            {"get": "retrieve", "put": "update", "patch": "partial_update", "delete": "destroy"}
+            {
+                "get": "retrieve",
+                "put": "update",
+                "patch": "partial_update",
+                "delete": "destroy",
+            }
         ),
         name="course-module-detail",
     ),
@@ -35,7 +42,12 @@ urlpatterns = router.urls + [
     path(
         "courses/<uuid:course_pk>/modules/<uuid:module_pk>/lessons/<uuid:pk>/",
         lesson_views.LessonViewSet.as_view(
-            {"get": "retrieve", "put": "update", "patch": "partial_update", "delete": "destroy"}
+            {
+                "get": "retrieve",
+                "put": "update",
+                "patch": "partial_update",
+                "delete": "destroy",
+            }
         ),
         name="module-lesson-detail",
     ),

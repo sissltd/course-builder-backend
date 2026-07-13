@@ -94,10 +94,14 @@ class SubmitCourseTests(TestCase):
         self.assertEqual(result.creator_price_snapshot, Decimal("150.00"))
         self.assertIsNotNone(result.submitted_at)
         self.assertTrue(
-            Notification.objects.filter(receiver=course.creator, title="Course submitted").exists()
+            Notification.objects.filter(
+                receiver=course.creator, title="Course submitted"
+            ).exists()
         )
 
-    def test_price_snapshot_reflects_category_price_at_submit_time_not_creation_time(self):
+    def test_price_snapshot_reflects_category_price_at_submit_time_not_creation_time(
+        self,
+    ):
         category = make_category(creator_price=Decimal("100.00"))
         course = build_compliant_course(category=category)
 

@@ -17,7 +17,10 @@ service = AuthenticationService()
 class SignupTests(TestCase):
     def test_creates_inactive_user_with_forced_role(self):
         user = service.signup(
-            email="new@example.com", password="StrongPass123!", first_name="A", last_name="B"
+            email="new@example.com",
+            password="StrongPass123!",
+            first_name="A",
+            last_name="B",
         )
 
         self.assertFalse(user.is_active)
@@ -28,7 +31,10 @@ class SignupTests(TestCase):
         # TestCase's rolled-back outer transaction unless captured like this.
         with self.captureOnCommitCallbacks(execute=True):
             service.signup(
-                email="new2@example.com", password="StrongPass123!", first_name="A", last_name="B"
+                email="new2@example.com",
+                password="StrongPass123!",
+                first_name="A",
+                last_name="B",
             )
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn("new2@example.com", mail.outbox[0].to)
@@ -39,7 +45,10 @@ class SignupTests(TestCase):
         make_user(email="dupe@example.com")
         with self.assertRaises(ValidationError):
             service.signup(
-                email="dupe@example.com", password="StrongPass123!", first_name="A", last_name="B"
+                email="dupe@example.com",
+                password="StrongPass123!",
+                first_name="A",
+                last_name="B",
             )
 
 
@@ -54,7 +63,9 @@ class VerifyEmailTests(TestCase):
 
         self.assertTrue(result.is_active)
         self.assertTrue(
-            UserActivityLog.objects.filter(user=user, action="ACCOUNT_VERIFIED").exists()
+            UserActivityLog.objects.filter(
+                user=user, action="ACCOUNT_VERIFIED"
+            ).exists()
         )
 
     def test_raises_not_found_for_unknown_email(self):
@@ -66,34 +77,50 @@ class ResetPasswordTests(TestCase):
     def test_happy_path_changes_password_and_logs(self):
         user = make_user()
         old_password_hash = user.password
-        make_verification_token(user=user, purpose=TokenPurpose.PASSWORD_RESET, raw_token="reset-me")
+        make_verification_token(
+            user=user, purpose=TokenPurpose.PASSWORD_RESET, raw_token="reset-me"
+        )
 
-        service.reset_password(email=user.email, token="reset-me", new_password="NewStrongPass456!")
+        service.reset_password(
+            email=user.email, token="reset-me", new_password="NewStrongPass456!"
+        )
 
         user.refresh_from_db()
         self.assertNotEqual(user.password, old_password_hash)
         self.assertTrue(user.check_password("NewStrongPass456!"))
         self.assertTrue(
-            UserActivityLog.objects.filter(user=user, action="PASSWORD_RESET_COMPLETED").exists()
+            UserActivityLog.objects.filter(
+                user=user, action="PASSWORD_RESET_COMPLETED"
+            ).exists()
         )
 
     def test_raises_with_expired_token(self):
         user = make_user()
         make_verification_token(
-            user=user, purpose=TokenPurpose.PASSWORD_RESET, raw_token="reset-me", expires_in_minutes=-1
+            user=user,
+            purpose=TokenPurpose.PASSWORD_RESET,
+            raw_token="reset-me",
+            expires_in_minutes=-1,
         )
 
         with self.assertRaises(ValidationError):
-            service.reset_password(email=user.email, token="reset-me", new_password="NewStrongPass456!")
+            service.reset_password(
+                email=user.email, token="reset-me", new_password="NewStrongPass456!"
+            )
 
     def test_raises_with_already_used_token(self):
         user = make_user()
         make_verification_token(
-            user=user, purpose=TokenPurpose.PASSWORD_RESET, raw_token="reset-me", is_used=True
+            user=user,
+            purpose=TokenPurpose.PASSWORD_RESET,
+            raw_token="reset-me",
+            is_used=True,
         )
 
         with self.assertRaises(NotFound):
-            service.reset_password(email=user.email, token="reset-me", new_password="NewStrongPass456!")
+            service.reset_password(
+                email=user.email, token="reset-me", new_password="NewStrongPass456!"
+            )
 
 
 class LogoutTests(TestCase):
@@ -103,8 +130,12 @@ class LogoutTests(TestCase):
 
         service.logout(user=user, refresh_token=str(refresh))
 
-        self.assertTrue(BlacklistedToken.objects.filter(token__jti=refresh["jti"]).exists())
-        self.assertTrue(UserActivityLog.objects.filter(user=user, action="LOGOUT").exists())
+        self.assertTrue(
+            BlacklistedToken.objects.filter(token__jti=refresh["jti"]).exists()
+        )
+        self.assertTrue(
+            UserActivityLog.objects.filter(user=user, action="LOGOUT").exists()
+        )
 
     def test_raises_on_garbage_token(self):
         user = make_user()

@@ -37,7 +37,9 @@ class CreatorProfile(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
         max_length=255,
         blank=True,
         default="",
-        help_text=_("Free-text expertise when 'Others (Specify)' is chosen instead of a category."),
+        help_text=_(
+            "Free-text expertise when 'Others (Specify)' is chosen instead of a category."
+        ),
     )
     video_comfort_level = models.CharField(
         verbose_name=_("Video Comfort Level"),
@@ -59,7 +61,9 @@ class CreatorProfile(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
         verbose_name=_("Agreement Accepted At"),
         null=True,
         blank=True,
-        help_text=_("When the creator accepted the account-level NDA / content-ownership agreement."),
+        help_text=_(
+            "When the creator accepted the account-level NDA / content-ownership agreement."
+        ),
     )
     onboarding_completed_at = models.DateTimeField(
         verbose_name=_("Onboarding Completed At"),
@@ -72,7 +76,9 @@ class CreatorProfile(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
         verbose_name = _("Creator Profile")
         verbose_name_plural = _("Creator Profiles")
         indexes = [
-            models.Index(fields=["onboarding_completed_at"], name="creatorprofile_completed_idx"),
+            models.Index(
+                fields=["onboarding_completed_at"], name="creatorprofile_completed_idx"
+            ),
         ]
 
     @property

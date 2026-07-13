@@ -25,7 +25,9 @@ class OnboardingApiTests(APITestCase):
         self.client.force_authenticate(user)
 
         response = self.client.patch(
-            "/api/v1/users/me/onboarding/", {"category_id": str(category.id)}, format="json"
+            "/api/v1/users/me/onboarding/",
+            {"category_id": str(category.id)},
+            format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
@@ -35,10 +37,14 @@ class OnboardingApiTests(APITestCase):
         self.client.force_authenticate(user)
 
         response = self.client.patch(
-            "/api/v1/users/me/onboarding/", {"category_id": str(category.id)}, format="json"
+            "/api/v1/users/me/onboarding/",
+            {"category_id": str(category.id)},
+            format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data["primary_expertise_category"]["id"], str(category.id))
+        self.assertEqual(
+            response.data["primary_expertise_category"]["id"], str(category.id)
+        )
         self.assertEqual(response.data["video_comfort_level"], "")
         self.assertFalse(response.data["has_completed_onboarding"])
 
@@ -69,7 +75,9 @@ class MeOnboardingStatusApiTests(APITestCase):
         before = self.client.get("/api/v1/users/me/")
         self.assertFalse(before.data["has_completed_onboarding"])
 
-        self.client.patch("/api/v1/users/me/onboarding/", {"agreement_accepted": True}, format="json")
+        self.client.patch(
+            "/api/v1/users/me/onboarding/", {"agreement_accepted": True}, format="json"
+        )
 
         after = self.client.get("/api/v1/users/me/")
         self.assertTrue(after.data["has_completed_onboarding"])

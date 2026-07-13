@@ -30,14 +30,24 @@ class TransactionSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Transaction
-        fields = ["id", "course", "amount", "type", "status", "description", "created_datetime"]
+        fields = [
+            "id",
+            "course",
+            "amount",
+            "type",
+            "status",
+            "description",
+            "created_datetime",
+        ]
         read_only_fields = fields
 
     @extend_schema_field(CourseMiniSerializer(allow_null=True))
     def get_course(self, obj):
         if not obj.course_id:
             return None
-        return CourseMiniSerializer({"id": obj.course_id, "title": obj.course.title}).data
+        return CourseMiniSerializer(
+            {"id": obj.course_id, "title": obj.course.title}
+        ).data
 
 
 class WithdrawalRequestSerializer(serializers.Serializer):

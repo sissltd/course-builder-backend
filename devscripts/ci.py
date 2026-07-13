@@ -3,15 +3,28 @@
 Needs a local Postgres + Redis and the same .env as normal development
 (see docker-compose.yaml / .env.example).
 """
+
 import subprocess
 import sys
+
+PYTHON = sys.executable
 
 GATES = [
     (["ruff", "check", "."], True),
     (["ruff", "format", "--check", "."], False),
-    (["python", "manage.py", "makemigrations", "--check", "--dry-run"], True),
-    (["python", "manage.py", "spectacular", "--file", "/tmp/openapi-schema.yaml", "--validate"], True),
-    (["python", "manage.py", "test"], True),
+    ([PYTHON, "manage.py", "makemigrations", "--check", "--dry-run"], True),
+    (
+        [
+            PYTHON,
+            "manage.py",
+            "spectacular",
+            "--file",
+            "/tmp/openapi-schema.yaml",
+            "--validate",
+        ],
+        True,
+    ),
+    ([PYTHON, "manage.py", "test"], True),
 ]
 
 

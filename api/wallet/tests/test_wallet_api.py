@@ -42,12 +42,16 @@ class WalletApiTests(APITestCase):
         wallet_service.credit_wallet(user=self.creator, amount=Decimal("100.00"))
         self.client.force_authenticate(self.creator)
 
-        response = self.client.post("/api/v1/withdrawals/", {"amount": "60.00"}, format="json")
+        response = self.client.post(
+            "/api/v1/withdrawals/", {"amount": "60.00"}, format="json"
+        )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
     def test_withdrawal_below_threshold_rejected(self):
         wallet_service.credit_wallet(user=self.creator, amount=Decimal("100.00"))
         self.client.force_authenticate(self.creator)
 
-        response = self.client.post("/api/v1/withdrawals/", {"amount": "5.00"}, format="json")
+        response = self.client.post(
+            "/api/v1/withdrawals/", {"amount": "5.00"}, format="json"
+        )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)

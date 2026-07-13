@@ -41,7 +41,11 @@ def validate_structural_standards(course: Course) -> list[str]:
     modules = list(course.modules.all().prefetch_related("lessons", "assessment"))
 
     module_count = len(modules)
-    if not (settings.COURSE_MODULE_COUNT_MIN <= module_count <= settings.COURSE_MODULE_COUNT_MAX):
+    if not (
+        settings.COURSE_MODULE_COUNT_MIN
+        <= module_count
+        <= settings.COURSE_MODULE_COUNT_MAX
+    ):
         failures.append(
             f"Course must have between {settings.COURSE_MODULE_COUNT_MIN} and "
             f"{settings.COURSE_MODULE_COUNT_MAX} modules (has {module_count})."
@@ -62,7 +66,9 @@ def validate_structural_standards(course: Course) -> list[str]:
             )
 
         if not hasattr(module, "assessment"):
-            failures.append(f"Module '{module.title}' is missing its module-level assessment.")
+            failures.append(
+                f"Module '{module.title}' is missing its module-level assessment."
+            )
 
         for lesson in lessons:
             objective_count = len(lesson.learning_objectives or [])
@@ -80,7 +86,9 @@ def validate_structural_standards(course: Course) -> list[str]:
 
             script_words = _word_count(lesson.script)
             if not (
-                settings.LESSON_SCRIPT_WORD_MIN <= script_words <= settings.LESSON_SCRIPT_WORD_MAX
+                settings.LESSON_SCRIPT_WORD_MIN
+                <= script_words
+                <= settings.LESSON_SCRIPT_WORD_MAX
             ):
                 failures.append(
                     f"Lesson '{lesson.title}' script must be between "
@@ -89,7 +97,9 @@ def validate_structural_standards(course: Course) -> list[str]:
                 )
 
             lesson_assessment = getattr(lesson, "assessment", None)
-            question_count = len(lesson_assessment.questions) if lesson_assessment else 0
+            question_count = (
+                len(lesson_assessment.questions) if lesson_assessment else 0
+            )
             if not (
                 settings.LESSON_QUIZ_QUESTIONS_MIN
                 <= question_count
@@ -114,7 +124,9 @@ def validate_structural_standards(course: Course) -> list[str]:
 
     duration_minutes = get_course_duration_minutes(course)
     if not (
-        settings.COURSE_DURATION_MIN_MINUTES <= duration_minutes <= settings.COURSE_DURATION_MAX_MINUTES
+        settings.COURSE_DURATION_MIN_MINUTES
+        <= duration_minutes
+        <= settings.COURSE_DURATION_MAX_MINUTES
     ):
         failures.append(
             f"Course duration must be between {settings.COURSE_DURATION_MIN_MINUTES} and "

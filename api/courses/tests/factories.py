@@ -52,7 +52,8 @@ def make_draft_course(*, creator=None, category=None, **kwargs):
         "creator": creator,
         "category": category,
         "title": "Test Course",
-        "description": "word " * 150,  # 150 words: within COURSE_DESCRIPTION_WORD_MIN/MAX (100-500)
+        "description": "word "
+        * 150,  # 150 words: within COURSE_DESCRIPTION_WORD_MIN/MAX (100-500)
         "preview_video_url": "https://example.com/preview.mp4",
         "terms_accepted_at": timezone.now(),
     }
@@ -62,12 +63,18 @@ def make_draft_course(*, creator=None, category=None, **kwargs):
 
 def make_questions(count_):
     return [
-        {"question": f"Question {i}?", "options": ["A", "B", "C", "D"], "correct_index": 0}
+        {
+            "question": f"Question {i}?",
+            "options": ["A", "B", "C", "D"],
+            "correct_index": 0,
+        }
         for i in range(count_)
     ]
 
 
-def build_compliant_course(*, creator=None, category=None, module_count=4, lessons_per_module=3):
+def build_compliant_course(
+    *, creator=None, category=None, module_count=4, lessons_per_module=3
+):
     """Build a Course whose module/lesson/assessment tree passes
     course_validation_service.validate_structural_standards, so tests that
     need a submittable course don't have to re-derive PRD thresholds."""

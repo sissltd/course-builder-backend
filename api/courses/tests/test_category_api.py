@@ -31,7 +31,9 @@ class CategoryApiTests(APITestCase):
         make_category(name="AI 101", track_preference=TrackPreference.AI_PREFERRED)
         self.client.force_authenticate(self.creator)
 
-        response = self.client.get("/api/v1/categories/", {"track_preference": "AI_PREFERRED"})
+        response = self.client.get(
+            "/api/v1/categories/", {"track_preference": "AI_PREFERRED"}
+        )
         results = response.data["data"]["results"]
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0]["name"], "AI 101")
@@ -41,7 +43,12 @@ class CategoryApiTests(APITestCase):
 
         response = self.client.post(
             "/api/v1/categories/",
-            {"name": "New Cat", "creator_price": "100.00", "track_preference": "OPEN", "status": "ACTIVE"},
+            {
+                "name": "New Cat",
+                "creator_price": "100.00",
+                "track_preference": "OPEN",
+                "status": "ACTIVE",
+            },
         )
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
@@ -50,7 +57,12 @@ class CategoryApiTests(APITestCase):
 
         response = self.client.post(
             "/api/v1/categories/",
-            {"name": "New Cat", "creator_price": "100.00", "track_preference": "OPEN", "status": "ACTIVE"},
+            {
+                "name": "New Cat",
+                "creator_price": "100.00",
+                "track_preference": "OPEN",
+                "status": "ACTIVE",
+            },
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertTrue(Category.objects.filter(name="New Cat").exists())
@@ -60,7 +72,9 @@ class CategoryApiTests(APITestCase):
         self.client.force_authenticate(self.admin)
 
         response = self.client.patch(
-            f"/api/v1/categories/{category.id}/", {"creator_price": "75.00"}, format="json"
+            f"/api/v1/categories/{category.id}/",
+            {"creator_price": "75.00"},
+            format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         category.refresh_from_db()
@@ -80,6 +94,11 @@ class CategoryApiTests(APITestCase):
 
         response = self.client.post(
             "/api/v1/categories/",
-            {"name": "Dup", "creator_price": "100.00", "track_preference": "OPEN", "status": "ACTIVE"},
+            {
+                "name": "Dup",
+                "creator_price": "100.00",
+                "track_preference": "OPEN",
+                "status": "ACTIVE",
+            },
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)

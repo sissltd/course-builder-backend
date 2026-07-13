@@ -10,7 +10,11 @@ from .course_serializer import (
     ReviewApproveSerializer,
     ReviewRejectSerializer,
 )
-from .lesson_serializer import LessonMiniSerializer, LessonSerializer, LessonWriteSerializer
+from .lesson_serializer import (
+    LessonMiniSerializer,
+    LessonSerializer,
+    LessonWriteSerializer,
+)
 from .module_serializer import ModuleSerializer, ModuleWriteSerializer
 
 __all__ = [

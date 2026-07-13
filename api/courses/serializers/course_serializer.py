@@ -88,7 +88,13 @@ class CourseCreateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Course
-        fields = ["category", "title", "description", "preview_video_url", "terms_accepted"]
+        fields = [
+            "category",
+            "title",
+            "description",
+            "preview_video_url",
+            "terms_accepted",
+        ]
 
     def create(self, validated_data):
         request = self.context["request"]
@@ -163,9 +169,15 @@ class ReviewRejectSerializer(serializers.Serializer):
 
         items = value.get("items", [])
         if not isinstance(items, list):
-            raise serializers.ValidationError("feedback.items must be a list if provided.")
+            raise serializers.ValidationError(
+                "feedback.items must be a list if provided."
+            )
         for index, item in enumerate(items):
-            if not isinstance(item, dict) or "module_id" not in item or "comment" not in item:
+            if (
+                not isinstance(item, dict)
+                or "module_id" not in item
+                or "comment" not in item
+            ):
                 raise serializers.ValidationError(
                     f"feedback.items[{index}] must include 'module_id' and 'comment'."
                 )

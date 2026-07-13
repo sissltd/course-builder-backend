@@ -2,7 +2,10 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from api.onboarding.serializers import CreatorProfileSerializer, OnboardingUpdateSerializer
+from api.onboarding.serializers import (
+    CreatorProfileSerializer,
+    OnboardingUpdateSerializer,
+)
 from api.onboarding.services import creator_profile_service
 
 
@@ -16,7 +19,9 @@ class OnboardingView(APIView):
     """
 
     permission_classes = [IsAuthenticated]
-    serializer_class = OnboardingUpdateSerializer  # for schema generation only; not a GenericAPIView
+    serializer_class = (
+        OnboardingUpdateSerializer  # for schema generation only; not a GenericAPIView
+    )
 
     def get(self, request):
         profile = creator_profile_service.get_or_create_profile(user=request.user)
@@ -25,5 +30,7 @@ class OnboardingView(APIView):
     def patch(self, request):
         serializer = OnboardingUpdateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        profile = creator_profile_service.update_profile(user=request.user, **serializer.validated_data)
+        profile = creator_profile_service.update_profile(
+            user=request.user, **serializer.validated_data
+        )
         return Response(CreatorProfileSerializer(profile).data)

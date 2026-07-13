@@ -6,7 +6,10 @@ class VideoComfortLevel(models.TextChoices):
     onboarding ("How comfortable are you creating video content?")."""
 
     NEEDS_GUIDANCE = "NEEDS_GUIDANCE", "Not comfortable, I'll need guidance"
-    SOMEWHAT_COMFORTABLE = "SOMEWHAT_COMFORTABLE", "Somewhat comfortable, I've recorded a few videos"
+    SOMEWHAT_COMFORTABLE = (
+        "SOMEWHAT_COMFORTABLE",
+        "Somewhat comfortable, I've recorded a few videos",
+    )
     VERY_COMFORTABLE = "VERY_COMFORTABLE", "Very comfortable, I produce video regularly"
     PREFERS_TEXT_AUDIO = "PREFERS_TEXT_AUDIO", "I prefer text-based or audio content"
 

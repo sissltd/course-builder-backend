@@ -16,12 +16,20 @@ class OnboardingUpdateSerializer(serializers.Serializer):
         required=False,
         queryset=Category.objects.filter(status=CategoryStatus.ACTIVE),
     )
-    other_expertise = serializers.CharField(required=False, allow_blank=True, max_length=255)
-    video_comfort_level = serializers.ChoiceField(choices=VideoComfortLevel.choices, required=False)
-    monthly_course_capacity = serializers.ChoiceField(choices=MonthlyCourseCapacity.choices, required=False)
+    other_expertise = serializers.CharField(
+        required=False, allow_blank=True, max_length=255
+    )
+    video_comfort_level = serializers.ChoiceField(
+        choices=VideoComfortLevel.choices, required=False
+    )
+    monthly_course_capacity = serializers.ChoiceField(
+        choices=MonthlyCourseCapacity.choices, required=False
+    )
     agreement_accepted = serializers.BooleanField(required=False)
 
     def validate(self, attrs):
         if not attrs:
-            raise serializers.ValidationError("At least one onboarding field must be provided.")
+            raise serializers.ValidationError(
+                "At least one onboarding field must be provided."
+            )
         return attrs

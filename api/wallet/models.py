@@ -101,7 +101,9 @@ class Transaction(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
         verbose_name_plural = _("Transactions")
         ordering = ["-created_datetime"]
         indexes = [
-            models.Index(fields=["wallet", "-created_datetime"], name="txn_wallet_dt_idx"),
+            models.Index(
+                fields=["wallet", "-created_datetime"], name="txn_wallet_dt_idx"
+            ),
             models.Index(fields=["status"], name="txn_status_idx"),
         ]
 

@@ -5,7 +5,11 @@ from rest_framework.generics import CreateAPIView, ListAPIView, RetrieveAPIView
 from api.users.permissions import IsCourseCreatorRole
 from api.wallet.filters import TransactionFilter
 from api.wallet.models import Transaction
-from api.wallet.serializers import TransactionSerializer, WalletSerializer, WithdrawalRequestSerializer
+from api.wallet.serializers import (
+    TransactionSerializer,
+    WalletSerializer,
+    WithdrawalRequestSerializer,
+)
 from api.wallet.services import wallet_service
 
 

@@ -16,7 +16,9 @@ class LessonAssessmentView(APIView):
     """
 
     permission_classes = [IsCourseCreatorRole]
-    serializer_class = AssessmentWriteSerializer  # for schema generation only; not a GenericAPIView
+    serializer_class = (
+        AssessmentWriteSerializer  # for schema generation only; not a GenericAPIView
+    )
 
     def _get_lesson(self, course_pk, module_pk, lesson_pk, user) -> Lesson:
         try:
@@ -62,7 +64,9 @@ class ModuleAssessmentView(APIView):
     """GET/PUT-upsert the module-level assessment attached to a single Module."""
 
     permission_classes = [IsCourseCreatorRole]
-    serializer_class = AssessmentWriteSerializer  # for schema generation only; not a GenericAPIView
+    serializer_class = (
+        AssessmentWriteSerializer  # for schema generation only; not a GenericAPIView
+    )
 
     def _get_module(self, course_pk, module_pk, user) -> Module:
         try:
@@ -105,7 +109,9 @@ class CourseAssessmentView(APIView):
     """GET/PUT-upsert the final course-level assessment attached to a Course."""
 
     permission_classes = [IsCourseCreatorRole]
-    serializer_class = AssessmentWriteSerializer  # for schema generation only; not a GenericAPIView
+    serializer_class = (
+        AssessmentWriteSerializer  # for schema generation only; not a GenericAPIView
+    )
 
     def _get_course(self, course_pk, user) -> Course:
         try:

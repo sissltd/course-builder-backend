@@ -87,7 +87,9 @@ class ModuleLessonAssessmentApiTests(APITestCase):
 
         payload = {
             "title": "Quiz 1",
-            "questions": [{"question": "Q1?", "options": ["A", "B"], "correct_index": 0}],
+            "questions": [
+                {"question": "Q1?", "options": ["A", "B"], "correct_index": 0}
+            ],
         }
         response = self.client.put(url, payload, format="json")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -109,7 +111,9 @@ class ModuleLessonAssessmentApiTests(APITestCase):
 
         payload = {
             "title": "Quiz",
-            "questions": [{"question": "Q1?", "options": ["only one"], "correct_index": 0}],
+            "questions": [
+                {"question": "Q1?", "options": ["only one"], "correct_index": 0}
+            ],
         }
         response = self.client.put(url, payload, format="json")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)

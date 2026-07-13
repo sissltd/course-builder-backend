@@ -4,7 +4,12 @@ from rest_framework.test import APITestCase
 from api.courses.enums import CourseStatus
 from api.courses.models import Course
 from api.courses.services import course_service
-from api.courses.tests.factories import build_compliant_course, make_category, make_draft_course, make_user
+from api.courses.tests.factories import (
+    build_compliant_course,
+    make_category,
+    make_draft_course,
+    make_user,
+)
 from api.users.enums import UserRole
 
 
@@ -37,7 +42,12 @@ class CourseApiTests(APITestCase):
 
         response = self.client.post(
             "/api/v1/courses/",
-            {"category": str(self.category.id), "title": "X", "description": "d", "terms_accepted": True},
+            {
+                "category": str(self.category.id),
+                "title": "X",
+                "description": "d",
+                "terms_accepted": True,
+            },
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
@@ -123,7 +133,9 @@ class CourseApiTests(APITestCase):
         self.assertEqual(course.status, CourseStatus.PUBLISHED)
 
     def test_publish_wrong_source_status(self):
-        course = build_compliant_course(creator=self.creator, category=self.category)  # still Draft
+        course = build_compliant_course(
+            creator=self.creator, category=self.category
+        )  # still Draft
         self.client.force_authenticate(self.admin)
 
         response = self.client.post(f"/api/v1/courses/{course.id}/publish/")

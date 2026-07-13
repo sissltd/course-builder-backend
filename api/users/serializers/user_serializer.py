@@ -31,4 +31,6 @@ class MeSerializer(serializers.ModelSerializer):
         # (api.onboarding.models never imports api.users at the top level).
         from api.onboarding.models import CreatorProfile
 
-        return CreatorProfile.objects.filter(user=obj, onboarding_completed_at__isnull=False).exists()
+        return CreatorProfile.objects.filter(
+            user=obj, onboarding_completed_at__isnull=False
+        ).exists()

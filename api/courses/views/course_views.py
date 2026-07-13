@@ -17,7 +17,11 @@ from api.courses.serializers import (
     ReviewRejectSerializer,
 )
 from api.courses.services import course_service, review_service
-from api.users.permissions import IsAdminRole, IsCourseCreatorRole, IsCreatorReviewerRole
+from api.users.permissions import (
+    IsAdminRole,
+    IsCourseCreatorRole,
+    IsCreatorReviewerRole,
+)
 
 OWNER_SCOPED_ACTIONS = {"retrieve", "update", "partial_update", "destroy", "submit"}
 
@@ -59,13 +63,21 @@ class CourseViewSet(ModelViewSet):
 
     @action(detail=True, methods=["post"])
     def submit(self, request, pk=None):
-        course = course_service.submit_course(course=self.get_object(), actor=request.user)
-        return Response(CourseDetailSerializer(course, context=self.get_serializer_context()).data)
+        course = course_service.submit_course(
+            course=self.get_object(), actor=request.user
+        )
+        return Response(
+            CourseDetailSerializer(course, context=self.get_serializer_context()).data
+        )
 
     @action(detail=True, methods=["post"])
     def publish(self, request, pk=None):
-        course = course_service.publish_course(course=self.get_object(), actor=request.user)
-        return Response(CourseDetailSerializer(course, context=self.get_serializer_context()).data)
+        course = course_service.publish_course(
+            course=self.get_object(), actor=request.user
+        )
+        return Response(
+            CourseDetailSerializer(course, context=self.get_serializer_context()).data
+        )
 
 
 class CourseReviewViewSet(ReadOnlyModelViewSet):
@@ -98,8 +110,12 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
 
     @action(detail=True, methods=["post"])
     def claim(self, request, pk=None):
-        course = course_service.claim_for_review(course=self.get_object(), reviewer=request.user)
-        return Response(CourseDetailSerializer(course, context=self.get_serializer_context()).data)
+        course = course_service.claim_for_review(
+            course=self.get_object(), reviewer=request.user
+        )
+        return Response(
+            CourseDetailSerializer(course, context=self.get_serializer_context()).data
+        )
 
     @action(detail=True, methods=["post"])
     def approve(self, request, pk=None):

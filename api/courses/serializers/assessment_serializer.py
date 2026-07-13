@@ -32,21 +32,29 @@ class AssessmentWriteSerializer(serializers.ModelSerializer):
 
         for index, question in enumerate(value):
             if not isinstance(question, dict):
-                raise serializers.ValidationError(f"Question {index} must be an object.")
+                raise serializers.ValidationError(
+                    f"Question {index} must be an object."
+                )
 
             text = question.get("question")
             options = question.get("options")
             correct_index = question.get("correct_index")
 
             if not isinstance(text, str) or not text.strip():
-                raise serializers.ValidationError(f"Question {index} is missing 'question' text.")
+                raise serializers.ValidationError(
+                    f"Question {index} is missing 'question' text."
+                )
             if not isinstance(options, list) or len(options) < 2:
                 raise serializers.ValidationError(
                     f"Question {index} must have at least 2 'options'."
                 )
             if not all(isinstance(option, str) for option in options):
-                raise serializers.ValidationError(f"Question {index} 'options' must all be strings.")
-            if not isinstance(correct_index, int) or not (0 <= correct_index < len(options)):
+                raise serializers.ValidationError(
+                    f"Question {index} 'options' must all be strings."
+                )
+            if not isinstance(correct_index, int) or not (
+                0 <= correct_index < len(options)
+            ):
                 raise serializers.ValidationError(
                     f"Question {index} 'correct_index' must be a valid index into 'options'."
                 )

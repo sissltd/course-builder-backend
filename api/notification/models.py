@@ -98,7 +98,9 @@ class Notification(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
             return cls.objects.create(**kwargs)
         except IntegrityError as exc:
             logger.exception("Error creating notification: %s", exc)
-            raise rest_exceptions.ValidationError("Error creating notification") from exc
+            raise rest_exceptions.ValidationError(
+                "Error creating notification"
+            ) from exc
 
     @classmethod
     def get_notifications(cls, **kwargs):
@@ -234,9 +236,7 @@ class Notification(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
         """
 
         if not receivers:
-            raise rest_exceptions.ValidationError(
-                "At least one receiver is required"
-            )
+            raise rest_exceptions.ValidationError("At least one receiver is required")
 
         if not isinstance(receivers, (list, tuple, set)):
             receivers = [receivers]

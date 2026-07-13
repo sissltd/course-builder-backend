@@ -22,7 +22,9 @@ class EmitEmailNotificationTests(TestCase):
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn("someone@example.com", mail.outbox[0].to)
         self.assertEqual(mail.outbox[0].subject, "Test Subject")
-        self.assertIn("http://localhost:3000/verify-email?token=abc123", mail.outbox[0].body)
+        self.assertIn(
+            "http://localhost:3000/verify-email?token=abc123", mail.outbox[0].body
+        )
 
     def test_resolves_user_instance_receiver_to_email(self):
         from api.authentication.tests.factories import make_user

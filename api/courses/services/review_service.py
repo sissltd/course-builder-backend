@@ -11,7 +11,9 @@ from api.wallet.services import wallet_service
 REVIEWABLE_STATUSES = (CourseStatus.SUBMITTED, CourseStatus.IN_REVIEW)
 
 
-def approve_course(*, course: Course, reviewer: User, feedback: dict | None = None) -> ReviewAction:
+def approve_course(
+    *, course: Course, reviewer: User, feedback: dict | None = None
+) -> ReviewAction:
     """Approve a course under review.
 
     Raises ValidationError if the course is not Submitted/In Review - this is
@@ -37,7 +39,9 @@ def approve_course(*, course: Course, reviewer: User, feedback: dict | None = No
         course.status = CourseStatus.APPROVED
         course.approved_at = timezone.now()
         course.updated_by = reviewer
-        course.save(update_fields=["status", "approved_at", "updated_by", "updated_datetime"])
+        course.save(
+            update_fields=["status", "approved_at", "updated_by", "updated_datetime"]
+        )
 
         wallet_service.credit_wallet(
             user=course.creator,
@@ -67,7 +71,9 @@ def reject_course(*, course: Course, reviewer: User, feedback: dict) -> ReviewAc
     """
 
     if not (feedback or {}).get("summary"):
-        raise exceptions.ValidationError({"feedback": "A summary is required when rejecting a course."})
+        raise exceptions.ValidationError(
+            {"feedback": "A summary is required when rejecting a course."}
+        )
     if course.status not in REVIEWABLE_STATUSES:
         raise exceptions.ValidationError(
             f"Course cannot be rejected from status '{course.status}'."
@@ -83,7 +89,9 @@ def reject_course(*, course: Course, reviewer: User, feedback: dict) -> ReviewAc
         course.status = CourseStatus.DRAFT
         course.rejected_at = timezone.now()
         course.updated_by = reviewer
-        course.save(update_fields=["status", "rejected_at", "updated_by", "updated_datetime"])
+        course.save(
+            update_fields=["status", "rejected_at", "updated_by", "updated_datetime"]
+        )
 
         Notification.emit_in_app_notification(
             receivers=[course.creator],

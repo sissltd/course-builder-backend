@@ -2,10 +2,16 @@ from django.db import models
 from django.utils.translation import gettext_lazy as _
 
 from api.courses.enums import AssessmentLevel
-from includes.helpers import DateHistoryModelMixin, UUIDPrimaryKeyModelMixin, UserHistoryModelMixin
+from includes.helpers import (
+    DateHistoryModelMixin,
+    UUIDPrimaryKeyModelMixin,
+    UserHistoryModelMixin,
+)
 
 
-class Assessment(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMixin):
+class Assessment(
+    UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMixin
+):
     """A quiz attached to exactly one of Lesson, Module, or Course.
 
     `questions` holds a list of objects shaped as:
@@ -59,9 +65,15 @@ class Assessment(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryMod
         constraints = [
             models.CheckConstraint(
                 check=(
-                    models.Q(lesson__isnull=False, module__isnull=True, course__isnull=True)
-                    | models.Q(lesson__isnull=True, module__isnull=False, course__isnull=True)
-                    | models.Q(lesson__isnull=True, module__isnull=True, course__isnull=False)
+                    models.Q(
+                        lesson__isnull=False, module__isnull=True, course__isnull=True
+                    )
+                    | models.Q(
+                        lesson__isnull=True, module__isnull=False, course__isnull=True
+                    )
+                    | models.Q(
+                        lesson__isnull=True, module__isnull=True, course__isnull=False
+                    )
                 ),
                 name="assessment_exactly_one_parent",
             ),

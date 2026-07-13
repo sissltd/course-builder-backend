@@ -46,7 +46,10 @@ class ReviewAction(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
         verbose_name_plural = _("Review Actions")
         ordering = ["-created_datetime"]
         indexes = [
-            models.Index(fields=["course", "-created_datetime"], name="reviewaction_course_dt_idx"),
+            models.Index(
+                fields=["course", "-created_datetime"],
+                name="reviewaction_course_dt_idx",
+            ),
         ]
 
     def __str__(self):
