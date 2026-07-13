@@ -401,22 +401,41 @@ The scaffold includes `config/settings/s3.py` as a reserved settings extension p
 
 That keeps the base Django scaffold lean. Projects that need file storage can add their preferred storage backend and settings without removing unused defaults.
 
-## GitHub Actions Workflow
+## GitHub Actions Workflows
 
-The repository includes `.github/workflows/deploy.yaml`.
+The repository includes `.github/workflows/ci.yml` and `.github/workflows/cd.yml`.
 
-This workflow:
+**CI** (`ci.yml`) runs on every pull request and push to `staging`/`main`:
 
-- triggers on pushes to `staging`
+- `lint` — `ruff check` (gate) and `ruff format --check` (informational)
+- `security` — gitleaks, bandit, pip-audit (all informational until triaged)
+- `test` — `manage.py check`, migration drift check, `migrate` from zero, OpenAPI
+  schema validation (`drf-spectacular`), and `manage.py test`, against real
+  Postgres/Redis service containers
+- `docker-build` — builds `.docker/Dockerfile` to verify it still builds (no push)
+
+**CD** (`cd.yml`) runs only after `CI` succeeds on a push (not a PR) to
+`staging`/`main`, and only while the `CD_ENABLED` repo variable is `true`:
+
+- checks out the exact commit CI passed on
 - builds the Docker image with `.docker/Dockerfile`
-- tags the image with both the short commit SHA and `latest`
-- pushes the image to DigitalOcean Container Registry
+- tags it with the short commit SHA and `staging`/`latest`
+- pushes it to DigitalOcean Container Registry
+- scans it with Trivy (informational until triaged)
+
+Since `workflow_run` only fires from workflow files on the default branch,
+`cd.yml` must exist on `main` for CD to run at all — merging this branch into
+`main` is required, not optional.
 
 Expected GitHub secrets:
 
 - `DIGITALOCEAN_ACCESS_TOKEN`
+
+Expected GitHub repo variables:
+
 - `DOCR_REGISTRY`
 - `DOCR_REPOSITORY`
+- `CD_ENABLED` (`false` until the registry/secrets are in place, then `true`)
 
 ## Extending the Scaffold
 
