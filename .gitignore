@@ -28,3 +28,4 @@ htmlcov/
 staticfiles/
 media/
 test.txt
+.opencode
