@@ -1,0 +1,7 @@
+Hi {{ first_name }},
+
+Verify your SoluDesks Course Creator Studio email address by clicking the link below:
+
+{{ verification_link }}
+
+This link expires in {{ expiry_minutes }} minutes. If you didn't request this, you can safely ignore this email.
