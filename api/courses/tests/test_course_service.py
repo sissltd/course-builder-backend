@@ -9,6 +9,7 @@ from api.courses.tests.factories import (
     build_compliant_course,
     make_category,
     make_draft_course,
+    make_topic,
     make_user,
 )
 from api.notification.models import Notification
@@ -57,6 +58,55 @@ class CreateDraftCourseTests(TestCase):
                 description="d",
                 terms_accepted=True,
             )
+
+    def test_creates_with_matching_topic(self):
+        creator = make_user()
+        category = make_category()
+        topic = make_topic(category=category)
+
+        course = course_service.create_draft_course(
+            creator=creator,
+            category=category,
+            topic=topic,
+            title="X",
+            description="d",
+            terms_accepted=True,
+        )
+
+        self.assertEqual(course.topic_id, topic.id)
+
+    def test_raises_when_topic_does_not_belong_to_category(self):
+        creator = make_user()
+        category = make_category()
+        other_category = make_category()
+        topic = make_topic(category=other_category)
+
+        with self.assertRaises(ValidationError):
+            course_service.create_draft_course(
+                creator=creator,
+                category=category,
+                topic=topic,
+                title="X",
+                description="d",
+                terms_accepted=True,
+            )
+
+    def test_combines_duration_hours_minutes_seconds(self):
+        creator = make_user()
+        category = make_category()
+
+        course = course_service.create_draft_course(
+            creator=creator,
+            category=category,
+            title="X",
+            description="d",
+            duration_hours=1,
+            duration_minutes=2,
+            duration_seconds=3,
+            terms_accepted=True,
+        )
+
+        self.assertEqual(course.planned_duration_seconds, 1 * 3600 + 2 * 60 + 3)
 
 
 class SubmitCourseTests(TestCase):
@@ -110,6 +160,16 @@ class SubmitCourseTests(TestCase):
 
         result = course_service.submit_course(course=course, actor=course.creator)
         self.assertEqual(result.creator_price_snapshot, Decimal("200.00"))
+
+    def test_price_snapshot_uses_topic_price_over_category_price_when_topic_set(self):
+        category = make_category(creator_price=Decimal("100.00"))
+        topic = make_topic(category=category, creator_price=Decimal("25.00"))
+        course = build_compliant_course(category=category)
+        course.topic = topic
+        course.save(update_fields=["topic"])
+
+        result = course_service.submit_course(course=course, actor=course.creator)
+        self.assertEqual(result.creator_price_snapshot, Decimal("25.00"))
 
 
 class ClaimForReviewTests(TestCase):

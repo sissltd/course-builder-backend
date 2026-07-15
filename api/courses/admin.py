@@ -3,10 +3,12 @@ from django.contrib import admin
 from api.courses.models import (
     Assessment,
     Category,
+    CategoryRequest,
     Course,
     Lesson,
     Module,
     ReviewAction,
+    Topic,
 )
 
 
@@ -22,6 +24,27 @@ class CategoryAdmin(admin.ModelAdmin):
     )
     list_filter = ("status", "track_preference")
     search_fields = ("name",)
+
+
+@admin.register(Topic)
+class TopicAdmin(admin.ModelAdmin):
+    list_display = ("id", "name", "category", "creator_price", "status", "created_datetime")
+    list_filter = ("status", "category")
+    search_fields = ("name",)
+
+
+@admin.register(CategoryRequest)
+class CategoryRequestAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "name",
+        "requested_by",
+        "status",
+        "resulting_category",
+        "created_datetime",
+    )
+    list_filter = ("status",)
+    search_fields = ("name", "requested_by__email")
 
 
 @admin.register(Course)

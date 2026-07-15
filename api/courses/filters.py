@@ -1,6 +1,6 @@
 import django_filters
 
-from api.courses.models import Category, Course
+from api.courses.models import Category, Course, Topic
 
 
 class CategoryFilter(django_filters.FilterSet):
@@ -8,6 +8,15 @@ class CategoryFilter(django_filters.FilterSet):
         model = Category
         fields = {
             "track_preference": ["exact"],
+            "status": ["exact"],
+        }
+
+
+class TopicFilter(django_filters.FilterSet):
+    class Meta:
+        model = Topic
+        fields = {
+            "category": ["exact"],
             "status": ["exact"],
         }
 

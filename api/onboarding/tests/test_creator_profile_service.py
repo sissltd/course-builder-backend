@@ -1,9 +1,9 @@
 from django.test import TestCase
 
-from api.onboarding.enums import MonthlyCourseCapacity, VideoComfortLevel
+from api.onboarding.enums import ExpertiseArea, MonthlyCourseCapacity, VideoComfortLevel
 from api.onboarding.models import CreatorProfile
 from api.onboarding.services import creator_profile_service
-from api.onboarding.tests.factories import make_category, make_user
+from api.onboarding.tests.factories import make_user
 from api.users.models import UserActivityLog
 
 
@@ -19,15 +19,16 @@ class GetOrCreateProfileTests(TestCase):
 
 
 class UpdateProfileTests(TestCase):
-    def test_category_id_sets_primary_expertise_category(self):
+    def test_expertise_area_sets_primary_expertise_area(self):
         user = make_user()
-        category = make_category()
 
         profile = creator_profile_service.update_profile(
-            user=user, category_id=category
+            user=user, expertise_area=ExpertiseArea.WEB_DEVELOPMENT
         )
 
-        self.assertEqual(profile.primary_expertise_category_id, category.id)
+        self.assertEqual(
+            profile.primary_expertise_area, ExpertiseArea.WEB_DEVELOPMENT
+        )
 
     def test_only_touches_provided_fields_across_separate_calls(self):
         user = make_user()
@@ -65,9 +66,10 @@ class UpdateProfileTests(TestCase):
 
     def test_full_wizard_across_four_calls_ends_completed(self):
         user = make_user()
-        category = make_category()
 
-        creator_profile_service.update_profile(user=user, category_id=category)
+        creator_profile_service.update_profile(
+            user=user, expertise_area=ExpertiseArea.WEB_DEVELOPMENT
+        )
         creator_profile_service.update_profile(
             user=user, video_comfort_level=VideoComfortLevel.NEEDS_GUIDANCE
         )
@@ -78,7 +80,9 @@ class UpdateProfileTests(TestCase):
             user=user, agreement_accepted=True
         )
 
-        self.assertEqual(profile.primary_expertise_category_id, category.id)
+        self.assertEqual(
+            profile.primary_expertise_area, ExpertiseArea.WEB_DEVELOPMENT
+        )
         self.assertEqual(profile.video_comfort_level, VideoComfortLevel.NEEDS_GUIDANCE)
         self.assertEqual(profile.monthly_course_capacity, MonthlyCourseCapacity.ONE)
         self.assertTrue(profile.has_completed_onboarding)

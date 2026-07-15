@@ -51,3 +51,19 @@ class ReviewActionType(models.TextChoices):
 
     APPROVE = "APPROVE", "Approve"
     REJECT = "REJECT", "Reject"
+
+
+class CategoryRequestStatus(models.TextChoices):
+    """Lifecycle status of a creator's request for a new Category."""
+
+    PENDING = "PENDING", "Pending"
+    APPROVED = "APPROVED", "Approved"
+    REJECTED = "REJECTED", "Rejected"
+
+
+class DifficultyLevel(models.TextChoices):
+    """Course difficulty level, self-reported by the creator."""
+
+    BEGINNER = "BEGINNER", "Beginner"
+    INTERMEDIATE = "INTERMEDIATE", "Intermediate"
+    ADVANCED = "ADVANCED", "Advanced"

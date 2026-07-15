@@ -1,0 +1,3 @@
+Hi {{ first_name }},
+
+Good news! Your requested category "{{ category_name }}" has been approved and is now available to select when building a course on SoluDesks Course Creator Studio.

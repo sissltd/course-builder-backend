@@ -34,6 +34,19 @@ class User(
         default=UserRole.COURSE_CREATOR,
         help_text=_("Primary role used for role-based permission checks."),
     )
+    country = models.CharField(
+        verbose_name=_("Country"),
+        max_length=2,
+        blank=True,
+        default="",
+        help_text=_("ISO 3166-1 alpha-2 country code."),
+    )
+    terms_accepted_at = models.DateTimeField(
+        verbose_name=_("Terms Accepted At"),
+        null=True,
+        blank=True,
+        help_text=_("When the user accepted the Terms and Conditions."),
+    )
 
     objects = CustomUserManager()
 

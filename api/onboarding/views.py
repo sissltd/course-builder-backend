@@ -2,11 +2,14 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from api.authentication.services.authentication_service import AuthenticationService
 from api.onboarding.serializers import (
     CreatorProfileSerializer,
     OnboardingUpdateSerializer,
 )
 from api.onboarding.services import creator_profile_service
+
+auth_service = AuthenticationService()
 
 
 class OnboardingView(APIView):
@@ -33,4 +36,7 @@ class OnboardingView(APIView):
         profile = creator_profile_service.update_profile(
             user=request.user, **serializer.validated_data
         )
-        return Response(CreatorProfileSerializer(profile).data)
+        data = CreatorProfileSerializer(profile).data
+        if serializer.validated_data.get("agreement_accepted"):
+            data = {**data, **auth_service.generate_access_token(user=request.user)}
+        return Response(data)

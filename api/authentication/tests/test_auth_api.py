@@ -26,6 +26,8 @@ class SignupApiTests(APITestCase):
                     "password": "StrongPass123!",
                     "first_name": "Ada",
                     "last_name": "Lovelace",
+                    "country": "NG",
+                    "terms_accepted": True,
                 },
                 format="json",
             )
@@ -43,10 +45,46 @@ class SignupApiTests(APITestCase):
                 "password": "StrongPass123!",
                 "first_name": "A",
                 "last_name": "B",
+                "country": "NG",
             },
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_missing_country_rejected(self):
+        response = self.client.post(
+            "/api/v1/auth/signup/",
+            {
+                "email": "nocountry@example.com",
+                "password": "StrongPass123!",
+                "first_name": "A",
+                "last_name": "B",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertTrue(
+            any(
+                error["field_name"] == "country"
+                for error in response.data["errors"]
+            )
+        )
+
+    def test_terms_accepted_defaults_false(self):
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(
+                "/api/v1/auth/signup/",
+                {
+                    "email": "noterms@example.com",
+                    "password": "StrongPass123!",
+                    "first_name": "A",
+                    "last_name": "B",
+                    "country": "NG",
+                },
+                format="json",
+            )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertIsNone(response.data["terms_accepted_at"])
 
 
 class VerifyEmailApiTests(APITestCase):

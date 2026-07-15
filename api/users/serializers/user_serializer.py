@@ -17,6 +17,8 @@ class MeSerializer(serializers.ModelSerializer):
             "email",
             "first_name",
             "last_name",
+            "country",
+            "terms_accepted_at",
             "role",
             "is_active",
             "created_datetime",
