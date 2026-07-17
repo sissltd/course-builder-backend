@@ -31,7 +31,9 @@ class ModuleViewSet(ModelViewSet):
 
     def _get_course(self) -> Course:
         try:
-            return Course.objects.get(pk=self.kwargs["course_pk"], creator=self.request.user)
+            return Course.objects.get(
+                pk=self.kwargs["course_pk"], creator=self.request.user
+            )
         except Course.DoesNotExist as exc:
             raise exceptions.NotFound("Course not found.") from exc
 
@@ -41,7 +43,9 @@ class ModuleViewSet(ModelViewSet):
             raise exceptions.ValidationError(
                 "Modules can only be added while the course is Draft."
             )
-        serializer.save(course=course, created_by=self.request.user, updated_by=self.request.user)
+        serializer.save(
+            course=course, created_by=self.request.user, updated_by=self.request.user
+        )
 
     def perform_update(self, serializer):
         if serializer.instance.course.status != CourseStatus.DRAFT:

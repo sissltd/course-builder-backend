@@ -1,0 +1,6 @@
+target-version = "py312"
+extend-exclude = ["*/migrations/*"]
+
+[lint.per-file-ignores]
+# config/settings/__init__.py intentionally aggregates submodules with `import *`.
+"config/settings/__init__.py" = ["F403", "F405"]

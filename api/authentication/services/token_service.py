@@ -21,16 +21,17 @@ def issue_token(*, user: User, purpose: str) -> tuple[EmailVerificationToken, st
     returned here so the caller can build a link and email it immediately.
     """
 
-    EmailVerificationToken.objects.filter(user=user, purpose=purpose, is_used=False).update(
-        is_used=True, used_at=timezone.now()
-    )
+    EmailVerificationToken.objects.filter(
+        user=user, purpose=purpose, is_used=False
+    ).update(is_used=True, used_at=timezone.now())
 
     raw_token = secrets.token_urlsafe(settings.EMAIL_TOKEN_BYTES)
     record = EmailVerificationToken.objects.create(
         user=user,
         purpose=purpose,
         token_hash=_hash_token(raw_token),
-        expires_at=timezone.now() + timedelta(minutes=settings.EMAIL_TOKEN_EXPIRY_MINUTES),
+        expires_at=timezone.now()
+        + timedelta(minutes=settings.EMAIL_TOKEN_EXPIRY_MINUTES),
     )
     return record, raw_token
 
@@ -49,13 +50,19 @@ def verify_token(*, user: User, purpose: str, token: str) -> EmailVerificationTo
         token_hash=_hash_token(token), is_used=False
     ).first()
     if not record or record.user_id != user.id or record.purpose != purpose:
-        raise exceptions.NotFound("Invalid or expired verification link. Please request a new one.")
+        raise exceptions.NotFound(
+            "Invalid or expired verification link. Please request a new one."
+        )
 
     if record.attempts >= settings.EMAIL_TOKEN_MAX_ATTEMPTS:
-        raise exceptions.ValidationError("Too many attempts. Please request a new link.")
+        raise exceptions.ValidationError(
+            "Too many attempts. Please request a new link."
+        )
 
     if record.expires_at < timezone.now():
-        raise exceptions.ValidationError("This link has expired. Please request a new one.")
+        raise exceptions.ValidationError(
+            "This link has expired. Please request a new one."
+        )
 
     record.is_used = True
     record.used_at = timezone.now()

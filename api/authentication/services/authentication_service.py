@@ -2,6 +2,7 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from django.db import transaction
+from django.utils import timezone
 from rest_framework import exceptions
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -35,7 +36,16 @@ class AuthenticationService(TsesAuthenticationInterface):
     mandates, plus `logout` and `forgot_password` as additional methods.
     """
 
-    def signup(self, *, email: str, password: str, first_name: str, last_name: str) -> User:
+    def signup(
+        self,
+        *,
+        email: str,
+        password: str,
+        first_name: str,
+        last_name: str,
+        country: str,
+        terms_accepted: bool = False,
+    ) -> User:
         """Create an inactive User and email a signup-verification link.
 
         Role is always forced to COURSE_CREATOR - not client-settable. The
@@ -44,7 +54,9 @@ class AuthenticationService(TsesAuthenticationInterface):
         """
 
         if User.objects.filter(email__iexact=email).exists():
-            raise exceptions.ValidationError({"email": "A user with this email already exists."})
+            raise exceptions.ValidationError(
+                {"email": "A user with this email already exists."}
+            )
 
         with transaction.atomic():
             user = User.objects.create_user(
@@ -52,6 +64,8 @@ class AuthenticationService(TsesAuthenticationInterface):
                 password=password,
                 first_name=first_name,
                 last_name=last_name,
+                country=country,
+                terms_accepted_at=timezone.now() if terms_accepted else None,
                 role=UserRole.COURSE_CREATOR,
                 is_active=False,
             )
@@ -59,7 +73,9 @@ class AuthenticationService(TsesAuthenticationInterface):
                 user=user, purpose=TokenPurpose.SIGNUP_VERIFICATION
             )
             transaction.on_commit(
-                lambda: self._send_signup_verification_email(user=user, raw_token=raw_token)
+                lambda: self._send_signup_verification_email(
+                    user=user, raw_token=raw_token
+                )
             )
 
         return user
@@ -68,7 +84,9 @@ class AuthenticationService(TsesAuthenticationInterface):
         """Verify a SIGNUP_VERIFICATION link token and activate the account."""
 
         user = self._get_user_or_404(email)
-        token_service.verify_token(user=user, purpose=TokenPurpose.SIGNUP_VERIFICATION, token=token)
+        token_service.verify_token(
+            user=user, purpose=TokenPurpose.SIGNUP_VERIFICATION, token=token
+        )
 
         user.is_active = True
         user.save(update_fields=["is_active"])
@@ -91,7 +109,9 @@ class AuthenticationService(TsesAuthenticationInterface):
 
         user = self._get_user_or_404(email)
         if not token_service.can_resend(user=user, purpose=purpose):
-            raise exceptions.ValidationError("Please wait before requesting another link.")
+            raise exceptions.ValidationError(
+                "Please wait before requesting another link."
+            )
 
         _token, raw_token = token_service.issue_token(user=user, purpose=purpose)
         if purpose == TokenPurpose.PASSWORD_RESET:
@@ -103,7 +123,9 @@ class AuthenticationService(TsesAuthenticationInterface):
         """Verify a PASSWORD_RESET link token and set a new password."""
 
         user = self._get_user_or_404(email)
-        token_service.verify_token(user=user, purpose=TokenPurpose.PASSWORD_RESET, token=token)
+        token_service.verify_token(
+            user=user, purpose=TokenPurpose.PASSWORD_RESET, token=token
+        )
         validate_password(new_password, user=user)
 
         with transaction.atomic():
@@ -121,7 +143,9 @@ class AuthenticationService(TsesAuthenticationInterface):
         try:
             RefreshToken(refresh_token).blacklist()
         except TokenError as exc:
-            raise exceptions.ValidationError("Invalid or already blacklisted token.") from exc
+            raise exceptions.ValidationError(
+                "Invalid or already blacklisted token."
+            ) from exc
 
         activity_service.log_auth_activity(
             user=user,
@@ -141,7 +165,9 @@ class AuthenticationService(TsesAuthenticationInterface):
         except User.DoesNotExist:
             return
 
-        _token, raw_token = token_service.issue_token(user=user, purpose=TokenPurpose.PASSWORD_RESET)
+        _token, raw_token = token_service.issue_token(
+            user=user, purpose=TokenPurpose.PASSWORD_RESET
+        )
         self._send_password_reset_email(user=user, raw_token=raw_token)
 
     @staticmethod
@@ -153,7 +179,9 @@ class AuthenticationService(TsesAuthenticationInterface):
 
     @staticmethod
     def _send_signup_verification_email(*, user: User, raw_token: str) -> None:
-        link = build_verification_link(path="/verify-email", email=user.email, token=raw_token)
+        link = build_verification_link(
+            path="/verify-email", email=user.email, token=raw_token
+        )
         Notification.emit_email_notification(
             receivers=[user],
             subject=EMAIL_VERIFICATION_SUBJECT,
@@ -167,7 +195,9 @@ class AuthenticationService(TsesAuthenticationInterface):
 
     @staticmethod
     def _send_password_reset_email(*, user: User, raw_token: str) -> None:
-        link = build_verification_link(path="/reset-password", email=user.email, token=raw_token)
+        link = build_verification_link(
+            path="/reset-password", email=user.email, token=raw_token
+        )
         Notification.emit_email_notification(
             receivers=[user],
             subject=PASSWORD_RESET_SUBJECT,

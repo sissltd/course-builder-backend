@@ -1,7 +1,11 @@
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
-from includes.helpers import DateHistoryModelMixin, UUIDPrimaryKeyModelMixin, UserHistoryModelMixin
+from includes.helpers import (
+    DateHistoryModelMixin,
+    UUIDPrimaryKeyModelMixin,
+    UserHistoryModelMixin,
+)
 
 
 class Lesson(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMixin):
@@ -27,7 +31,9 @@ class Lesson(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMi
         verbose_name=_("Script"),
         blank=True,
         default="",
-        help_text=_("Lesson narration/content script, 500-1500 words (SCCS PRD Section 6.2)."),
+        help_text=_(
+            "Lesson narration/content script, 500-1500 words (SCCS PRD Section 6.2)."
+        ),
     )
     learning_objectives = models.JSONField(
         verbose_name=_("Learning Objectives"),

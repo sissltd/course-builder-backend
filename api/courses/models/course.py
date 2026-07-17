@@ -1,8 +1,12 @@
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
-from api.courses.enums import CourseStatus
-from includes.helpers import DateHistoryModelMixin, UUIDPrimaryKeyModelMixin, UserHistoryModelMixin
+from api.courses.enums import CourseStatus, DifficultyLevel
+from includes.helpers import (
+    DateHistoryModelMixin,
+    UUIDPrimaryKeyModelMixin,
+    UserHistoryModelMixin,
+)
 
 
 class Course(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMixin):
@@ -27,6 +31,19 @@ class Course(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMi
         related_name="courses",
         help_text=_("Category this course belongs to."),
     )
+    topic = models.ForeignKey(
+        "courses.Topic",
+        verbose_name=_("Topic"),
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="courses",
+        help_text=_(
+            "Topic this course belongs to, nested under category. Optional for "
+            "backward compatibility with category-only courses; when set, its "
+            "price is used instead of the category's at submission time."
+        ),
+    )
     title = models.CharField(
         verbose_name=_("Title"),
         max_length=255,
@@ -34,7 +51,9 @@ class Course(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMi
     )
     description = models.TextField(
         verbose_name=_("Description"),
-        help_text=_("Course description including target audience, prerequisites, and outcomes."),
+        help_text=_(
+            "Course description including target audience, prerequisites, and outcomes."
+        ),
     )
     status = models.CharField(
         verbose_name=_("Status"),
@@ -49,17 +68,59 @@ class Course(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMi
         decimal_places=2,
         null=True,
         blank=True,
-        help_text=_("Category creator_price captured at submission time. Null until submitted."),
+        help_text=_(
+            "Category creator_price captured at submission time. Null until submitted."
+        ),
     )
     preview_video_url = models.URLField(
         verbose_name=_("Preview Video URL"),
         blank=True,
         default="",
-        help_text=_("1-2 minute course overview video URL, required before submission (BR-015)."),
+        help_text=_(
+            "1-2 minute course overview video URL, required before submission (BR-015)."
+        ),
+    )
+    thumbnail_url = models.URLField(
+        verbose_name=_("Thumbnail URL"),
+        blank=True,
+        default="",
+        help_text=_(
+            "Course thumbnail image URL, distinct from preview_video_url's cover video."
+        ),
+    )
+    difficulty_level = models.CharField(
+        verbose_name=_("Difficulty Level"),
+        max_length=15,
+        choices=DifficultyLevel.choices,
+        blank=True,
+        default="",
+        help_text=_("Self-reported difficulty level for this course."),
+    )
+    learning_objectives = models.JSONField(
+        verbose_name=_("Learning Objectives"),
+        default=list,
+        blank=True,
+        help_text=_("Course-level list of measurable learning objective strings."),
+    )
+    tags = models.JSONField(
+        verbose_name=_("Tags"),
+        default=list,
+        blank=True,
+        help_text=_("Free-text tags for search/discovery."),
+    )
+    planned_duration_seconds = models.PositiveIntegerField(
+        verbose_name=_("Planned Duration (seconds)"),
+        default=0,
+        help_text=_(
+            "Creator-declared course duration (entered as H/M/S), distinct from "
+            "duration_estimate_minutes which is computed from actual lessons."
+        ),
     )
     terms_accepted_at = models.DateTimeField(
         verbose_name=_("Terms Accepted At"),
-        help_text=_("When the creator accepted the category Terms and Conditions (BR-005)."),
+        help_text=_(
+            "When the creator accepted the category Terms and Conditions (BR-005)."
+        ),
     )
     submitted_at = models.DateTimeField(
         verbose_name=_("Submitted At"), null=True, blank=True
@@ -79,8 +140,12 @@ class Course(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMi
         verbose_name_plural = _("Courses")
         ordering = ["-created_datetime"]
         indexes = [
-            models.Index(fields=["status", "submitted_at"], name="course_status_submitted_idx"),
-            models.Index(fields=["creator", "status"], name="course_creator_status_idx"),
+            models.Index(
+                fields=["status", "submitted_at"], name="course_status_submitted_idx"
+            ),
+            models.Index(
+                fields=["creator", "status"], name="course_creator_status_idx"
+            ),
         ]
 
     def __str__(self):

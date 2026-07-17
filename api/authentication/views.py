@@ -21,7 +21,9 @@ class SignupView(APIView):
     """Create an inactive user and email a signup-verification link."""
 
     permission_classes = [AllowAny]
-    serializer_class = SignupSerializer  # for schema generation only; not a GenericAPIView
+    serializer_class = (
+        SignupSerializer  # for schema generation only; not a GenericAPIView
+    )
 
     def post(self, request):
         serializer = SignupSerializer(data=request.data)
@@ -34,7 +36,9 @@ class VerifyEmailView(APIView):
     """Verify a signup link token, activate the account, and auto-issue tokens."""
 
     permission_classes = [AllowAny]
-    serializer_class = VerifyEmailSerializer  # for schema generation only; not a GenericAPIView
+    serializer_class = (
+        VerifyEmailSerializer  # for schema generation only; not a GenericAPIView
+    )
 
     def post(self, request):
         serializer = VerifyEmailSerializer(data=request.data)
@@ -48,20 +52,26 @@ class ResendVerificationView(APIView):
     """Re-issue a verification link for signup verification or password reset."""
 
     permission_classes = [AllowAny]
-    serializer_class = ResendVerificationSerializer  # for schema generation only; not a GenericAPIView
+    serializer_class = (
+        ResendVerificationSerializer  # for schema generation only; not a GenericAPIView
+    )
 
     def post(self, request):
         serializer = ResendVerificationSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         auth_service.resend_otp(**serializer.validated_data)
-        return Response({"detail": "A new verification link has been sent."}, status=200)
+        return Response(
+            {"detail": "A new verification link has been sent."}, status=200
+        )
 
 
 class LoginView(APIView):
     """Exchange email+password for a JWT access/refresh token pair."""
 
     permission_classes = [AllowAny]
-    serializer_class = LoginSerializer  # for schema generation only; not a GenericAPIView
+    serializer_class = (
+        LoginSerializer  # for schema generation only; not a GenericAPIView
+    )
 
     def post(self, request):
         serializer = LoginSerializer(data=request.data, context={"request": request})
@@ -73,7 +83,9 @@ class LogoutView(APIView):
     """Blacklist a refresh token, ending the session it belongs to."""
 
     permission_classes = [IsAuthenticated]
-    serializer_class = LogoutSerializer  # for schema generation only; not a GenericAPIView
+    serializer_class = (
+        LogoutSerializer  # for schema generation only; not a GenericAPIView
+    )
 
     def post(self, request):
         serializer = LogoutSerializer(data=request.data)
@@ -90,14 +102,18 @@ class ForgotPasswordView(APIView):
     """Request a password-reset link. Never reveals whether the email exists."""
 
     permission_classes = [AllowAny]
-    serializer_class = ForgotPasswordSerializer  # for schema generation only; not a GenericAPIView
+    serializer_class = (
+        ForgotPasswordSerializer  # for schema generation only; not a GenericAPIView
+    )
 
     def post(self, request):
         serializer = ForgotPasswordSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         auth_service.forgot_password(**serializer.validated_data)
         return Response(
-            {"detail": "If an account exists for this email, a reset link has been sent."},
+            {
+                "detail": "If an account exists for this email, a reset link has been sent."
+            },
             status=200,
         )
 
@@ -106,7 +122,9 @@ class ResetPasswordView(APIView):
     """Consume a password-reset link token and set a new password."""
 
     permission_classes = [AllowAny]
-    serializer_class = ResetPasswordSerializer  # for schema generation only; not a GenericAPIView
+    serializer_class = (
+        ResetPasswordSerializer  # for schema generation only; not a GenericAPIView
+    )
 
     def post(self, request):
         serializer = ResetPasswordSerializer(data=request.data)

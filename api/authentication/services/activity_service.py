@@ -4,7 +4,9 @@ from api.users.enums import UserActivityCategoryEnums
 from api.users.models import UserActivityLog
 
 
-def log_auth_activity(*, user, action: str, summary: str, request=None, details: dict | None = None):
+def log_auth_activity(
+    *, user, action: str, summary: str, request=None, details: dict | None = None
+):
     """Create a UserActivityLog row for an authentication event.
 
     category is always AUTH. Pulls IP/user-agent/method/path from `request`

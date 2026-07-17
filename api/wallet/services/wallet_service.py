@@ -73,7 +73,9 @@ def create_withdrawal_request(*, user: User, amount: Decimal) -> Transaction:
         wallet = Wallet.objects.select_for_update().get(pk=wallet.pk)
 
         if amount > wallet.balance:
-            raise exceptions.ValidationError("Withdrawal amount exceeds available balance.")
+            raise exceptions.ValidationError(
+                "Withdrawal amount exceeds available balance."
+            )
 
         txn = Transaction.objects.create(
             wallet=wallet,

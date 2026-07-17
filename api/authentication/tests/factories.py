@@ -31,7 +31,13 @@ def make_user(*, is_active=True, password="testpass123", **kwargs):
 
 
 def make_verification_token(
-    *, user, purpose, raw_token="fixed-test-token-value", expires_in_minutes=60, is_used=False, attempts=0
+    *,
+    user,
+    purpose,
+    raw_token="fixed-test-token-value",
+    expires_in_minutes=60,
+    is_used=False,
+    attempts=0,
 ):
     return EmailVerificationToken.objects.create(
         user=user,

@@ -5,7 +5,11 @@ from django.utils.translation import gettext_lazy as _
 
 from api.users.enums import UserRole
 from api.users.models.manager import CustomUserManager
-from includes.helpers import DateHistoryModelMixin, UUIDPrimaryKeyModelMixin, UserHistoryModelMixin
+from includes.helpers import (
+    DateHistoryModelMixin,
+    UUIDPrimaryKeyModelMixin,
+    UserHistoryModelMixin,
+)
 
 
 class User(
@@ -29,6 +33,19 @@ class User(
         choices=UserRole.choices,
         default=UserRole.COURSE_CREATOR,
         help_text=_("Primary role used for role-based permission checks."),
+    )
+    country = models.CharField(
+        verbose_name=_("Country"),
+        max_length=2,
+        blank=True,
+        default="",
+        help_text=_("ISO 3166-1 alpha-2 country code."),
+    )
+    terms_accepted_at = models.DateTimeField(
+        verbose_name=_("Terms Accepted At"),
+        null=True,
+        blank=True,
+        help_text=_("When the user accepted the Terms and Conditions."),
     )
 
     objects = CustomUserManager()

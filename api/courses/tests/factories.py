@@ -12,7 +12,15 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 
 from api.courses.enums import AssessmentLevel, CategoryStatus, TrackPreference
-from api.courses.models import Assessment, Category, Course, Lesson, Module
+from api.courses.models import (
+    Assessment,
+    Category,
+    CategoryRequest,
+    Course,
+    Lesson,
+    Module,
+    Topic,
+)
 from api.users.enums import UserRole
 
 User = get_user_model()
@@ -45,6 +53,29 @@ def make_category(**kwargs):
     return Category.objects.create(**defaults)
 
 
+def make_topic(*, category=None, **kwargs):
+    n = next(_sequence)
+    category = category or make_category()
+    defaults = {
+        "category": category,
+        "name": f"Topic {n}",
+        "creator_price": Decimal("25.00"),
+        "status": CategoryStatus.ACTIVE,
+    }
+    defaults.update(kwargs)
+    return Topic.objects.create(**defaults)
+
+
+def make_category_request(*, requested_by=None, **kwargs):
+    n = next(_sequence)
+    defaults = {
+        "requested_by": requested_by or make_user(),
+        "name": f"Requested Category {n}",
+    }
+    defaults.update(kwargs)
+    return CategoryRequest.objects.create(**defaults)
+
+
 def make_draft_course(*, creator=None, category=None, **kwargs):
     creator = creator or make_user()
     category = category or make_category()
@@ -52,7 +83,8 @@ def make_draft_course(*, creator=None, category=None, **kwargs):
         "creator": creator,
         "category": category,
         "title": "Test Course",
-        "description": "word " * 150,  # 150 words: within COURSE_DESCRIPTION_WORD_MIN/MAX (100-500)
+        "description": "word "
+        * 150,  # 150 words: within COURSE_DESCRIPTION_WORD_MIN/MAX (100-500)
         "preview_video_url": "https://example.com/preview.mp4",
         "terms_accepted_at": timezone.now(),
     }
@@ -62,12 +94,18 @@ def make_draft_course(*, creator=None, category=None, **kwargs):
 
 def make_questions(count_):
     return [
-        {"question": f"Question {i}?", "options": ["A", "B", "C", "D"], "correct_index": 0}
+        {
+            "question": f"Question {i}?",
+            "options": ["A", "B", "C", "D"],
+            "correct_index": 0,
+        }
         for i in range(count_)
     ]
 
 
-def build_compliant_course(*, creator=None, category=None, module_count=4, lessons_per_module=3):
+def build_compliant_course(
+    *, creator=None, category=None, module_count=4, lessons_per_module=3
+):
     """Build a Course whose module/lesson/assessment tree passes
     course_validation_service.validate_structural_standards, so tests that
     need a submittable course don't have to re-derive PRD thresholds."""

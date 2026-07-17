@@ -35,7 +35,9 @@ class EmailVerificationToken(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
         max_length=64,
         unique=True,
         db_index=True,
-        help_text=_("SHA-256 hex digest of the raw token. The raw token is never stored."),
+        help_text=_(
+            "SHA-256 hex digest of the raw token. The raw token is never stored."
+        ),
     )
     expires_at = models.DateTimeField(
         verbose_name=_("Expires At"),
@@ -46,9 +48,7 @@ class EmailVerificationToken(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
         default=False,
         help_text=_("Whether this token has already been successfully verified."),
     )
-    used_at = models.DateTimeField(
-        verbose_name=_("Used At"), null=True, blank=True
-    )
+    used_at = models.DateTimeField(verbose_name=_("Used At"), null=True, blank=True)
     attempts = models.PositiveSmallIntegerField(
         verbose_name=_("Attempts"),
         default=0,
@@ -60,7 +60,9 @@ class EmailVerificationToken(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
         verbose_name_plural = _("Email Verification Tokens")
         ordering = ["-created_datetime"]
         indexes = [
-            models.Index(fields=["user", "purpose", "is_used"], name="evt_user_purpose_used_idx"),
+            models.Index(
+                fields=["user", "purpose", "is_used"], name="evt_user_purpose_used_idx"
+            ),
         ]
 
     def __str__(self):

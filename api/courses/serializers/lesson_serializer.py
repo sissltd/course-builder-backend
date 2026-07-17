@@ -52,7 +52,14 @@ class LessonWriteSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Lesson
-        fields = ["id", "title", "order", "script", "learning_objectives", "duration_minutes"]
+        fields = [
+            "id",
+            "title",
+            "order",
+            "script",
+            "learning_objectives",
+            "duration_minutes",
+        ]
         read_only_fields = ["id"]
 
     def validate_learning_objectives(self, value):

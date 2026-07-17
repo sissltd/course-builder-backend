@@ -5,7 +5,11 @@ from django.db import models
 from django.utils.translation import gettext_lazy as _
 
 from api.courses.enums import CategoryStatus, TrackPreference
-from includes.helpers import DateHistoryModelMixin, UUIDPrimaryKeyModelMixin, UserHistoryModelMixin
+from includes.helpers import (
+    DateHistoryModelMixin,
+    UUIDPrimaryKeyModelMixin,
+    UserHistoryModelMixin,
+)
 
 
 class Category(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMixin):
@@ -33,7 +37,9 @@ class Category(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModel
         max_digits=10,
         decimal_places=2,
         validators=[MinValueValidator(Decimal("0"))],
-        help_text=_("Fixed price paid to a creator for an approved course in this category."),
+        help_text=_(
+            "Fixed price paid to a creator for an approved course in this category."
+        ),
     )
     track_preference = models.CharField(
         verbose_name=_("Track Preference"),

@@ -19,7 +19,7 @@ def get_or_create_profile(*, user: User) -> CreatorProfile:
 def update_profile(
     *,
     user: User,
-    category_id=None,
+    expertise_area: str | None = None,
     other_expertise: str | None = None,
     video_comfort_level: str | None = None,
     monthly_course_capacity: str | None = None,
@@ -37,9 +37,9 @@ def update_profile(
     profile = get_or_create_profile(user=user)
     update_fields = ["updated_datetime"]
 
-    if category_id is not None:
-        profile.primary_expertise_category = category_id
-        update_fields.append("primary_expertise_category")
+    if expertise_area is not None:
+        profile.primary_expertise_area = expertise_area
+        update_fields.append("primary_expertise_area")
     if other_expertise is not None:
         profile.primary_expertise_other = other_expertise
         update_fields.append("primary_expertise_other")

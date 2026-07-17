@@ -114,4 +114,6 @@ class GetCourseDurationMinutesTests(TestCase):
     def test_sums_lesson_durations_across_modules(self):
         course = build_compliant_course(module_count=4, lessons_per_module=3)
         # build_compliant_course sets every lesson to 20 minutes.
-        self.assertEqual(course_validation_service.get_course_duration_minutes(course), 4 * 3 * 20)
+        self.assertEqual(
+            course_validation_service.get_course_duration_minutes(course), 4 * 3 * 20
+        )

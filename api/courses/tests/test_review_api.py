@@ -52,12 +52,16 @@ class ReviewQueueApiTests(APITestCase):
         course = self._submitted_course()
         self.client.force_authenticate(self.reviewer)
 
-        response = self.client.post(f"/api/v1/review-queue/{course.id}/approve/", {}, format="json")
+        response = self.client.post(
+            f"/api/v1/review-queue/{course.id}/approve/", {}, format="json"
+        )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
         course.refresh_from_db()
         self.assertEqual(course.status, CourseStatus.APPROVED)
-        self.assertTrue(ReviewAction.objects.filter(course=course, action="APPROVE").exists())
+        self.assertTrue(
+            ReviewAction.objects.filter(course=course, action="APPROVE").exists()
+        )
 
         wallet = wallet_service.get_or_create_wallet(user=self.creator)
         self.assertEqual(wallet.balance, Decimal("120.00"))
@@ -66,8 +70,12 @@ class ReviewQueueApiTests(APITestCase):
         course = self._submitted_course()
         self.client.force_authenticate(self.reviewer)
 
-        self.client.post(f"/api/v1/review-queue/{course.id}/approve/", {}, format="json")
-        response = self.client.post(f"/api/v1/review-queue/{course.id}/approve/", {}, format="json")
+        self.client.post(
+            f"/api/v1/review-queue/{course.id}/approve/", {}, format="json"
+        )
+        response = self.client.post(
+            f"/api/v1/review-queue/{course.id}/approve/", {}, format="json"
+        )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_reject_requires_summary(self):
@@ -93,13 +101,17 @@ class ReviewQueueApiTests(APITestCase):
         course.refresh_from_db()
         self.assertEqual(course.status, CourseStatus.DRAFT)
         self.assertIsNotNone(course.rejected_at)
-        self.assertTrue(ReviewAction.objects.filter(course=course, action="REJECT").exists())
+        self.assertTrue(
+            ReviewAction.objects.filter(course=course, action="REJECT").exists()
+        )
 
     def test_creator_cannot_review_own_course(self):
         course = self._submitted_course()
         self.client.force_authenticate(self.creator)
 
-        response = self.client.post(f"/api/v1/review-queue/{course.id}/approve/", {}, format="json")
+        response = self.client.post(
+            f"/api/v1/review-queue/{course.id}/approve/", {}, format="json"
+        )
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_non_reviewer_non_admin_forbidden(self):
@@ -114,5 +126,7 @@ class ReviewQueueApiTests(APITestCase):
         course = self._submitted_course()
         self.client.force_authenticate(self.admin)
 
-        response = self.client.post(f"/api/v1/review-queue/{course.id}/approve/", {}, format="json")
+        response = self.client.post(
+            f"/api/v1/review-queue/{course.id}/approve/", {}, format="json"
+        )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
