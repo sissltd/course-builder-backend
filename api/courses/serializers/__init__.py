@@ -1,4 +1,9 @@
 from .assessment_serializer import AssessmentSerializer, AssessmentWriteSerializer
+from .category_request_serializer import (
+    CategoryRequestApproveSerializer,
+    CategoryRequestCreateSerializer,
+    CategoryRequestSerializer,
+)
 from .category_serializer import CategorySerializer, CategoryWriteSerializer
 from .course_serializer import (
     CategoryMiniSerializer,
@@ -9,6 +14,7 @@ from .course_serializer import (
     ReviewActionSerializer,
     ReviewApproveSerializer,
     ReviewRejectSerializer,
+    TopicMiniSerializer,
 )
 from .lesson_serializer import (
     LessonMiniSerializer,
@@ -16,11 +22,15 @@ from .lesson_serializer import (
     LessonWriteSerializer,
 )
 from .module_serializer import ModuleSerializer, ModuleWriteSerializer
+from .topic_serializer import TopicSerializer, TopicWriteSerializer
 
 __all__ = [
     "AssessmentSerializer",
     "AssessmentWriteSerializer",
     "CategoryMiniSerializer",
+    "CategoryRequestApproveSerializer",
+    "CategoryRequestCreateSerializer",
+    "CategoryRequestSerializer",
     "CategorySerializer",
     "CategoryWriteSerializer",
     "CourseCreateSerializer",
@@ -35,4 +45,7 @@ __all__ = [
     "ReviewActionSerializer",
     "ReviewApproveSerializer",
     "ReviewRejectSerializer",
+    "TopicMiniSerializer",
+    "TopicSerializer",
+    "TopicWriteSerializer",
 ]

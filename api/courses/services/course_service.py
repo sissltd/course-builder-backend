@@ -4,10 +4,30 @@ from django.utils import timezone
 from rest_framework import exceptions
 
 from api.courses.enums import CategoryStatus, CourseStatus
-from api.courses.models import Category, Course
+from api.courses.models import Category, Course, Topic
 from api.courses.services import course_validation_service
 from api.notification.models import Notification
 from api.users.models import User
+
+DRAFT_EDITABLE_FIELDS = {
+    "title",
+    "description",
+    "preview_video_url",
+    "thumbnail_url",
+    "category",
+    "topic",
+    "difficulty_level",
+    "learning_objectives",
+    "tags",
+    "planned_duration_seconds",
+}
+
+
+def _validate_topic_matches_category(*, topic: Topic | None, category: Category) -> None:
+    if topic is not None and topic.category_id != category.id:
+        raise exceptions.ValidationError(
+            "topic does not belong to the selected category."
+        )
 
 
 def create_draft_course(
@@ -17,13 +37,22 @@ def create_draft_course(
     title: str,
     description: str,
     preview_video_url: str = "",
+    thumbnail_url: str = "",
+    topic: Topic | None = None,
+    difficulty_level: str = "",
+    learning_objectives: list | None = None,
+    tags: list | None = None,
+    duration_hours: int = 0,
+    duration_minutes: int = 0,
+    duration_seconds: int = 0,
     terms_accepted: bool,
 ) -> Course:
     """Create a new Draft course owned by `creator`.
 
-    Raises ValidationError if terms_accepted is False (BR-005) or the category
-    is not currently accepting submissions. Does not snapshot the category
-    price yet - that happens at submit time, see submit_course().
+    Raises ValidationError if terms_accepted is False (BR-005), the category
+    is not currently accepting submissions, or topic doesn't belong to
+    category. Does not snapshot the category/topic price yet - that happens
+    at submit time, see submit_course().
     """
 
     if not terms_accepted:
@@ -34,13 +63,22 @@ def create_draft_course(
         raise exceptions.ValidationError(
             "This category is not currently accepting new courses."
         )
+    _validate_topic_matches_category(topic=topic, category=category)
 
     return Course.objects.create(
         creator=creator,
         category=category,
+        topic=topic,
         title=title,
         description=description,
         preview_video_url=preview_video_url,
+        thumbnail_url=thumbnail_url,
+        difficulty_level=difficulty_level,
+        learning_objectives=learning_objectives or [],
+        tags=tags or [],
+        planned_duration_seconds=duration_hours * 3600
+        + duration_minutes * 60
+        + duration_seconds,
         terms_accepted_at=timezone.now(),
         created_by=creator,
         updated_by=creator,
@@ -49,14 +87,18 @@ def create_draft_course(
 
 def update_draft_course(*, course: Course, actor: User, data: dict) -> Course:
     """Update editable fields on a Draft course. Raises ValidationError if the
-    course is not in Draft status."""
+    course is not in Draft status, or a supplied topic doesn't belong to the
+    (new or existing) category."""
 
     if course.status != CourseStatus.DRAFT:
         raise exceptions.ValidationError("Only Draft courses can be edited.")
 
-    editable_fields = {"title", "description", "preview_video_url", "category"}
+    if "topic" in data:
+        category = data.get("category", course.category)
+        _validate_topic_matches_category(topic=data["topic"], category=category)
+
     for field, value in data.items():
-        if field in editable_fields:
+        if field in DRAFT_EDITABLE_FIELDS:
             setattr(course, field, value)
 
     course.updated_by = actor
@@ -100,7 +142,9 @@ def submit_course(*, course: Course, actor: User) -> Course:
         raise exceptions.ValidationError({"structural_standards": failures})
 
     with transaction.atomic():
-        course.creator_price_snapshot = course.category.creator_price
+        course.creator_price_snapshot = (
+            course.topic.creator_price if course.topic_id else course.category.creator_price
+        )
         course.status = CourseStatus.SUBMITTED
         course.submitted_at = timezone.now()
         course.updated_by = actor

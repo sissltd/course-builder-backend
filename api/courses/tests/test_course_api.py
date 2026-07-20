@@ -8,6 +8,7 @@ from api.courses.tests.factories import (
     build_compliant_course,
     make_category,
     make_draft_course,
+    make_topic,
     make_user,
 )
 from api.users.enums import UserRole
@@ -36,6 +37,99 @@ class CourseApiTests(APITestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(Course.objects.filter(creator=self.creator).count(), 1)
+
+    def test_creator_can_create_with_topic_and_course_information_fields(self):
+        topic = make_topic(category=self.category)
+        self.client.force_authenticate(self.creator)
+
+        response = self.client.post(
+            "/api/v1/courses/",
+            {
+                "category": str(self.category.id),
+                "topic": str(topic.id),
+                "title": "My Course",
+                "description": "d" * 20,
+                "difficulty_level": "BEGINNER",
+                "learning_objectives": ["Objective 1", "Objective 2"],
+                "tags": ["Python", "Backend"],
+                "thumbnail_url": "https://example.com/thumb.jpg",
+                "duration_hours": 1,
+                "duration_minutes": 30,
+                "duration_seconds": 0,
+                "terms_accepted": True,
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        course = Course.objects.get(creator=self.creator)
+        self.assertEqual(course.topic_id, topic.id)
+        self.assertEqual(course.difficulty_level, "BEGINNER")
+        self.assertEqual(course.learning_objectives, ["Objective 1", "Objective 2"])
+        self.assertEqual(course.tags, ["Python", "Backend"])
+        self.assertEqual(course.thumbnail_url, "https://example.com/thumb.jpg")
+        self.assertEqual(course.planned_duration_seconds, 90 * 60)
+
+    def test_create_with_mismatched_topic_and_category_rejected(self):
+        other_category = make_category()
+        topic = make_topic(category=other_category)
+        self.client.force_authenticate(self.creator)
+
+        response = self.client.post(
+            "/api/v1/courses/",
+            {
+                "category": str(self.category.id),
+                "topic": str(topic.id),
+                "title": "My Course",
+                "description": "d" * 20,
+                "terms_accepted": True,
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_create_with_non_string_tags_rejected(self):
+        self.client.force_authenticate(self.creator)
+
+        response = self.client.post(
+            "/api/v1/courses/",
+            {
+                "category": str(self.category.id),
+                "title": "My Course",
+                "description": "d" * 20,
+                "tags": ["ok", ""],
+                "terms_accepted": True,
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_partial_update_without_duration_leaves_it_unchanged(self):
+        course = make_draft_course(
+            creator=self.creator, category=self.category, planned_duration_seconds=120
+        )
+        self.client.force_authenticate(self.creator)
+
+        response = self.client.patch(
+            f"/api/v1/courses/{course.id}/", {"title": "New Title"}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        course.refresh_from_db()
+        self.assertEqual(course.planned_duration_seconds, 120)
+
+    def test_partial_update_with_duration_recombines_it(self):
+        course = make_draft_course(
+            creator=self.creator, category=self.category, planned_duration_seconds=120
+        )
+        self.client.force_authenticate(self.creator)
+
+        response = self.client.patch(
+            f"/api/v1/courses/{course.id}/",
+            {"duration_hours": 2, "duration_minutes": 0, "duration_seconds": 0},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        course.refresh_from_db()
+        self.assertEqual(course.planned_duration_seconds, 2 * 3600)
 
     def test_non_creator_role_forbidden_to_create(self):
         self.client.force_authenticate(self.admin)

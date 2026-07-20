@@ -2,6 +2,7 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from django.db import transaction
+from django.utils import timezone
 from rest_framework import exceptions
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -36,7 +37,14 @@ class AuthenticationService(TsesAuthenticationInterface):
     """
 
     def signup(
-        self, *, email: str, password: str, first_name: str, last_name: str
+        self,
+        *,
+        email: str,
+        password: str,
+        first_name: str,
+        last_name: str,
+        country: str,
+        terms_accepted: bool = False,
     ) -> User:
         """Create an inactive User and email a signup-verification link.
 
@@ -56,6 +64,8 @@ class AuthenticationService(TsesAuthenticationInterface):
                 password=password,
                 first_name=first_name,
                 last_name=last_name,
+                country=country,
+                terms_accepted_at=timezone.now() if terms_accepted else None,
                 role=UserRole.COURSE_CREATOR,
                 is_active=False,
             )

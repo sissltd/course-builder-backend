@@ -3,14 +3,22 @@ from rest_framework.routers import DefaultRouter
 
 from api.courses.views import (
     assessment_views,
+    category_request_views,
     category_views,
     course_views,
     lesson_views,
     module_views,
+    topic_views,
 )
 
 router = DefaultRouter()
 router.register("categories", category_views.CategoryViewSet, basename="category")
+router.register(
+    "category-requests",
+    category_request_views.CategoryRequestViewSet,
+    basename="category-request",
+)
+router.register("topics", topic_views.TopicViewSet, basename="topic")
 router.register("courses", course_views.CourseViewSet, basename="course")
 router.register(
     "review-queue", course_views.CourseReviewViewSet, basename="course-review"

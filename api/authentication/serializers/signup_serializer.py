@@ -10,3 +10,5 @@ class SignupSerializer(serializers.Serializer):
     password = serializers.CharField(write_only=True, validators=[validate_password])
     first_name = serializers.CharField(max_length=150)
     last_name = serializers.CharField(max_length=150)
+    country = serializers.CharField(max_length=2)
+    terms_accepted = serializers.BooleanField(required=False, default=False)

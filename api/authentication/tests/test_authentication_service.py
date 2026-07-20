@@ -21,10 +21,25 @@ class SignupTests(TestCase):
             password="StrongPass123!",
             first_name="A",
             last_name="B",
+            country="NG",
         )
 
         self.assertFalse(user.is_active)
         self.assertEqual(user.role, UserRole.COURSE_CREATOR)
+        self.assertEqual(user.country, "NG")
+        self.assertIsNone(user.terms_accepted_at)
+
+    def test_terms_accepted_true_stamps_timestamp(self):
+        user = service.signup(
+            email="terms@example.com",
+            password="StrongPass123!",
+            first_name="A",
+            last_name="B",
+            country="NG",
+            terms_accepted=True,
+        )
+
+        self.assertIsNotNone(user.terms_accepted_at)
 
     def test_sends_verification_email_with_link(self):
         # signup() emails via transaction.on_commit(), which never fires under
@@ -35,6 +50,7 @@ class SignupTests(TestCase):
                 password="StrongPass123!",
                 first_name="A",
                 last_name="B",
+                country="NG",
             )
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn("new2@example.com", mail.outbox[0].to)
@@ -49,6 +65,7 @@ class SignupTests(TestCase):
                 password="StrongPass123!",
                 first_name="A",
                 last_name="B",
+                country="NG",
             )
 
 
