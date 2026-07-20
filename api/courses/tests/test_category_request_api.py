@@ -11,6 +11,7 @@ from api.users.enums import UserRole
 class CategoryRequestApiTests(APITestCase):
     def setUp(self):
         self.admin = make_user(role=UserRole.ADMIN)
+        self.reviewer = make_user(role=UserRole.CREATOR_REVIEWER)
         self.creator = make_user(role=UserRole.COURSE_CREATOR)
         self.other_creator = make_user(role=UserRole.COURSE_CREATOR)
 
@@ -49,6 +50,39 @@ class CategoryRequestApiTests(APITestCase):
 
         response = self.client.get("/api/v1/category-requests/")
         self.assertEqual(len(response.data["data"]["results"]), 2)
+
+    def test_reviewer_lists_all_requests(self):
+        make_category_request(requested_by=self.creator)
+        make_category_request(requested_by=self.other_creator)
+        self.client.force_authenticate(self.reviewer)
+
+        response = self.client.get("/api/v1/category-requests/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]["results"]), 2)
+
+    def test_reviewer_can_approve(self):
+        category_request = make_category_request(
+            requested_by=self.creator, name="Robotics"
+        )
+        self.client.force_authenticate(self.reviewer)
+
+        response = self.client.post(
+            f"/api/v1/category-requests/{category_request.id}/approve/",
+            {"creator_price": "25.00"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(Category.objects.filter(name="Robotics").exists())
+
+    def test_reviewer_can_reject(self):
+        category_request = make_category_request(requested_by=self.creator)
+        self.client.force_authenticate(self.reviewer)
+
+        response = self.client.post(
+            f"/api/v1/category-requests/{category_request.id}/reject/"
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["status"], CategoryRequestStatus.REJECTED)
 
     def test_creator_cannot_approve(self):
         category_request = make_category_request(requested_by=self.creator)

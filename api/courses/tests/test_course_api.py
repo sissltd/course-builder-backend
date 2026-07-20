@@ -7,6 +7,7 @@ from api.courses.services import course_service
 from api.courses.tests.factories import (
     build_compliant_course,
     make_category,
+    make_collaborator,
     make_draft_course,
     make_topic,
     make_user,
@@ -182,6 +183,34 @@ class CourseApiTests(APITestCase):
             f"/api/v1/courses/{course.id}/", {"title": "New Title"}, format="json"
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_collaborator_can_retrieve_and_update_draft(self):
+        course = make_draft_course(creator=self.creator, category=self.category)
+        collaborator_user = make_user()
+        make_collaborator(course=course, user=collaborator_user)
+        self.client.force_authenticate(collaborator_user)
+
+        response = self.client.get(f"/api/v1/courses/{course.id}/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        response = self.client.patch(
+            f"/api/v1/courses/{course.id}/", {"title": "Collab Title"}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        course.refresh_from_db()
+        self.assertEqual(course.title, "Collab Title")
+
+    def test_collaborator_cannot_submit_or_delete(self):
+        course = build_compliant_course(creator=self.creator, category=self.category)
+        collaborator_user = make_user()
+        make_collaborator(course=course, user=collaborator_user)
+        self.client.force_authenticate(collaborator_user)
+
+        response = self.client.post(f"/api/v1/courses/{course.id}/submit/")
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+        response = self.client.delete(f"/api/v1/courses/{course.id}/")
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
     def test_owner_can_delete_draft(self):
         course = make_draft_course(creator=self.creator, category=self.category)

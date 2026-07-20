@@ -14,7 +14,7 @@ CATEGORY_APPROVED_SUBJECT = "Your category request has been approved"
 
 
 def submit_request(*, user: User, name: str) -> CategoryRequest:
-    """Create a Pending CategoryRequest and notify Admins in-app.
+    """Create a Pending CategoryRequest and notify Admins/Reviewers in-app.
 
     No email is sent here - the requester is only emailed on approval, per
     the "notified via email shortly on approval" confirmation copy.
@@ -22,10 +22,12 @@ def submit_request(*, user: User, name: str) -> CategoryRequest:
 
     category_request = CategoryRequest.objects.create(requested_by=user, name=name)
 
-    admins = list(User.objects.filter(role=UserRole.ADMIN))
-    if admins:
+    managers = list(
+        User.objects.filter(role__in=[UserRole.ADMIN, UserRole.CREATOR_REVIEWER])
+    )
+    if managers:
         Notification.emit_in_app_notification(
-            receivers=admins,
+            receivers=managers,
             title="New category request",
             content=f"{user.email} requested a new category: '{name}'.",
             metadata={"category_request_id": category_request.id},
@@ -37,11 +39,16 @@ def submit_request(*, user: User, name: str) -> CategoryRequest:
 def approve_request(
     *,
     category_request: CategoryRequest,
-    admin: User,
+    actor: User,
     creator_price: Decimal,
     track_preference: str = TrackPreference.OPEN,
 ) -> CategoryRequest:
-    """Approve a Pending request: create the real Category and email the requester."""
+    """Approve a Pending request: create the real Category and email the requester.
+
+    `actor` is whoever is allowed to manage category requests - an Admin or
+    a Creator Reviewer (Reviewers have full Category/Topic CRUD parity with
+    Admin, so they approve/reject these too).
+    """
 
     if category_request.status != CategoryRequestStatus.PENDING:
         raise exceptions.ValidationError(
@@ -53,8 +60,8 @@ def approve_request(
             name=category_request.name,
             creator_price=creator_price,
             track_preference=track_preference,
-            created_by=admin,
-            updated_by=admin,
+            created_by=actor,
+            updated_by=actor,
         )
     except IntegrityError as exc:
         raise exceptions.ValidationError(
@@ -63,7 +70,7 @@ def approve_request(
 
     category_request.resulting_category = category
     category_request.status = CategoryRequestStatus.APPROVED
-    category_request.reviewed_by = admin
+    category_request.reviewed_by = actor
     category_request.reviewed_at = timezone.now()
     category_request.save(
         update_fields=[
@@ -88,7 +95,7 @@ def approve_request(
     return category_request
 
 
-def reject_request(*, category_request: CategoryRequest, admin: User) -> CategoryRequest:
+def reject_request(*, category_request: CategoryRequest, actor: User) -> CategoryRequest:
     """Reject a Pending request. No email - Figma has no rejection-notice screen."""
 
     if category_request.status != CategoryRequestStatus.PENDING:
@@ -97,7 +104,7 @@ def reject_request(*, category_request: CategoryRequest, admin: User) -> Categor
         )
 
     category_request.status = CategoryRequestStatus.REJECTED
-    category_request.reviewed_by = admin
+    category_request.reviewed_by = actor
     category_request.reviewed_at = timezone.now()
     category_request.save(
         update_fields=["status", "reviewed_by", "reviewed_at", "updated_datetime"]

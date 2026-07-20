@@ -4,6 +4,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet, ReadOnlyModelViewSet
 
+from api.courses.enums import CourseStatus
 from api.courses.filters import CourseReviewQueueFilter
 from api.courses.models import Course
 from api.courses.permissions import IsCourseOwner
@@ -16,7 +17,7 @@ from api.courses.serializers import (
     ReviewApproveSerializer,
     ReviewRejectSerializer,
 )
-from api.courses.services import course_service, review_service
+from api.courses.services import collaborator_service, course_service, review_service
 from api.users.permissions import (
     IsAdminRole,
     IsCourseCreatorRole,
@@ -35,12 +36,19 @@ class CourseViewSet(ModelViewSet):
         if getattr(self, "swagger_fake_view", False):
             return Course.objects.none()
 
-        queryset = Course.objects.select_related("category")
         if self.action == "publish":
             # Admin-only (enforced by get_permissions) and not owner-scoped:
             # an Admin publishing a course is never its creator.
-            return queryset
-        return queryset.filter(creator=self.request.user)
+            return Course.objects.select_related("category", "topic")
+        if self.action in {"retrieve", "update", "partial_update"}:
+            # Viewing/editing an existing course extends to collaborators;
+            # list/create/destroy/submit stay creator-only (see IsCourseOwner).
+            return collaborator_service.get_courses_accessible_to(
+                self.request.user
+            ).select_related("category", "topic")
+        return Course.objects.select_related("category", "topic").filter(
+            creator=self.request.user
+        )
 
     def get_serializer_class(self):
         if self.action == "create":
@@ -85,8 +93,10 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
 
     Kept separate from CourseViewSet rather than branching one viewset's
     queryset by role, so a creator's own-courses queryset and a reviewer's
-    cross-creator queue never share permission/queryset logic. `list` is
-    scoped to Submitted/In Review courses (the actual "queue"); detail actions
+    cross-creator queue never share permission/queryset logic. `list` covers
+    every stage a reviewer needs to browse - Submitted/In Review (the actual
+    "queue"), plus Approved and Published - narrowable via
+    CourseReviewQueueFilter's ?status= param; detail actions
     (retrieve/claim/approve/reject) look up any course by id, so acting on a
     course in the wrong status produces a 400 from the service layer rather
     than a misleading 404.
@@ -100,12 +110,26 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
 
     def get_queryset(self):
         if self.action == "list":
-            return course_service.get_review_queue()
+            return course_service.get_review_queue(
+                status_in=[
+                    CourseStatus.SUBMITTED,
+                    CourseStatus.IN_REVIEW,
+                    CourseStatus.APPROVED,
+                    CourseStatus.PUBLISHED,
+                ]
+            )
         return Course.objects.select_related("category", "creator")
 
     def get_serializer_class(self):
         if self.action == "list":
             return CourseListSerializer
+        if self.action == "approve":
+            # Also drives OpenAPI schema generation for approve/reject, since
+            # neither calls self.get_serializer() at runtime (each
+            # instantiates its own write serializer directly below).
+            return ReviewApproveSerializer
+        if self.action == "reject":
+            return ReviewRejectSerializer
         return CourseDetailSerializer
 
     @action(detail=True, methods=["post"])

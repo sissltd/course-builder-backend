@@ -11,12 +11,18 @@ from itertools import count
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 
-from api.courses.enums import AssessmentLevel, CategoryStatus, TrackPreference
+from api.courses.enums import (
+    AssessmentLevel,
+    CategoryStatus,
+    CollaboratorRole,
+    TrackPreference,
+)
 from api.courses.models import (
     Assessment,
     Category,
     CategoryRequest,
     Course,
+    CourseCollaborator,
     Lesson,
     Module,
     Topic,
@@ -74,6 +80,16 @@ def make_category_request(*, requested_by=None, **kwargs):
     }
     defaults.update(kwargs)
     return CategoryRequest.objects.create(**defaults)
+
+
+def make_collaborator(*, course=None, user=None, **kwargs):
+    defaults = {
+        "course": course or make_draft_course(),
+        "user": user or make_user(),
+        "role": CollaboratorRole.COLLABORATOR,
+    }
+    defaults.update(kwargs)
+    return CourseCollaborator.objects.create(**defaults)
 
 
 def make_draft_course(*, creator=None, category=None, **kwargs):

@@ -272,3 +272,62 @@ class Notification(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
             return cls.objects.get(**kwargs)
         except cls.DoesNotExist as exc:
             raise rest_exceptions.NotFound("Notification not found") from exc
+
+
+class NotificationPreference(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
+    """Per-user toggles for which alert types a Creator Reviewer wants to
+    receive. Preference storage only - it does not implement the underlying
+    SLA-threshold detection/alerting system itself (not built yet); toggling
+    sla_breached off, for instance, has no effect until that system exists.
+
+    Lazily provisioned via notification_preference_service.get_or_create,
+    mirroring CreatorProfile/ReviewerAvailability - no row exists until a
+    user first opens their Notification settings.
+    """
+
+    user = models.OneToOneField(
+        "users.User",
+        verbose_name=_("User"),
+        on_delete=models.CASCADE,
+        related_name="notification_preference",
+        help_text=_("User these notification preferences belong to."),
+    )
+    new_course_assigned = models.BooleanField(
+        verbose_name=_("New Course Assigned"),
+        default=True,
+        help_text=_("Notify when a course is assigned to this reviewer."),
+    )
+    escalation_assigned = models.BooleanField(
+        verbose_name=_("Escalation Assigned"),
+        default=True,
+        help_text=_("Notify when an escalation is assigned (QA Reviewer only)."),
+    )
+    creator_feedback = models.BooleanField(
+        verbose_name=_("Creator Feedback"),
+        default=True,
+        help_text=_("Notify when a creator appeals a course decision."),
+    )
+    sla_amber_warning = models.BooleanField(
+        verbose_name=_("SLA Amber Warning"),
+        default=True,
+        help_text=_("Notify when a course in the queue hits the amber threshold."),
+    )
+    sla_red_critical_alert = models.BooleanField(
+        verbose_name=_("SLA Red Critical Alert"),
+        default=True,
+        help_text=_("Notify when a course hits the critical threshold."),
+    )
+    sla_breached = models.BooleanField(
+        verbose_name=_("SLA Breached"),
+        default=True,
+        help_text=_("Notify immediately when the SLA window is missed."),
+    )
+
+    class Meta:
+        verbose_name = _("Notification Preference")
+        verbose_name_plural = _("Notification Preferences")
+
+    def __str__(self):
+        """Use the owning user's id as the human-readable label."""
+
+        return f"NotificationPreference({self.user_id})"

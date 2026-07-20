@@ -3,7 +3,7 @@ from django.contrib.auth.models import AbstractUser
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
-from api.users.enums import UserRole
+from api.users.enums import Sex, UserRole
 from api.users.models.manager import CustomUserManager
 from includes.helpers import (
     DateHistoryModelMixin,
@@ -41,11 +41,32 @@ class User(
         default="",
         help_text=_("ISO 3166-1 alpha-2 country code."),
     )
+    sex = models.CharField(
+        verbose_name=_("Sex"),
+        max_length=20,
+        choices=Sex.choices,
+        blank=True,
+        default="",
+        help_text=_("Self-reported sex."),
+    )
     terms_accepted_at = models.DateTimeField(
         verbose_name=_("Terms Accepted At"),
         null=True,
         blank=True,
         help_text=_("When the user accepted the Terms and Conditions."),
+    )
+    timezone = models.CharField(
+        verbose_name=_("Timezone"),
+        max_length=50,
+        blank=True,
+        default="",
+        help_text=_("IANA timezone identifier, e.g. 'Africa/Lagos'."),
+    )
+    avatar_url = models.URLField(
+        verbose_name=_("Avatar URL"),
+        blank=True,
+        default="",
+        help_text=_("Profile picture URL."),
     )
 
     objects = CustomUserManager()

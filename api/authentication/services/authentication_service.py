@@ -45,10 +45,13 @@ class AuthenticationService(TsesAuthenticationInterface):
         last_name: str,
         country: str,
         terms_accepted: bool = False,
+        role: str = UserRole.COURSE_CREATOR,
     ) -> User:
         """Create an inactive User and email a signup-verification link.
 
-        Role is always forced to COURSE_CREATOR - not client-settable. The
+        `role` defaults to COURSE_CREATOR and is never taken from client
+        input on the public signup endpoint - it's set by which view calls
+        this (see ReviewerSignupView, which passes CREATOR_REVIEWER). The
         user stays is_active=False (and therefore cannot authenticate at all,
         per SIMPLE_JWT's USER_AUTHENTICATION_RULE) until verify_otp succeeds.
         """
@@ -66,7 +69,7 @@ class AuthenticationService(TsesAuthenticationInterface):
                 last_name=last_name,
                 country=country,
                 terms_accepted_at=timezone.now() if terms_accepted else None,
-                role=UserRole.COURSE_CREATOR,
+                role=role,
                 is_active=False,
             )
             _token, raw_token = token_service.issue_token(

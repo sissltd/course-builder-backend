@@ -2,9 +2,14 @@ from rest_framework.permissions import BasePermission
 
 from api.courses.models import Course
 
+# Actions where a collaborator (not just the creator) is granted access -
+# never destroy/submit, which stay creator-only (see CourseViewSet.get_queryset).
+COLLABORATOR_ALLOWED_ACTIONS = {"retrieve", "update", "partial_update"}
+
 
 class IsCourseOwner(BasePermission):
-    """Object-level permission granting access only to the course's creator.
+    """Object-level permission granting access to the course's creator, and
+    to any collaborator for the view/edit-safe actions above.
 
     Resolves the owning Course whether `obj` is a Course itself, or a child
     object exposing `.course` (Module) or `.module.course` (Lesson).
@@ -12,7 +17,23 @@ class IsCourseOwner(BasePermission):
 
     def has_object_permission(self, request, view, obj):
         course = self._resolve_course(obj)
-        return bool(course and course.creator_id == request.user.id)
+        if not course:
+            return False
+        if course.creator_id == request.user.id:
+            return True
+        if getattr(view, "action", None) not in COLLABORATOR_ALLOWED_ACTIONS:
+            return False
+
+        # Local import: keeps this permission module decoupled from the
+        # service layer at import time, mirroring the pattern used elsewhere
+        # in this app for one-directional runtime-only dependencies.
+        from api.courses.services import collaborator_service
+
+        return (
+            collaborator_service.get_courses_accessible_to(request.user)
+            .filter(pk=course.pk)
+            .exists()
+        )
 
     @staticmethod
     def _resolve_course(obj):

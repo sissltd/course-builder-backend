@@ -5,6 +5,11 @@ from .category_request_serializer import (
     CategoryRequestSerializer,
 )
 from .category_serializer import CategorySerializer, CategoryWriteSerializer
+from .collaborator_serializer import (
+    CollaboratorInviteSerializer,
+    CollaboratorRoleUpdateSerializer,
+    CollaboratorSerializer,
+)
 from .course_serializer import (
     CategoryMiniSerializer,
     CourseCreateSerializer,
@@ -33,6 +38,9 @@ __all__ = [
     "CategoryRequestSerializer",
     "CategorySerializer",
     "CategoryWriteSerializer",
+    "CollaboratorInviteSerializer",
+    "CollaboratorRoleUpdateSerializer",
+    "CollaboratorSerializer",
     "CourseCreateSerializer",
     "CourseDetailSerializer",
     "CourseListSerializer",

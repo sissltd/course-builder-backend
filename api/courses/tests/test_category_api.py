@@ -13,6 +13,7 @@ class CategoryApiTests(APITestCase):
     def setUp(self):
         self.admin = make_user(role=UserRole.ADMIN)
         self.creator = make_user(role=UserRole.COURSE_CREATOR)
+        self.reviewer = make_user(role=UserRole.CREATOR_REVIEWER)
 
     def test_list_requires_authentication(self):
         response = self.client.get("/api/v1/categories/")
@@ -66,6 +67,41 @@ class CategoryApiTests(APITestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertTrue(Category.objects.filter(name="New Cat").exists())
+
+    def test_reviewer_can_create_category(self):
+        self.client.force_authenticate(self.reviewer)
+
+        response = self.client.post(
+            "/api/v1/categories/",
+            {
+                "name": "Reviewer Cat",
+                "creator_price": "100.00",
+                "track_preference": "OPEN",
+                "status": "ACTIVE",
+            },
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertTrue(Category.objects.filter(name="Reviewer Cat").exists())
+
+    def test_reviewer_can_update_price(self):
+        category = make_category(creator_price=Decimal("50.00"))
+        self.client.force_authenticate(self.reviewer)
+
+        response = self.client.patch(
+            f"/api/v1/categories/{category.id}/",
+            {"creator_price": "75.00"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        category.refresh_from_db()
+        self.assertEqual(category.creator_price, Decimal("75.00"))
+
+    def test_reviewer_can_delete_category(self):
+        category = make_category()
+        self.client.force_authenticate(self.reviewer)
+
+        response = self.client.delete(f"/api/v1/categories/{category.id}/")
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
     def test_admin_can_update_price(self):
         category = make_category(creator_price=Decimal("50.00"))

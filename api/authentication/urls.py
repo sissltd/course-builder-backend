@@ -6,6 +6,11 @@ from api.authentication import views
 urlpatterns = [
     path("auth/signup/", views.SignupView.as_view(), name="auth-signup"),
     path(
+        "auth/reviewer/signup/",
+        views.ReviewerSignupView.as_view(),
+        name="auth-reviewer-signup",
+    ),
+    path(
         "auth/verify-email/", views.VerifyEmailView.as_view(), name="auth-verify-email"
     ),
     path(
@@ -14,6 +19,9 @@ urlpatterns = [
         name="auth-resend-verification",
     ),
     path("auth/login/", views.LoginView.as_view(), name="auth-login"),
+    path(
+        "auth/reviewer/login/", views.LoginView.as_view(), name="auth-reviewer-login"
+    ),
     path("auth/token/refresh/", TokenRefreshView.as_view(), name="auth-token-refresh"),
     path("auth/logout/", views.LogoutView.as_view(), name="auth-logout"),
     path(

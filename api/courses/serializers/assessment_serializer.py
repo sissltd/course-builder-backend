@@ -22,6 +22,8 @@ class AssessmentWriteSerializer(serializers.ModelSerializer):
     at submit time, not duplicated here.
     """
 
+    questions = serializers.JSONField(required=True)
+
     class Meta:
         model = Assessment
         fields = ["title", "questions"]

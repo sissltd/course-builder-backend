@@ -2,6 +2,15 @@
 from django.db import models
 
 
+class Sex(models.TextChoices):
+    """Self-reported sex, shown on a user's profile (e.g. course-collaborator
+    detail panel)."""
+
+    MALE = "MALE", "Male"
+    FEMALE = "FEMALE", "Female"
+    PREFER_NOT_TO_SAY = "PREFER_NOT_TO_SAY", "Prefer not to say"
+
+
 class UserRole(models.TextChoices):
     """Primary role used for role-based permission checks across the platform.
 
@@ -18,11 +27,21 @@ class UserActivityCategoryEnums(models.TextChoices):
     """High-level buckets used to group user activity events.
 
     Extend these choices when a project introduces new audit domains such as
-    billing, security, or team management.
+    billing, security, or team management. PRODUCTION and ALERT are retained
+    for forward compatibility with the SCCS AI Auto-Production Engine and SLA
+    alerting subsystems (neither is implemented in this backend yet) - same
+    "reserved, unused for now" idiom as TrackPreference.AI_PREFERRED.
     """
 
     AUTH = "AUTH", "Authentication"
     PROFILE = "PROFILE", "Profile"
+    COURSE = "COURSE", "Course"
+    SUBMISSION = "SUBMISSION", "Submission"
+    APPROVAL = "APPROVAL", "Approval"
+    PUBLISH = "PUBLISH", "Publish"
+    CONFIGURATION = "CONFIGURATION", "Configuration"
+    PRODUCTION = "PRODUCTION", "Production"
+    ALERT = "ALERT", "Alert"
 
 
 class UserActivityActionEnums(models.TextChoices):
@@ -43,3 +62,23 @@ class UserActivityActionEnums(models.TextChoices):
     PROFILE_UPDATED = "PROFILE_UPDATED", "Profile Updated"
     PASSWORD_CHANGED = "PASSWORD_CHANGED", "Password Changed"
     ONBOARDING_COMPLETED = "ONBOARDING_COMPLETED", "Onboarding Completed"
+    COURSE_ASSIGNED = "COURSE_ASSIGNED", "Course Assigned"
+    COURSE_SUBMITTED = "COURSE_SUBMITTED", "Course Submitted"
+    COURSE_APPROVED = "COURSE_APPROVED", "Course Approved"
+    COURSE_REJECTED = "COURSE_REJECTED", "Course Rejected"
+    COURSE_PUBLISHED = "COURSE_PUBLISHED", "Course Published"
+    AVAILABILITY_UPDATED = "AVAILABILITY_UPDATED", "Availability Updated"
+    NOTIFICATION_PREFERENCES_UPDATED = (
+        "NOTIFICATION_PREFERENCES_UPDATED",
+        "Notification Preferences Updated",
+    )
+
+
+class UnavailabilityReason(models.TextChoices):
+    """Why a Creator Reviewer marked themselves unavailable."""
+
+    VACATION = "VACATION", "Vacation"
+    SICK_LEAVE = "SICK_LEAVE", "Sick Leave"
+    PERSONAL = "PERSONAL", "Personal"
+    TRAINING = "TRAINING", "Training"
+    OTHER = "OTHER", "Other"
