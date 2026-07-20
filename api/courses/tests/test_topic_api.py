@@ -10,6 +10,7 @@ class TopicApiTests(APITestCase):
     def setUp(self):
         self.admin = make_user(role=UserRole.ADMIN)
         self.creator = make_user(role=UserRole.COURSE_CREATOR)
+        self.reviewer = make_user(role=UserRole.CREATOR_REVIEWER)
         self.category = make_category(name="Software Engineering")
 
     def test_list_requires_authentication(self):
@@ -65,6 +66,29 @@ class TopicApiTests(APITestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertTrue(Topic.objects.filter(name="Rust Development").exists())
+
+    def test_reviewer_can_create_topic(self):
+        self.client.force_authenticate(self.reviewer)
+
+        response = self.client.post(
+            "/api/v1/topics/",
+            {
+                "category": str(self.category.id),
+                "name": "Rust Development",
+                "creator_price": "25.00",
+                "status": "ACTIVE",
+            },
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+    def test_reviewer_can_update_price(self):
+        topic = make_topic(category=self.category, name="Frontend Development")
+        self.client.force_authenticate(self.reviewer)
+
+        response = self.client.patch(
+            f"/api/v1/topics/{topic.id}/", {"creator_price": "30.00"}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
 
     def test_duplicate_name_within_category_rejected(self):
         make_topic(category=self.category, name="Frontend Development")

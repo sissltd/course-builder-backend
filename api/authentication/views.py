@@ -12,6 +12,7 @@ from api.authentication.serializers import (
     VerifyEmailSerializer,
 )
 from api.authentication.services.authentication_service import AuthenticationService
+from api.users.enums import UserRole
 from api.users.serializers import MeSerializer
 
 auth_service = AuthenticationService()
@@ -24,12 +25,23 @@ class SignupView(APIView):
     serializer_class = (
         SignupSerializer  # for schema generation only; not a GenericAPIView
     )
+    signup_role = UserRole.COURSE_CREATOR
 
     def post(self, request):
         serializer = SignupSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        user = auth_service.signup(**serializer.validated_data)
+        user = auth_service.signup(**serializer.validated_data, role=self.signup_role)
         return Response(MeSerializer(user).data, status=201)
+
+
+class ReviewerSignupView(SignupView):
+    """Same signup flow as SignupView, forcing role=CREATOR_REVIEWER instead.
+
+    A separate endpoint (not a role field on the shared /signup/) per
+    explicit product decision - open self-service, not admin-invite-gated.
+    """
+
+    signup_role = UserRole.CREATOR_REVIEWER
 
 
 class VerifyEmailView(APIView):

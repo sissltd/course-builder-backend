@@ -18,6 +18,8 @@ class MeSerializer(serializers.ModelSerializer):
             "first_name",
             "last_name",
             "country",
+            "timezone",
+            "avatar_url",
             "terms_accepted_at",
             "role",
             "is_active",
@@ -36,3 +38,15 @@ class MeSerializer(serializers.ModelSerializer):
         return CreatorProfile.objects.filter(
             user=obj, onboarding_completed_at__isnull=False
         ).exists()
+
+
+class MeUpdateSerializer(serializers.ModelSerializer):
+    """Write serializer for PATCH /users/me/. Email is deliberately excluded -
+    changing it needs its own re-verification flow, not built yet."""
+
+    class Meta:
+        model = User
+        fields = ["first_name", "last_name", "timezone", "avatar_url"]
+
+    def to_representation(self, instance):
+        return MeSerializer(instance, context=self.context).data

@@ -44,5 +44,6 @@ SPECTACULAR_SETTINGS = {
         "CategoryStatusEnum": "api.courses.enums.CategoryStatus",
         "CourseStatusEnum": "api.courses.enums.CourseStatus",
         "TransactionStatusEnum": "api.wallet.enums.TransactionStatus",
+        "CollaboratorRoleEnum": "api.courses.enums.CollaboratorRole",
     },
 }

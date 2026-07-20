@@ -75,6 +75,19 @@ Auth: AllowAny. Creates an inactive user (role always forced to `COURSE_CREATOR`
 { "errors": [ { "type": "validation_error", "code": "invalid", "message": "A user with this email already exists.", "field_name": "email" } ] }
 ```
 
+### Reviewer Signup
+`POST {{base_url}}/api/v1/auth/reviewer/signup/`
+Auth: AllowAny. Identical to Signup above (same `SignupSerializer`, same
+verification-link email), except the created account gets
+`role: "CREATOR_REVIEWER"` instead of `COURSE_CREATOR`. A separate endpoint
+by design, not a role field on `/auth/signup/` — this is **open
+self-service**: anyone who signs up here becomes a Creator Reviewer, with
+course-approval, wallet-crediting, and full Category/Topic pricing access.
+No onboarding wizard applies to this role either (onboarding is entirely
+opt-in for every role — nothing backend-side forces it).
+
+**Body / response shapes**: identical to Signup, just `role: "CREATOR_REVIEWER"`.
+
 ### Verify Email
 `POST {{base_url}}/api/v1/auth/verify-email/`
 Auth: AllowAny. Consumes the link token, activates the account, and auto-issues tokens (login-on-verify) — no separate login call needed right after signup.
@@ -120,8 +133,13 @@ Auth: AllowAny. Subject to a resend cooldown (`EMAIL_TOKEN_RESEND_COOLDOWN_SECON
 ```
 
 ### Login
-`POST {{base_url}}/api/v1/auth/login/`
-Auth: AllowAny. Standard email+password → JWT pair. Unverified (`is_active=False`) accounts are rejected here — this is `rest_framework_simplejwt`'s own `USER_AUTHENTICATION_RULE`, already wired project-wide, not a custom check.
+`POST {{base_url}}/api/v1/auth/login/` (Creator) or
+`POST {{base_url}}/api/v1/auth/reviewer/login/` (Reviewer — same view/behavior,
+just a distinct URL for the reviewer frontend to call)
+Auth: AllowAny. Standard email+password → JWT pair, for any active user
+regardless of role. Deliberately **not** anti-enumeration: unknown email,
+wrong password, and an unverified (`is_active=False`) account each return a
+distinct field-scoped `validation_error` rather than one generic message.
 
 **Body**
 ```json
@@ -133,9 +151,24 @@ Auth: AllowAny. Standard email+password → JWT pair. Unverified (`is_active=Fal
 { "access": "eyJ...", "refresh": "eyJ..." }
 ```
 
-**401 Unauthorized** (wrong password, unknown email, or unverified account — same message either way, anti-enumeration)
+**400 Bad Request** (no account with this email)
 ```json
-{ "errors": [ { "type": "client_error", "code": "no_active_account", "message": "No active account found with the given credentials", "field_name": null } ] }
+{ "errors": [ { "type": "validation_error", "code": "invalid", "message": "No account found with this email address.", "field_name": "email" } ] }
+```
+
+**400 Bad Request** (account exists, wrong password)
+```json
+{ "errors": [ { "type": "validation_error", "code": "invalid", "message": "Incorrect password.", "field_name": "password" } ] }
+```
+
+**400 Bad Request** (account exists, correct password, not yet verified)
+```json
+{ "errors": [ { "type": "validation_error", "code": "invalid", "message": "This account has not been verified yet. Please check your email for a verification link.", "field_name": "email" } ] }
+```
+
+**400 Bad Request** (missing `email` and/or `password` — standard required-field validation, unchanged)
+```json
+{ "errors": [ { "type": "validation_error", "code": "required", "message": "This field is required.", "field_name": "email" }, { "type": "validation_error", "code": "required", "message": "This field is required.", "field_name": "password" } ] }
 ```
 
 ### Refresh Token
@@ -337,7 +370,7 @@ Auth: any authenticated user
 
 **200 OK** — same object shape as one item in the list above (not paginated).
 
-### Create Category — Admin only
+### Create Category — Admin or Creator Reviewer
 `POST {{base_url}}/api/v1/categories/`
 
 **Body**
@@ -391,7 +424,7 @@ Auth: any authenticated user
 }
 ```
 
-### Update Category — Admin only
+### Update Category — Admin or Creator Reviewer
 `PATCH {{base_url}}/api/v1/categories/{{category_id}}/`
 
 **Body**
@@ -401,7 +434,7 @@ Auth: any authenticated user
 
 **200 OK** — updated category object. *(Existing in-progress/submitted courses keep their `creator_price_snapshot`; only courses submitted after this change pick up the new price.)*
 
-### Delete Category — Admin only
+### Delete Category — Admin or Creator Reviewer
 `DELETE {{base_url}}/api/v1/categories/{{category_id}}/`
 
 **204 No Content** (empty body)
@@ -724,16 +757,18 @@ Same shape, `"level": "COURSE"`. `questions` must have **≥15** entries before 
 
 ## Folder: Review Queue (Creator Reviewer / Admin)
 
-`list` is scoped to `Submitted`/`In Review` courses (the actual queue). The
-detail actions (`retrieve`/`claim`/`approve`/`reject`) look up any course by id
-— acting on a course in the wrong status returns **400** (wrong state), not 404.
+`list` covers every stage a reviewer needs: `Submitted`/`In Review` (the
+actual pending queue), plus `Approved` and `Published` — narrow to one via
+`?status=`, or omit it to see all four together. The detail actions
+(`retrieve`/`claim`/`approve`/`reject`) look up any course by id — acting on
+a course in the wrong status returns **400** (wrong state), not 404.
 
 ### List Queue
 `GET {{base_url}}/api/v1/review-queue/`
 Auth: Creator Reviewer or Admin role
-Query params: `status` (`SUBMITTED`|`IN_REVIEW`), `category`, `ordering=submitted_at` (default, oldest first)
+Query params: `status` (`SUBMITTED`|`IN_REVIEW`|`APPROVED`|`PUBLISHED`), `category`, `ordering=submitted_at` (default, oldest first)
 
-**200 OK** — same paginated envelope as `/courses/`, items are `CourseListSerializer` objects, oldest `submitted_at` first.
+**200 OK** — same paginated envelope as `/courses/`, items are `CourseListSerializer` objects, oldest `submitted_at` first. With no `status` filter, all four statuses are returned together.
 
 ### Retrieve Course in Queue
 `GET {{base_url}}/api/v1/review-queue/{{course_id}}/`

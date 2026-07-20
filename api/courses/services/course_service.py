@@ -3,11 +3,14 @@ from django.db.models import QuerySet
 from django.utils import timezone
 from rest_framework import exceptions
 
+from api.authentication.services import activity_service
 from api.courses.enums import CategoryStatus, CourseStatus
 from api.courses.models import Category, Course, Topic
 from api.courses.services import course_validation_service
 from api.notification.models import Notification
+from api.users.enums import UserActivityActionEnums, UserActivityCategoryEnums
 from api.users.models import User
+from api.users.services import reviewer_availability_service
 
 DRAFT_EDITABLE_FIELDS = {
     "title",
@@ -163,6 +166,13 @@ def submit_course(*, course: Course, actor: User) -> Course:
             content=f"Your course '{course.title}' has been submitted for review.",
             metadata={"course_id": course.id},
         )
+        activity_service.log_activity(
+            user=course.creator,
+            category=UserActivityCategoryEnums.SUBMISSION,
+            action=UserActivityActionEnums.COURSE_SUBMITTED,
+            summary=f"You submitted '{course.title}' for review.",
+            target=course,
+        )
 
     return course
 
@@ -172,7 +182,10 @@ def claim_for_review(*, course: Course, reviewer: User) -> Course:
 
     Idempotent: calling this on a course already In Review is a no-op (so two
     reviewers hitting claim in close succession don't error on each other).
-    Raises ValidationError for any other status.
+    Raises ValidationError for any other status. A reviewer marked
+    Unavailable cannot make a *new* claim (checked after the idempotent
+    short-circuit, so re-calling claim on a course they already hold still
+    works even if they've since gone Unavailable).
     """
 
     if course.status == CourseStatus.IN_REVIEW:
@@ -181,9 +194,17 @@ def claim_for_review(*, course: Course, reviewer: User) -> Course:
         raise exceptions.ValidationError(
             f"Course cannot be claimed from status '{course.status}'."
         )
+    reviewer_availability_service.require_reviewer_available(user=reviewer)
 
     course.status = CourseStatus.IN_REVIEW
     course.save(update_fields=["status", "updated_datetime"])
+    activity_service.log_activity(
+        user=reviewer,
+        category=UserActivityCategoryEnums.COURSE,
+        action=UserActivityActionEnums.COURSE_ASSIGNED,
+        summary=f"Course '{course.title}' assigned to you.",
+        target=course,
+    )
     return course
 
 
@@ -201,6 +222,13 @@ def publish_course(*, course: Course, actor: User) -> Course:
     course.updated_by = actor
     course.save(
         update_fields=["status", "published_at", "updated_by", "updated_datetime"]
+    )
+    activity_service.log_activity(
+        user=actor,
+        category=UserActivityCategoryEnums.PUBLISH,
+        action=UserActivityActionEnums.COURSE_PUBLISHED,
+        summary=f"You published '{course.title}'.",
+        target=course,
     )
     return course
 

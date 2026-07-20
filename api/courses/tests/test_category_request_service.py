@@ -13,9 +13,10 @@ from api.users.enums import UserRole
 
 
 class SubmitRequestTests(TestCase):
-    def test_creates_pending_request_and_notifies_admins(self):
+    def test_creates_pending_request_and_notifies_admins_and_reviewers(self):
         creator = make_user()
         admin = make_user(role=UserRole.ADMIN)
+        reviewer = make_user(role=UserRole.CREATOR_REVIEWER)
 
         category_request = category_request_service.submit_request(
             user=creator, name="Robotics"
@@ -25,6 +26,11 @@ class SubmitRequestTests(TestCase):
         self.assertTrue(
             Notification.objects.filter(
                 receiver=admin, title="New category request"
+            ).exists()
+        )
+        self.assertTrue(
+            Notification.objects.filter(
+                receiver=reviewer, title="New category request"
             ).exists()
         )
         self.assertEqual(len(mail.outbox), 0)
@@ -38,7 +44,7 @@ class ApproveRequestTests(TestCase):
 
         result = category_request_service.approve_request(
             category_request=category_request,
-            admin=admin,
+            actor=admin,
             creator_price=Decimal("30.00"),
         )
 
@@ -50,6 +56,20 @@ class ApproveRequestTests(TestCase):
         self.assertEqual(len(mail.outbox), 1)
         self.assertEqual(mail.outbox[0].to, [creator.email])
 
+    def test_reviewer_can_approve(self):
+        creator = make_user()
+        reviewer = make_user(role=UserRole.CREATOR_REVIEWER)
+        category_request = make_category_request(requested_by=creator, name="Robotics")
+
+        result = category_request_service.approve_request(
+            category_request=category_request,
+            actor=reviewer,
+            creator_price=Decimal("30.00"),
+        )
+
+        self.assertEqual(result.status, CategoryRequestStatus.APPROVED)
+        self.assertEqual(result.reviewed_by, reviewer)
+
     def test_raises_when_not_pending(self):
         category_request = make_category_request()
         category_request.status = CategoryRequestStatus.APPROVED
@@ -59,7 +79,7 @@ class ApproveRequestTests(TestCase):
         with self.assertRaises(ValidationError):
             category_request_service.approve_request(
                 category_request=category_request,
-                admin=admin,
+                actor=admin,
                 creator_price=Decimal("30.00"),
             )
 
@@ -71,7 +91,7 @@ class ApproveRequestTests(TestCase):
         with self.assertRaises(ValidationError):
             category_request_service.approve_request(
                 category_request=category_request,
-                admin=admin,
+                actor=admin,
                 creator_price=Decimal("30.00"),
             )
 
@@ -82,7 +102,7 @@ class RejectRequestTests(TestCase):
         admin = make_user(role=UserRole.ADMIN)
 
         result = category_request_service.reject_request(
-            category_request=category_request, admin=admin
+            category_request=category_request, actor=admin
         )
 
         self.assertEqual(result.status, CategoryRequestStatus.REJECTED)
@@ -97,5 +117,5 @@ class RejectRequestTests(TestCase):
 
         with self.assertRaises(ValidationError):
             category_request_service.reject_request(
-                category_request=category_request, admin=admin
+                category_request=category_request, actor=admin
             )

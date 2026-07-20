@@ -4,6 +4,7 @@ from rest_framework.viewsets import ModelViewSet
 from api.courses.enums import CourseStatus
 from api.courses.models import Lesson, Module
 from api.courses.serializers import LessonSerializer, LessonWriteSerializer
+from api.courses.services import collaborator_service
 from api.users.permissions import IsCourseCreatorRole
 
 
@@ -18,7 +19,9 @@ class LessonViewSet(ModelViewSet):
         return Lesson.objects.filter(
             module_id=self.kwargs["module_pk"],
             module__course_id=self.kwargs["course_pk"],
-            module__course__creator=self.request.user,
+            module__course__in=collaborator_service.get_courses_accessible_to(
+                self.request.user
+            ),
         )
 
     def get_serializer_class(self):
@@ -31,7 +34,9 @@ class LessonViewSet(ModelViewSet):
             return Module.objects.select_related("course").get(
                 pk=self.kwargs["module_pk"],
                 course_id=self.kwargs["course_pk"],
-                course__creator=self.request.user,
+                course__in=collaborator_service.get_courses_accessible_to(
+                    self.request.user
+                ),
             )
         except Module.DoesNotExist as exc:
             raise exceptions.NotFound("Module not found.") from exc

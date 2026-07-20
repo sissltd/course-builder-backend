@@ -5,6 +5,7 @@ from api.courses.models import (
     Category,
     CategoryRequest,
     Course,
+    CourseCollaborator,
     Lesson,
     Module,
     ReviewAction,
@@ -52,6 +53,12 @@ class CourseAdmin(admin.ModelAdmin):
     list_display = ("id", "title", "creator", "category", "status", "created_datetime")
     list_filter = ("status", "category")
     search_fields = ("title", "creator__email")
+
+
+@admin.register(CourseCollaborator)
+class CourseCollaboratorAdmin(admin.ModelAdmin):
+    list_display = ("id", "course", "user", "role", "created_datetime")
+    list_filter = ("role",)
 
 
 @admin.register(Module)

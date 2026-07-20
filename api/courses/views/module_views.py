@@ -4,14 +4,16 @@ from rest_framework.viewsets import ModelViewSet
 from api.courses.enums import CourseStatus
 from api.courses.models import Course, Module
 from api.courses.serializers import ModuleSerializer, ModuleWriteSerializer
+from api.courses.services import collaborator_service
 from api.users.permissions import IsCourseCreatorRole
 
 
 class ModuleViewSet(ModelViewSet):
     """Sub-resource CRUD for Modules nested under a Draft course.
 
-    get_queryset() is filtered to the owning creator so a non-owner's request
-    404s (existence is not leaked via a 403) instead of relying solely on an
+    get_queryset() is filtered to the courses the requesting user can access
+    (creator or collaborator) so a non-owner/non-collaborator's request 404s
+    (existence is not leaked via a 403) instead of relying solely on an
     object-level permission check.
     """
 
@@ -21,7 +23,10 @@ class ModuleViewSet(ModelViewSet):
         if getattr(self, "swagger_fake_view", False):
             return Module.objects.none()
         return Module.objects.filter(
-            course_id=self.kwargs["course_pk"], course__creator=self.request.user
+            course_id=self.kwargs["course_pk"],
+            course__in=collaborator_service.get_courses_accessible_to(
+                self.request.user
+            ),
         )
 
     def get_serializer_class(self):
@@ -31,9 +36,9 @@ class ModuleViewSet(ModelViewSet):
 
     def _get_course(self) -> Course:
         try:
-            return Course.objects.get(
-                pk=self.kwargs["course_pk"], creator=self.request.user
-            )
+            return collaborator_service.get_courses_accessible_to(
+                self.request.user
+            ).get(pk=self.kwargs["course_pk"])
         except Course.DoesNotExist as exc:
             raise exceptions.NotFound("Course not found.") from exc
 
