@@ -14,13 +14,45 @@ class Sex(models.TextChoices):
 class UserRole(models.TextChoices):
     """Primary role used for role-based permission checks across the platform.
 
-    Extend these choices as new operator roles are introduced (e.g. AI Track
+    Roles fall into three groups, and the distinction matters:
+
+    * **Public** - COURSE_CREATOR is what public signup assigns. Anyone can
+      obtain it by registering.
+    * **Staff** - STAFF_WRITER / STAFF_VERIFIER / STAFF_APPROVER are the roles
+      offered in the "Invite a staff" dialog. They are invitation-only: no
+      public route assigns them. They mirror the authoring pipeline
+      (write -> verify -> approve) and are deliberately kept distinct from the
+      public roles so a self-registered user is never mistaken for hired staff
+      in permissions, reporting, or the Teams page.
+    * **Privileged** - ADMIN and SUPER_ADMIN. SUPER_ADMIN is bootstrap-only and
+      unique platform-wide; it is the only role that can invite staff.
+
+    Extend the staff group as new operator roles are introduced (e.g. AI Track
     Reviewer, QA Reviewer) once the corresponding review pipelines exist.
     """
 
     COURSE_CREATOR = "COURSE_CREATOR", "Course Creator"
     CREATOR_REVIEWER = "CREATOR_REVIEWER", "Creator Reviewer"
+    STAFF_WRITER = "STAFF_WRITER", "Writer"
+    STAFF_VERIFIER = "STAFF_VERIFIER", "Verifier"
+    STAFF_APPROVER = "STAFF_APPROVER", "Approver"
     ADMIN = "ADMIN", "Admin"
+    SUPER_ADMIN = "SUPER_ADMIN", "Super Admin"
+
+
+#: Roles a Super Admin may hand out via the "Invite a staff" dialog, in the
+#: order the dropdown shows them. SUPER_ADMIN is absent by design - the seat is
+#: unique and claimable only through the bootstrap endpoint - and so are the
+#: public roles, which are not staff positions.
+INVITABLE_STAFF_ROLES = (
+    UserRole.STAFF_WRITER,
+    UserRole.STAFF_VERIFIER,
+    UserRole.STAFF_APPROVER,
+)
+
+#: Every role that counts as staff for the Teams page: the invitable roles plus
+#: the privileged roles, which are staff too but are not handed out by invite.
+STAFF_ROLES = INVITABLE_STAFF_ROLES + (UserRole.ADMIN, UserRole.SUPER_ADMIN)
 
 
 class UserActivityCategoryEnums(models.TextChoices):
@@ -62,6 +94,14 @@ class UserActivityActionEnums(models.TextChoices):
     PROFILE_UPDATED = "PROFILE_UPDATED", "Profile Updated"
     PASSWORD_CHANGED = "PASSWORD_CHANGED", "Password Changed"
     ONBOARDING_COMPLETED = "ONBOARDING_COMPLETED", "Onboarding Completed"
+    SUPERADMIN_BOOTSTRAPPED = "SUPERADMIN_BOOTSTRAPPED", "Super Admin Bootstrapped"
+    STAFF_INVITED = "STAFF_INVITED", "Staff Invited"
+    STAFF_INVITATION_ACCEPTED = (
+        "STAFF_INVITATION_ACCEPTED",
+        "Staff Invitation Accepted",
+    )
+    STAFF_REVOKED = "STAFF_REVOKED", "Staff Revoked"
+    STAFF_REACTIVATED = "STAFF_REACTIVATED", "Staff Reactivated"
     COURSE_ASSIGNED = "COURSE_ASSIGNED", "Course Assigned"
     COURSE_SUBMITTED = "COURSE_SUBMITTED", "Course Submitted"
     COURSE_APPROVED = "COURSE_APPROVED", "Course Approved"

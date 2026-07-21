@@ -10,7 +10,11 @@ from api.courses.serializers import (
 )
 from api.courses.services import category_request_service
 from api.users.enums import UserRole
-from api.users.permissions import IsAdminRole, IsCourseCreatorRole, IsCreatorReviewerRole
+from api.users.permissions import (
+    IsAdminRole,
+    IsCourseCreatorRole,
+    IsCreatorReviewerRole,
+)
 
 MANAGE_ACTIONS = {"approve", "reject"}
 

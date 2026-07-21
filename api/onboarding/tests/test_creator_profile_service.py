@@ -26,9 +26,7 @@ class UpdateProfileTests(TestCase):
             user=user, expertise_area=ExpertiseArea.WEB_DEVELOPMENT
         )
 
-        self.assertEqual(
-            profile.primary_expertise_area, ExpertiseArea.WEB_DEVELOPMENT
-        )
+        self.assertEqual(profile.primary_expertise_area, ExpertiseArea.WEB_DEVELOPMENT)
 
     def test_only_touches_provided_fields_across_separate_calls(self):
         user = make_user()
@@ -80,9 +78,7 @@ class UpdateProfileTests(TestCase):
             user=user, agreement_accepted=True
         )
 
-        self.assertEqual(
-            profile.primary_expertise_area, ExpertiseArea.WEB_DEVELOPMENT
-        )
+        self.assertEqual(profile.primary_expertise_area, ExpertiseArea.WEB_DEVELOPMENT)
         self.assertEqual(profile.video_comfort_level, VideoComfortLevel.NEEDS_GUIDANCE)
         self.assertEqual(profile.monthly_course_capacity, MonthlyCourseCapacity.ONE)
         self.assertTrue(profile.has_completed_onboarding)

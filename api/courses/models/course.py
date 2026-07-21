@@ -25,7 +25,7 @@ class Course(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMi
         help_text=_("Course Creator who owns this course."),
     )
     category = models.ForeignKey(
-        "courses.Category",
+        "categories.Category",
         verbose_name=_("Category"),
         on_delete=models.PROTECT,
         related_name="courses",

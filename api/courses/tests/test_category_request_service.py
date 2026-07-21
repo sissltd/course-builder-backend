@@ -5,7 +5,7 @@ from django.test import TestCase
 from rest_framework.exceptions import ValidationError
 
 from api.courses.enums import CategoryRequestStatus
-from api.courses.models import Category
+from api.categories.models import Category
 from api.courses.services import category_request_service
 from api.courses.tests.factories import make_category_request, make_user
 from api.notification.models import Notification

@@ -24,13 +24,37 @@ from api.users.permissions import (
     IsCreatorReviewerRole,
 )
 
-OWNER_SCOPED_ACTIONS = {"retrieve", "update", "partial_update", "destroy", "submit"}
+OWNER_SCOPED_ACTIONS = {"retrieve", "update", "partial_update", "destroy"}
+
+#: Creators reach their own courses; Admins reach any course. Composed rather
+#: than listed side by side because DRF ANDs a permission list together, which
+#: would require an Admin to also hold the creator role.
+OWNER_OR_ADMIN = (IsCourseCreatorRole & IsCourseOwner) | IsAdminRole
+
+#: Submission is the one owner-scoped action an Admin does NOT get a bypass on.
+#: Submitting is the author vouching for their own work (see
+#: course_service.submit_course), so an Admin may submit only a course they
+#: themselves created - in which case IsCourseOwner passes anyway.
+SUBMIT_PERMISSION = (IsCourseCreatorRole | IsAdminRole) & IsCourseOwner
 
 
 class CourseViewSet(ModelViewSet):
-    """A Course Creator's own courses: authoring + submission (SCCS PRD Track A)."""
+    """Course authoring and submission (SCCS PRD Track A).
 
-    permission_classes = [IsCourseCreatorRole]
+    Serves two audiences through one viewset: a Course Creator (or invited
+    Writer) working on their own courses, and an Admin (or invited Approver)
+    with full CRUD across every course on the platform. The queryset and
+    object-level permissions branch on that distinction rather than the
+    viewset being duplicated, because the request/response shapes are identical
+    - only the visible scope differs.
+
+    Admin access widens *who* may act, not *what* the workflow allows: the
+    service layer's status rules still apply, so an Admin editing a Published
+    course gets the same "Only Draft courses can be edited" error a creator
+    would.
+    """
+
+    permission_classes = [IsCourseCreatorRole | IsAdminRole]
 
     def get_queryset(self):
         if getattr(self, "swagger_fake_view", False):
@@ -40,9 +64,14 @@ class CourseViewSet(ModelViewSet):
             # Admin-only (enforced by get_permissions) and not owner-scoped:
             # an Admin publishing a course is never its creator.
             return Course.objects.select_related("category", "topic")
+
+        is_admin = IsAdminRole().has_permission(self.request, self)
+
+        if is_admin:
+            # Admins have full read/write visibility across every course.
+            return Course.objects.select_related("category", "topic")
+
         if self.action in {"retrieve", "update", "partial_update"}:
-            # Viewing/editing an existing course extends to collaborators;
-            # list/create/destroy/submit stay creator-only (see IsCourseOwner).
             return collaborator_service.get_courses_accessible_to(
                 self.request.user
             ).select_related("category", "topic")
@@ -61,9 +90,13 @@ class CourseViewSet(ModelViewSet):
 
     def get_permissions(self):
         if self.action in OWNER_SCOPED_ACTIONS:
-            return [IsCourseCreatorRole(), IsCourseOwner()]
+            return [OWNER_OR_ADMIN()]
+        if self.action == "submit":
+            return [SUBMIT_PERMISSION()]
         if self.action == "publish":
             return [IsAdminRole()]
+        if self.action == "create":
+            return [IsCourseCreatorRole()]
         return super().get_permissions()
 
     def perform_destroy(self, instance):
@@ -124,9 +157,6 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
         if self.action == "list":
             return CourseListSerializer
         if self.action == "approve":
-            # Also drives OpenAPI schema generation for approve/reject, since
-            # neither calls self.get_serializer() at runtime (each
-            # instantiates its own write serializer directly below).
             return ReviewApproveSerializer
         if self.action == "reject":
             return ReviewRejectSerializer

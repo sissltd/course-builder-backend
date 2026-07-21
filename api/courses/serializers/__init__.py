@@ -4,7 +4,6 @@ from .category_request_serializer import (
     CategoryRequestCreateSerializer,
     CategoryRequestSerializer,
 )
-from .category_serializer import CategorySerializer, CategoryWriteSerializer
 from .collaborator_serializer import (
     CollaboratorInviteSerializer,
     CollaboratorRoleUpdateSerializer,
@@ -36,8 +35,6 @@ __all__ = [
     "CategoryRequestApproveSerializer",
     "CategoryRequestCreateSerializer",
     "CategoryRequestSerializer",
-    "CategorySerializer",
-    "CategoryWriteSerializer",
     "CollaboratorInviteSerializer",
     "CollaboratorRoleUpdateSerializer",
     "CollaboratorSerializer",

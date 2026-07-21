@@ -77,6 +77,20 @@ class User(
     class Meta:
         verbose_name = _("User")
         verbose_name_plural = _("Users")
+        constraints = [
+            # Partial unique index over the single value SUPER_ADMIN, which
+            # permits at most one such row platform-wide. This is what makes the
+            # bootstrap endpoint genuinely one-shot: an application-level
+            # "does one already exist?" check is a TOCTOU race that two
+            # concurrent requests can both pass, whereas this cannot be raced.
+            # Promoting a replacement super admin is therefore a deliberate
+            # operation (demote the incumbent first), not an API call.
+            models.UniqueConstraint(
+                fields=["role"],
+                condition=models.Q(role=UserRole.SUPER_ADMIN),
+                name="unique_super_admin",
+            ),
+        ]
 
     def __str__(self):
         """Use email as the human-readable identifier in admin and logs."""

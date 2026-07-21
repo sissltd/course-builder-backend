@@ -27,6 +27,15 @@ class CreatorProfile(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
         related_name="creator_profile",
         help_text=_("User this onboarding profile belongs to."),
     )
+    primary_expertise_category = models.ForeignKey(
+        "categories.Category",
+        verbose_name=_("Primary Expertise Category"),
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text=_("Primary area-of-expertise category selected during onboarding."),
+    )
     primary_expertise_area = models.CharField(
         verbose_name=_("Primary Expertise Area"),
         max_length=30,

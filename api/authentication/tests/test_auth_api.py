@@ -80,10 +80,7 @@ class SignupApiTests(APITestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertTrue(
-            any(
-                error["field_name"] == "country"
-                for error in response.data["errors"]
-            )
+            any(error["field_name"] == "country" for error in response.data["errors"])
         )
 
     def test_terms_accepted_defaults_false(self):
@@ -210,9 +207,7 @@ class LoginApiTests(APITestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertTrue(
-            any(
-                error["field_name"] == "password" for error in response.data["errors"]
-            )
+            any(error["field_name"] == "password" for error in response.data["errors"])
         )
 
     def test_nonexistent_email_rejected(self):
@@ -426,9 +421,7 @@ class MeApiTests(APITestCase):
         user = make_user()
         self.client.force_authenticate(user)
 
-        self.client.patch(
-            "/api/v1/users/me/", {"first_name": "New"}, format="json"
-        )
+        self.client.patch("/api/v1/users/me/", {"first_name": "New"}, format="json")
 
         self.assertTrue(
             UserActivityLog.objects.filter(

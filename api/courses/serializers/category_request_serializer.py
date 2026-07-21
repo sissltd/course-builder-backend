@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from api.courses.enums import TrackPreference
+from api.categories.enums import TrackPreference
 from api.courses.models import CategoryRequest
 from api.courses.serializers.course_serializer import CategoryMiniSerializer
 from api.courses.services import category_request_service

@@ -3,7 +3,8 @@ from decimal import Decimal
 from django.test import TestCase
 from rest_framework.exceptions import ValidationError
 
-from api.courses.enums import CategoryStatus, CourseStatus
+from api.categories.enums import CategoryStatus
+from api.courses.enums import CourseStatus
 from api.courses.services import course_service
 from api.courses.tests.factories import (
     build_compliant_course,

@@ -68,7 +68,9 @@ class CollaboratorApiTests(APITestCase):
     def test_plain_collaborator_cannot_invite(self):
         collaborator_user = make_user()
         make_collaborator(
-            course=self.course, user=collaborator_user, role=CollaboratorRole.COLLABORATOR
+            course=self.course,
+            user=collaborator_user,
+            role=CollaboratorRole.COLLABORATOR,
         )
         self.client.force_authenticate(collaborator_user)
 
@@ -81,7 +83,9 @@ class CollaboratorApiTests(APITestCase):
 
     def test_admin_collaborator_can_invite(self):
         admin_user = make_user()
-        make_collaborator(course=self.course, user=admin_user, role=CollaboratorRole.ADMIN)
+        make_collaborator(
+            course=self.course, user=admin_user, role=CollaboratorRole.ADMIN
+        )
         self.client.force_authenticate(admin_user)
 
         response = self.client.post(

@@ -4,8 +4,10 @@ from django.db import IntegrityError
 from django.utils import timezone
 from rest_framework import exceptions
 
-from api.courses.enums import CategoryRequestStatus, TrackPreference
-from api.courses.models import Category, CategoryRequest
+from api.courses.enums import CategoryRequestStatus
+from api.categories.enums import TrackPreference
+from api.categories.models import Category
+from api.courses.models import CategoryRequest
 from api.notification.models import Notification
 from api.users.enums import UserRole
 from api.users.models import User
@@ -95,7 +97,9 @@ def approve_request(
     return category_request
 
 
-def reject_request(*, category_request: CategoryRequest, actor: User) -> CategoryRequest:
+def reject_request(
+    *, category_request: CategoryRequest, actor: User
+) -> CategoryRequest:
     """Reject a Pending request. No email - Figma has no rejection-notice screen."""
 
     if category_request.status != CategoryRequestStatus.PENDING:

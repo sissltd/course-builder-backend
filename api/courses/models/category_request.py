@@ -34,7 +34,7 @@ class CategoryRequest(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
         help_text=_("Whether this request is pending, approved, or rejected."),
     )
     resulting_category = models.ForeignKey(
-        "courses.Category",
+        "categories.Category",
         verbose_name=_("Resulting Category"),
         on_delete=models.SET_NULL,
         null=True,

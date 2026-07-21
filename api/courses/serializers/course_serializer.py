@@ -2,7 +2,8 @@ from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
-from api.courses.models import Category, Course, ReviewAction, Topic
+from api.categories.models import Category
+from api.courses.models import Course, ReviewAction, Topic
 from api.courses.serializers.assessment_serializer import AssessmentSerializer
 from api.courses.serializers.module_serializer import ModuleSerializer
 from api.courses.services import course_service, course_validation_service

@@ -67,9 +67,7 @@ class ReviewerAvailabilityServiceTests(TestCase):
         user = _make_user()
         reviewer_availability_service.update_availability(user=user, is_available=False)
 
-        self.assertFalse(
-            reviewer_availability_service.is_reviewer_available(user=user)
-        )
+        self.assertFalse(reviewer_availability_service.is_reviewer_available(user=user))
 
     def test_setting_available_clears_reason_and_return_date(self):
         user = _make_user()
@@ -106,9 +104,7 @@ class ReviewerAvailabilityServiceTests(TestCase):
             auto_return_enabled=False,
         )
 
-        self.assertFalse(
-            reviewer_availability_service.is_reviewer_available(user=user)
-        )
+        self.assertFalse(reviewer_availability_service.is_reviewer_available(user=user))
 
     def test_require_reviewer_available_raises_when_unavailable(self):
         user = _make_user()

@@ -8,8 +8,7 @@ if [ "${DJANGO_RUN_MIGRATIONS:-1}" = "1" ]; then
     python manage.py migrate --noinput
 fi
 
-# static collection opt-in because project may not define STATIC_ROOT yet.
-if [ "${DJANGO_COLLECTSTATIC:-0}" = "1" ]; then
+if [ "${DJANGO_COLLECTSTATIC:-1}" = "1" ]; then
     python manage.py collectstatic --noinput
 fi
 

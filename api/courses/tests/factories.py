@@ -11,15 +11,11 @@ from itertools import count
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 
-from api.courses.enums import (
-    AssessmentLevel,
-    CategoryStatus,
-    CollaboratorRole,
-    TrackPreference,
-)
+from api.categories.enums import CategoryStatus, TrackPreference
+from api.courses.enums import AssessmentLevel, CollaboratorRole
+from api.categories.models import Category
 from api.courses.models import (
     Assessment,
-    Category,
     CategoryRequest,
     Course,
     CourseCollaborator,
