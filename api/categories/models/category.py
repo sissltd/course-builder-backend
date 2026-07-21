@@ -4,7 +4,7 @@ from django.core.validators import MinValueValidator
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
-from api.courses.enums import CategoryStatus, TrackPreference
+from api.categories.enums import CategoryStatus, TrackPreference
 from includes.helpers import (
     DateHistoryModelMixin,
     UUIDPrimaryKeyModelMixin,
@@ -13,7 +13,7 @@ from includes.helpers import (
 
 
 class Category(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMixin):
-    """An Admin-managed course category with fixed creator pricing.
+    """A staff-managed course category with fixed creator pricing.
 
     Price changes are not retroactive: Course.creator_price_snapshot captures
     the price in effect when a course is submitted, so editing a category's

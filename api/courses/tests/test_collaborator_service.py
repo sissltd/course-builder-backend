@@ -15,7 +15,10 @@ class InviteCollaboratorTests(TestCase):
         invitee = make_user()
 
         collaborator = collaborator_service.invite_collaborator(
-            course=course, inviter=creator, email=invitee.email, role=CollaboratorRole.COLLABORATOR
+            course=course,
+            inviter=creator,
+            email=invitee.email,
+            role=CollaboratorRole.COLLABORATOR,
         )
 
         self.assertEqual(collaborator.user_id, invitee.id)
@@ -129,5 +132,7 @@ class HasManageAccessTests(TestCase):
         )
 
         self.assertFalse(
-            collaborator_service.has_manage_access(course=course, user=collaborator_user)
+            collaborator_service.has_manage_access(
+                course=course, user=collaborator_user
+            )
         )

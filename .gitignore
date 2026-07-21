@@ -30,3 +30,6 @@ media/
 openapi-schema.yaml
 test.txt
 .opencode
+
+# PR working files
+pullrequest.md

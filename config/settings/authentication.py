@@ -12,3 +12,8 @@ WITHDRAWAL_OTP_LENGTH = config("WITHDRAWAL_OTP_LENGTH", default=6, cast=int)
 WITHDRAWAL_OTP_EXPIRY_MINUTES = config(
     "WITHDRAWAL_OTP_EXPIRY_MINUTES", default=10, cast=int
 )
+# Shared secret gating the one-time superadmin bootstrap endpoint. Deliberately
+# defaults to empty, which DISABLES the endpoint outright - an unset token must
+# never mean "anyone may claim the superadmin seat". Set it to a long random
+# value in the deployment environment, bootstrap once, then unset it.
+SUPERADMIN_BOOTSTRAP_TOKEN = config("SUPERADMIN_BOOTSTRAP_TOKEN", default="")

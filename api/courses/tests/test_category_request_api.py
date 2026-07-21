@@ -3,7 +3,8 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 
 from api.courses.enums import CategoryRequestStatus
-from api.courses.models import Category, CategoryRequest
+from api.categories.models import Category
+from api.courses.models import CategoryRequest
 from api.courses.tests.factories import make_category_request, make_user
 from api.users.enums import UserRole
 

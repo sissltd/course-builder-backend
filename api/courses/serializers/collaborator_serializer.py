@@ -30,7 +30,9 @@ class CollaboratorInviteSerializer(serializers.Serializer):
 
     email = serializers.EmailField()
     role = serializers.ChoiceField(
-        choices=CollaboratorRole.choices, required=False, default=CollaboratorRole.COLLABORATOR
+        choices=CollaboratorRole.choices,
+        required=False,
+        default=CollaboratorRole.COLLABORATOR,
     )
 
 

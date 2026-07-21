@@ -1,5 +1,4 @@
 from .assessment import Assessment
-from .category import Category
 from .category_request import CategoryRequest
 from .course import Course
 from .course_collaborator import CourseCollaborator
@@ -10,7 +9,6 @@ from .topic import Topic
 
 __all__ = [
     "Assessment",
-    "Category",
     "CategoryRequest",
     "Course",
     "CourseCollaborator",

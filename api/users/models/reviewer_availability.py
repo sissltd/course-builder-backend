@@ -26,7 +26,9 @@ class ReviewerAvailability(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
     is_available = models.BooleanField(
         verbose_name=_("Is Available"),
         default=True,
-        help_text=_("Whether new courses can be claimed/approved/rejected by this reviewer."),
+        help_text=_(
+            "Whether new courses can be claimed/approved/rejected by this reviewer."
+        ),
     )
     unavailability_reason = models.CharField(
         verbose_name=_("Unavailability Reason"),

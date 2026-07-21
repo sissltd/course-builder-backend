@@ -2,6 +2,7 @@
 .git/
 .agents/
 .codex/
+.opencode/
 
 .env
 .env.*
@@ -23,3 +24,7 @@ htmlcov/
 
 staticfiles/
 media/
+screenshots/
+*.md
+!requirements.txt
+docker-compose.yaml

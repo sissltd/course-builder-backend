@@ -57,7 +57,11 @@ class ReviewQueueApiTests(APITestCase):
         ids = {r["id"] for r in response.data["data"]["results"]}
         self.assertEqual(
             ids,
-            {str(submitted_course.id), str(approved_course.id), str(published_course.id)},
+            {
+                str(submitted_course.id),
+                str(approved_course.id),
+                str(published_course.id),
+            },
         )
 
         response = self.client.get("/api/v1/review-queue/", {"status": "APPROVED"})

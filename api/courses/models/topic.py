@@ -4,7 +4,7 @@ from django.core.validators import MinValueValidator
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
-from api.courses.enums import CategoryStatus
+from api.categories.enums import CategoryStatus
 from includes.helpers import (
     DateHistoryModelMixin,
     UUIDPrimaryKeyModelMixin,
@@ -22,7 +22,7 @@ class Topic(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMix
     """
 
     category = models.ForeignKey(
-        "courses.Category",
+        "categories.Category",
         verbose_name=_("Category"),
         on_delete=models.CASCADE,
         related_name="topics",
@@ -60,7 +60,9 @@ class Topic(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMix
             ),
         ]
         indexes = [
-            models.Index(fields=["category", "status"], name="topic_category_status_idx"),
+            models.Index(
+                fields=["category", "status"], name="topic_category_status_idx"
+            ),
         ]
 
     def __str__(self):

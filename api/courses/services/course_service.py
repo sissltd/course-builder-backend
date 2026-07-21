@@ -4,8 +4,10 @@ from django.utils import timezone
 from rest_framework import exceptions
 
 from api.authentication.services import activity_service
-from api.courses.enums import CategoryStatus, CourseStatus
-from api.courses.models import Category, Course, Topic
+from api.categories.enums import CategoryStatus
+from api.categories.models import Category
+from api.courses.enums import CourseStatus
+from api.courses.models import Course, Topic
 from api.courses.services import course_validation_service
 from api.notification.models import Notification
 from api.users.enums import UserActivityActionEnums, UserActivityCategoryEnums
@@ -26,7 +28,9 @@ DRAFT_EDITABLE_FIELDS = {
 }
 
 
-def _validate_topic_matches_category(*, topic: Topic | None, category: Category) -> None:
+def _validate_topic_matches_category(
+    *, topic: Topic | None, category: Category
+) -> None:
     if topic is not None and topic.category_id != category.id:
         raise exceptions.ValidationError(
             "topic does not belong to the selected category."
@@ -146,7 +150,9 @@ def submit_course(*, course: Course, actor: User) -> Course:
 
     with transaction.atomic():
         course.creator_price_snapshot = (
-            course.topic.creator_price if course.topic_id else course.category.creator_price
+            course.topic.creator_price
+            if course.topic_id
+            else course.category.creator_price
         )
         course.status = CourseStatus.SUBMITTED
         course.submitted_at = timezone.now()

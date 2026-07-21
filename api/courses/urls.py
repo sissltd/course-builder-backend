@@ -4,7 +4,6 @@ from rest_framework.routers import DefaultRouter
 from api.courses.views import (
     assessment_views,
     category_request_views,
-    category_views,
     collaborator_views,
     course_views,
     lesson_views,
@@ -13,7 +12,6 @@ from api.courses.views import (
 )
 
 router = DefaultRouter()
-router.register("categories", category_views.CategoryViewSet, basename="category")
 router.register(
     "category-requests",
     category_request_views.CategoryRequestViewSet,

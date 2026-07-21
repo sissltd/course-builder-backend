@@ -93,6 +93,19 @@ def verify_token(*, user: User, purpose: str, token: str) -> EmailVerificationTo
     return record
 
 
+def invalidate_tokens(*, user: User, purpose: str) -> int:
+    """Burn every unused token for user+purpose. Returns how many were burned.
+
+    Used when an outstanding link must stop working even though nobody consumed
+    it - revoking a staff invitation, for example. Marks tokens used rather than
+    deleting them so the audit trail survives.
+    """
+
+    return EmailVerificationToken.objects.filter(
+        user=user, purpose=purpose, is_used=False
+    ).update(is_used=True, used_at=timezone.now())
+
+
 def can_resend(*, user: User, purpose: str) -> bool:
     """True if there's no active token, or the active one was issued more than
     settings.EMAIL_TOKEN_RESEND_COOLDOWN_SECONDS ago."""
