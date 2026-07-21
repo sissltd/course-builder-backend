@@ -42,6 +42,8 @@ class UserActivityCategoryEnums(models.TextChoices):
     CONFIGURATION = "CONFIGURATION", "Configuration"
     PRODUCTION = "PRODUCTION", "Production"
     ALERT = "ALERT", "Alert"
+    KYC = "KYC", "KYC"
+    WALLET = "WALLET", "Wallet"
 
 
 class UserActivityActionEnums(models.TextChoices):
@@ -72,6 +74,26 @@ class UserActivityActionEnums(models.TextChoices):
         "NOTIFICATION_PREFERENCES_UPDATED",
         "Notification Preferences Updated",
     )
+    KYC_SUBMITTED = "KYC_SUBMITTED", "KYC Submitted"
+    WITHDRAWAL_REQUESTED = "WITHDRAWAL_REQUESTED", "Withdrawal Requested"
+    WITHDRAWAL_CONFIRMED = "WITHDRAWAL_CONFIRMED", "Withdrawal Confirmed"
+
+
+class KYCDocumentType(models.TextChoices):
+    """Identity document types a user can submit for KYC verification."""
+
+    NATIONAL_ID = "NATIONAL_ID", "National ID (NIN)"
+    DRIVERS_LICENSE = "DRIVERS_LICENSE", "Driver's License"
+    INTERNATIONAL_PASSPORT = "INTERNATIONAL_PASSPORT", "International Passport"
+    VOTERS_ID = "VOTERS_ID", "Voter's ID"
+
+
+class KYCStatus(models.TextChoices):
+    """Review status of a KYC verification submission."""
+
+    PENDING = "PENDING", "Pending"
+    APPROVED = "APPROVED", "Approved"
+    REJECTED = "REJECTED", "Rejected"
 
 
 class UnavailabilityReason(models.TextChoices):

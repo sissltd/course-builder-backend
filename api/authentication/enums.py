@@ -10,3 +10,4 @@ class TokenPurpose(models.TextChoices):
 
     SIGNUP_VERIFICATION = "SIGNUP_VERIFICATION", "Signup Verification"
     PASSWORD_RESET = "PASSWORD_RESET", "Password Reset"
+    WITHDRAWAL_CONFIRMATION = "WITHDRAWAL_CONFIRMATION", "Withdrawal Confirmation"
