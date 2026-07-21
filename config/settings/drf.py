@@ -41,8 +41,9 @@ SPECTACULAR_SETTINGS = {
         "persistAuthorization": True,
     },
     "ENUM_NAME_OVERRIDES": {
-        "CategoryStatusEnum": "api.courses.enums.CategoryStatus",
+        "CategoryStatusEnum": "api.categories.enums.CategoryStatus",
         "CourseStatusEnum": "api.courses.enums.CourseStatus",
         "TransactionStatusEnum": "api.wallet.enums.TransactionStatus",
+        "CollaboratorRoleEnum": "api.courses.enums.CollaboratorRole",
     },
 }

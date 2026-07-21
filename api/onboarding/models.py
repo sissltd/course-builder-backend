@@ -1,7 +1,11 @@
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
-from api.onboarding.enums import MonthlyCourseCapacity, VideoComfortLevel
+from api.onboarding.enums import (
+    ExpertiseArea,
+    MonthlyCourseCapacity,
+    VideoComfortLevel,
+)
 from includes.helpers import DateHistoryModelMixin, UUIDPrimaryKeyModelMixin
 
 
@@ -24,13 +28,21 @@ class CreatorProfile(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
         help_text=_("User this onboarding profile belongs to."),
     )
     primary_expertise_category = models.ForeignKey(
-        "courses.Category",
+        "categories.Category",
         verbose_name=_("Primary Expertise Category"),
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name="+",
         help_text=_("Primary area-of-expertise category selected during onboarding."),
+    )
+    primary_expertise_area = models.CharField(
+        verbose_name=_("Primary Expertise Area"),
+        max_length=30,
+        choices=ExpertiseArea.choices,
+        blank=True,
+        default="",
+        help_text=_("Primary area-of-expertise selected during onboarding."),
     )
     primary_expertise_other = models.CharField(
         verbose_name=_("Primary Expertise (Other)"),

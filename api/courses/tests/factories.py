@@ -11,8 +11,18 @@ from itertools import count
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 
-from api.courses.enums import AssessmentLevel, CategoryStatus, TrackPreference
-from api.courses.models import Assessment, Category, Course, Lesson, Module
+from api.categories.enums import CategoryStatus, TrackPreference
+from api.courses.enums import AssessmentLevel, CollaboratorRole
+from api.categories.models import Category
+from api.courses.models import (
+    Assessment,
+    CategoryRequest,
+    Course,
+    CourseCollaborator,
+    Lesson,
+    Module,
+    Topic,
+)
 from api.users.enums import UserRole
 
 User = get_user_model()
@@ -43,6 +53,39 @@ def make_category(**kwargs):
     }
     defaults.update(kwargs)
     return Category.objects.create(**defaults)
+
+
+def make_topic(*, category=None, **kwargs):
+    n = next(_sequence)
+    category = category or make_category()
+    defaults = {
+        "category": category,
+        "name": f"Topic {n}",
+        "creator_price": Decimal("25.00"),
+        "status": CategoryStatus.ACTIVE,
+    }
+    defaults.update(kwargs)
+    return Topic.objects.create(**defaults)
+
+
+def make_category_request(*, requested_by=None, **kwargs):
+    n = next(_sequence)
+    defaults = {
+        "requested_by": requested_by or make_user(),
+        "name": f"Requested Category {n}",
+    }
+    defaults.update(kwargs)
+    return CategoryRequest.objects.create(**defaults)
+
+
+def make_collaborator(*, course=None, user=None, **kwargs):
+    defaults = {
+        "course": course or make_draft_course(),
+        "user": user or make_user(),
+        "role": CollaboratorRole.COLLABORATOR,
+    }
+    defaults.update(kwargs)
+    return CourseCollaborator.objects.create(**defaults)
 
 
 def make_draft_course(*, creator=None, category=None, **kwargs):

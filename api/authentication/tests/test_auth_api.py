@@ -11,6 +11,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from api.authentication.enums import TokenPurpose
 from api.authentication.models import EmailVerificationToken
 from api.authentication.tests.factories import make_user, make_verification_token
+from api.users.enums import UserRole
 from api.users.models import UserActivityLog
 
 
@@ -26,6 +27,8 @@ class SignupApiTests(APITestCase):
                     "password": "StrongPass123!",
                     "first_name": "Ada",
                     "last_name": "Lovelace",
+                    "country": "NG",
+                    "terms_accepted": True,
                 },
                 format="json",
             )
@@ -43,10 +46,78 @@ class SignupApiTests(APITestCase):
                 "password": "StrongPass123!",
                 "first_name": "A",
                 "last_name": "B",
+                "country": "NG",
             },
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_creates_course_creator_role_by_default(self):
+        response = self.client.post(
+            "/api/v1/auth/signup/",
+            {
+                "email": "defaultrole@example.com",
+                "password": "StrongPass123!",
+                "first_name": "A",
+                "last_name": "B",
+                "country": "NG",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["role"], "COURSE_CREATOR")
+
+    def test_missing_country_rejected(self):
+        response = self.client.post(
+            "/api/v1/auth/signup/",
+            {
+                "email": "nocountry@example.com",
+                "password": "StrongPass123!",
+                "first_name": "A",
+                "last_name": "B",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertTrue(
+            any(error["field_name"] == "country" for error in response.data["errors"])
+        )
+
+    def test_terms_accepted_defaults_false(self):
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(
+                "/api/v1/auth/signup/",
+                {
+                    "email": "noterms@example.com",
+                    "password": "StrongPass123!",
+                    "first_name": "A",
+                    "last_name": "B",
+                    "country": "NG",
+                },
+                format="json",
+            )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertIsNone(response.data["terms_accepted_at"])
+
+
+class ReviewerSignupApiTests(APITestCase):
+    def test_happy_path_creates_creator_reviewer_role(self):
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(
+                "/api/v1/auth/reviewer/signup/",
+                {
+                    "email": "reviewer@example.com",
+                    "password": "StrongPass123!",
+                    "first_name": "Rita",
+                    "last_name": "Reviewer",
+                    "country": "NG",
+                },
+                format="json",
+            )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["role"], "CREATOR_REVIEWER")
+        self.assertFalse(response.data["is_active"])
+        self.assertEqual(len(mail.outbox), 1)
 
 
 class VerifyEmailApiTests(APITestCase):
@@ -121,7 +192,10 @@ class LoginApiTests(APITestCase):
             {"email": "inactive@example.com", "password": "StrongPass123!"},
             format="json",
         )
-        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertTrue(
+            any(error["field_name"] == "email" for error in response.data["errors"])
+        )
 
     def test_wrong_password_rejected(self):
         make_user(email="user@example.com", password="StrongPass123!")
@@ -131,7 +205,28 @@ class LoginApiTests(APITestCase):
             {"email": "user@example.com", "password": "WrongPass!"},
             format="json",
         )
-        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertTrue(
+            any(error["field_name"] == "password" for error in response.data["errors"])
+        )
+
+    def test_nonexistent_email_rejected(self):
+        response = self.client.post(
+            "/api/v1/auth/login/",
+            {"email": "nobody@example.com", "password": "WhateverPass1!"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertTrue(
+            any(error["field_name"] == "email" for error in response.data["errors"])
+        )
+
+    def test_missing_email_and_password_rejected(self):
+        response = self.client.post("/api/v1/auth/login/", {}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        field_names = {error["field_name"] for error in response.data["errors"]}
+        self.assertIn("email", field_names)
+        self.assertIn("password", field_names)
 
     def test_happy_path(self):
         user = make_user(email="user2@example.com", password="StrongPass123!")
@@ -147,6 +242,22 @@ class LoginApiTests(APITestCase):
         self.assertTrue(
             UserActivityLog.objects.filter(user=user, action="LOGIN").exists()
         )
+
+    def test_reviewer_login_endpoint_works(self):
+        make_user(
+            email="reviewer2@example.com",
+            password="StrongPass123!",
+            role=UserRole.CREATOR_REVIEWER,
+        )
+
+        response = self.client.post(
+            "/api/v1/auth/reviewer/login/",
+            {"email": "reviewer2@example.com", "password": "StrongPass123!"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("access", response.data)
+        self.assertIn("refresh", response.data)
 
 
 class TokenRefreshApiTests(APITestCase):
@@ -277,3 +388,43 @@ class MeApiTests(APITestCase):
     def test_unauthenticated(self):
         response = self.client.get("/api/v1/users/me/")
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_patch_updates_profile_fields(self):
+        user = make_user()
+        self.client.force_authenticate(user)
+
+        response = self.client.patch(
+            "/api/v1/users/me/",
+            {"first_name": "Updated", "timezone": "Africa/Lagos"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["first_name"], "Updated")
+        self.assertEqual(response.data["timezone"], "Africa/Lagos")
+        user.refresh_from_db()
+        self.assertEqual(user.first_name, "Updated")
+
+    def test_patch_cannot_change_email(self):
+        user = make_user(email="original@example.com")
+        self.client.force_authenticate(user)
+
+        response = self.client.patch(
+            "/api/v1/users/me/",
+            {"email": "changed@example.com"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        user.refresh_from_db()
+        self.assertEqual(user.email, "original@example.com")
+
+    def test_patch_logs_configuration_activity(self):
+        user = make_user()
+        self.client.force_authenticate(user)
+
+        self.client.patch("/api/v1/users/me/", {"first_name": "New"}, format="json")
+
+        self.assertTrue(
+            UserActivityLog.objects.filter(
+                user=user, action="PROFILE_UPDATED", category="CONFIGURATION"
+            ).exists()
+        )

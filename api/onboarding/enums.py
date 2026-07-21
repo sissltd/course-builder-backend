@@ -22,3 +22,17 @@ class MonthlyCourseCapacity(models.TextChoices):
     TWO_TO_THREE = "TWO_TO_THREE", "2-3 courses"
     FOUR_TO_FIVE = "FOUR_TO_FIVE", "4-5 courses"
     MORE_THAN_FIVE = "MORE_THAN_FIVE", "More than 5 courses"
+
+
+class ExpertiseArea(models.TextChoices):
+    """Primary area of expertise selected during onboarding
+    ("Which of these best describes your primary area of expertise?")."""
+
+    WEB_DEVELOPMENT = "WEB_DEVELOPMENT", "Web Development"
+    DATA_SCIENCE_ANALYTICS = "DATA_SCIENCE_ANALYTICS", "Data Science & Analytics"
+    AI_MACHINE_LEARNING = "AI_MACHINE_LEARNING", "AI & Machine Learning"
+    BUSINESS_MANAGEMENT = "BUSINESS_MANAGEMENT", "Business & Management"
+    DIGITAL_MARKETING = "DIGITAL_MARKETING", "Digital Marketing"
+    LEADERSHIP_SOFT_SKILLS = "LEADERSHIP_SOFT_SKILLS", "Leadership & Soft Skills"
+    FINANCE_ACCOUNTING = "FINANCE_ACCOUNTING", "Finance & Accounting"
+    OTHERS = "OTHERS", "Others (Specify)"

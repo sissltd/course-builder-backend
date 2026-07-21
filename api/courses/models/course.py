@@ -1,7 +1,7 @@
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
-from api.courses.enums import CourseStatus
+from api.courses.enums import CourseStatus, DifficultyLevel
 from includes.helpers import (
     DateHistoryModelMixin,
     UUIDPrimaryKeyModelMixin,
@@ -25,11 +25,24 @@ class Course(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMi
         help_text=_("Course Creator who owns this course."),
     )
     category = models.ForeignKey(
-        "courses.Category",
+        "categories.Category",
         verbose_name=_("Category"),
         on_delete=models.PROTECT,
         related_name="courses",
         help_text=_("Category this course belongs to."),
+    )
+    topic = models.ForeignKey(
+        "courses.Topic",
+        verbose_name=_("Topic"),
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="courses",
+        help_text=_(
+            "Topic this course belongs to, nested under category. Optional for "
+            "backward compatibility with category-only courses; when set, its "
+            "price is used instead of the category's at submission time."
+        ),
     )
     title = models.CharField(
         verbose_name=_("Title"),
@@ -65,6 +78,42 @@ class Course(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMi
         default="",
         help_text=_(
             "1-2 minute course overview video URL, required before submission (BR-015)."
+        ),
+    )
+    thumbnail_url = models.URLField(
+        verbose_name=_("Thumbnail URL"),
+        blank=True,
+        default="",
+        help_text=_(
+            "Course thumbnail image URL, distinct from preview_video_url's cover video."
+        ),
+    )
+    difficulty_level = models.CharField(
+        verbose_name=_("Difficulty Level"),
+        max_length=15,
+        choices=DifficultyLevel.choices,
+        blank=True,
+        default="",
+        help_text=_("Self-reported difficulty level for this course."),
+    )
+    learning_objectives = models.JSONField(
+        verbose_name=_("Learning Objectives"),
+        default=list,
+        blank=True,
+        help_text=_("Course-level list of measurable learning objective strings."),
+    )
+    tags = models.JSONField(
+        verbose_name=_("Tags"),
+        default=list,
+        blank=True,
+        help_text=_("Free-text tags for search/discovery."),
+    )
+    planned_duration_seconds = models.PositiveIntegerField(
+        verbose_name=_("Planned Duration (seconds)"),
+        default=0,
+        help_text=_(
+            "Creator-declared course duration (entered as H/M/S), distinct from "
+            "duration_estimate_minutes which is computed from actual lessons."
         ),
     )
     terms_accepted_at = models.DateTimeField(

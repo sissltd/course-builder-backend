@@ -13,6 +13,7 @@ CUSTOM_APPS = [
     "api.users",
     "api.notification",
     "api.authentication",
+    "api.categories",
     "api.courses",
     "api.onboarding",
     "api.wallet",

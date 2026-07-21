@@ -5,6 +5,7 @@ from rest_framework.views import APIView
 from api.courses.enums import AssessmentLevel, CourseStatus
 from api.courses.models import Course, Lesson, Module
 from api.courses.serializers import AssessmentSerializer, AssessmentWriteSerializer
+from api.courses.services import collaborator_service
 from api.users.permissions import IsCourseCreatorRole
 
 
@@ -26,7 +27,7 @@ class LessonAssessmentView(APIView):
                 pk=lesson_pk,
                 module_id=module_pk,
                 module__course_id=course_pk,
-                module__course__creator=user,
+                module__course__in=collaborator_service.get_courses_accessible_to(user),
             )
         except Lesson.DoesNotExist as exc:
             raise exceptions.NotFound("Lesson not found.") from exc
@@ -71,7 +72,9 @@ class ModuleAssessmentView(APIView):
     def _get_module(self, course_pk, module_pk, user) -> Module:
         try:
             return Module.objects.select_related("course").get(
-                pk=module_pk, course_id=course_pk, course__creator=user
+                pk=module_pk,
+                course_id=course_pk,
+                course__in=collaborator_service.get_courses_accessible_to(user),
             )
         except Module.DoesNotExist as exc:
             raise exceptions.NotFound("Module not found.") from exc
@@ -115,7 +118,9 @@ class CourseAssessmentView(APIView):
 
     def _get_course(self, course_pk, user) -> Course:
         try:
-            return Course.objects.get(pk=course_pk, creator=user)
+            return collaborator_service.get_courses_accessible_to(user).get(
+                pk=course_pk
+            )
         except Course.DoesNotExist as exc:
             raise exceptions.NotFound("Course not found.") from exc
 

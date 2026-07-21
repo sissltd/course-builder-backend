@@ -4,6 +4,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet, ReadOnlyModelViewSet
 
+from api.courses.enums import CourseStatus
 from api.courses.filters import CourseReviewQueueFilter
 from api.courses.models import Course
 from api.courses.permissions import IsCourseOwner
@@ -16,31 +17,67 @@ from api.courses.serializers import (
     ReviewApproveSerializer,
     ReviewRejectSerializer,
 )
-from api.courses.services import course_service, review_service
+from api.courses.services import collaborator_service, course_service, review_service
 from api.users.permissions import (
     IsAdminRole,
     IsCourseCreatorRole,
     IsCreatorReviewerRole,
 )
 
-OWNER_SCOPED_ACTIONS = {"retrieve", "update", "partial_update", "destroy", "submit"}
+OWNER_SCOPED_ACTIONS = {"retrieve", "update", "partial_update", "destroy"}
+
+#: Creators reach their own courses; Admins reach any course. Composed rather
+#: than listed side by side because DRF ANDs a permission list together, which
+#: would require an Admin to also hold the creator role.
+OWNER_OR_ADMIN = (IsCourseCreatorRole & IsCourseOwner) | IsAdminRole
+
+#: Submission is the one owner-scoped action an Admin does NOT get a bypass on.
+#: Submitting is the author vouching for their own work (see
+#: course_service.submit_course), so an Admin may submit only a course they
+#: themselves created - in which case IsCourseOwner passes anyway.
+SUBMIT_PERMISSION = (IsCourseCreatorRole | IsAdminRole) & IsCourseOwner
 
 
 class CourseViewSet(ModelViewSet):
-    """A Course Creator's own courses: authoring + submission (SCCS PRD Track A)."""
+    """Course authoring and submission (SCCS PRD Track A).
 
-    permission_classes = [IsCourseCreatorRole]
+    Serves two audiences through one viewset: a Course Creator (or invited
+    Writer) working on their own courses, and an Admin (or invited Approver)
+    with full CRUD across every course on the platform. The queryset and
+    object-level permissions branch on that distinction rather than the
+    viewset being duplicated, because the request/response shapes are identical
+    - only the visible scope differs.
+
+    Admin access widens *who* may act, not *what* the workflow allows: the
+    service layer's status rules still apply, so an Admin editing a Published
+    course gets the same "Only Draft courses can be edited" error a creator
+    would.
+    """
+
+    permission_classes = [IsCourseCreatorRole | IsAdminRole]
 
     def get_queryset(self):
         if getattr(self, "swagger_fake_view", False):
             return Course.objects.none()
 
-        queryset = Course.objects.select_related("category")
         if self.action == "publish":
             # Admin-only (enforced by get_permissions) and not owner-scoped:
             # an Admin publishing a course is never its creator.
-            return queryset
-        return queryset.filter(creator=self.request.user)
+            return Course.objects.select_related("category", "topic")
+
+        is_admin = IsAdminRole().has_permission(self.request, self)
+
+        if is_admin:
+            # Admins have full read/write visibility across every course.
+            return Course.objects.select_related("category", "topic")
+
+        if self.action in {"retrieve", "update", "partial_update"}:
+            return collaborator_service.get_courses_accessible_to(
+                self.request.user
+            ).select_related("category", "topic")
+        return Course.objects.select_related("category", "topic").filter(
+            creator=self.request.user
+        )
 
     def get_serializer_class(self):
         if self.action == "create":
@@ -53,9 +90,13 @@ class CourseViewSet(ModelViewSet):
 
     def get_permissions(self):
         if self.action in OWNER_SCOPED_ACTIONS:
-            return [IsCourseCreatorRole(), IsCourseOwner()]
+            return [OWNER_OR_ADMIN()]
+        if self.action == "submit":
+            return [SUBMIT_PERMISSION()]
         if self.action == "publish":
             return [IsAdminRole()]
+        if self.action == "create":
+            return [IsCourseCreatorRole()]
         return super().get_permissions()
 
     def perform_destroy(self, instance):
@@ -85,8 +126,10 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
 
     Kept separate from CourseViewSet rather than branching one viewset's
     queryset by role, so a creator's own-courses queryset and a reviewer's
-    cross-creator queue never share permission/queryset logic. `list` is
-    scoped to Submitted/In Review courses (the actual "queue"); detail actions
+    cross-creator queue never share permission/queryset logic. `list` covers
+    every stage a reviewer needs to browse - Submitted/In Review (the actual
+    "queue"), plus Approved and Published - narrowable via
+    CourseReviewQueueFilter's ?status= param; detail actions
     (retrieve/claim/approve/reject) look up any course by id, so acting on a
     course in the wrong status produces a 400 from the service layer rather
     than a misleading 404.
@@ -100,12 +143,23 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
 
     def get_queryset(self):
         if self.action == "list":
-            return course_service.get_review_queue()
+            return course_service.get_review_queue(
+                status_in=[
+                    CourseStatus.SUBMITTED,
+                    CourseStatus.IN_REVIEW,
+                    CourseStatus.APPROVED,
+                    CourseStatus.PUBLISHED,
+                ]
+            )
         return Course.objects.select_related("category", "creator")
 
     def get_serializer_class(self):
         if self.action == "list":
             return CourseListSerializer
+        if self.action == "approve":
+            return ReviewApproveSerializer
+        if self.action == "reject":
+            return ReviewRejectSerializer
         return CourseDetailSerializer
 
     @action(detail=True, methods=["post"])

@@ -1,8 +1,8 @@
 from rest_framework import serializers
 
-from api.courses.enums import CategoryStatus
-from api.courses.models import Category
-from api.onboarding.enums import MonthlyCourseCapacity, VideoComfortLevel
+from api.categories.enums import CategoryStatus
+from api.categories.models import Category
+from api.onboarding.enums import ExpertiseArea, MonthlyCourseCapacity, VideoComfortLevel
 
 
 class OnboardingUpdateSerializer(serializers.Serializer):
@@ -15,6 +15,9 @@ class OnboardingUpdateSerializer(serializers.Serializer):
     category_id = serializers.PrimaryKeyRelatedField(
         required=False,
         queryset=Category.objects.filter(status=CategoryStatus.ACTIVE),
+    )
+    expertise_area = serializers.ChoiceField(
+        choices=ExpertiseArea.choices, required=False
     )
     other_expertise = serializers.CharField(
         required=False, allow_blank=True, max_length=255
@@ -31,5 +34,12 @@ class OnboardingUpdateSerializer(serializers.Serializer):
         if not attrs:
             raise serializers.ValidationError(
                 "At least one onboarding field must be provided."
+            )
+        if (
+            attrs.get("expertise_area") == ExpertiseArea.OTHERS
+            and not attrs.get("other_expertise", "").strip()
+        ):
+            raise serializers.ValidationError(
+                "other_expertise is required when expertise_area is 'Others'."
             )
         return attrs

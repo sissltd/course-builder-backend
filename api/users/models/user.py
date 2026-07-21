@@ -3,7 +3,7 @@ from django.contrib.auth.models import AbstractUser
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
-from api.users.enums import UserRole
+from api.users.enums import Sex, UserRole
 from api.users.models.manager import CustomUserManager
 from includes.helpers import (
     DateHistoryModelMixin,
@@ -34,6 +34,40 @@ class User(
         default=UserRole.COURSE_CREATOR,
         help_text=_("Primary role used for role-based permission checks."),
     )
+    country = models.CharField(
+        verbose_name=_("Country"),
+        max_length=2,
+        blank=True,
+        default="",
+        help_text=_("ISO 3166-1 alpha-2 country code."),
+    )
+    sex = models.CharField(
+        verbose_name=_("Sex"),
+        max_length=20,
+        choices=Sex.choices,
+        blank=True,
+        default="",
+        help_text=_("Self-reported sex."),
+    )
+    terms_accepted_at = models.DateTimeField(
+        verbose_name=_("Terms Accepted At"),
+        null=True,
+        blank=True,
+        help_text=_("When the user accepted the Terms and Conditions."),
+    )
+    timezone = models.CharField(
+        verbose_name=_("Timezone"),
+        max_length=50,
+        blank=True,
+        default="",
+        help_text=_("IANA timezone identifier, e.g. 'Africa/Lagos'."),
+    )
+    avatar_url = models.URLField(
+        verbose_name=_("Avatar URL"),
+        blank=True,
+        default="",
+        help_text=_("Profile picture URL."),
+    )
 
     objects = CustomUserManager()
 
@@ -43,6 +77,20 @@ class User(
     class Meta:
         verbose_name = _("User")
         verbose_name_plural = _("Users")
+        constraints = [
+            # Partial unique index over the single value SUPER_ADMIN, which
+            # permits at most one such row platform-wide. This is what makes the
+            # bootstrap endpoint genuinely one-shot: an application-level
+            # "does one already exist?" check is a TOCTOU race that two
+            # concurrent requests can both pass, whereas this cannot be raced.
+            # Promoting a replacement super admin is therefore a deliberate
+            # operation (demote the incumbent first), not an API call.
+            models.UniqueConstraint(
+                fields=["role"],
+                condition=models.Q(role=UserRole.SUPER_ADMIN),
+                name="unique_super_admin",
+            ),
+        ]
 
     def __str__(self):
         """Use email as the human-readable identifier in admin and logs."""

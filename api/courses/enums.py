@@ -1,26 +1,6 @@
 from django.db import models
 
 
-class TrackPreference(models.TextChoices):
-    """Which production track a category is best suited for.
-
-    AI_PREFERRED is retained for forward compatibility with the SCCS Market
-    Intelligence Engine / AI Auto-Production Engine data model, even though
-    the AI production track is not implemented yet.
-    """
-
-    CREATOR_PREFERRED = "CREATOR_PREFERRED", "Creator Preferred"
-    AI_PREFERRED = "AI_PREFERRED", "AI Preferred"
-    OPEN = "OPEN", "Open"
-
-
-class CategoryStatus(models.TextChoices):
-    """Whether a category currently accepts new course submissions."""
-
-    ACTIVE = "ACTIVE", "Active"
-    INACTIVE = "INACTIVE", "Inactive"
-
-
 class CourseStatus(models.TextChoices):
     """Course lifecycle status (SCCS PRD v3.5 Section 8, Flow A).
 
@@ -51,3 +31,28 @@ class ReviewActionType(models.TextChoices):
 
     APPROVE = "APPROVE", "Approve"
     REJECT = "REJECT", "Reject"
+
+
+class CategoryRequestStatus(models.TextChoices):
+    """Lifecycle status of a creator's request for a new Category."""
+
+    PENDING = "PENDING", "Pending"
+    APPROVED = "APPROVED", "Approved"
+    REJECTED = "REJECTED", "Rejected"
+
+
+class DifficultyLevel(models.TextChoices):
+    """Course difficulty level, self-reported by the creator."""
+
+    BEGINNER = "BEGINNER", "Beginner"
+    INTERMEDIATE = "INTERMEDIATE", "Intermediate"
+    ADVANCED = "ADVANCED", "Advanced"
+
+
+class CollaboratorRole(models.TextChoices):
+    """A course collaborator's access level. The course's own creator
+    ("Author") is never stored as a row here - it's derived from
+    Course.creator - so only these two values are ever persisted."""
+
+    COLLABORATOR = "COLLABORATOR", "Collaborator"
+    ADMIN = "ADMIN", "Admin"

@@ -2,6 +2,7 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from django.db import transaction
+from django.utils import timezone
 from rest_framework import exceptions
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -36,11 +37,21 @@ class AuthenticationService(TsesAuthenticationInterface):
     """
 
     def signup(
-        self, *, email: str, password: str, first_name: str, last_name: str
+        self,
+        *,
+        email: str,
+        password: str,
+        first_name: str,
+        last_name: str,
+        country: str,
+        terms_accepted: bool = False,
+        role: str = UserRole.COURSE_CREATOR,
     ) -> User:
         """Create an inactive User and email a signup-verification link.
 
-        Role is always forced to COURSE_CREATOR - not client-settable. The
+        `role` defaults to COURSE_CREATOR and is never taken from client
+        input on the public signup endpoint - it's set by which view calls
+        this (see ReviewerSignupView, which passes CREATOR_REVIEWER). The
         user stays is_active=False (and therefore cannot authenticate at all,
         per SIMPLE_JWT's USER_AUTHENTICATION_RULE) until verify_otp succeeds.
         """
@@ -56,7 +67,9 @@ class AuthenticationService(TsesAuthenticationInterface):
                 password=password,
                 first_name=first_name,
                 last_name=last_name,
-                role=UserRole.COURSE_CREATOR,
+                country=country,
+                terms_accepted_at=timezone.now() if terms_accepted else None,
+                role=role,
                 is_active=False,
             )
             _token, raw_token = token_service.issue_token(
