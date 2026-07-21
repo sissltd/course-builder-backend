@@ -19,7 +19,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     DJANGO_SETTINGS_MODULE=config.settings
 
-RUN groupadd -r appuser && useradd -r -g appuser -d /app -s /sbin/nologin appuser
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends gosu \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd -r appuser && useradd -r -g appuser -d /app -s /sbin/nologin appuser
 
 WORKDIR /app
 
@@ -29,14 +32,12 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 COPY . /app
 
 RUN mkdir -p /app/staticfiles /app/media \
-    && chown -R appuser:appuser /app
+    && chown -R appuser:appuser /app/staticfiles /app/media
 
 RUN chmod +x /app/.docker/entrypoint.sh
 
 EXPOSE 8000
 
-USER appuser
-
 ENTRYPOINT ["/bin/sh", "/app/.docker/entrypoint.sh"]
 
-CMD ["gunicorn", "config.wsgi:application", "--config", "gunicorn.conf.py"]
+CMD ["gosu", "appuser", "gunicorn", "config.wsgi:application", "--config", "gunicorn.conf.py"]
