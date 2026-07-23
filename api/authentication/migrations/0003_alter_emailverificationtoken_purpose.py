@@ -13,6 +13,6 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name='emailverificationtoken',
             name='purpose',
-            field=models.CharField(choices=[('SIGNUP_VERIFICATION', 'Signup Verification'), ('PASSWORD_RESET', 'Password Reset'), ('STAFF_INVITATION', 'Staff Invitation')], help_text='What this token authorizes.', max_length=32, verbose_name='Purpose'),
+            field=models.CharField(choices=[('SIGNUP_VERIFICATION', 'Signup Verification'), ('PASSWORD_RESET', 'Password Reset'), ('WITHDRAWAL_CONFIRMATION', 'Withdrawal Confirmation'), ('STAFF_INVITATION', 'Staff Invitation')], help_text='What this token authorizes.', max_length=32, verbose_name='Purpose'),
         ),
     ]

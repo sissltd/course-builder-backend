@@ -36,6 +36,29 @@ def issue_token(*, user: User, purpose: str) -> tuple[EmailVerificationToken, st
     return record, raw_token
 
 
+def issue_numeric_code(
+    *, user: User, purpose: str, length: int, expiry_minutes: int
+) -> tuple[EmailVerificationToken, str]:
+    """Same one-active-token-per-purpose contract as issue_token, but the raw
+    value is a short numeric code (for OTP-style manual entry, e.g. confirming
+    a withdrawal) rather than a URL-safe link token. Stored identically -
+    verify_token and can_resend work unchanged for either kind of value.
+    """
+
+    EmailVerificationToken.objects.filter(
+        user=user, purpose=purpose, is_used=False
+    ).update(is_used=True, used_at=timezone.now())
+
+    raw_code = "".join(secrets.choice("0123456789") for _ in range(length))
+    record = EmailVerificationToken.objects.create(
+        user=user,
+        purpose=purpose,
+        token_hash=_hash_token(raw_code),
+        expires_at=timezone.now() + timedelta(minutes=expiry_minutes),
+    )
+    return record, raw_code
+
+
 def verify_token(*, user: User, purpose: str, token: str) -> EmailVerificationToken:
     """Verify `token` against the active token for user+purpose.
 
@@ -51,17 +74,17 @@ def verify_token(*, user: User, purpose: str, token: str) -> EmailVerificationTo
     ).first()
     if not record or record.user_id != user.id or record.purpose != purpose:
         raise exceptions.NotFound(
-            "Invalid or expired verification link. Please request a new one."
+            "Invalid or expired verification code. Please request a new one."
         )
 
     if record.attempts >= settings.EMAIL_TOKEN_MAX_ATTEMPTS:
         raise exceptions.ValidationError(
-            "Too many attempts. Please request a new link."
+            "Too many attempts. Please request a new code."
         )
 
     if record.expires_at < timezone.now():
         raise exceptions.ValidationError(
-            "This link has expired. Please request a new one."
+            "This code has expired. Please request a new one."
         )
 
     record.is_used = True

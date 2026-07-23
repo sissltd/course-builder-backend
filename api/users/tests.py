@@ -8,9 +8,14 @@ from rest_framework import status
 from rest_framework.exceptions import ValidationError
 from rest_framework.test import APITestCase
 
-from api.users.enums import UnavailabilityReason, UserActivityActionEnums, UserRole
-from api.users.models import ReviewerAvailability, UserActivityLog
-from api.users.services import reviewer_availability_service
+from api.users.enums import (
+    KYCStatus,
+    UnavailabilityReason,
+    UserActivityActionEnums,
+    UserRole,
+)
+from api.users.models import KYCVerification, ReviewerAvailability, UserActivityLog
+from api.users.services import kyc_service, reviewer_availability_service
 
 User = get_user_model()
 
@@ -229,3 +234,123 @@ class UserActivityLogApiTests(APITestCase):
         results = response.data["data"]["results"]
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0]["summary"], "Course assigned to you.")
+
+
+class KYCServiceTests(TestCase):
+    def test_is_verified_false_with_no_submission(self):
+        user = _make_user()
+
+        self.assertFalse(kyc_service.is_verified(user=user))
+
+    def test_is_verified_true_when_latest_is_approved(self):
+        user = _make_user()
+        kyc_service.submit_verification(
+            user=user,
+            country_of_issue="NG",
+            document_type="NATIONAL_ID",
+            id_number="12345",
+        )
+        KYCVerification.objects.filter(user=user).update(status=KYCStatus.APPROVED)
+
+        self.assertTrue(kyc_service.is_verified(user=user))
+
+    def test_cannot_submit_while_a_pending_submission_exists(self):
+        user = _make_user()
+        kyc_service.submit_verification(
+            user=user,
+            country_of_issue="NG",
+            document_type="NATIONAL_ID",
+            id_number="12345",
+        )
+
+        with self.assertRaises(ValidationError):
+            kyc_service.submit_verification(
+                user=user,
+                country_of_issue="NG",
+                document_type="VOTERS_ID",
+                id_number="67890",
+            )
+
+    def test_can_resubmit_after_rejection(self):
+        user = _make_user()
+        kyc_service.submit_verification(
+            user=user,
+            country_of_issue="NG",
+            document_type="NATIONAL_ID",
+            id_number="12345",
+        )
+        KYCVerification.objects.filter(user=user).update(status=KYCStatus.REJECTED)
+
+        resubmission = kyc_service.submit_verification(
+            user=user,
+            country_of_issue="NG",
+            document_type="VOTERS_ID",
+            id_number="67890",
+        )
+
+        self.assertEqual(resubmission.status, KYCStatus.PENDING)
+
+    def test_require_verified_raises_when_not_verified(self):
+        user = _make_user()
+
+        with self.assertRaises(ValidationError):
+            kyc_service.require_verified(user=user)
+
+
+class KYCApiTests(APITestCase):
+    def test_requires_authentication(self):
+        response = self.client.get("/api/v1/users/me/kyc/")
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_get_with_no_submission_returns_null(self):
+        user = _make_user()
+        self.client.force_authenticate(user)
+
+        response = self.client.get("/api/v1/users/me/kyc/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsNone(response.data)
+
+    def test_submit_creates_pending_verification(self):
+        user = _make_user()
+        self.client.force_authenticate(user)
+
+        response = self.client.post(
+            "/api/v1/users/me/kyc/",
+            {
+                "country_of_issue": "NG",
+                "document_type": "NATIONAL_ID",
+                "id_number": "12345",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["status"], "PENDING")
+        self.assertTrue(
+            UserActivityLog.objects.filter(
+                user=user, action=UserActivityActionEnums.KYC_SUBMITTED
+            ).exists()
+        )
+
+    def test_submit_while_pending_rejected(self):
+        user = _make_user()
+        self.client.force_authenticate(user)
+        self.client.post(
+            "/api/v1/users/me/kyc/",
+            {
+                "country_of_issue": "NG",
+                "document_type": "NATIONAL_ID",
+                "id_number": "12345",
+            },
+            format="json",
+        )
+
+        response = self.client.post(
+            "/api/v1/users/me/kyc/",
+            {
+                "country_of_issue": "NG",
+                "document_type": "VOTERS_ID",
+                "id_number": "67890",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
