@@ -71,6 +71,18 @@ class CanManageCategories(HasRole):
     allowed_roles = (UserRole.STAFF_WRITER, UserRole.SUPER_ADMIN)
 
 
+class IsAdminOrSuperAdminRole(HasRole):
+    """Grants access to Admins and Super Admins only - deliberately excludes
+    STAFF_APPROVER, unlike IsAdminRole.
+
+    Used for KYC review: identity-verification decisions (and the new-request
+    alert) are kept to the platform's own administrative tier rather than
+    extended to invited Approver staff, who only handle course approvals.
+    """
+
+    allowed_roles = (UserRole.ADMIN, UserRole.SUPER_ADMIN)
+
+
 class IsSuperAdminRole(HasRole):
     """Grants access to users with the Super Admin role only.
 

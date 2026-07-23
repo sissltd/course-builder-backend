@@ -115,6 +115,8 @@ class UserActivityActionEnums(models.TextChoices):
         "Notification Preferences Updated",
     )
     KYC_SUBMITTED = "KYC_SUBMITTED", "KYC Submitted"
+    KYC_APPROVED = "KYC_APPROVED", "KYC Approved"
+    KYC_REJECTED = "KYC_REJECTED", "KYC Rejected"
     WITHDRAWAL_REQUESTED = "WITHDRAWAL_REQUESTED", "Withdrawal Requested"
     WITHDRAWAL_CONFIRMED = "WITHDRAWAL_CONFIRMED", "Withdrawal Confirmed"
 

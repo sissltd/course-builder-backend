@@ -1,11 +1,25 @@
+from django_filters.rest_framework import DjangoFilterBackend
+from rest_framework import filters as drf_filters
 from rest_framework import status
+from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.viewsets import ReadOnlyModelViewSet
 from rest_framework.views import APIView
 
 from api.authentication.services import activity_service
-from api.users.enums import UserActivityActionEnums, UserActivityCategoryEnums
+from api.users.enums import (
+    KYCStatus,
+    UserActivityActionEnums,
+    UserActivityCategoryEnums,
+)
+from api.users.filters import KYCReviewQueueFilter
+from api.users.models import KYCVerification
+from api.users.permissions import IsAdminOrSuperAdminRole
 from api.users.serializers import (
+    KYCReviewApproveSerializer,
+    KYCReviewRejectSerializer,
+    KYCVerificationAdminSerializer,
     KYCVerificationSerializer,
     KYCVerificationSubmitSerializer,
 )
@@ -44,3 +58,52 @@ class KYCVerificationView(APIView):
         return Response(
             KYCVerificationSerializer(submission).data, status=status.HTTP_201_CREATED
         )
+
+
+class KYCReviewViewSet(ReadOnlyModelViewSet):
+    """Admin review queue for KYC verification submissions.
+
+    Restricted to Admins and Super Admins (not invited Approvers - see
+    IsAdminOrSuperAdminRole). `list` defaults to PENDING submissions (the
+    actual queue), narrowable via KYCReviewQueueFilter's ?status= param;
+    detail actions look up any submission by id, so acting on one in the
+    wrong status produces a 400 from the service layer rather than a
+    misleading 404. Mirrors CourseReviewViewSet's shape.
+    """
+
+    permission_classes = [IsAdminOrSuperAdminRole]
+    filterset_class = KYCReviewQueueFilter
+    filter_backends = [DjangoFilterBackend, drf_filters.OrderingFilter]
+    ordering_fields = ["created_datetime"]
+    ordering = ["created_datetime"]
+
+    def get_queryset(self):
+        queryset = KYCVerification.objects.select_related("user", "reviewed_by")
+        if self.action == "list" and "status" not in self.request.query_params:
+            return queryset.filter(status=KYCStatus.PENDING)
+        return queryset
+
+    def get_serializer_class(self):
+        if self.action == "approve":
+            return KYCReviewApproveSerializer
+        if self.action == "reject":
+            return KYCReviewRejectSerializer
+        return KYCVerificationAdminSerializer
+
+    @action(detail=True, methods=["post"])
+    def approve(self, request, pk=None):
+        verification = kyc_service.approve_verification(
+            verification=self.get_object(), reviewer=request.user
+        )
+        return Response(KYCVerificationAdminSerializer(verification).data)
+
+    @action(detail=True, methods=["post"])
+    def reject(self, request, pk=None):
+        serializer = KYCReviewRejectSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        verification = kyc_service.reject_verification(
+            verification=self.get_object(),
+            reviewer=request.user,
+            rejection_reason=serializer.validated_data["rejection_reason"],
+        )
+        return Response(KYCVerificationAdminSerializer(verification).data)
