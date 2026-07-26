@@ -17,6 +17,7 @@ CUSTOM_APPS = [
     "api.courses",
     "api.onboarding",
     "api.wallet",
+    "api.platform",
 ]
 
 THIRD_PARTY_APPS = [

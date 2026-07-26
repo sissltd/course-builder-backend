@@ -54,6 +54,15 @@ class EmailVerificationToken(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
         default=0,
         help_text=_("Reserved abuse-tracking counter. Kept for forward compatibility."),
     )
+    new_email = models.EmailField(
+        verbose_name=_("New Email"),
+        blank=True,
+        default="",
+        help_text=_(
+            "Pending new email address, only populated for EMAIL_CHANGE-purpose "
+            "tokens - applied to User.email once this token is confirmed."
+        ),
+    )
 
     class Meta:
         verbose_name = _("Email Verification Token")

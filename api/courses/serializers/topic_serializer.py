@@ -2,12 +2,14 @@ from rest_framework import serializers
 
 from api.courses.models import Topic
 from api.courses.serializers.course_serializer import CategoryMiniSerializer
+from api.courses.services import topic_service
 
 
 class TopicSerializer(serializers.ModelSerializer):
     """Read-only representation of a Topic for creators/reviewers."""
 
     category = CategoryMiniSerializer(read_only=True)
+    is_currently_reserved = serializers.BooleanField(read_only=True)
 
     class Meta:
         model = Topic
@@ -17,6 +19,9 @@ class TopicSerializer(serializers.ModelSerializer):
             "name",
             "creator_price",
             "status",
+            "reserved_by",
+            "reserved_until",
+            "is_currently_reserved",
             "created_datetime",
             "updated_datetime",
         ]
@@ -36,3 +41,11 @@ class TopicWriteSerializer(serializers.ModelSerializer):
         model = Topic
         fields = ["id", "category", "name", "creator_price", "status"]
         read_only_fields = ["id"]
+
+    def update(self, instance, validated_data):
+        request = self.context.get("request")
+        return topic_service.update_topic(
+            topic=instance,
+            actor=request.user if request else None,
+            data=validated_data,
+        )

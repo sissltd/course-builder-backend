@@ -3,6 +3,9 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from api.authentication.serializers import (
+    ChangeEmailConfirmSerializer,
+    ChangeEmailRequestSerializer,
+    ChangePasswordSerializer,
     ForgotPasswordSerializer,
     LoginSerializer,
     LogoutSerializer,
@@ -143,3 +146,57 @@ class ResetPasswordView(APIView):
         serializer.is_valid(raise_exception=True)
         auth_service.reset_password(**serializer.validated_data)
         return Response({"detail": "Password reset successfully."}, status=200)
+
+
+class ChangePasswordView(APIView):
+    """Change the logged-in user's password (current password required)."""
+
+    permission_classes = [IsAuthenticated]
+    serializer_class = (
+        ChangePasswordSerializer  # for schema generation only; not a GenericAPIView
+    )
+
+    def post(self, request):
+        serializer = ChangePasswordSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        auth_service.change_password(user=request.user, **serializer.validated_data)
+        return Response({"detail": "Password changed successfully."}, status=200)
+
+
+class ChangeEmailRequestView(APIView):
+    """Request an email change - emails a confirmation link to the new address."""
+
+    permission_classes = [IsAuthenticated]
+    serializer_class = (
+        ChangeEmailRequestSerializer  # for schema generation only; not a GenericAPIView
+    )
+
+    def post(self, request):
+        serializer = ChangeEmailRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        auth_service.request_email_change(user=request.user, **serializer.validated_data)
+        return Response(
+            {"detail": "A confirmation link has been sent to your new email address."},
+            status=200,
+        )
+
+
+class ChangeEmailConfirmView(APIView):
+    """Consume an email-change confirmation link token and apply the new email.
+
+    AllowAny: the confirming link is opened from the new inbox, where the
+    caller may not have an active session at all - identity was already
+    proven at the request step (current password), the token proves control
+    of the new inbox.
+    """
+
+    permission_classes = [AllowAny]
+    serializer_class = (
+        ChangeEmailConfirmSerializer  # for schema generation only; not a GenericAPIView
+    )
+
+    def post(self, request):
+        serializer = ChangeEmailConfirmSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        auth_service.confirm_email_change(**serializer.validated_data)
+        return Response({"detail": "Email address changed successfully."}, status=200)

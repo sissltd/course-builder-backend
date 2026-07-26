@@ -376,6 +376,177 @@ class ResetPasswordApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
 
+class ChangePasswordApiTests(APITestCase):
+    def test_requires_authentication(self):
+        response = self.client.post(
+            "/api/v1/auth/change-password/",
+            {"current_password": "x", "new_password": "y"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_happy_path_allows_login_with_new_password(self):
+        user = make_user(password="OldPass123!")
+        self.client.force_authenticate(user)
+
+        response = self.client.post(
+            "/api/v1/auth/change-password/",
+            {"current_password": "OldPass123!", "new_password": "BrandNewPass456!"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        login_response = self.client.post(
+            "/api/v1/auth/login/",
+            {"email": user.email, "password": "BrandNewPass456!"},
+            format="json",
+        )
+        self.assertEqual(login_response.status_code, status.HTTP_200_OK)
+
+    def test_wrong_current_password_rejected(self):
+        user = make_user(password="OldPass123!")
+        self.client.force_authenticate(user)
+
+        response = self.client.post(
+            "/api/v1/auth/change-password/",
+            {"current_password": "WrongPass!", "new_password": "BrandNewPass456!"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_weak_new_password_rejected(self):
+        user = make_user(password="OldPass123!")
+        self.client.force_authenticate(user)
+
+        response = self.client.post(
+            "/api/v1/auth/change-password/",
+            {"current_password": "OldPass123!", "new_password": "123"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_logs_password_changed_activity(self):
+        user = make_user(password="OldPass123!")
+        self.client.force_authenticate(user)
+
+        self.client.post(
+            "/api/v1/auth/change-password/",
+            {"current_password": "OldPass123!", "new_password": "BrandNewPass456!"},
+            format="json",
+        )
+
+        self.assertTrue(
+            UserActivityLog.objects.filter(
+                user=user, action="PASSWORD_CHANGED", category="AUTH"
+            ).exists()
+        )
+
+
+class ChangeEmailApiTests(APITestCase):
+    def test_request_requires_authentication(self):
+        response = self.client.post(
+            "/api/v1/auth/change-email/",
+            {"new_email": "new@example.com", "password": "x"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_request_wrong_password_rejected(self):
+        user = make_user(email="old@example.com", password="StrongPass123!")
+        self.client.force_authenticate(user)
+
+        response = self.client.post(
+            "/api/v1/auth/change-email/",
+            {"new_email": "new@example.com", "password": "WrongPass!"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_request_duplicate_email_rejected(self):
+        make_user(email="taken@example.com")
+        user = make_user(email="old@example.com", password="StrongPass123!")
+        self.client.force_authenticate(user)
+
+        response = self.client.post(
+            "/api/v1/auth/change-email/",
+            {"new_email": "taken@example.com", "password": "StrongPass123!"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_request_sends_confirmation_to_new_address_without_changing_email_yet(self):
+        user = make_user(email="old@example.com", password="StrongPass123!")
+        self.client.force_authenticate(user)
+
+        response = self.client.post(
+            "/api/v1/auth/change-email/",
+            {"new_email": "new@example.com", "password": "StrongPass123!"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, ["new@example.com"])
+        user.refresh_from_db()
+        self.assertEqual(user.email, "old@example.com")
+
+    def test_confirm_updates_email_and_old_email_stops_working(self):
+        user = make_user(email="old@example.com", password="StrongPass123!")
+        make_verification_token(
+            user=user,
+            purpose=TokenPurpose.EMAIL_CHANGE,
+            raw_token="confirm-me",
+            new_email="new@example.com",
+        )
+
+        response = self.client.post(
+            "/api/v1/auth/change-email/confirm/",
+            {"token": "confirm-me"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        user.refresh_from_db()
+        self.assertEqual(user.email, "new@example.com")
+
+        old_login = self.client.post(
+            "/api/v1/auth/login/",
+            {"email": "old@example.com", "password": "StrongPass123!"},
+            format="json",
+        )
+        self.assertEqual(old_login.status_code, status.HTTP_400_BAD_REQUEST)
+
+        new_login = self.client.post(
+            "/api/v1/auth/login/",
+            {"email": "new@example.com", "password": "StrongPass123!"},
+            format="json",
+        )
+        self.assertEqual(new_login.status_code, status.HTTP_200_OK)
+
+    def test_confirm_wrong_token_rejected(self):
+        response = self.client.post(
+            "/api/v1/auth/change-email/confirm/",
+            {"token": "not-a-real-token"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_confirm_expired_token_rejected(self):
+        user = make_user(email="old@example.com")
+        make_verification_token(
+            user=user,
+            purpose=TokenPurpose.EMAIL_CHANGE,
+            raw_token="confirm-me",
+            new_email="new@example.com",
+            expires_in_minutes=-1,
+        )
+
+        response = self.client.post(
+            "/api/v1/auth/change-email/confirm/",
+            {"token": "confirm-me"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+
 class MeApiTests(APITestCase):
     def test_authenticated(self):
         user = make_user()

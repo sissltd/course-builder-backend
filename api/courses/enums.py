@@ -56,3 +56,11 @@ class CollaboratorRole(models.TextChoices):
 
     COLLABORATOR = "COLLABORATOR", "Collaborator"
     ADMIN = "ADMIN", "Admin"
+
+
+class ReservationStatus(models.TextChoices):
+    """Lifecycle status of a creator's request to reserve a Topic (PRD BR-007)."""
+
+    PENDING = "PENDING", "Pending"
+    APPROVED = "APPROVED", "Approved"
+    REJECTED = "REJECTED", "Rejected"

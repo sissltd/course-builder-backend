@@ -33,6 +33,21 @@ urlpatterns = [
         name="auth-reset-password",
     ),
     path(
+        "auth/change-password/",
+        views.ChangePasswordView.as_view(),
+        name="auth-change-password",
+    ),
+    path(
+        "auth/change-email/",
+        views.ChangeEmailRequestView.as_view(),
+        name="auth-change-email-request",
+    ),
+    path(
+        "auth/change-email/confirm/",
+        views.ChangeEmailConfirmView.as_view(),
+        name="auth-change-email-confirm",
+    ),
+    path(
         "auth/superadmin/bootstrap/",
         views.SuperAdminBootstrapView.as_view(),
         name="auth-superadmin-bootstrap",

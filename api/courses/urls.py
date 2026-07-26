@@ -8,6 +8,7 @@ from api.courses.views import (
     course_views,
     lesson_views,
     module_views,
+    topic_reservation_views,
     topic_views,
 )
 
@@ -18,6 +19,11 @@ router.register(
     basename="category-request",
 )
 router.register("topics", topic_views.TopicViewSet, basename="topic")
+router.register(
+    "topic-reservations",
+    topic_reservation_views.TopicReservationRequestViewSet,
+    basename="topic-reservation",
+)
 router.register("courses", course_views.CourseViewSet, basename="course")
 router.register(
     "review-queue", course_views.CourseReviewViewSet, basename="course-review"

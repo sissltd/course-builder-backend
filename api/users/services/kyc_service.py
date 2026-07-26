@@ -58,7 +58,13 @@ def submit_verification(
 
 
 def _notify_admins_of_new_submission(verification: KYCVerification) -> None:
-    admins = User.objects.filter(role__in=IsAdminOrSuperAdminRole.allowed_roles)
+    # exclude() rather than filter(kyc_submission_alert=True): an admin with
+    # no NotificationPreference row yet (the common case - it's lazily
+    # created) still gets notified, since only an explicit opt-out excludes
+    # them.
+    admins = User.objects.filter(
+        role__in=IsAdminOrSuperAdminRole.allowed_roles
+    ).exclude(notification_preference__kyc_submission_alert=False)
     if not admins:
         return
 

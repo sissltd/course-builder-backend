@@ -22,6 +22,7 @@ from api.courses.models import (
     Lesson,
     Module,
     Topic,
+    TopicReservationRequest,
 )
 from api.users.enums import UserRole
 
@@ -76,6 +77,15 @@ def make_category_request(*, requested_by=None, **kwargs):
     }
     defaults.update(kwargs)
     return CategoryRequest.objects.create(**defaults)
+
+
+def make_topic_reservation_request(*, requested_by=None, topic=None, **kwargs):
+    defaults = {
+        "requested_by": requested_by or make_user(),
+        "topic": topic or make_topic(),
+    }
+    defaults.update(kwargs)
+    return TopicReservationRequest.objects.create(**defaults)
 
 
 def make_collaborator(*, course=None, user=None, **kwargs):

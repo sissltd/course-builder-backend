@@ -322,6 +322,36 @@ class NotificationPreference(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
         default=True,
         help_text=_("Notify immediately when the SLA window is missed."),
     )
+    kyc_submission_alert = models.BooleanField(
+        verbose_name=_("KYC Submission Alert"),
+        default=True,
+        help_text=_("Notify Admins/Super Admins when a new KYC submission arrives."),
+    )
+    account_deletion_detection_alert = models.BooleanField(
+        verbose_name=_("Account/Course Deletion Detection Alert"),
+        default=True,
+        help_text=_(
+            "Reserved for a future suspicious-deletion detection system - no "
+            "trigger exists yet, same idiom as the PRODUCTION/ALERT activity "
+            "categories."
+        ),
+    )
+    mie_recommendation_alert = models.BooleanField(
+        verbose_name=_("MIE Recommendation Alert"),
+        default=True,
+        help_text=_(
+            "Reserved for the Market Intelligence Engine, which is not "
+            "implemented in this backend - inert while AI Creator is unavailable."
+        ),
+    )
+    mie_pipeline_alert = models.BooleanField(
+        verbose_name=_("MIE Pipeline Alert"),
+        default=True,
+        help_text=_(
+            "Reserved for the AI Auto-Production Engine, which is not "
+            "implemented in this backend - inert while AI Creator is unavailable."
+        ),
+    )
 
     class Meta:
         verbose_name = _("Notification Preference")

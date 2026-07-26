@@ -10,6 +10,7 @@ from api.authentication.enums import TokenPurpose
 from api.authentication.services import token_service
 from api.courses.models import Course
 from api.notification.models import Notification
+from api.platform.services import platform_settings_service
 from api.users.models import User
 from api.users.services import kyc_service
 from api.wallet.enums import (
@@ -160,9 +161,12 @@ def request_withdrawal(
 
     kyc_service.require_verified(user=user)
 
-    if amount < settings.MINIMUM_WITHDRAWAL_THRESHOLD:
+    minimum_withdrawal_threshold = (
+        platform_settings_service.get_settings().minimum_withdrawal_threshold
+    )
+    if amount < minimum_withdrawal_threshold:
         raise exceptions.ValidationError(
-            f"Minimum withdrawal amount is {settings.MINIMUM_WITHDRAWAL_THRESHOLD}."
+            f"Minimum withdrawal amount is {minimum_withdrawal_threshold}."
         )
 
     wallet = get_or_create_wallet(user=user)

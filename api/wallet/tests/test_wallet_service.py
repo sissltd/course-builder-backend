@@ -4,7 +4,7 @@ from decimal import Decimal
 
 from django import db
 from django.core import mail
-from django.test import TestCase, TransactionTestCase, override_settings
+from django.test import TestCase, TransactionTestCase
 from rest_framework.exceptions import ValidationError
 
 from api.courses.tests.factories import make_user
@@ -183,7 +183,6 @@ class RequestWithdrawalTests(TestCase):
                 payout_account_id=self.payout_account.id,
             )
 
-    @override_settings(MINIMUM_WITHDRAWAL_THRESHOLD=Decimal("50.00"))
     def test_raises_below_minimum_threshold(self):
         _approve_kyc(self.user)
 
@@ -194,7 +193,6 @@ class RequestWithdrawalTests(TestCase):
                 payout_account_id=self.payout_account.id,
             )
 
-    @override_settings(MINIMUM_WITHDRAWAL_THRESHOLD=Decimal("50.00"))
     def test_raises_when_amount_exceeds_balance(self):
         _approve_kyc(self.user)
 
@@ -205,7 +203,6 @@ class RequestWithdrawalTests(TestCase):
                 payout_account_id=self.payout_account.id,
             )
 
-    @override_settings(MINIMUM_WITHDRAWAL_THRESHOLD=Decimal("50.00"))
     def test_happy_path_creates_pending_request_without_touching_balance(self):
         _approve_kyc(self.user)
 
