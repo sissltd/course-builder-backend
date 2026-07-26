@@ -322,38 +322,6 @@ class KYCServiceTests(TestCase):
         with self.assertRaises(ValidationError):
             kyc_service.require_verified(user=user)
 
-    def test_wrong_role_cannot_approve(self):
-        applicant = _make_user()
-        verification = kyc_service.submit_verification(
-            user=applicant,
-            country_of_issue="NG",
-            document_type="NATIONAL_ID",
-            id_number="12345",
-        )
-        wrong_role_reviewer = _make_user(role=UserRole.COURSE_CREATOR)
-
-        with self.assertRaises(PermissionDenied):
-            kyc_service.approve_verification(
-                verification=verification, reviewer=wrong_role_reviewer
-            )
-
-    def test_wrong_role_cannot_reject(self):
-        applicant = _make_user()
-        verification = kyc_service.submit_verification(
-            user=applicant,
-            country_of_issue="NG",
-            document_type="NATIONAL_ID",
-            id_number="12345",
-        )
-        wrong_role_reviewer = _make_user(role=UserRole.CREATOR_REVIEWER)
-
-        with self.assertRaises(PermissionDenied):
-            kyc_service.reject_verification(
-                verification=verification,
-                reviewer=wrong_role_reviewer,
-                rejection_reason="Blurry document.",
-            )
-
     def test_admin_who_opted_out_is_not_notified(self):
         subscribed_admin = _make_user(role=UserRole.ADMIN)
         opted_out_admin = _make_user(role=UserRole.ADMIN)

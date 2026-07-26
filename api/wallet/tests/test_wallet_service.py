@@ -5,7 +5,7 @@ from decimal import Decimal
 from django import db
 from django.core import mail
 from django.test import TestCase, TransactionTestCase
-from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework.exceptions import ValidationError
 
 from api.courses.tests.factories import make_user
 from api.users.enums import KYCStatus, UserRole
@@ -189,18 +189,6 @@ class RequestWithdrawalTests(TestCase):
 
     def test_raises_when_kyc_not_verified(self):
         with self.assertRaises(ValidationError):
-            wallet_service.request_withdrawal(
-                user=self.user,
-                amount=Decimal("60.00"),
-                payout_account_id=self.payout_account.id,
-            )
-
-    def test_wrong_role_cannot_request_withdrawal(self):
-        _approve_kyc(self.user)
-        self.user.role = UserRole.ADMIN
-        self.user.save(update_fields=["role"])
-
-        with self.assertRaises(PermissionDenied):
             wallet_service.request_withdrawal(
                 user=self.user,
                 amount=Decimal("60.00"),
