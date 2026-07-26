@@ -14,6 +14,8 @@ from api.users.enums import (
     UserActivityActionEnums,
     UserRole,
 )
+from api.notification.models import Notification
+from api.notification.services import notification_preference_service
 from api.users.models import KYCVerification, ReviewerAvailability, UserActivityLog
 from api.users.services import kyc_service, reviewer_availability_service
 
@@ -295,6 +297,32 @@ class KYCServiceTests(TestCase):
 
         with self.assertRaises(ValidationError):
             kyc_service.require_verified(user=user)
+
+    def test_admin_who_opted_out_is_not_notified(self):
+        subscribed_admin = _make_user(role=UserRole.ADMIN)
+        opted_out_admin = _make_user(role=UserRole.ADMIN)
+        notification_preference_service.update_preference(
+            user=opted_out_admin, kyc_submission_alert=False
+        )
+        user = _make_user()
+
+        kyc_service.submit_verification(
+            user=user,
+            country_of_issue="NG",
+            document_type="NATIONAL_ID",
+            id_number="12345",
+        )
+
+        self.assertTrue(
+            Notification.objects.filter(
+                receiver=subscribed_admin, title="New KYC verification request"
+            ).exists()
+        )
+        self.assertFalse(
+            Notification.objects.filter(
+                receiver=opted_out_admin, title="New KYC verification request"
+            ).exists()
+        )
 
 
 class KYCApiTests(APITestCase):

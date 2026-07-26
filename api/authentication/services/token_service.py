@@ -14,11 +14,16 @@ def _hash_token(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
-def issue_token(*, user: User, purpose: str) -> tuple[EmailVerificationToken, str]:
+def issue_token(
+    *, user: User, purpose: str, extra_fields: dict | None = None
+) -> tuple[EmailVerificationToken, str]:
     """Invalidate any prior unused token for user+purpose, then issue a new one.
 
     Returns (token_instance, raw_token). raw_token is never persisted - only
     returned here so the caller can build a link and email it immediately.
+    `extra_fields` sets additional columns on the row (e.g. `new_email` for
+    an EMAIL_CHANGE-purpose token) without every other purpose needing to
+    know about them.
     """
 
     EmailVerificationToken.objects.filter(
@@ -32,6 +37,7 @@ def issue_token(*, user: User, purpose: str) -> tuple[EmailVerificationToken, st
         token_hash=_hash_token(raw_token),
         expires_at=timezone.now()
         + timedelta(minutes=settings.EMAIL_TOKEN_EXPIRY_MINUTES),
+        **(extra_fields or {}),
     )
     return record, raw_token
 
@@ -85,6 +91,39 @@ def verify_token(*, user: User, purpose: str, token: str) -> EmailVerificationTo
     if record.expires_at < timezone.now():
         raise exceptions.ValidationError(
             "This code has expired. Please request a new one."
+        )
+
+    record.is_used = True
+    record.used_at = timezone.now()
+    record.save(update_fields=["is_used", "used_at", "updated_datetime"])
+    return record
+
+
+def verify_token_without_user(*, purpose: str, token: str) -> EmailVerificationToken:
+    """Same checks as verify_token, but resolves the user from the token
+    itself instead of requiring the caller to already know it.
+
+    For flows where the confirming link is the only piece of identifying
+    information available - e.g. email-change confirmation, opened from the
+    new inbox where the user may not be authenticated at all.
+    """
+
+    record = EmailVerificationToken.objects.filter(
+        token_hash=_hash_token(token), is_used=False, purpose=purpose
+    ).first()
+    if not record:
+        raise exceptions.NotFound(
+            "Invalid or expired verification link. Please request a new one."
+        )
+
+    if record.attempts >= settings.EMAIL_TOKEN_MAX_ATTEMPTS:
+        raise exceptions.ValidationError(
+            "Too many attempts. Please request a new code."
+        )
+
+    if record.expires_at < timezone.now():
+        raise exceptions.ValidationError(
+            "This link has expired. Please request a new one."
         )
 
     record.is_used = True

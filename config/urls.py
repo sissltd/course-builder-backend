@@ -52,4 +52,5 @@ urlpatterns = [
     path("api/v1/", include("api.onboarding.urls")),
     path("api/v1/", include("api.wallet.urls")),
     path("api/v1/", include("api.notification.urls")),
+    path("api/v1/", include("api.platform.urls")),
 ]

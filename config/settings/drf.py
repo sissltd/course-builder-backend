@@ -45,5 +45,9 @@ SPECTACULAR_SETTINGS = {
         "CourseStatusEnum": "api.courses.enums.CourseStatus",
         "TransactionStatusEnum": "api.wallet.enums.TransactionStatus",
         "CollaboratorRoleEnum": "api.courses.enums.CollaboratorRole",
+        # CategoryRequestStatus and ReservationStatus share identical choices
+        # (PENDING/APPROVED/REJECTED) so drf-spectacular treats them as one
+        # component; give that shared component a single explicit name.
+        "RequestStatusEnum": "api.courses.enums.CategoryRequestStatus",
     },
 }

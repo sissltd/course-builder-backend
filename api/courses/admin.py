@@ -9,7 +9,9 @@ from api.courses.models import (
     Module,
     ReviewAction,
     Topic,
+    TopicReservationRequest,
 )
+from api.courses.services import topic_service
 
 
 @admin.register(Course)
@@ -70,7 +72,43 @@ class TopicAdmin(admin.ModelAdmin):
         "category",
         "creator_price",
         "status",
+        "reserved_by",
+        "reserved_until",
         "created_datetime",
     )
     list_filter = ("status", "category")
     search_fields = ("name",)
+
+    def save_model(self, request, obj, form, change):
+        """Route edits through topic_service so admin can't bypass its rules.
+
+        A plain obj.save() here would skip update_topic()'s refresh of
+        creator_price_snapshot on courses still in the review queue - the same
+        business rule the API's PATCH endpoint enforces. Routing through the
+        service keeps admin from silently diverging from it.
+        """
+
+        if not change:
+            obj.created_by = request.user
+            obj.updated_by = request.user
+            obj.save()
+            return
+
+        topic_service.update_topic(
+            topic=obj,
+            actor=request.user,
+            data={field: form.cleaned_data[field] for field in form.changed_data},
+        )
+
+
+@admin.register(TopicReservationRequest)
+class TopicReservationRequestAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "topic",
+        "requested_by",
+        "status",
+        "created_datetime",
+    )
+    list_filter = ("status",)
+    search_fields = ("topic__name", "requested_by__email")

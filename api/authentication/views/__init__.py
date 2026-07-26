@@ -1,4 +1,7 @@
 from .auth_views import (
+    ChangeEmailConfirmView,
+    ChangeEmailRequestView,
+    ChangePasswordView,
     ForgotPasswordView,
     LoginView,
     LogoutView,
@@ -19,6 +22,9 @@ from .staff_views import (
 
 __all__ = [
     "AcceptStaffInvitationView",
+    "ChangeEmailConfirmView",
+    "ChangeEmailRequestView",
+    "ChangePasswordView",
     "ForgotPasswordView",
     "InviteStaffView",
     "LoginView",

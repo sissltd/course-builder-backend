@@ -18,6 +18,7 @@ CUSTOM_APPS = [
     "api.onboarding",
     "api.wallet",
     "shared.audit"
+    "api.platform",
 ]
 
 THIRD_PARTY_APPS = [

@@ -26,6 +26,10 @@ from .lesson_serializer import (
     LessonWriteSerializer,
 )
 from .module_serializer import ModuleSerializer, ModuleWriteSerializer
+from .topic_reservation_serializer import (
+    TopicReservationRequestCreateSerializer,
+    TopicReservationRequestSerializer,
+)
 from .topic_serializer import TopicSerializer, TopicWriteSerializer
 
 __all__ = [
@@ -51,6 +55,8 @@ __all__ = [
     "ReviewApproveSerializer",
     "ReviewRejectSerializer",
     "TopicMiniSerializer",
+    "TopicReservationRequestCreateSerializer",
+    "TopicReservationRequestSerializer",
     "TopicSerializer",
     "TopicWriteSerializer",
 ]
