@@ -6,14 +6,19 @@ from includes.helpers import DateHistoryModelMixin, UUIDPrimaryKeyModelMixin
 
 
 class TopicReservationRequest(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
-    """A creator's request to reserve a Topic against AI production (PRD BR-007).
+    """A creator's request for a brand-new Topic under a Category, reserved
+    against AI production once approved (PRD BR-007).
 
-    Mirrors CategoryRequest's shape: approving sets Topic.reserved_by/
-    reserved_until (see topic_reservation_service.approve_request); rejecting
-    just closes the request out. The Figma's Reservation page shows a
-    Pending/Approved queue with bulk Approve/Reject, which is why this is a
-    request-and-approve flow rather than the PRD text's literal description
-    of silent automatic reservation on Draft creation.
+    Mirrors CategoryRequest's shape: the creator proposes a `name` under a
+    `category`, for a Topic that doesn't exist yet (an *existing* Topic is
+    reserved automatically the moment a Draft course selects it - see
+    course_service.create_draft_course - this flow is only for a name that
+    doesn't exist yet). Approving creates the real Topic and reserves it to
+    the requester in one step (see
+    topic_reservation_service.approve_request); rejecting just closes the
+    request out, optionally with `rejection_reason` (e.g. the name already
+    matches an existing topic - that judgment is left to the reviewing
+    admin/reviewer, not automated). `topic` stays null until approval.
     """
 
     requested_by = models.ForeignKey(
@@ -21,14 +26,28 @@ class TopicReservationRequest(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
         verbose_name=_("Requested By"),
         on_delete=models.CASCADE,
         related_name="topic_reservation_requests",
-        help_text=_("Creator who requested this reservation."),
+        help_text=_("Creator who requested this topic."),
+    )
+    name = models.CharField(
+        verbose_name=_("Name"),
+        max_length=255,
+        help_text=_("Proposed name for the new topic."),
+    )
+    category = models.ForeignKey(
+        "categories.Category",
+        verbose_name=_("Category"),
+        on_delete=models.CASCADE,
+        related_name="topic_reservation_requests",
+        help_text=_("Category the proposed topic would belong to."),
     )
     topic = models.ForeignKey(
         "courses.Topic",
         verbose_name=_("Topic"),
         on_delete=models.CASCADE,
         related_name="reservation_requests",
-        help_text=_("Topic requested to be reserved."),
+        null=True,
+        blank=True,
+        help_text=_("The Topic created once this request is approved."),
     )
     status = models.CharField(
         verbose_name=_("Status"),
@@ -36,6 +55,12 @@ class TopicReservationRequest(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
         choices=ReservationStatus.choices,
         default=ReservationStatus.PENDING,
         help_text=_("Whether this request is pending, approved, or rejected."),
+    )
+    rejection_reason = models.TextField(
+        verbose_name=_("Rejection Reason"),
+        null=True,
+        blank=True,
+        help_text=_("Why the reviewer rejected this request, e.g. a duplicate name."),
     )
     reviewed_by = models.ForeignKey(
         "users.User",
@@ -61,4 +86,4 @@ class TopicReservationRequest(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
     def __str__(self):
         """Summarize the request for admin/debugging readability."""
 
-        return f"TopicReservationRequest({self.topic_id}, {self.status})"
+        return f"TopicReservationRequest({self.name}, {self.status})"

@@ -5,8 +5,9 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 
 from api.courses.enums import ReservationStatus
-from api.courses.models import TopicReservationRequest
+from api.courses.models import Topic, TopicReservationRequest
 from api.courses.tests.factories import (
+    make_category,
     make_topic,
     make_topic_reservation_request,
     make_user,
@@ -20,12 +21,12 @@ class TopicReservationRequestApiTests(APITestCase):
         self.reviewer = make_user(role=UserRole.CREATOR_REVIEWER)
         self.creator = make_user(role=UserRole.COURSE_CREATOR)
         self.other_creator = make_user(role=UserRole.COURSE_CREATOR)
-        self.topic = make_topic()
+        self.category = make_category()
 
     def test_create_requires_authentication(self):
         response = self.client.post(
             "/api/v1/topic-reservations/",
-            {"topic": str(self.topic.id)},
+            {"name": "New Topic", "category": str(self.category.id)},
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
@@ -35,45 +36,36 @@ class TopicReservationRequestApiTests(APITestCase):
 
         response = self.client.post(
             "/api/v1/topic-reservations/",
-            {"topic": str(self.topic.id)},
+            {"name": "New Topic", "category": str(self.category.id)},
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(response.data["status"], ReservationStatus.PENDING)
+        self.assertIsNone(response.data["topic"])
         self.assertTrue(
             TopicReservationRequest.objects.filter(
-                requested_by=self.creator, topic=self.topic
+                requested_by=self.creator, name="New Topic", category=self.category
             ).exists()
         )
 
-    def test_duplicate_pending_request_rejected(self):
-        make_topic_reservation_request(topic=self.topic, requested_by=self.creator)
-        self.client.force_authenticate(self.other_creator)
-
-        response = self.client.post(
-            "/api/v1/topic-reservations/",
-            {"topic": str(self.topic.id)},
-            format="json",
-        )
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-
-    def test_already_reserved_topic_rejected(self):
-        self.topic.reserved_by = self.other_creator
-        self.topic.reserved_until = timezone.localdate() + timedelta(days=10)
-        self.topic.save()
+    def test_duplicate_name_still_accepted_at_submit_time(self):
+        # No automatic duplicate check - it's the reviewer's call.
+        make_topic(category=self.category, name="Existing Topic")
         self.client.force_authenticate(self.creator)
 
         response = self.client.post(
             "/api/v1/topic-reservations/",
-            {"topic": str(self.topic.id)},
+            {"name": "Existing Topic", "category": str(self.category.id)},
             format="json",
         )
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
     def test_creator_lists_only_own_requests(self):
-        make_topic_reservation_request(topic=self.topic, requested_by=self.creator)
         make_topic_reservation_request(
-            topic=make_topic(), requested_by=self.other_creator
+            requested_by=self.creator, category=self.category
+        )
+        make_topic_reservation_request(
+            requested_by=self.other_creator, category=self.category
         )
         self.client.force_authenticate(self.creator)
 
@@ -81,9 +73,11 @@ class TopicReservationRequestApiTests(APITestCase):
         self.assertEqual(len(response.data["data"]["results"]), 1)
 
     def test_admin_lists_all_requests(self):
-        make_topic_reservation_request(topic=self.topic, requested_by=self.creator)
         make_topic_reservation_request(
-            topic=make_topic(), requested_by=self.other_creator
+            requested_by=self.creator, category=self.category
+        )
+        make_topic_reservation_request(
+            requested_by=self.other_creator, category=self.category
         )
         self.client.force_authenticate(self.admin)
 
@@ -92,7 +86,7 @@ class TopicReservationRequestApiTests(APITestCase):
 
     def test_creator_cannot_approve(self):
         request = make_topic_reservation_request(
-            topic=self.topic, requested_by=self.creator
+            requested_by=self.creator, category=self.category
         )
         self.client.force_authenticate(self.creator)
 
@@ -101,9 +95,9 @@ class TopicReservationRequestApiTests(APITestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
-    def test_admin_approve_reserves_topic(self):
+    def test_admin_approve_creates_and_reserves_topic(self):
         request = make_topic_reservation_request(
-            topic=self.topic, requested_by=self.creator
+            requested_by=self.creator, category=self.category, name="New Topic"
         )
         self.client.force_authenticate(self.admin)
 
@@ -112,27 +106,55 @@ class TopicReservationRequestApiTests(APITestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["status"], ReservationStatus.APPROVED)
+        self.assertIsNotNone(response.data["topic"])
 
-        self.topic.refresh_from_db()
-        self.assertEqual(self.topic.reserved_by_id, self.creator.id)
-        self.assertTrue(self.topic.is_currently_reserved)
+        topic = Topic.objects.get(name="New Topic", category=self.category)
+        self.assertEqual(topic.reserved_by_id, self.creator.id)
+        self.assertTrue(topic.is_currently_reserved)
         self.assertEqual(
-            self.topic.reserved_until, timezone.localdate() + timedelta(days=30)
+            topic.reserved_until, timezone.localdate() + timedelta(days=30)
         )
 
-    def test_reviewer_can_reject(self):
+    def test_admin_approve_rejects_duplicate_name_in_category(self):
+        make_topic(category=self.category, name="Existing Topic")
         request = make_topic_reservation_request(
-            topic=self.topic, requested_by=self.creator
+            requested_by=self.creator, category=self.category, name="Existing Topic"
+        )
+        self.client.force_authenticate(self.admin)
+
+        response = self.client.post(
+            f"/api/v1/topic-reservations/{request.id}/approve/"
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_reviewer_can_reject_with_reason(self):
+        request = make_topic_reservation_request(
+            requested_by=self.creator, category=self.category
         )
         self.client.force_authenticate(self.reviewer)
 
         response = self.client.post(
-            f"/api/v1/topic-reservations/{request.id}/reject/"
+            f"/api/v1/topic-reservations/{request.id}/reject/",
+            {"reason": "This topic already exists in our database."},
+            format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["status"], ReservationStatus.REJECTED)
-        self.topic.refresh_from_db()
-        self.assertFalse(self.topic.is_currently_reserved)
+        self.assertEqual(
+            response.data["rejection_reason"],
+            "This topic already exists in our database.",
+        )
+        self.assertIsNone(response.data["topic"])
+
+
+class ExistingTopicReservationApiTests(APITestCase):
+    """Reserving an existing topic happens via course creation, not this
+    viewset - see course_service.create_draft_course."""
+
+    def setUp(self):
+        self.admin = make_user(role=UserRole.ADMIN)
+        self.creator = make_user(role=UserRole.COURSE_CREATOR)
+        self.topic = make_topic()
 
     def test_release_reservation(self):
         self.topic.reserved_by = self.creator
