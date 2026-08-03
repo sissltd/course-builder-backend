@@ -3,7 +3,7 @@ from django.contrib.auth.models import AbstractUser
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
-from api.users.enums import Sex, UserRole
+from api.users.enums import AccountStatus, Sex, UserRole
 from api.users.models.manager import CustomUserManager
 from core.mixins import (
     DateHistoryModelMixin,
@@ -33,6 +33,31 @@ class User(
         choices=UserRole.choices,
         default=UserRole.COURSE_CREATOR,
         help_text=_("Primary role used for role-based permission checks."),
+    )
+    status = models.CharField(
+        verbose_name=_("Account Status"),
+        max_length=25,
+        choices=AccountStatus.choices,
+        default=AccountStatus.PENDING_VERIFICATION,
+        help_text=_(
+            "Account activation/lifecycle status, independent of role."
+        ),
+    )
+    failed_login_attempts = models.PositiveIntegerField(
+        verbose_name=_("Failed Login Attempts"),
+        default=0,
+        help_text=_(
+            "Consecutive failed login attempts since the last successful login."
+        ),
+    )
+    locked_until = models.DateTimeField(
+        verbose_name=_("Locked Until"),
+        null=True,
+        blank=True,
+        help_text=_(
+            "Account is locked from logging in until this time, set after "
+            "repeated failed login attempts. Null means not locked."
+        ),
     )
     country = models.CharField(
         verbose_name=_("Country"),

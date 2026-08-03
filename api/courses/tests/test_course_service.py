@@ -1,7 +1,7 @@
 from decimal import Decimal
 
 from django.test import TestCase
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import PermissionDenied, ValidationError
 
 from api.categories.enums import CategoryStatus
 from api.courses.enums import CourseStatus
@@ -14,6 +14,7 @@ from api.courses.tests.factories import (
     make_user,
 )
 from api.notification.models import Notification
+from api.users.enums import UserRole
 
 
 class CreateDraftCourseTests(TestCase):
@@ -76,6 +77,73 @@ class CreateDraftCourseTests(TestCase):
 
         self.assertEqual(course.topic_id, topic.id)
 
+    def test_selecting_a_topic_reserves_it_for_the_creator(self):
+        creator = make_user()
+        category = make_category()
+        topic = make_topic(category=category)
+
+        course_service.create_draft_course(
+            creator=creator,
+            category=category,
+            topic=topic,
+            title="X",
+            description="d",
+            terms_accepted=True,
+        )
+
+        topic.refresh_from_db()
+        self.assertEqual(topic.reserved_by_id, creator.id)
+        self.assertIsNotNone(topic.reserved_until)
+        self.assertTrue(topic.is_currently_reserved)
+
+    def test_raises_when_topic_reserved_by_someone_else(self):
+        creator = make_user()
+        other_creator = make_user()
+        category = make_category()
+        topic = make_topic(category=category)
+        course_service.create_draft_course(
+            creator=other_creator,
+            category=category,
+            topic=topic,
+            title="First",
+            description="d",
+            terms_accepted=True,
+        )
+
+        with self.assertRaises(ValidationError):
+            course_service.create_draft_course(
+                creator=creator,
+                category=category,
+                topic=topic,
+                title="Second",
+                description="d",
+                terms_accepted=True,
+            )
+
+    def test_creating_a_second_draft_with_own_reserved_topic_succeeds(self):
+        creator = make_user()
+        category = make_category()
+        topic = make_topic(category=category)
+        course_service.create_draft_course(
+            creator=creator,
+            category=category,
+            topic=topic,
+            title="First",
+            description="d",
+            terms_accepted=True,
+        )
+
+        course = course_service.create_draft_course(
+            creator=creator,
+            category=category,
+            topic=topic,
+            title="Second",
+            description="d",
+            terms_accepted=True,
+        )
+
+        self.assertEqual(course.topic_id, topic.id)
+
     def test_raises_when_topic_does_not_belong_to_category(self):
         creator = make_user()
         category = make_category()
@@ -87,6 +155,19 @@ class CreateDraftCourseTests(TestCase):
                 creator=creator,
                 category=category,
                 topic=topic,
+                title="X",
+                description="d",
+                terms_accepted=True,
+            )
+
+    def test_wrong_role_cannot_create(self):
+        creator = make_user(role=UserRole.CREATOR_REVIEWER)
+        category = make_category()
+
+        with self.assertRaises(PermissionDenied):
+            course_service.create_draft_course(
+                creator=creator,
+                category=category,
                 title="X",
                 description="d",
                 terms_accepted=True,
@@ -117,6 +198,14 @@ class SubmitCourseTests(TestCase):
 
         with self.assertRaises(ValidationError):
             course_service.submit_course(course=course, actor=other)
+
+    def test_wrong_role_cannot_submit(self):
+        course = build_compliant_course()
+        course.creator.role = UserRole.CREATOR_REVIEWER
+        course.creator.save(update_fields=["role"])
+
+        with self.assertRaises(PermissionDenied):
+            course_service.submit_course(course=course, actor=course.creator)
 
     def test_raises_when_status_not_draft(self):
         course = build_compliant_course()
@@ -177,7 +266,7 @@ class ClaimForReviewTests(TestCase):
     def test_transitions_submitted_to_in_review(self):
         course = build_compliant_course()
         course_service.submit_course(course=course, actor=course.creator)
-        reviewer = make_user()
+        reviewer = make_user(role=UserRole.CREATOR_REVIEWER)
 
         result = course_service.claim_for_review(course=course, reviewer=reviewer)
         self.assertEqual(result.status, CourseStatus.IN_REVIEW)
@@ -185,7 +274,7 @@ class ClaimForReviewTests(TestCase):
     def test_idempotent_when_already_in_review(self):
         course = build_compliant_course()
         course_service.submit_course(course=course, actor=course.creator)
-        reviewer = make_user()
+        reviewer = make_user(role=UserRole.CREATOR_REVIEWER)
         course_service.claim_for_review(course=course, reviewer=reviewer)
 
         result = course_service.claim_for_review(course=course, reviewer=reviewer)
@@ -193,25 +282,42 @@ class ClaimForReviewTests(TestCase):
 
     def test_raises_for_other_statuses(self):
         course = build_compliant_course()  # still Draft
-        reviewer = make_user()
+        reviewer = make_user(role=UserRole.CREATOR_REVIEWER)
 
         with self.assertRaises(ValidationError):
             course_service.claim_for_review(course=course, reviewer=reviewer)
+
+    def test_wrong_role_cannot_claim(self):
+        course = build_compliant_course()
+        course_service.submit_course(course=course, actor=course.creator)
+        wrong_role_reviewer = make_user(role=UserRole.COURSE_CREATOR)
+
+        with self.assertRaises(PermissionDenied):
+            course_service.claim_for_review(course=course, reviewer=wrong_role_reviewer)
 
 
 class PublishCourseTests(TestCase):
     def test_raises_when_not_approved(self):
         course = build_compliant_course()
+        admin = make_user(role=UserRole.ADMIN)
 
         with self.assertRaises(ValidationError):
-            course_service.publish_course(course=course, actor=course.creator)
+            course_service.publish_course(course=course, actor=admin)
 
     def test_happy_path(self):
         course = build_compliant_course()
         course.status = CourseStatus.APPROVED
         course.save()
-        admin = make_user()
+        admin = make_user(role=UserRole.ADMIN)
 
         result = course_service.publish_course(course=course, actor=admin)
         self.assertEqual(result.status, CourseStatus.PUBLISHED)
         self.assertIsNotNone(result.published_at)
+
+    def test_wrong_role_cannot_publish(self):
+        course = build_compliant_course()
+        course.status = CourseStatus.APPROVED
+        course.save()
+
+        with self.assertRaises(PermissionDenied):
+            course_service.publish_course(course=course, actor=course.creator)

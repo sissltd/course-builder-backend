@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 from django.db import transaction
 from django.db.models import QuerySet
 from django.utils import timezone
@@ -10,8 +12,15 @@ from api.courses.enums import CourseStatus
 from api.courses.models import Course, Topic
 from api.courses.services import course_validation_service
 from api.notification.models import Notification
+from api.platform.services import platform_settings_service
 from api.users.enums import UserActivityActionEnums, UserActivityCategoryEnums
 from api.users.models import User
+from api.users.permissions import (
+    IsAdminRole,
+    IsCourseCreatorRole,
+    IsCreatorReviewerRole,
+    require_role,
+)
 from api.users.services import reviewer_availability_service
 
 DRAFT_EDITABLE_FIELDS = {
@@ -57,11 +66,20 @@ def create_draft_course(
     """Create a new Draft course owned by `creator`.
 
     Raises ValidationError if terms_accepted is False (BR-005), the category
-    is not currently accepting submissions, or topic doesn't belong to
-    category. Does not snapshot the category/topic price yet - that happens
-    at submit time, see submit_course().
+    is not currently accepting submissions, topic doesn't belong to category,
+    or topic is currently reserved by someone else. Does not snapshot the
+    category/topic price yet - that happens at submit time, see
+    submit_course().
+
+    Selecting an available topic reserves it for `creator` immediately (PRD
+    5.2's "Select category/topic -> Start Draft -> Topic automatically
+    reserved" flow), using the same expiry window as an approved
+    TopicReservationRequest. This is separate from - and does not require -
+    the request/approve flow in topic_reservation_service, which exists for
+    requesting a brand-new topic that doesn't exist yet.
     """
 
+    require_role(creator, IsCourseCreatorRole.allowed_roles)
     if not terms_accepted:
         raise exceptions.ValidationError(
             "You must accept the category Terms and Conditions to create a course."
@@ -71,25 +89,42 @@ def create_draft_course(
             "This category is not currently accepting new courses."
         )
     _validate_topic_matches_category(topic=topic, category=category)
+    if (
+        topic is not None
+        and topic.is_currently_reserved
+        and topic.reserved_by_id != creator.id
+    ):
+        raise exceptions.ValidationError("This topic is currently reserved.")
 
-    return Course.objects.create(
-        creator=creator,
-        category=category,
-        topic=topic,
-        title=title,
-        description=description,
-        preview_video_url=preview_video_url,
-        thumbnail_url=thumbnail_url,
-        difficulty_level=difficulty_level,
-        learning_objectives=learning_objectives or [],
-        tags=tags or [],
-        planned_duration_seconds=duration_hours * 3600
-        + duration_minutes * 60
-        + duration_seconds,
-        terms_accepted_at=timezone.now(),
-        created_by=creator,
-        updated_by=creator,
-    )
+    with transaction.atomic():
+        course = Course.objects.create(
+            creator=creator,
+            category=category,
+            topic=topic,
+            title=title,
+            description=description,
+            preview_video_url=preview_video_url,
+            thumbnail_url=thumbnail_url,
+            difficulty_level=difficulty_level,
+            learning_objectives=learning_objectives or [],
+            tags=tags or [],
+            planned_duration_seconds=duration_hours * 3600
+            + duration_minutes * 60
+            + duration_seconds,
+            terms_accepted_at=timezone.now(),
+            created_by=creator,
+            updated_by=creator,
+        )
+
+        if topic is not None and not topic.is_currently_reserved:
+            expiry_days = (
+                platform_settings_service.get_settings().topic_reservation_expiry_days
+            )
+            topic.reserved_by = creator
+            topic.reserved_until = timezone.localdate() + timedelta(days=expiry_days)
+            topic.save(update_fields=["reserved_by", "reserved_until", "updated_datetime"])
+
+    return course
 
 
 def update_draft_course(*, course: Course, actor: User, data: dict) -> Course:
@@ -135,6 +170,7 @@ def submit_course(*, course: Course, actor: User) -> Course:
       draft creation.
     """
 
+    require_role(actor, IsCourseCreatorRole.allowed_roles + IsAdminRole.allowed_roles)
     if course.creator_id != actor.id:
         raise exceptions.ValidationError(
             "Only the course creator can submit this course."
@@ -194,6 +230,9 @@ def claim_for_review(*, course: Course, reviewer: User) -> Course:
     works even if they've since gone Unavailable).
     """
 
+    require_role(
+        reviewer, IsCreatorReviewerRole.allowed_roles + IsAdminRole.allowed_roles
+    )
     if course.status == CourseStatus.IN_REVIEW:
         return course
     if course.status != CourseStatus.SUBMITTED:
@@ -218,6 +257,7 @@ def publish_course(*, course: Course, actor: User) -> Course:
     """Transition an Approved course to Published (Admin-only, enforced by view
     permission). No external LMS push - deferred until LMS integration exists."""
 
+    require_role(actor, IsAdminRole.allowed_roles)
     if course.status != CourseStatus.APPROVED:
         raise exceptions.ValidationError(
             f"Course cannot be published from status '{course.status}'."

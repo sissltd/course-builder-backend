@@ -8,6 +8,7 @@ from api.courses.models import Course, ReviewAction
 from api.notification.models import Notification
 from api.users.enums import UserActivityActionEnums, UserActivityCategoryEnums
 from api.users.models import User
+from api.users.permissions import IsAdminRole, IsCreatorReviewerRole, require_role
 from api.users.services import reviewer_availability_service
 from api.wallet.services import wallet_service
 
@@ -27,6 +28,9 @@ def approve_course(
     transaction so a failure partway through leaves nothing half-applied.
     """
 
+    require_role(
+        reviewer, IsCreatorReviewerRole.allowed_roles + IsAdminRole.allowed_roles
+    )
     if course.status not in REVIEWABLE_STATUSES:
         raise exceptions.ValidationError(
             f"Course cannot be approved from status '{course.status}'."
@@ -81,6 +85,9 @@ def reject_course(*, course: Course, reviewer: User, feedback: dict) -> ReviewAc
     record and Course.rejected_at). Notifies the creator with the feedback.
     """
 
+    require_role(
+        reviewer, IsCreatorReviewerRole.allowed_roles + IsAdminRole.allowed_roles
+    )
     if not (feedback or {}).get("summary"):
         raise exceptions.ValidationError(
             {"feedback": "A summary is required when rejecting a course."}

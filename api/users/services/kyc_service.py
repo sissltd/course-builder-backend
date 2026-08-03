@@ -10,7 +10,7 @@ from api.users.enums import (
     UserActivityCategoryEnums,
 )
 from api.users.models import KYCVerification, User
-from api.users.permissions import IsAdminOrSuperAdminRole
+from api.users.permissions import IsAdminOrSuperAdminRole, require_role
 
 REVIEWABLE_STATUSES = (KYCStatus.PENDING,)
 
@@ -89,6 +89,7 @@ def approve_verification(
     activity, mirroring review_service.approve_course.
     """
 
+    require_role(reviewer, IsAdminOrSuperAdminRole.allowed_roles)
     if verification.status not in REVIEWABLE_STATUSES:
         raise exceptions.ValidationError(
             f"Submission cannot be approved from status '{verification.status}'."
@@ -129,6 +130,7 @@ def reject_verification(
     resubmit - see submit_verification) and logs the reviewer's activity.
     """
 
+    require_role(reviewer, IsAdminOrSuperAdminRole.allowed_roles)
     if not rejection_reason:
         raise exceptions.ValidationError(
             {"rejection_reason": "A rejection reason is required."}

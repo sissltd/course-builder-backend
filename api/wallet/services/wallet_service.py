@@ -12,6 +12,7 @@ from api.courses.models import Course
 from api.notification.models import Notification
 from api.platform.services import platform_settings_service
 from api.users.models import User
+from api.users.permissions import IsCourseCreatorRole, require_role
 from api.users.services import kyc_service
 from api.wallet.enums import (
     TransactionStatus,
@@ -117,6 +118,7 @@ def create_payout_account(
     account demotes any previous default.
     """
 
+    require_role(user, IsCourseCreatorRole.allowed_roles)
     has_existing = PayoutAccount.objects.filter(user=user).exists()
     is_default = is_default or not has_existing
 
@@ -141,6 +143,7 @@ def delete_payout_account(*, user: User, payout_account_id) -> None:
     Raises NotFound if it doesn't exist or belongs to someone else.
     """
 
+    require_role(user, IsCourseCreatorRole.allowed_roles)
     account = PayoutAccount.objects.filter(user=user, pk=payout_account_id).first()
     if account is None:
         raise exceptions.NotFound("Payout account not found.")
@@ -159,6 +162,7 @@ def request_withdrawal(
     amount is below the minimum threshold, or exceeds the current balance.
     """
 
+    require_role(user, IsCourseCreatorRole.allowed_roles)
     kyc_service.require_verified(user=user)
 
     minimum_withdrawal_threshold = (
@@ -215,6 +219,7 @@ def confirm_withdrawal(*, user: User, withdrawal_request_id, code: str) -> Trans
     doesn't exist, isn't the caller's, or isn't awaiting confirmation.
     """
 
+    require_role(user, IsCourseCreatorRole.allowed_roles)
     withdrawal_request = WithdrawalRequest.objects.filter(
         pk=withdrawal_request_id,
         user=user,

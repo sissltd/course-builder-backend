@@ -5,10 +5,11 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.utils import timezone
 from rest_framework import status
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.test import APITestCase
 
 from api.users.enums import (
+    AccountStatus,
     KYCStatus,
     UnavailabilityReason,
     UserActivityActionEnums,
@@ -53,6 +54,29 @@ class UserRoleTests(TestCase):
                 role=role,
             )
             self.assertEqual(user.role, role)
+
+
+class UserAccountStatusTests(TestCase):
+    def test_default_status_is_pending_verification(self):
+        user = _make_user()
+
+        self.assertEqual(user.status, AccountStatus.PENDING_VERIFICATION)
+
+    def test_default_failed_login_attempts_is_zero(self):
+        user = _make_user()
+
+        self.assertEqual(user.failed_login_attempts, 0)
+
+    def test_status_field_accepts_all_enum_choices(self):
+        for index, account_status in enumerate(AccountStatus.values):
+            user = User.objects.create_user(
+                email=f"status{index}@example.com",
+                password="testpass123",
+                first_name="Test",
+                last_name="User",
+                status=account_status,
+            )
+            self.assertEqual(user.status, account_status)
 
 
 class ReviewerAvailabilityServiceTests(TestCase):
@@ -297,6 +321,38 @@ class KYCServiceTests(TestCase):
 
         with self.assertRaises(ValidationError):
             kyc_service.require_verified(user=user)
+
+    def test_wrong_role_cannot_approve(self):
+        applicant = _make_user()
+        verification = kyc_service.submit_verification(
+            user=applicant,
+            country_of_issue="NG",
+            document_type="NATIONAL_ID",
+            id_number="12345",
+        )
+        wrong_role_reviewer = _make_user(role=UserRole.COURSE_CREATOR)
+
+        with self.assertRaises(PermissionDenied):
+            kyc_service.approve_verification(
+                verification=verification, reviewer=wrong_role_reviewer
+            )
+
+    def test_wrong_role_cannot_reject(self):
+        applicant = _make_user()
+        verification = kyc_service.submit_verification(
+            user=applicant,
+            country_of_issue="NG",
+            document_type="NATIONAL_ID",
+            id_number="12345",
+        )
+        wrong_role_reviewer = _make_user(role=UserRole.CREATOR_REVIEWER)
+
+        with self.assertRaises(PermissionDenied):
+            kyc_service.reject_verification(
+                verification=verification,
+                reviewer=wrong_role_reviewer,
+                rejection_reason="Blurry document.",
+            )
 
     def test_admin_who_opted_out_is_not_notified(self):
         subscribed_admin = _make_user(role=UserRole.ADMIN)

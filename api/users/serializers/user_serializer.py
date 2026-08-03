@@ -23,7 +23,9 @@ class MeSerializer(serializers.ModelSerializer):
             "terms_accepted_at",
             "role",
             "is_active",
+            "status",
             "created_datetime",
+            "updated_datetime",
             "has_completed_onboarding",
         ]
         read_only_fields = fields
