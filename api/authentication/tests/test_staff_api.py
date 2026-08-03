@@ -15,7 +15,7 @@ from rest_framework.test import APITestCase
 from api.authentication.enums import TokenPurpose
 from api.authentication.models import EmailVerificationToken
 from api.authentication.tests.factories import make_user, make_verification_token
-from api.users.enums import UserActivityActionEnums, UserRole
+from api.users.enums import AccountStatus, UserActivityActionEnums, UserRole
 from api.users.models import User, UserActivityLog
 
 BOOTSTRAP_URL = "/api/v1/auth/superadmin/bootstrap/"
@@ -57,6 +57,7 @@ class SuperAdminBootstrapApiTests(APITestCase):
         self.assertTrue(user.is_staff)
         self.assertTrue(user.is_superuser)
         self.assertTrue(user.check_password("StrongPass123!"))
+        self.assertEqual(user.status, AccountStatus.ACTIVE)
 
     def test_bootstrapped_super_admin_can_log_in(self):
         self.client.post(BOOTSTRAP_URL, VALID_BOOTSTRAP_PAYLOAD, format="json")
@@ -171,7 +172,13 @@ class InviteStaffApiTests(APITestCase):
         self.client.force_authenticate(self.super_admin)
 
         for index, role in enumerate(
-            [UserRole.STAFF_WRITER, UserRole.STAFF_VERIFIER, UserRole.STAFF_APPROVER]
+            [
+                UserRole.STAFF_WRITER,
+                UserRole.STAFF_VERIFIER,
+                UserRole.STAFF_APPROVER,
+                UserRole.AI_REVIEWER,
+                UserRole.QA_REVIEWER,
+            ]
         ):
             with self.subTest(role=role):
                 email = f"staff{index}@example.com"
@@ -343,6 +350,7 @@ class AcceptStaffInvitationApiTests(APITestCase):
         self.assertTrue(self.invitee.is_active)
         self.assertTrue(self.invitee.check_password("StrongPass123!"))
         self.assertEqual(self.invitee.role, UserRole.STAFF_WRITER)
+        self.assertEqual(self.invitee.status, AccountStatus.ACTIVE)
 
     def test_accepted_staff_can_log_in(self):
         self.client.post(ACCEPT_URL, self.payload, format="json")
@@ -506,6 +514,7 @@ class RevokeStaffApiTests(APITestCase):
         self.assertEqual(response.data["staff"]["invitation_status"], "REVOKED")
         self.staff.refresh_from_db()
         self.assertFalse(self.staff.is_active)
+        self.assertEqual(self.staff.status, AccountStatus.DEACTIVATED)
 
     def test_revoked_staff_cannot_log_in(self):
         self.client.post(revoke_url(self.staff))
@@ -642,6 +651,7 @@ class ReactivateStaffApiTests(APITestCase):
         self.staff.refresh_from_db()
         self.assertTrue(self.staff.is_active)
         self.assertEqual(self.staff.role, UserRole.STAFF_WRITER)
+        self.assertEqual(self.staff.status, AccountStatus.ACTIVE)
 
     def test_reactivated_staff_can_log_in_again(self):
         self.client.post(revoke_url(self.staff))

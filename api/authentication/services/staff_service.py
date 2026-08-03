@@ -12,7 +12,12 @@ from api.authentication.models import EmailVerificationToken
 from api.authentication.services import activity_service, token_service
 from api.authentication.utils.links import build_verification_link
 from api.notification.models import Notification
-from api.users.enums import STAFF_ROLES, UserActivityActionEnums, UserRole
+from api.users.enums import (
+    AccountStatus,
+    STAFF_ROLES,
+    UserActivityActionEnums,
+    UserRole,
+)
 
 User = get_user_model()
 
@@ -110,6 +115,7 @@ class StaffService:
                     # Active immediately: there is no one to verify this account
                     # for it, and the env secret already proved server access.
                     is_active=True,
+                    status=AccountStatus.ACTIVE,
                     # Django-level flags kept in step with the app role so the
                     # Super Admin can also reach /admin/.
                     is_staff=True,
@@ -236,7 +242,8 @@ class StaffService:
         with transaction.atomic():
             user.set_password(password)
             user.is_active = True
-            user.save(update_fields=["password", "is_active"])
+            user.status = AccountStatus.ACTIVE
+            user.save(update_fields=["password", "is_active", "status"])
             activity_service.log_auth_activity(
                 user=user,
                 action=UserActivityActionEnums.STAFF_INVITATION_ACCEPTED,
@@ -288,7 +295,8 @@ class StaffService:
 
         with transaction.atomic():
             staff.is_active = False
-            staff.save(update_fields=["is_active"])
+            staff.status = AccountStatus.DEACTIVATED
+            staff.save(update_fields=["is_active", "status"])
             token_service.invalidate_tokens(
                 user=staff, purpose=TokenPurpose.STAFF_INVITATION
             )
@@ -323,7 +331,8 @@ class StaffService:
 
         with transaction.atomic():
             staff.is_active = True
-            staff.save(update_fields=["is_active"])
+            staff.status = AccountStatus.ACTIVE
+            staff.save(update_fields=["is_active", "status"])
             activity_service.log_auth_activity(
                 user=actor,
                 action=UserActivityActionEnums.STAFF_REACTIVATED,

@@ -15,6 +15,7 @@ from .staff_invitation_serializer import (
     StaffMemberSerializer,
 )
 from .superadmin_bootstrap_serializer import SuperAdminBootstrapSerializer
+from .token_refresh_serializer import TokenRefreshSerializer
 from .verify_email_serializer import VerifyEmailSerializer
 
 __all__ = [
@@ -31,5 +32,6 @@ __all__ = [
     "StaffInvitationSerializer",
     "StaffMemberSerializer",
     "SuperAdminBootstrapSerializer",
+    "TokenRefreshSerializer",
     "VerifyEmailSerializer",
 ]
