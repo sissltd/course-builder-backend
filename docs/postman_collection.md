@@ -62,12 +62,12 @@ Auth: AllowAny. Creates an inactive user (role always forced to `COURSE_CREATOR`
 
 **Body**
 ```json
-{ "email": "creator@example.com", "password": "StrongPass123!", "first_name": "Ada", "last_name": "Lovelace" }
+{ "email": "creator@example.com", "password": "StrongPass123!", "password_confirm": "StrongPass123!", "first_name": "Ada", "last_name": "Lovelace" }
 ```
 
 **201 Created**
 ```json
-{ "id": "...", "email": "creator@example.com", "first_name": "Ada", "last_name": "Lovelace", "role": "COURSE_CREATOR", "is_active": false, "created_datetime": "2026-07-12T12:00:00Z", "has_completed_onboarding": false }
+{ "id": "...", "email": "creator@example.com", "first_name": "Ada", "last_name": "Lovelace", "role": "COURSE_CREATOR", "is_active": false, "status": "PENDING_VERIFICATION", "created_datetime": "2026-07-12T12:00:00Z", "updated_datetime": "2026-07-12T12:00:00Z", "has_completed_onboarding": false }
 ```
 
 **400 Bad Request** (duplicate email)
