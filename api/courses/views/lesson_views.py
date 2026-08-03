@@ -1,13 +1,259 @@
+from drf_spectacular.utils import (
+    OpenApiExample,
+    OpenApiParameter,
+    OpenApiResponse,
+    extend_schema,
+    extend_schema_view,
+)
 from rest_framework import exceptions
 from rest_framework.viewsets import ModelViewSet
 
+from api.collaborators.services import collaborator_service
 from api.courses.enums import CourseStatus
 from api.courses.models import Lesson, Module
 from api.courses.serializers import LessonSerializer, LessonWriteSerializer
-from api.courses.services import collaborator_service
 from api.users.permissions import IsCourseCreatorRole
+from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
+
+_LESSON_EXAMPLE = {
+    "id": "c3d4e5f6-a7b8-4c9d-0e1f-2a3b4c5d6e7f",
+    "title": "Variables and Data Types",
+    "order": 1,
+    "script": "In this lesson we cover Python's core data types...",
+    "learning_objectives": ["Identify Python's built-in data types"],
+    "duration_minutes": 15,
+    "assessment": None,
+}
+
+_PATH_PARAMETERS = [
+    OpenApiParameter(
+        name="course_pk",
+        type=str,
+        location=OpenApiParameter.PATH,
+        description="UUID of the parent course.",
+    ),
+    OpenApiParameter(
+        name="module_pk",
+        type=str,
+        location=OpenApiParameter.PATH,
+        description="UUID of the parent module.",
+    ),
+]
+
+_DRAFT_ONLY_400 = OpenApiResponse(
+    description="The parent course is not Draft.",
+    examples=[
+        OpenApiExample(
+            name="Course not editable",
+            value={
+                "errors": [
+                    {
+                        "type": "validation_error",
+                        "code": "invalid",
+                        "message": "Lessons can only be edited while the course is Draft.",
+                        "field_name": None,
+                    }
+                ]
+            },
+        ),
+    ],
+)
 
 
+@extend_schema_view(
+    list=extend_schema(
+        summary="List a module's lessons",
+        description=(
+            "Returns every lesson in the module, each with its assessment "
+            "nested inline if one is set.\n\n"
+            "Called when expanding a module in the course builder.\n\n"
+            "**Auth:** Course Creator/Writer with access to the course.\n\n"
+            "**Prerequisites:** None beyond having access to the course.\n\n"
+            "**Important:** Like ModuleViewSet, `list` never 404s on a "
+            "module the caller can't reach - it returns an empty result "
+            "set instead."
+        ),
+        tags=["Courses — Lessons"],
+        parameters=_PATH_PARAMETERS,
+        responses={
+            200: OpenApiResponse(
+                response=LessonSerializer(many=True),
+                description="Lessons, in whatever order the queryset returns them.",
+                examples=[OpenApiExample(name="Success", value=[_LESSON_EXAMPLE])],
+            ),
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    ),
+    retrieve=extend_schema(
+        summary="Retrieve a lesson",
+        description=(
+            "Returns a single lesson with its assessment.\n\n"
+            "Called when opening a lesson in the course builder.\n\n"
+            "**Auth:** Course Creator/Writer with access to the course.\n\n"
+            "**Prerequisites:** The lesson must exist under the given "
+            "module.\n\n"
+            "**Important:** None."
+        ),
+        tags=["Courses — Lessons"],
+        parameters=_PATH_PARAMETERS,
+        responses={
+            200: OpenApiResponse(
+                response=LessonSerializer,
+                description="The requested lesson.",
+                examples=[OpenApiExample(name="Success", value=_LESSON_EXAMPLE)],
+            ),
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
+            **STANDARD_ERROR_RESPONSES["not_found"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    ),
+    create=extend_schema(
+        summary="Add a lesson to a module",
+        description=(
+            "Creates a new lesson on a module belonging to a Draft course. "
+            "`id` comes back in the response so the client can immediately "
+            "set the lesson's assessment without a second round-trip.\n\n"
+            "Called from the 'Add lesson' action in the course builder.\n\n"
+            "**Auth:** Course Creator/Writer with access to the course.\n\n"
+            "**Prerequisites:** The parent course must be `DRAFT`.\n\n"
+            "**Important:** `learning_objectives` is only validated for "
+            "shape here (a list of non-empty strings) - the 2-5 "
+            "count-per-lesson rule is enforced later, at submit time."
+        ),
+        tags=["Courses — Lessons"],
+        parameters=_PATH_PARAMETERS,
+        request=LessonWriteSerializer,
+        examples=[
+            OpenApiExample(
+                name="Sample Request",
+                request_only=True,
+                value={
+                    "title": "Variables and Data Types",
+                    "order": 1,
+                    "script": "In this lesson we cover Python's core data types...",
+                    "learning_objectives": ["Identify Python's built-in data types"],
+                    "duration_minutes": 15,
+                },
+            ),
+        ],
+        responses={
+            201: OpenApiResponse(
+                response=LessonWriteSerializer,
+                description="Lesson created.",
+                examples=[OpenApiExample(name="Success", value=_LESSON_EXAMPLE)],
+            ),
+            400: _DRAFT_ONLY_400,
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
+            **STANDARD_ERROR_RESPONSES["not_found"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    ),
+    update=extend_schema(
+        summary="Replace a lesson",
+        description=(
+            "Overwrites a lesson's fields. Send the full object.\n\n"
+            "Called from the lesson edit form.\n\n"
+            "**Auth:** Course Creator/Writer with access to the course.\n\n"
+            "**Prerequisites:** The parent course must be `DRAFT`.\n\n"
+            "**Important:** None."
+        ),
+        tags=["Courses — Lessons"],
+        parameters=_PATH_PARAMETERS,
+        request=LessonWriteSerializer,
+        responses={
+            200: OpenApiResponse(
+                response=LessonWriteSerializer,
+                description="Lesson updated.",
+                examples=[OpenApiExample(name="Success", value=_LESSON_EXAMPLE)],
+            ),
+            400: _DRAFT_ONLY_400,
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
+            **STANDARD_ERROR_RESPONSES["not_found"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    ),
+    partial_update=extend_schema(
+        summary="Update a lesson",
+        description=(
+            "Updates only the fields supplied, e.g. editing a lesson's "
+            "`script` without touching anything else.\n\n"
+            "Called from the lesson edit form and drag-to-reorder in the "
+            "course builder.\n\n"
+            "**Auth:** Course Creator/Writer with access to the course.\n\n"
+            "**Prerequisites:** The parent course must be `DRAFT`.\n\n"
+            "**Important:** None."
+        ),
+        tags=["Courses — Lessons"],
+        parameters=_PATH_PARAMETERS,
+        request=LessonWriteSerializer,
+        examples=[
+            OpenApiExample(
+                name="Reorder",
+                request_only=True,
+                value={"order": 2},
+            ),
+        ],
+        responses={
+            200: OpenApiResponse(
+                response=LessonWriteSerializer,
+                description="Lesson updated.",
+                examples=[OpenApiExample(name="Success", value=_LESSON_EXAMPLE)],
+            ),
+            400: _DRAFT_ONLY_400,
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
+            **STANDARD_ERROR_RESPONSES["not_found"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    ),
+    destroy=extend_schema(
+        summary="Delete a lesson",
+        description=(
+            "Deletes a lesson and cascades to its assessment. There is no "
+            "undo.\n\n"
+            "Called from the delete action on a lesson in the course "
+            "builder.\n\n"
+            "**Auth:** Course Creator/Writer with access to the course.\n\n"
+            "**Prerequisites:** The parent course must be `DRAFT`.\n\n"
+            "**Important:** None."
+        ),
+        tags=["Courses — Lessons"],
+        parameters=_PATH_PARAMETERS,
+        responses={
+            204: OpenApiResponse(description="Lesson deleted."),
+            400: OpenApiResponse(
+                description="The parent course is not Draft.",
+                examples=[
+                    OpenApiExample(
+                        name="Course not editable",
+                        value={
+                            "errors": [
+                                {
+                                    "type": "validation_error",
+                                    "code": "invalid",
+                                    "message": (
+                                        "Lessons can only be deleted while "
+                                        "the course is Draft."
+                                    ),
+                                    "field_name": None,
+                                }
+                            ]
+                        },
+                    ),
+                ],
+            ),
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
+            **STANDARD_ERROR_RESPONSES["not_found"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    ),
+)
 class LessonViewSet(ModelViewSet):
     """Sub-resource CRUD for Lessons nested under a Draft course's module."""
 

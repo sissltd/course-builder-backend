@@ -12,13 +12,11 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 
 from api.categories.enums import CategoryStatus, TrackPreference
-from api.courses.enums import AssessmentLevel, CollaboratorRole
+from api.courses.enums import AssessmentLevel
 from api.categories.models import Category
 from api.courses.models import (
     Assessment,
-    CategoryRequest,
     Course,
-    CourseCollaborator,
     Lesson,
     Module,
     Topic,
@@ -69,33 +67,15 @@ def make_topic(*, category=None, **kwargs):
     return Topic.objects.create(**defaults)
 
 
-def make_category_request(*, requested_by=None, **kwargs):
+def make_topic_reservation_request(*, requested_by=None, category=None, **kwargs):
     n = next(_sequence)
     defaults = {
         "requested_by": requested_by or make_user(),
-        "name": f"Requested Category {n}",
-    }
-    defaults.update(kwargs)
-    return CategoryRequest.objects.create(**defaults)
-
-
-def make_topic_reservation_request(*, requested_by=None, topic=None, **kwargs):
-    defaults = {
-        "requested_by": requested_by or make_user(),
-        "topic": topic or make_topic(),
+        "name": f"Requested Topic {n}",
+        "category": category or make_category(),
     }
     defaults.update(kwargs)
     return TopicReservationRequest.objects.create(**defaults)
-
-
-def make_collaborator(*, course=None, user=None, **kwargs):
-    defaults = {
-        "course": course or make_draft_course(),
-        "user": user or make_user(),
-        "role": CollaboratorRole.COLLABORATOR,
-    }
-    defaults.update(kwargs)
-    return CourseCollaborator.objects.create(**defaults)
 
 
 def make_draft_course(*, creator=None, category=None, **kwargs):
@@ -117,8 +97,15 @@ def make_draft_course(*, creator=None, category=None, **kwargs):
 def make_questions(count_):
     return [
         {
+            "type": "MULTIPLE_CHOICE",
             "question": f"Question {i}?",
-            "options": ["A", "B", "C", "D"],
+            "points": 10,
+            "options": [
+                {"text": "A", "explanation": "Why A is right or wrong."},
+                {"text": "B", "explanation": "Why B is right or wrong."},
+                {"text": "C", "explanation": "Why C is right or wrong."},
+                {"text": "D", "explanation": "Why D is right or wrong."},
+            ],
             "correct_index": 0,
         }
         for i in range(count_)

@@ -2,8 +2,9 @@ from django.db import IntegrityError
 from django.db.models import Q, QuerySet
 from rest_framework import exceptions
 
-from api.courses.enums import CollaboratorRole
-from api.courses.models import Course, CourseCollaborator
+from api.collaborators.enums import CollaboratorRole
+from api.collaborators.models import CourseCollaborator
+from api.courses.models import Course
 from api.notification.models import Notification
 from api.users.models import User
 

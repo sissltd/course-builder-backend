@@ -15,6 +15,7 @@ CUSTOM_APPS = [
     "api.authentication",
     "api.categories",
     "api.courses",
+    "api.collaborators",
     "api.onboarding",
     "api.wallet",
     "shared.audit"
