@@ -1,8 +1,8 @@
 """Coverage for category browsing and staff-managed category CRUD.
 
-The access rule under test is deliberately narrow: Writers and Super Admins
-manage categories, everyone else reads them. Admins and Approvers are included
-in "everyone else" - unlike courses, where they have full control - so several
+The access rule under test is deliberately narrow: Writers, Admins, and Super
+Admins manage categories, everyone else reads them. Approvers are included in
+"everyone else" - unlike courses, where they have full control - so several
 tests below assert a 403 for roles that are privileged elsewhere.
 """
 
@@ -87,7 +87,7 @@ class CategoryReadAccessTests(APITestCase):
 
 
 class CategoryWriteAccessTests(APITestCase):
-    """Only Writers and Super Admins may create/update/delete."""
+    """Only Writers, Admins, and Super Admins may create/update/delete."""
 
     def test_writer_can_create(self):
         self.client.force_authenticate(make_user(role=UserRole.STAFF_WRITER))
@@ -104,15 +104,13 @@ class CategoryWriteAccessTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
-    def test_admin_cannot_create(self):
-        # Admins run courses but not categories - the one place they are
-        # narrower than a Writer.
+    def test_admin_can_create(self):
         self.client.force_authenticate(make_user(role=UserRole.ADMIN))
 
         response = self.client.post(LIST_URL, VALID_PAYLOAD)
 
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-        self.assertFalse(Category.objects.filter(name="New Cat").exists())
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertTrue(Category.objects.filter(name="New Cat").exists())
 
     def test_approver_cannot_create(self):
         self.client.force_authenticate(make_user(role=UserRole.STAFF_APPROVER))
@@ -142,18 +140,18 @@ class CategoryWriteAccessTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
-    def test_admin_cannot_update_or_delete(self):
+    def test_admin_can_update_and_delete(self):
         category = make_category()
         self.client.force_authenticate(make_user(role=UserRole.ADMIN))
 
         patch = self.client.patch(
             detail_url(category), {"name": "Renamed"}, format="json"
         )
-        delete = self.client.delete(detail_url(category))
+        self.assertEqual(patch.status_code, status.HTTP_200_OK)
 
-        self.assertEqual(patch.status_code, status.HTTP_403_FORBIDDEN)
-        self.assertEqual(delete.status_code, status.HTTP_403_FORBIDDEN)
-        self.assertTrue(Category.objects.filter(id=category.id).exists())
+        delete = self.client.delete(detail_url(category))
+        self.assertEqual(delete.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(Category.objects.filter(id=category.id).exists())
 
 
 class CategoryWriteBehaviourTests(APITestCase):
@@ -290,7 +288,7 @@ class CategoryDeletionImpactTests(APITestCase):
 
     def test_non_manager_cannot_preview(self):
         category = make_category()
-        self.client.force_authenticate(make_user(role=UserRole.ADMIN))
+        self.client.force_authenticate(make_user(role=UserRole.STAFF_APPROVER))
 
         response = self.client.get(self.impact_url(category))
 
@@ -484,9 +482,9 @@ class CategoryDeletionStrategyTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
-    def test_admin_cannot_delete_even_with_a_strategy(self):
+    def test_approver_cannot_delete_even_with_a_strategy(self):
         self._add_course()
-        self.client.force_authenticate(make_user(role=UserRole.ADMIN))
+        self.client.force_authenticate(make_user(role=UserRole.STAFF_APPROVER))
 
         response = self.client.delete(
             f"{detail_url(self.category)}?strategy=DELETE_COURSES"

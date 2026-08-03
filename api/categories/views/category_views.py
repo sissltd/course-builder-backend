@@ -38,7 +38,7 @@ _CATEGORY_EXAMPLE = {
 }
 
 _AUTH_LINE = (
-    "**Auth:** Writer or Super Admin. Admins, Approvers, Reviewers, and public "
+    "**Auth:** Writer, Admin, or Super Admin. Approvers, Reviewers, and public "
     "Course Creators have read access only — they browse categories but do not "
     "manage them."
 )
@@ -383,8 +383,8 @@ class CategoryViewSet(ModelViewSet):
 
     List/retrieve are open to any authenticated user - creators need to browse
     categories to pick one (US-101). Create/update/delete are restricted to
-    Writers and Super Admins via CanManageCategories; note this deliberately
-    excludes Admins and Approvers, who read categories like everyone else.
+    Writers, Admins, and Super Admins via CanManageCategories; note this
+    deliberately excludes Approvers, who read categories like everyone else.
     """
 
     queryset = Category.objects.all()
