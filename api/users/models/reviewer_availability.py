@@ -3,7 +3,7 @@ from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 from api.users.enums import UnavailabilityReason
-from includes.helpers import DateHistoryModelMixin, UUIDPrimaryKeyModelMixin
+from core.mixins import DateHistoryModelMixin, UUIDPrimaryKeyModelMixin
 
 
 class ReviewerAvailability(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):

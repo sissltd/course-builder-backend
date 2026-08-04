@@ -5,10 +5,10 @@ from django.utils.translation import gettext_lazy as _
 
 from api.users.enums import Sex, UserRole
 from api.users.models.manager import CustomUserManager
-from includes.helpers import (
+from core.mixins import (
     DateHistoryModelMixin,
-    UUIDPrimaryKeyModelMixin,
     UserHistoryModelMixin,
+    UUIDPrimaryKeyModelMixin,
 )
 
 

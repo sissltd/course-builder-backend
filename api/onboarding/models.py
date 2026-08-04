@@ -6,7 +6,7 @@ from api.onboarding.enums import (
     MonthlyCourseCapacity,
     VideoComfortLevel,
 )
-from includes.helpers import DateHistoryModelMixin, UUIDPrimaryKeyModelMixin
+from core.mixins import DateHistoryModelMixin, UUIDPrimaryKeyModelMixin
 
 
 class CreatorProfile(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
