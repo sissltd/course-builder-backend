@@ -5,10 +5,10 @@ from django.db import models
 from django.utils.translation import gettext_lazy as _
 
 from api.categories.enums import CategoryStatus
-from includes.helpers import (
+from core.mixins import (
     DateHistoryModelMixin,
-    UUIDPrimaryKeyModelMixin,
     UserHistoryModelMixin,
+    UUIDPrimaryKeyModelMixin,
 )
 
 
@@ -37,10 +37,8 @@ class Topic(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMix
         verbose_name=_("Creator Price"),
         max_digits=10,
         decimal_places=2,
-        validators=[MinValueValidator(Decimal("0"))],
-        help_text=_(
-            "Fixed price paid to a creator for an approved course in this topic."
-        ),
+        validators=[MinValueValidator(Decimal(0))],
+        help_text=_("Fixed price paid to a creator for an approved course in this topic."),
     )
     status = models.CharField(
         verbose_name=_("Status"),

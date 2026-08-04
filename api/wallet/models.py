@@ -11,7 +11,7 @@ from api.wallet.enums import (
     TransactionType,
     WithdrawalRequestStatus,
 )
-from includes.helpers import DateHistoryModelMixin, UUIDPrimaryKeyModelMixin
+from core.mixins import DateHistoryModelMixin, UUIDPrimaryKeyModelMixin
 
 
 def _generate_reference() -> str:

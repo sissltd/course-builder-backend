@@ -9,7 +9,7 @@ from rest_framework import exceptions as rest_exceptions
 
 from api.notification import enums as notification_enums
 from api.notification.services import email_service
-from includes.helpers import DateHistoryModelMixin, UUIDPrimaryKeyModelMixin
+from core.mixins import DateHistoryModelMixin, UUIDPrimaryKeyModelMixin
 
 logger = logging.getLogger(__name__)
 
