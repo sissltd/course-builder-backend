@@ -3,6 +3,7 @@ boto3==1.35.99
 celery==5.6.2
 channels==4.3.2
 channels_redis==4.2.1
+cryptography==46.0.5
 Django==5.2.14
 djangorestframework==3.17.1
 django-redis==5.4.0

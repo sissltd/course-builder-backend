@@ -195,7 +195,7 @@ def create_audit_log_task(
 ):
     """Creates an audit log entry."""
     try:
-        from shared.auditt.models import AuditLog
+        from shared.audit.models import AuditLog
 
         AuditLog.objects.create(
             event=event,
@@ -215,7 +215,7 @@ def create_audit_log_task(
 def write_audit_log(self, event, email, ip, meta=None):
     """Creates an audit log entry."""
     try:
-        from shared.auditt.models import AuditLog
+        from shared.audit.models import AuditLog
 
         AuditLog.objects.create(
             event=event,
