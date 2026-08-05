@@ -8,6 +8,10 @@ UPDATABLE_FIELDS = {
     "sla_amber_warning",
     "sla_red_critical_alert",
     "sla_breached",
+    "kyc_submission_alert",
+    "account_deletion_detection_alert",
+    "mie_recommendation_alert",
+    "mie_pipeline_alert",
 }
 
 

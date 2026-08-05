@@ -11,6 +11,21 @@ class Sex(models.TextChoices):
     PREFER_NOT_TO_SAY = "PREFER_NOT_TO_SAY", "Prefer not to say"
 
 
+class AccountStatus(models.TextChoices):
+    """Account activation and lifecycle status, independent of role.
+
+    Tracks whether a user has completed email verification, been suspended
+    for policy reasons, or been deactivated by administrative action. This
+    field is descriptive and human-facing; is_active remains the authentication
+    gate (Django/simplejwt convention) and is kept in sync.
+    """
+
+    PENDING_VERIFICATION = "PENDING_VERIFICATION", "Pending Verification"
+    ACTIVE = "ACTIVE", "Active"
+    SUSPENDED = "SUSPENDED", "Suspended"
+    DEACTIVATED = "DEACTIVATED", "Deactivated"
+
+
 class UserRole(models.TextChoices):
     """Primary role used for role-based permission checks across the platform.
 
@@ -18,17 +33,14 @@ class UserRole(models.TextChoices):
 
     * **Public** - COURSE_CREATOR is what public signup assigns. Anyone can
       obtain it by registering.
-    * **Staff** - STAFF_WRITER / STAFF_VERIFIER / STAFF_APPROVER are the roles
-      offered in the "Invite a staff" dialog. They are invitation-only: no
-      public route assigns them. They mirror the authoring pipeline
-      (write -> verify -> approve) and are deliberately kept distinct from the
-      public roles so a self-registered user is never mistaken for hired staff
-      in permissions, reporting, or the Teams page.
+    * **Staff** - STAFF_WRITER / STAFF_VERIFIER / STAFF_APPROVER / AI_REVIEWER /
+      QA_REVIEWER are the roles offered in the "Invite a staff" dialog. They
+      are invitation-only: no public route assigns them. They mirror the
+      authoring and review pipelines and are deliberately kept distinct from
+      the public roles so a self-registered user is never mistaken for hired
+      staff in permissions, reporting, or the Teams page.
     * **Privileged** - ADMIN and SUPER_ADMIN. SUPER_ADMIN is bootstrap-only and
       unique platform-wide; it is the only role that can invite staff.
-
-    Extend the staff group as new operator roles are introduced (e.g. AI Track
-    Reviewer, QA Reviewer) once the corresponding review pipelines exist.
     """
 
     COURSE_CREATOR = "COURSE_CREATOR", "Course Creator"
@@ -36,6 +48,8 @@ class UserRole(models.TextChoices):
     STAFF_WRITER = "STAFF_WRITER", "Writer"
     STAFF_VERIFIER = "STAFF_VERIFIER", "Verifier"
     STAFF_APPROVER = "STAFF_APPROVER", "Approver"
+    AI_REVIEWER = "AI_REVIEWER", "AI Reviewer"
+    QA_REVIEWER = "QA_REVIEWER", "QA Reviewer"
     ADMIN = "ADMIN", "Admin"
     SUPER_ADMIN = "SUPER_ADMIN", "Super Admin"
 
@@ -48,6 +62,8 @@ INVITABLE_STAFF_ROLES = (
     UserRole.STAFF_WRITER,
     UserRole.STAFF_VERIFIER,
     UserRole.STAFF_APPROVER,
+    UserRole.AI_REVIEWER,
+    UserRole.QA_REVIEWER,
 )
 
 #: Every role that counts as staff for the Teams page: the invitable roles plus
@@ -85,8 +101,14 @@ class UserActivityActionEnums(models.TextChoices):
     introduced, while keeping values stable for reporting and analytics.
     """
 
+    ACCOUNT_CREATED = "ACCOUNT_CREATED", "Account Created"
     LOGIN = "LOGIN", "Login"
     LOGOUT = "LOGOUT", "Logout"
+    LOCKOUT_TRIGGERED = (
+        "LOCKOUT_TRIGGERED",
+        "Account Locked (Repeated Failed Logins)",
+    )
+    SESSIONS_REVOKED = "SESSIONS_REVOKED", "Sessions Revoked (All Devices)"
     TOKEN_REFRESHED = "TOKEN_REFRESHED", "Token Refreshed"
     ACCOUNT_VERIFIED = "ACCOUNT_VERIFIED", "Account Verified"
     PASSWORD_RESET_COMPLETED = (

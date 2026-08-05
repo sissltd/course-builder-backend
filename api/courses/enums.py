@@ -26,6 +26,13 @@ class AssessmentLevel(models.TextChoices):
     COURSE = "COURSE", "Course"
 
 
+class QuestionType(models.TextChoices):
+    """A quiz question's answer format."""
+
+    MULTIPLE_CHOICE = "MULTIPLE_CHOICE", "Question Choice"
+    ESSAY = "ESSAY", "Essay Question"
+
+
 class ReviewActionType(models.TextChoices):
     """The decision recorded by a reviewer on a ReviewAction."""
 
@@ -49,10 +56,9 @@ class DifficultyLevel(models.TextChoices):
     ADVANCED = "ADVANCED", "Advanced"
 
 
-class CollaboratorRole(models.TextChoices):
-    """A course collaborator's access level. The course's own creator
-    ("Author") is never stored as a row here - it's derived from
-    Course.creator - so only these two values are ever persisted."""
+class ReservationStatus(models.TextChoices):
+    """Lifecycle status of a creator's request to reserve a Topic (PRD BR-007)."""
 
-    COLLABORATOR = "COLLABORATOR", "Collaborator"
-    ADMIN = "ADMIN", "Admin"
+    PENDING = "PENDING", "Pending"
+    APPROVED = "APPROVED", "Approved"
+    REJECTED = "REJECTED", "Rejected"

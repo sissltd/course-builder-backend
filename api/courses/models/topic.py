@@ -2,6 +2,7 @@ from decimal import Decimal
 
 from django.core.validators import MinValueValidator
 from django.db import models
+from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 from api.categories.enums import CategoryStatus
@@ -47,6 +48,23 @@ class Topic(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMix
         default=CategoryStatus.ACTIVE,
         help_text=_("Whether the topic currently accepts new course submissions."),
     )
+    reserved_by = models.ForeignKey(
+        "users.User",
+        verbose_name=_("Reserved By"),
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text=_(
+            "Creator this topic is currently reserved for (PRD BR-007), if any."
+        ),
+    )
+    reserved_until = models.DateField(
+        verbose_name=_("Reserved Until"),
+        null=True,
+        blank=True,
+        help_text=_("Date the current reservation expires."),
+    )
 
     class Meta:
         verbose_name = _("Topic")
@@ -62,6 +80,16 @@ class Topic(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMix
                 fields=["category", "status"], name="topic_category_status_idx"
             ),
         ]
+
+    @property
+    def is_currently_reserved(self) -> bool:
+        """Whether this topic has an active (non-expired) reservation.
+
+        Computed on read rather than flipped by a scheduled job - same idiom
+        as ReviewerAvailability.is_effectively_available.
+        """
+
+        return bool(self.reserved_until and self.reserved_until >= timezone.localdate())
 
     def __str__(self):
         """Use the topic name as the human-readable label."""

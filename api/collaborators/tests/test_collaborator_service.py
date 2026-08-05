@@ -1,10 +1,11 @@
 from django.test import TestCase
 from rest_framework.exceptions import ValidationError
 
-from api.courses.enums import CollaboratorRole
-from api.courses.models import CourseCollaborator
-from api.courses.services import collaborator_service
-from api.courses.tests.factories import make_collaborator, make_draft_course, make_user
+from api.collaborators.enums import CollaboratorRole
+from api.collaborators.models import CourseCollaborator
+from api.collaborators.services import collaborator_service
+from api.collaborators.tests.factories import make_collaborator
+from api.courses.tests.factories import make_draft_course, make_user
 from api.notification.models import Notification
 
 

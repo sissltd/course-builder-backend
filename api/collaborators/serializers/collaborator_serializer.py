@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
-from api.courses.enums import CollaboratorRole
-from api.courses.models import CourseCollaborator
+from api.collaborators.enums import CollaboratorRole
+from api.collaborators.models import CourseCollaborator
 from api.users.models import User
 
 
@@ -28,6 +28,7 @@ class CollaboratorSerializer(serializers.ModelSerializer):
 class CollaboratorInviteSerializer(serializers.Serializer):
     """Request body for inviting a collaborator onto a course."""
 
+    course_id = serializers.UUIDField()
     email = serializers.EmailField()
     role = serializers.ChoiceField(
         choices=CollaboratorRole.choices,

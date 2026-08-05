@@ -25,9 +25,9 @@ class IsCourseOwner(BasePermission):
             return False
 
         # Local import: keeps this permission module decoupled from the
-        # service layer at import time, mirroring the pattern used elsewhere
-        # in this app for one-directional runtime-only dependencies.
-        from api.courses.services import collaborator_service
+        # collaborators app at import time, mirroring the pattern used
+        # elsewhere in this app for one-directional runtime-only dependencies.
+        from api.collaborators.services import collaborator_service
 
         return (
             collaborator_service.get_courses_accessible_to(request.user)

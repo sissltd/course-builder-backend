@@ -1,3 +1,4 @@
+from rest_framework import exceptions
 from rest_framework.permissions import BasePermission
 
 from api.users.enums import UserRole
@@ -20,6 +21,17 @@ class HasRole(BasePermission):
         return bool(user.is_superuser or user.role in self.allowed_roles)
 
 
+def require_role(user, allowed_roles, message="You do not have permission to perform this action."):
+    """Raise PermissionDenied unless `user` is a superuser or holds one of
+    `allowed_roles`. Mirrors HasRole.has_permission's bypass/check logic, for
+    use inside service functions as defense-in-depth alongside view-level
+    permission classes - so a service called from a code path that doesn't
+    apply the same permission class still enforces the same role rule."""
+
+    if not (user.is_superuser or user.role in allowed_roles):
+        raise exceptions.PermissionDenied(message)
+
+
 class IsCourseCreatorRole(HasRole):
     """Grants access to users who author courses.
 
@@ -38,6 +50,28 @@ class IsCreatorReviewerRole(HasRole):
     """
 
     allowed_roles = (UserRole.CREATOR_REVIEWER, UserRole.STAFF_VERIFIER)
+
+
+class IsAiReviewerRole(HasRole):
+    """Grants access to users who review AI-produced courses (SCCS Track B).
+
+    No view uses this yet - the AI Auto-Production review pipeline isn't
+    built in this backend - but the role is already invitable
+    (INVITABLE_STAFF_ROLES), so it needs to be enforceable the moment such a
+    view exists.
+    """
+
+    allowed_roles = (UserRole.AI_REVIEWER,)
+
+
+class IsQaReviewerRole(HasRole):
+    """Grants access to users who QA production media output (SCCS Track B).
+
+    Same rationale as IsAiReviewerRole: no consuming view yet, added for
+    enforceability ahead of the QA review pipeline.
+    """
+
+    allowed_roles = (UserRole.QA_REVIEWER,)
 
 
 class IsAdminRole(HasRole):
@@ -62,13 +96,13 @@ class CanManageCategories(HasRole):
     COURSE_CREATOR role, and category management is a staff responsibility -
     public creators only browse categories to pick one for a course.
 
-    Note this excludes Admins and Approvers, who keep read access like everyone
-    else. Categories carry `creator_price`, so a Writer editing one can affect
-    what their own submissions pay; that is an accepted trust decision for
+    Note this excludes Approvers, who keep read access like everyone else.
+    Categories carry `creator_price`, so a Writer/Admin editing one can affect
+    what a creator's submissions pay; that is an accepted trust decision for
     salaried staff rather than an oversight.
     """
 
-    allowed_roles = (UserRole.STAFF_WRITER, UserRole.SUPER_ADMIN)
+    allowed_roles = (UserRole.STAFF_WRITER, UserRole.ADMIN, UserRole.SUPER_ADMIN)
 
 
 class IsAdminOrSuperAdminRole(HasRole):

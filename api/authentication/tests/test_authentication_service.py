@@ -111,6 +111,45 @@ class ResetPasswordTests(TestCase):
             ).exists()
         )
 
+    def test_revokes_existing_sessions_and_sends_confirmation(self):
+        user = make_user()
+        refresh = RefreshToken.for_user(user)
+        make_verification_token(
+            user=user, purpose=TokenPurpose.PASSWORD_RESET, raw_token="reset-me"
+        )
+
+        service.reset_password(
+            email=user.email, token="reset-me", new_password="NewStrongPass456!"
+        )
+
+        self.assertTrue(
+            BlacklistedToken.objects.filter(token__jti=refresh["jti"]).exists()
+        )
+        self.assertTrue(
+            UserActivityLog.objects.filter(
+                user=user, action="SESSIONS_REVOKED"
+            ).exists()
+        )
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].subject, "Your password was changed")
+        self.assertIn(user.email, mail.outbox[0].to)
+
+    def test_does_not_revoke_other_users_sessions(self):
+        user = make_user()
+        other_user = make_user()
+        other_refresh = RefreshToken.for_user(other_user)
+        make_verification_token(
+            user=user, purpose=TokenPurpose.PASSWORD_RESET, raw_token="reset-me"
+        )
+
+        service.reset_password(
+            email=user.email, token="reset-me", new_password="NewStrongPass456!"
+        )
+
+        self.assertFalse(
+            BlacklistedToken.objects.filter(token__jti=other_refresh["jti"]).exists()
+        )
+
     def test_raises_with_expired_token(self):
         user = make_user()
         make_verification_token(

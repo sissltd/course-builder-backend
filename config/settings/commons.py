@@ -118,3 +118,16 @@ STORAGES = {
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 AUTH_USER_MODEL = "users.User"
+
+# Cache
+# Backs DRF's ScopedRateThrottle (see config/settings/drf.py) - a shared
+# cache is required so rate-limit counts stay consistent across gunicorn
+# worker processes/containers, unlike the per-process default LocMemCache.
+# Reuses the same Redis instance as Celery, on a different DB index so the
+# two never collide.
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": config("REDIS_URL", default="redis://redis:6379/1"),
+    }
+}

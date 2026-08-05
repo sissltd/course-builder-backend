@@ -17,6 +17,10 @@ class NotificationPreferenceSerializer(serializers.ModelSerializer):
             "sla_amber_warning",
             "sla_red_critical_alert",
             "sla_breached",
+            "kyc_submission_alert",
+            "account_deletion_detection_alert",
+            "mie_recommendation_alert",
+            "mie_pipeline_alert",
         ]
         read_only_fields = fields
 
@@ -31,6 +35,10 @@ class NotificationPreferenceUpdateSerializer(serializers.Serializer):
     sla_amber_warning = serializers.BooleanField(required=False)
     sla_red_critical_alert = serializers.BooleanField(required=False)
     sla_breached = serializers.BooleanField(required=False)
+    kyc_submission_alert = serializers.BooleanField(required=False)
+    account_deletion_detection_alert = serializers.BooleanField(required=False)
+    mie_recommendation_alert = serializers.BooleanField(required=False)
+    mie_pipeline_alert = serializers.BooleanField(required=False)
 
     def validate(self, attrs):
         if not attrs:

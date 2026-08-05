@@ -1,9 +1,10 @@
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from api.courses.enums import CollaboratorRole
-from api.courses.models import CourseCollaborator
-from api.courses.tests.factories import make_collaborator, make_draft_course, make_user
+from api.collaborators.enums import CollaboratorRole
+from api.collaborators.models import CourseCollaborator
+from api.collaborators.tests.factories import make_collaborator
+from api.courses.tests.factories import make_draft_course, make_user
 from api.notification.models import Notification
 from api.users.enums import UserRole
 
@@ -18,8 +19,12 @@ class CollaboratorApiTests(APITestCase):
         self.client.force_authenticate(self.creator)
 
         response = self.client.post(
-            f"/api/v1/courses/{self.course.id}/collaborators/",
-            {"email": self.invitee.email, "role": "COLLABORATOR"},
+            "/api/v1/collaborators/",
+            {
+                "course_id": self.course.id,
+                "email": self.invitee.email,
+                "role": "COLLABORATOR",
+            },
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
@@ -38,8 +43,8 @@ class CollaboratorApiTests(APITestCase):
         self.client.force_authenticate(self.creator)
 
         response = self.client.post(
-            f"/api/v1/courses/{self.course.id}/collaborators/",
-            {"email": "nobody@example.com"},
+            "/api/v1/collaborators/",
+            {"course_id": self.course.id, "email": "nobody@example.com"},
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -48,8 +53,8 @@ class CollaboratorApiTests(APITestCase):
         self.client.force_authenticate(self.creator)
 
         response = self.client.post(
-            f"/api/v1/courses/{self.course.id}/collaborators/",
-            {"email": self.creator.email},
+            "/api/v1/collaborators/",
+            {"course_id": self.course.id, "email": self.creator.email},
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -59,8 +64,8 @@ class CollaboratorApiTests(APITestCase):
         self.client.force_authenticate(self.creator)
 
         response = self.client.post(
-            f"/api/v1/courses/{self.course.id}/collaborators/",
-            {"email": self.invitee.email},
+            "/api/v1/collaborators/",
+            {"course_id": self.course.id, "email": self.invitee.email},
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -75,8 +80,8 @@ class CollaboratorApiTests(APITestCase):
         self.client.force_authenticate(collaborator_user)
 
         response = self.client.post(
-            f"/api/v1/courses/{self.course.id}/collaborators/",
-            {"email": self.invitee.email},
+            "/api/v1/collaborators/",
+            {"course_id": self.course.id, "email": self.invitee.email},
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
@@ -89,8 +94,8 @@ class CollaboratorApiTests(APITestCase):
         self.client.force_authenticate(admin_user)
 
         response = self.client.post(
-            f"/api/v1/courses/{self.course.id}/collaborators/",
-            {"email": self.invitee.email},
+            "/api/v1/collaborators/",
+            {"course_id": self.course.id, "email": self.invitee.email},
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
@@ -100,17 +105,27 @@ class CollaboratorApiTests(APITestCase):
         make_collaborator(course=self.course, user=collaborator_user)
         self.client.force_authenticate(collaborator_user)
 
-        response = self.client.get(f"/api/v1/courses/{self.course.id}/collaborators/")
+        response = self.client.get(
+            f"/api/v1/collaborators/?course_id={self.course.id}"
+        )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_list_requires_course_id(self):
+        self.client.force_authenticate(self.creator)
+
+        response = self.client.get("/api/v1/collaborators/")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_list_empty_for_non_collaborator(self):
         # Matches ModuleViewSet's own convention: list never calls get_object(),
-        # so an inaccessible course's nested list is an empty 200, not a 404
-        # (only detail/create actions 404 for a course you can't access).
+        # so an inaccessible course's list is an empty 200, not a 404 (only
+        # detail/create actions 404 for a course you can't access).
         outsider = make_user()
         self.client.force_authenticate(outsider)
 
-        response = self.client.get(f"/api/v1/courses/{self.course.id}/collaborators/")
+        response = self.client.get(
+            f"/api/v1/collaborators/?course_id={self.course.id}"
+        )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data["data"]["results"]), 0)
 
@@ -118,9 +133,7 @@ class CollaboratorApiTests(APITestCase):
         collaborator = make_collaborator(course=self.course, user=self.invitee)
         self.client.force_authenticate(self.creator)
 
-        response = self.client.delete(
-            f"/api/v1/courses/{self.course.id}/collaborators/{collaborator.id}/"
-        )
+        response = self.client.delete(f"/api/v1/collaborators/{collaborator.id}/")
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
         self.assertFalse(CourseCollaborator.objects.filter(id=collaborator.id).exists())
 
@@ -133,7 +146,7 @@ class CollaboratorApiTests(APITestCase):
         self.client.force_authenticate(collaborator_user)
 
         response = self.client.delete(
-            f"/api/v1/courses/{self.course.id}/collaborators/{other_collaborator.id}/"
+            f"/api/v1/collaborators/{other_collaborator.id}/"
         )
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
         self.assertTrue(
@@ -145,7 +158,7 @@ class CollaboratorApiTests(APITestCase):
         self.client.force_authenticate(self.creator)
 
         response = self.client.patch(
-            f"/api/v1/courses/{self.course.id}/collaborators/{collaborator.id}/",
+            f"/api/v1/collaborators/{collaborator.id}/",
             {"role": "ADMIN"},
             format="json",
         )
@@ -160,7 +173,7 @@ class CollaboratorApiTests(APITestCase):
         self.client.force_authenticate(collaborator_user)
 
         response = self.client.patch(
-            f"/api/v1/courses/{self.course.id}/collaborators/{other_collaborator.id}/",
+            f"/api/v1/collaborators/{other_collaborator.id}/",
             {"role": "ADMIN"},
             format="json",
         )

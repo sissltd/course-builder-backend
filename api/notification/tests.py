@@ -110,6 +110,24 @@ class NotificationPreferenceApiTests(APITestCase):
         self.assertFalse(response.data["sla_breached"])
         self.assertTrue(response.data["new_course_assigned"])
 
+    def test_admin_facing_fields_default_true_and_round_trip(self):
+        user = make_user()
+        self.client.force_authenticate(user)
+
+        response = self.client.get("/api/v1/users/me/notification-preferences/")
+        self.assertTrue(response.data["kyc_submission_alert"])
+        self.assertTrue(response.data["account_deletion_detection_alert"])
+        self.assertTrue(response.data["mie_recommendation_alert"])
+        self.assertTrue(response.data["mie_pipeline_alert"])
+
+        response = self.client.patch(
+            "/api/v1/users/me/notification-preferences/",
+            {"kyc_submission_alert": False},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertFalse(response.data["kyc_submission_alert"])
+
     def test_patch_empty_body_rejected(self):
         user = make_user()
         self.client.force_authenticate(user)

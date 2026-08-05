@@ -1,13 +1,13 @@
 from rest_framework import status
 from rest_framework.test import APITestCase
 
+from api.collaborators.tests.factories import make_collaborator
 from api.courses.enums import CourseStatus
 from api.courses.models import Course
 from api.courses.services import course_service
 from api.courses.tests.factories import (
     build_compliant_course,
     make_category,
-    make_collaborator,
     make_draft_course,
     make_topic,
     make_user,

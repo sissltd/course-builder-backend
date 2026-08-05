@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 from rest_framework import status
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.test import APITestCase
 
 from api.courses.enums import CourseStatus
@@ -264,3 +265,35 @@ class ReviewQueueApiTests(APITestCase):
                 user=self.admin, action="COURSE_PUBLISHED", category="PUBLISH"
             ).exists()
         )
+
+
+class ReviewServiceRoleEnforcementTests(APITestCase):
+    """Direct service-level calls, bypassing the view layer entirely - the
+    defense-in-depth these should still block even if a caller other than
+    CourseReviewViewSet reached review_service directly."""
+
+    def setUp(self):
+        self.creator = make_user(role=UserRole.COURSE_CREATOR)
+        self.category = make_category(creator_price=Decimal("120.00"))
+
+    def _submitted_course(self):
+        course = build_compliant_course(creator=self.creator, category=self.category)
+        return course_service.submit_course(course=course, actor=self.creator)
+
+    def test_wrong_role_cannot_approve(self):
+        course = self._submitted_course()
+        wrong_role_reviewer = make_user(role=UserRole.COURSE_CREATOR)
+
+        with self.assertRaises(PermissionDenied):
+            review_service.approve_course(course=course, reviewer=wrong_role_reviewer)
+
+    def test_wrong_role_cannot_reject(self):
+        course = self._submitted_course()
+        wrong_role_reviewer = make_user(role=UserRole.COURSE_CREATOR)
+
+        with self.assertRaises(PermissionDenied):
+            review_service.reject_course(
+                course=course,
+                reviewer=wrong_role_reviewer,
+                feedback={"summary": "Needs work."},
+            )

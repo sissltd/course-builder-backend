@@ -4,11 +4,11 @@ from decimal import Decimal
 
 from django import db
 from django.core import mail
-from django.test import TestCase, TransactionTestCase, override_settings
-from rest_framework.exceptions import ValidationError
+from django.test import TestCase, TransactionTestCase
+from rest_framework.exceptions import PermissionDenied, ValidationError
 
 from api.courses.tests.factories import make_user
-from api.users.enums import KYCStatus
+from api.users.enums import KYCStatus, UserRole
 from api.users.models import KYCVerification
 from api.wallet.enums import TransactionStatus, TransactionType, WithdrawalRequestStatus
 from api.wallet.models import Wallet
@@ -162,6 +162,18 @@ class PayoutAccountTests(TestCase):
         self.assertFalse(first.is_default)
         self.assertTrue(second.is_default)
 
+    def test_wrong_role_cannot_create_payout_account(self):
+        reviewer = make_user(role=UserRole.CREATOR_REVIEWER)
+
+        with self.assertRaises(PermissionDenied):
+            wallet_service.create_payout_account(
+                user=reviewer,
+                account_type="LOCAL",
+                provider_name="Access Bank",
+                account_number="1234567890",
+                account_name="Test User",
+            )
+
 
 class RequestWithdrawalTests(TestCase):
     def setUp(self):
@@ -183,7 +195,18 @@ class RequestWithdrawalTests(TestCase):
                 payout_account_id=self.payout_account.id,
             )
 
-    @override_settings(MINIMUM_WITHDRAWAL_THRESHOLD=Decimal("50.00"))
+    def test_wrong_role_cannot_request_withdrawal(self):
+        _approve_kyc(self.user)
+        self.user.role = UserRole.ADMIN
+        self.user.save(update_fields=["role"])
+
+        with self.assertRaises(PermissionDenied):
+            wallet_service.request_withdrawal(
+                user=self.user,
+                amount=Decimal("60.00"),
+                payout_account_id=self.payout_account.id,
+            )
+
     def test_raises_below_minimum_threshold(self):
         _approve_kyc(self.user)
 
@@ -194,7 +217,6 @@ class RequestWithdrawalTests(TestCase):
                 payout_account_id=self.payout_account.id,
             )
 
-    @override_settings(MINIMUM_WITHDRAWAL_THRESHOLD=Decimal("50.00"))
     def test_raises_when_amount_exceeds_balance(self):
         _approve_kyc(self.user)
 
@@ -205,7 +227,6 @@ class RequestWithdrawalTests(TestCase):
                 payout_account_id=self.payout_account.id,
             )
 
-    @override_settings(MINIMUM_WITHDRAWAL_THRESHOLD=Decimal("50.00"))
     def test_happy_path_creates_pending_request_without_touching_balance(self):
         _approve_kyc(self.user)
 

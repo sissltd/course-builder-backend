@@ -17,6 +17,16 @@ REST_FRAMEWORK = {
         "django_filters.rest_framework.DjangoFilterBackend",
         "rest_framework.filters.OrderingFilter",
     ],
+    # Not applied globally (DEFAULT_THROTTLE_CLASSES intentionally omitted) -
+    # only the specific auth views that declare throttle_classes/throttle_scope
+    # (signup, login, forgot/reset password) are rate-limited, so unrelated
+    # endpoints aren't silently throttled by a blanket default.
+    "DEFAULT_THROTTLE_RATES": {
+        "signup": "3/hour",
+        "login": "5/min",
+        "forgot_password": "3/hour",
+        "reset_password": "5/hour",
+    },
 }
 
 SPECTACULAR_SETTINGS = {
@@ -44,6 +54,10 @@ SPECTACULAR_SETTINGS = {
         "CategoryStatusEnum": "api.categories.enums.CategoryStatus",
         "CourseStatusEnum": "api.courses.enums.CourseStatus",
         "TransactionStatusEnum": "api.wallet.enums.TransactionStatus",
-        "CollaboratorRoleEnum": "api.courses.enums.CollaboratorRole",
+        "CollaboratorRoleEnum": "api.collaborators.enums.CollaboratorRole",
+        # CategoryRequestStatus and ReservationStatus share identical choices
+        # (PENDING/APPROVED/REJECTED) so drf-spectacular treats them as one
+        # component; give that shared component a single explicit name.
+        "RequestStatusEnum": "api.courses.enums.CategoryRequestStatus",
     },
 }

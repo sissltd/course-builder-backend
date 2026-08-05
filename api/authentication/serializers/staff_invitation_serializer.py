@@ -26,15 +26,17 @@ class StaffInvitationSerializer(serializers.Serializer):
         help_text="Family name of the invitee.",
     )
     role = serializers.ChoiceField(
-        # Restricted to the three invitable positions rather than UserRole at
-        # large: this is the boundary that stops a Super Admin from minting a
-        # second Super Admin, or an invitee from landing on a public role.
+        # Restricted to the invitable positions rather than UserRole at large:
+        # this is the boundary that stops a Super Admin from minting a second
+        # Super Admin, or an invitee from landing on a public role.
         choices=[(role.value, role.label) for role in INVITABLE_STAFF_ROLES],
         help_text=(
             "Staff position to grant on acceptance. One of "
             "`STAFF_WRITER` (Writer - authors courses), "
-            "`STAFF_VERIFIER` (Verifier - reviews submitted courses), or "
-            "`STAFF_APPROVER` (Approver - approves and publishes courses). "
+            "`STAFF_VERIFIER` (Verifier - reviews submitted courses), "
+            "`STAFF_APPROVER` (Approver - approves and publishes courses), "
+            "`AI_REVIEWER` (AI Reviewer - performs AI-based course reviews), or "
+            "`QA_REVIEWER` (QA Reviewer - performs QA reviews on courses). "
             "Any other role, including SUPER_ADMIN, is rejected."
         ),
     )

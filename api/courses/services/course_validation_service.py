@@ -1,6 +1,5 @@
-from django.conf import settings
-
 from api.courses.models import Assessment, Course
+from api.platform.services import platform_settings_service
 
 
 def _word_count(text: str) -> int:
@@ -28,8 +27,9 @@ def validate_structural_standards(course: Course) -> list[str]:
 
     Read-only: does not mutate the course. Returns a list of human-readable
     failure messages; an empty list means the course passes. Thresholds are
-    sourced from Django settings (config/settings/courses.py) so they can be
-    tuned without a code change.
+    sourced from PlatformSettings (api.platform) - an Admin/Super Admin-
+    editable DB row - rather than Django settings, so they can be tuned
+    without a deploy.
 
     Deliberately out of scope: readability scoring, plagiarism scanning, bias/
     inclusivity checks, per-objective assessment-alignment checking, and media
@@ -37,32 +37,33 @@ def validate_structural_standards(course: Course) -> list[str]:
     NLP/plagiarism/media tooling that is not part of this Phase 1 slice.
     """
 
+    platform_settings = platform_settings_service.get_settings()
     failures: list[str] = []
     modules = list(course.modules.all().prefetch_related("lessons", "assessment"))
 
     module_count = len(modules)
     if not (
-        settings.COURSE_MODULE_COUNT_MIN
+        platform_settings.course_module_count_min
         <= module_count
-        <= settings.COURSE_MODULE_COUNT_MAX
+        <= platform_settings.course_module_count_max
     ):
         failures.append(
-            f"Course must have between {settings.COURSE_MODULE_COUNT_MIN} and "
-            f"{settings.COURSE_MODULE_COUNT_MAX} modules (has {module_count})."
+            f"Course must have between {platform_settings.course_module_count_min} and "
+            f"{platform_settings.course_module_count_max} modules (has {module_count})."
         )
 
     for module in modules:
         lessons = list(module.lessons.all())
         lesson_count = len(lessons)
         if not (
-            settings.COURSE_LESSONS_PER_MODULE_MIN
+            platform_settings.course_lessons_per_module_min
             <= lesson_count
-            <= settings.COURSE_LESSONS_PER_MODULE_MAX
+            <= platform_settings.course_lessons_per_module_max
         ):
             failures.append(
                 f"Module '{module.title}' must have between "
-                f"{settings.COURSE_LESSONS_PER_MODULE_MIN} and "
-                f"{settings.COURSE_LESSONS_PER_MODULE_MAX} lessons (has {lesson_count})."
+                f"{platform_settings.course_lessons_per_module_min} and "
+                f"{platform_settings.course_lessons_per_module_max} lessons (has {lesson_count})."
             )
 
         if not hasattr(module, "assessment"):
@@ -73,26 +74,26 @@ def validate_structural_standards(course: Course) -> list[str]:
         for lesson in lessons:
             objective_count = len(lesson.learning_objectives or [])
             if not (
-                settings.COURSE_LEARNING_OBJECTIVES_MIN
+                platform_settings.course_learning_objectives_min
                 <= objective_count
-                <= settings.COURSE_LEARNING_OBJECTIVES_MAX
+                <= platform_settings.course_learning_objectives_max
             ):
                 failures.append(
                     f"Lesson '{lesson.title}' must have between "
-                    f"{settings.COURSE_LEARNING_OBJECTIVES_MIN} and "
-                    f"{settings.COURSE_LEARNING_OBJECTIVES_MAX} learning objectives "
+                    f"{platform_settings.course_learning_objectives_min} and "
+                    f"{platform_settings.course_learning_objectives_max} learning objectives "
                     f"(has {objective_count})."
                 )
 
             script_words = _word_count(lesson.script)
             if not (
-                settings.LESSON_SCRIPT_WORD_MIN
+                platform_settings.lesson_script_word_min
                 <= script_words
-                <= settings.LESSON_SCRIPT_WORD_MAX
+                <= platform_settings.lesson_script_word_max
             ):
                 failures.append(
                     f"Lesson '{lesson.title}' script must be between "
-                    f"{settings.LESSON_SCRIPT_WORD_MIN} and {settings.LESSON_SCRIPT_WORD_MAX} "
+                    f"{platform_settings.lesson_script_word_min} and {platform_settings.lesson_script_word_max} "
                     f"words (has {script_words})."
                 )
 
@@ -101,36 +102,36 @@ def validate_structural_standards(course: Course) -> list[str]:
                 len(lesson_assessment.questions) if lesson_assessment else 0
             )
             if not (
-                settings.LESSON_QUIZ_QUESTIONS_MIN
+                platform_settings.lesson_quiz_questions_min
                 <= question_count
-                <= settings.LESSON_QUIZ_QUESTIONS_MAX
+                <= platform_settings.lesson_quiz_questions_max
             ):
                 failures.append(
                     f"Lesson '{lesson.title}' must have between "
-                    f"{settings.LESSON_QUIZ_QUESTIONS_MIN} and {settings.LESSON_QUIZ_QUESTIONS_MAX} "
+                    f"{platform_settings.lesson_quiz_questions_min} and {platform_settings.lesson_quiz_questions_max} "
                     f"quiz questions (has {question_count})."
                 )
 
     description_words = _word_count(course.description)
     if not (
-        settings.COURSE_DESCRIPTION_WORD_MIN
+        platform_settings.course_description_word_min
         <= description_words
-        <= settings.COURSE_DESCRIPTION_WORD_MAX
+        <= platform_settings.course_description_word_max
     ):
         failures.append(
-            f"Course description must be between {settings.COURSE_DESCRIPTION_WORD_MIN} and "
-            f"{settings.COURSE_DESCRIPTION_WORD_MAX} words (has {description_words})."
+            f"Course description must be between {platform_settings.course_description_word_min} and "
+            f"{platform_settings.course_description_word_max} words (has {description_words})."
         )
 
     duration_minutes = get_course_duration_minutes(course)
     if not (
-        settings.COURSE_DURATION_MIN_MINUTES
+        platform_settings.course_duration_min_minutes
         <= duration_minutes
-        <= settings.COURSE_DURATION_MAX_MINUTES
+        <= platform_settings.course_duration_max_minutes
     ):
         failures.append(
-            f"Course duration must be between {settings.COURSE_DURATION_MIN_MINUTES} and "
-            f"{settings.COURSE_DURATION_MAX_MINUTES} minutes (has {duration_minutes})."
+            f"Course duration must be between {platform_settings.course_duration_min_minutes} and "
+            f"{platform_settings.course_duration_max_minutes} minutes (has {duration_minutes})."
         )
 
     if not course.preview_video_url:
@@ -147,10 +148,10 @@ def validate_structural_standards(course: Course) -> list[str]:
     # instance was loaded - a fresh query is always correct.
     final_assessment = Assessment.objects.filter(course=course).first()
     final_question_count = len(final_assessment.questions) if final_assessment else 0
-    if final_question_count < settings.COURSE_FINAL_ASSESSMENT_MIN_QUESTIONS:
+    if final_question_count < platform_settings.course_final_assessment_min_questions:
         failures.append(
             "Course must have a final assessment with at least "
-            f"{settings.COURSE_FINAL_ASSESSMENT_MIN_QUESTIONS} questions "
+            f"{platform_settings.course_final_assessment_min_questions} questions "
             f"(has {final_question_count})."
         )
 

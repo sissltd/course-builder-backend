@@ -10,7 +10,7 @@ from api.users.enums import (
     UserActivityCategoryEnums,
 )
 from api.users.models import KYCVerification, User
-from api.users.permissions import IsAdminOrSuperAdminRole
+from api.users.permissions import IsAdminOrSuperAdminRole, require_role
 
 REVIEWABLE_STATUSES = (KYCStatus.PENDING,)
 
@@ -58,7 +58,13 @@ def submit_verification(
 
 
 def _notify_admins_of_new_submission(verification: KYCVerification) -> None:
-    admins = User.objects.filter(role__in=IsAdminOrSuperAdminRole.allowed_roles)
+    # exclude() rather than filter(kyc_submission_alert=True): an admin with
+    # no NotificationPreference row yet (the common case - it's lazily
+    # created) still gets notified, since only an explicit opt-out excludes
+    # them.
+    admins = User.objects.filter(
+        role__in=IsAdminOrSuperAdminRole.allowed_roles
+    ).exclude(notification_preference__kyc_submission_alert=False)
     if not admins:
         return
 
@@ -83,6 +89,7 @@ def approve_verification(
     activity, mirroring review_service.approve_course.
     """
 
+    require_role(reviewer, IsAdminOrSuperAdminRole.allowed_roles)
     if verification.status not in REVIEWABLE_STATUSES:
         raise exceptions.ValidationError(
             f"Submission cannot be approved from status '{verification.status}'."
@@ -123,6 +130,7 @@ def reject_verification(
     resubmit - see submit_verification) and logs the reviewer's activity.
     """
 
+    require_role(reviewer, IsAdminOrSuperAdminRole.allowed_roles)
     if not rejection_reason:
         raise exceptions.ValidationError(
             {"rejection_reason": "A rejection reason is required."}

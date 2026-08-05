@@ -1,11 +1,16 @@
 from .auth_views import (
+    ChangeEmailConfirmView,
+    ChangeEmailRequestView,
+    ChangePasswordView,
     ForgotPasswordView,
     LoginView,
+    LogoutAllView,
     LogoutView,
     ResendVerificationView,
     ResetPasswordView,
     ReviewerSignupView,
     SignupView,
+    TokenRefreshView,
     VerifyEmailView,
 )
 from .staff_views import (
@@ -19,9 +24,13 @@ from .staff_views import (
 
 __all__ = [
     "AcceptStaffInvitationView",
+    "ChangeEmailConfirmView",
+    "ChangeEmailRequestView",
+    "ChangePasswordView",
     "ForgotPasswordView",
     "InviteStaffView",
     "LoginView",
+    "LogoutAllView",
     "LogoutView",
     "ReactivateStaffView",
     "ResendVerificationView",
@@ -31,5 +40,6 @@ __all__ = [
     "SignupView",
     "StaffListView",
     "SuperAdminBootstrapView",
+    "TokenRefreshView",
     "VerifyEmailView",
 ]
