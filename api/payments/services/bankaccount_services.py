@@ -17,11 +17,12 @@ class AccountDetailsError(Exception):
     
 
 def _check_account_name_matches_profile(user, account_name):
-    user_names = {user.first_name.lower(), user.last_name.lower()}
-    account_names = set(account_name.lower().split())
+        full_name = user.full_name.lower()
+        user_names = set(full_name.split())
+        account_names = set(account_name.lower().split())
 
-    common_names = user_names.intersection(account_names)
-    return len(common_names) >= 2
+        common_names = user_names.intersection(account_names)
+        return len(common_names) >= 2
 
 
 def get_bank_account_list(user):

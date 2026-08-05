@@ -24,7 +24,7 @@ class BankAccount(
     user = models.ForeignKey(User, related_name="bank_accounts", on_delete=models.PROTECT)
     bank_name = models.CharField(max_length=255)
     account_name = models.CharField(max_length=255)
-    account_number = models.CharField(max_length=255)
+    account_number = models.CharField(max_length=20)
     is_suspended = models.BooleanField(default=False)
     bank_code = models.CharField(max_length=64, blank=True)
     paystack_recipient_code = models.CharField(max_length=50, null=True, blank=True)
