@@ -35,6 +35,14 @@ class Lesson(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMi
             "Lesson narration/content script, 500-1500 words (SCCS PRD Section 6.2)."
         ),
     )
+    video_url = models.URLField(
+        verbose_name=_("Video URL"),
+        blank=True,
+        default="",
+        help_text=_(
+            "Optional lesson video link, same pattern as Course.preview_video_url."
+        ),
+    )
     learning_objectives = models.JSONField(
         verbose_name=_("Learning Objectives"),
         default=list,

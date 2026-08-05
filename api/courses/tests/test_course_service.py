@@ -5,6 +5,7 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 
 from api.categories.enums import CategoryStatus
 from api.courses.enums import CourseStatus
+from api.courses.models import CourseVersion, Lesson, Module
 from api.courses.services import course_service
 from api.courses.tests.factories import (
     build_compliant_course,
@@ -321,3 +322,41 @@ class PublishCourseTests(TestCase):
 
         with self.assertRaises(PermissionDenied):
             course_service.publish_course(course=course, actor=course.creator)
+
+    def test_creates_a_single_v1_0_course_version_snapshot(self):
+        course = build_compliant_course()
+        course.status = CourseStatus.APPROVED
+        course.save()
+        admin = make_user(role=UserRole.ADMIN)
+
+        course_service.publish_course(course=course, actor=admin)
+
+        versions = CourseVersion.objects.filter(course=course)
+        self.assertEqual(versions.count(), 1)
+        version = versions.first()
+        self.assertEqual(version.version_number, "1.0")
+        self.assertEqual(version.snapshot["title"], course.title)
+        self.assertEqual(len(version.snapshot["modules"]), course.modules.count())
+
+
+class RecalculateDurationEstimateTests(TestCase):
+    def test_sums_lesson_durations_across_modules(self):
+        course = make_draft_course()
+        module_a = Module.objects.create(course=course, title="A", order=0)
+        module_b = Module.objects.create(course=course, title="B", order=1)
+        Lesson.objects.create(module=module_a, title="L1", order=0, duration_minutes=10)
+        Lesson.objects.create(module=module_a, title="L2", order=1, duration_minutes=15)
+        Lesson.objects.create(module=module_b, title="L3", order=0, duration_minutes=20)
+
+        result = course_service.recalculate_duration_estimate(course=course)
+
+        self.assertEqual(result.duration_estimate_minutes, 45)
+        course.refresh_from_db()
+        self.assertEqual(course.duration_estimate_minutes, 45)
+
+    def test_returns_zero_for_course_with_no_lessons(self):
+        course = make_draft_course()
+
+        result = course_service.recalculate_duration_estimate(course=course)
+
+        self.assertEqual(result.duration_estimate_minutes, 0)

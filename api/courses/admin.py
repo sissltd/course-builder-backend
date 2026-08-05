@@ -4,6 +4,7 @@ from api.courses.models import (
     Assessment,
     CategoryRequest,
     Course,
+    CourseVersion,
     Lesson,
     Module,
     ReviewAction,
@@ -20,9 +21,15 @@ class CourseAdmin(admin.ModelAdmin):
     search_fields = ("title", "creator__email")
 
 
+@admin.register(CourseVersion)
+class CourseVersionAdmin(admin.ModelAdmin):
+    list_display = ("id", "course", "version_number", "published_at")
+    search_fields = ("course__title",)
+
+
 @admin.register(Module)
 class ModuleAdmin(admin.ModelAdmin):
-    list_display = ("id", "title", "course", "order")
+    list_display = ("id", "title", "course", "order", "locked_by", "lock_expires_at")
     list_filter = ("course",)
 
 

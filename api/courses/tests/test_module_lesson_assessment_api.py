@@ -1,6 +1,7 @@
 from rest_framework import status
 from rest_framework.test import APITestCase
 
+from api.collaborators.enums import CollaboratorRole
 from api.collaborators.tests.factories import make_collaborator
 from api.courses.enums import CourseStatus
 from api.courses.models import Lesson, Module
@@ -39,9 +40,13 @@ class ModuleLessonAssessmentApiTests(APITestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
-    def test_collaborator_can_create_module(self):
+    def test_admin_collaborator_can_create_module(self):
+        # ADMIN-role collaborators get full-course access, including
+        # structural changes like adding modules.
         collaborator_user = make_user()
-        make_collaborator(course=self.course, user=collaborator_user)
+        make_collaborator(
+            course=self.course, user=collaborator_user, role=CollaboratorRole.ADMIN
+        )
         self.client.force_authenticate(collaborator_user)
 
         response = self.client.post(
@@ -51,7 +56,44 @@ class ModuleLessonAssessmentApiTests(APITestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
-    def test_collaborator_can_create_lesson_under_module(self):
+    def test_plain_collaborator_cannot_create_module(self):
+        # A plain COLLABORATOR only edits assigned modules' content - adding
+        # a new module is a structural change reserved for the creator/an
+        # ADMIN collaborator (SCCS PRD Section 14).
+        collaborator_user = make_user()
+        make_collaborator(
+            course=self.course, user=collaborator_user, role=CollaboratorRole.COLLABORATOR
+        )
+        self.client.force_authenticate(collaborator_user)
+
+        response = self.client.post(
+            f"/api/v1/courses/{self.course.id}/modules/",
+            {"title": "Module 1", "order": 1},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_collaborator_can_create_lesson_under_assigned_module(self):
+        module = Module.objects.create(course=self.course, title="M1", order=1)
+        collaborator_user = make_user()
+        collaborator = make_collaborator(course=self.course, user=collaborator_user)
+        collaborator.assigned_modules.set([module])
+        self.client.force_authenticate(collaborator_user)
+
+        response = self.client.post(
+            f"/api/v1/courses/{self.course.id}/modules/{module.id}/lessons/",
+            {
+                "title": "L1",
+                "order": 1,
+                "script": "x",
+                "learning_objectives": ["a", "b"],
+                "duration_minutes": 10,
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+    def test_collaborator_cannot_create_lesson_under_unassigned_module(self):
         module = Module.objects.create(course=self.course, title="M1", order=1)
         collaborator_user = make_user()
         make_collaborator(course=self.course, user=collaborator_user)
@@ -68,7 +110,7 @@ class ModuleLessonAssessmentApiTests(APITestCase):
             },
             format="json",
         )
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
     def test_non_collaborator_still_gets_404_creating_module(self):
         # Regression check: the get_courses_accessible_to refactor must not

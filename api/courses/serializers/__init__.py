@@ -20,7 +20,11 @@ from .lesson_serializer import (
     LessonSerializer,
     LessonWriteSerializer,
 )
-from .module_serializer import ModuleSerializer, ModuleWriteSerializer
+from .module_serializer import (
+    ModuleMiniSerializer,
+    ModuleSerializer,
+    ModuleWriteSerializer,
+)
 from .topic_reservation_serializer import (
     TopicReservationRejectSerializer,
     TopicReservationRequestCreateSerializer,
@@ -39,6 +43,7 @@ __all__ = [
     "LessonMiniSerializer",
     "LessonSerializer",
     "LessonWriteSerializer",
+    "ModuleMiniSerializer",
     "ModuleSerializer",
     "ModuleWriteSerializer",
     "QuizOptionSerializer",
