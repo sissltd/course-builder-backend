@@ -3,6 +3,7 @@ import uuid
 
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 
@@ -69,6 +70,28 @@ class UserHistoryModelMixin(models.Model):
         null=True,
         help_text=_("User who updated the object"),
     )
+    
+    class Meta:
+            abstract = True
+
+class SoftDeleteModelMixin(models.Model):
+    deleted_datetime = models.DateTimeField(
+        verbose_name=_("Deleted datetime"),
+        null=True,
+        blank=True,
+        help_text=_("datetime of object deletion"),
+    )
+    is_deleted = models.BooleanField(
+        verbose_name=_("Is deleted"),
+        default=False,
+        help_text=_("Is deleted"),
+    )
 
     class Meta:
         abstract = True
+
+    def delete(self, *args, **kwargs):
+        self.deleted_datetime = timezone.now()
+        self.is_deleted = True
+        self.save(update_fields=["deleted_datetime", "is_deleted"])
+        return 1, {self.__class__.__name__: 1}
