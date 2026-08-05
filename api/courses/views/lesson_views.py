@@ -12,6 +12,7 @@ from api.collaborators.services import collaborator_service
 from api.courses.enums import CourseStatus
 from api.courses.models import Lesson, Module
 from api.courses.serializers import LessonSerializer, LessonWriteSerializer
+from api.courses.services import course_service, module_lock_service
 from api.users.permissions import IsCourseCreatorRole
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 
@@ -255,19 +256,25 @@ _DRAFT_ONLY_400 = OpenApiResponse(
     ),
 )
 class LessonViewSet(ModelViewSet):
-    """Sub-resource CRUD for Lessons nested under a Draft course's module."""
+    """Sub-resource CRUD for Lessons nested under a Draft course's module.
+
+    Scoped at the module level (SCCS PRD Section 14): a plain COLLABORATOR
+    may create/edit/delete lessons within a module they're assigned to (that
+    is what "editing an assigned module" means in practice), but a module
+    the caller can't access - including one they're not assigned - 404s.
+    Also enforces the parent module's edit lock, same as ModuleViewSet.
+    """
 
     permission_classes = [IsCourseCreatorRole]
 
     def get_queryset(self):
         if getattr(self, "swagger_fake_view", False):
             return Lesson.objects.none()
+        accessible_modules = collaborator_service.get_modules_accessible_to(
+            user=self.request.user, course_id=self.kwargs["course_pk"]
+        )
         return Lesson.objects.filter(
-            module_id=self.kwargs["module_pk"],
-            module__course_id=self.kwargs["course_pk"],
-            module__course__in=collaborator_service.get_courses_accessible_to(
-                self.request.user
-            ),
+            module_id=self.kwargs["module_pk"], module__in=accessible_modules
         )
 
     def get_serializer_class(self):
@@ -276,13 +283,12 @@ class LessonViewSet(ModelViewSet):
         return LessonWriteSerializer
 
     def _get_module(self) -> Module:
+        accessible_modules = collaborator_service.get_modules_accessible_to(
+            user=self.request.user, course_id=self.kwargs["course_pk"]
+        )
         try:
-            return Module.objects.select_related("course").get(
-                pk=self.kwargs["module_pk"],
-                course_id=self.kwargs["course_pk"],
-                course__in=collaborator_service.get_courses_accessible_to(
-                    self.request.user
-                ),
+            return accessible_modules.select_related("course").get(
+                pk=self.kwargs["module_pk"]
             )
         except Module.DoesNotExist as exc:
             raise exceptions.NotFound("Module not found.") from exc
@@ -293,20 +299,30 @@ class LessonViewSet(ModelViewSet):
             raise exceptions.ValidationError(
                 "Lessons can only be added while the course is Draft."
             )
-        serializer.save(
+        module_lock_service.check_not_locked(module=module, user=self.request.user)
+        lesson = serializer.save(
             module=module, created_by=self.request.user, updated_by=self.request.user
         )
+        course_service.recalculate_duration_estimate(course=module.course)
+        return lesson
 
     def perform_update(self, serializer):
-        if serializer.instance.module.course.status != CourseStatus.DRAFT:
+        module = serializer.instance.module
+        if module.course.status != CourseStatus.DRAFT:
             raise exceptions.ValidationError(
                 "Lessons can only be edited while the course is Draft."
             )
-        serializer.save(updated_by=self.request.user)
+        module_lock_service.check_not_locked(module=module, user=self.request.user)
+        lesson = serializer.save(updated_by=self.request.user)
+        course_service.recalculate_duration_estimate(course=module.course)
+        return lesson
 
     def perform_destroy(self, instance):
-        if instance.module.course.status != CourseStatus.DRAFT:
+        module = instance.module
+        if module.course.status != CourseStatus.DRAFT:
             raise exceptions.ValidationError(
                 "Lessons can only be deleted while the course is Draft."
             )
+        module_lock_service.check_not_locked(module=module, user=self.request.user)
         instance.delete()
+        course_service.recalculate_duration_estimate(course=module.course)

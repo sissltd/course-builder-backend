@@ -9,7 +9,7 @@ from api.authentication.services import activity_service
 from api.categories.enums import CategoryStatus
 from api.categories.models import Category
 from api.courses.enums import CourseStatus
-from api.courses.models import Course, Topic
+from api.courses.models import Course, CourseVersion, Topic
 from api.courses.services import course_validation_service
 from api.notification.models import Notification
 from api.platform.services import platform_settings_service
@@ -253,9 +253,46 @@ def claim_for_review(*, course: Course, reviewer: User) -> Course:
     return course
 
 
+def _build_course_snapshot(course: Course) -> dict:
+    """Plain-dict snapshot of a course's module/lesson tree at publish time,
+    for CourseVersion.snapshot. Built by direct model traversal rather than
+    a serializer, to avoid a circular import with course_serializer (which
+    already imports this module)."""
+
+    return {
+        "title": course.title,
+        "description": course.description,
+        "difficulty_level": course.difficulty_level,
+        "modules": [
+            {
+                "title": module.title,
+                "order": module.order,
+                "lessons": [
+                    {
+                        "title": lesson.title,
+                        "order": lesson.order,
+                        "script": lesson.script,
+                        "video_url": lesson.video_url,
+                        "duration_minutes": lesson.duration_minutes,
+                    }
+                    for lesson in module.lessons.all()
+                ],
+            }
+            for module in course.modules.all()
+        ],
+    }
+
+
 def publish_course(*, course: Course, actor: User) -> Course:
     """Transition an Approved course to Published (Admin-only, enforced by view
-    permission). No external LMS push - deferred until LMS integration exists."""
+    permission), recording a CourseVersion snapshot at course.version (SCCS
+    PRD Section 15). No external LMS push - deferred until LMS integration
+    exists.
+
+    There is no re-edit-after-publish workflow yet (publishing is one-way,
+    no unpublish action), so this only ever creates a single v1.0
+    CourseVersion per course today - see CourseVersion's docstring.
+    """
 
     require_role(actor, IsAdminRole.allowed_roles)
     if course.status != CourseStatus.APPROVED:
@@ -263,19 +300,39 @@ def publish_course(*, course: Course, actor: User) -> Course:
             f"Course cannot be published from status '{course.status}'."
         )
 
-    course.status = CourseStatus.PUBLISHED
-    course.published_at = timezone.now()
-    course.updated_by = actor
-    course.save(
-        update_fields=["status", "published_at", "updated_by", "updated_datetime"]
+    with transaction.atomic():
+        course.status = CourseStatus.PUBLISHED
+        course.published_at = timezone.now()
+        course.updated_by = actor
+        course.save(
+            update_fields=["status", "published_at", "updated_by", "updated_datetime"]
+        )
+        CourseVersion.objects.create(
+            course=course,
+            version_number=course.version,
+            published_at=course.published_at,
+            snapshot=_build_course_snapshot(course),
+            created_by=actor,
+            updated_by=actor,
+        )
+        activity_service.log_activity(
+            user=actor,
+            category=UserActivityCategoryEnums.PUBLISH,
+            action=UserActivityActionEnums.COURSE_PUBLISHED,
+            summary=f"You published '{course.title}'.",
+            target=course,
+        )
+    return course
+
+
+def recalculate_duration_estimate(*, course: Course) -> Course:
+    """Recompute and persist Course.duration_estimate_minutes from its
+    current Lesson tree. Call after any Lesson create/update/delete."""
+
+    course.duration_estimate_minutes = course_validation_service.get_course_duration_minutes(
+        course
     )
-    activity_service.log_activity(
-        user=actor,
-        category=UserActivityCategoryEnums.PUBLISH,
-        action=UserActivityActionEnums.COURSE_PUBLISHED,
-        summary=f"You published '{course.title}'.",
-        target=course,
-    )
+    course.save(update_fields=["duration_estimate_minutes", "updated_datetime"])
     return course
 
 

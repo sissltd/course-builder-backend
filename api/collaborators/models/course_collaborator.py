@@ -44,6 +44,18 @@ class CourseCollaborator(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
         related_name="+",
         help_text=_("User who invited this collaborator."),
     )
+    assigned_modules = models.ManyToManyField(
+        "courses.Module",
+        verbose_name=_("Assigned Modules"),
+        related_name="assigned_collaborators",
+        blank=True,
+        help_text=_(
+            "Modules this collaborator may view/edit (SCCS PRD Section 14: "
+            "'collaborators receive access to only their assigned modules'). "
+            "Ignored for ADMIN-role collaborators, who get full-course access "
+            "regardless of what's assigned here."
+        ),
+    )
 
     class Meta:
         verbose_name = _("Course Collaborator")

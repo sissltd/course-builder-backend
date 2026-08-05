@@ -6,12 +6,15 @@ from drf_spectacular.utils import (
     extend_schema_view,
 )
 from rest_framework import exceptions
+from rest_framework.decorators import action
+from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 
 from api.collaborators.services import collaborator_service
 from api.courses.enums import CourseStatus
 from api.courses.models import Course, Module
 from api.courses.serializers import ModuleSerializer, ModuleWriteSerializer
+from api.courses.services import module_lock_service
 from api.users.permissions import IsCourseCreatorRole
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 
@@ -244,10 +247,15 @@ _DRAFT_ONLY_400 = OpenApiResponse(
 class ModuleViewSet(ModelViewSet):
     """Sub-resource CRUD for Modules nested under a Draft course.
 
-    get_queryset() is filtered to the courses the requesting user can access
-    (creator or collaborator) so a non-owner/non-collaborator's request 404s
-    (existence is not leaked via a 403) instead of relying solely on an
-    object-level permission check.
+    get_queryset() is filtered to the modules the requesting user can access
+    (SCCS PRD Section 14: full course for the creator or an ADMIN-role
+    collaborator, only explicitly assigned modules for a plain COLLABORATOR)
+    so a request for a module outside that scope 404s (existence is not
+    leaked via a 403) instead of relying solely on an object-level
+    permission check. Structural changes (create/delete a module) go further
+    and require full manage access (creator or ADMIN collaborator) - a plain
+    COLLABORATOR may edit their assigned modules' content but not add/remove
+    modules from the course.
     """
 
     permission_classes = [IsCourseCreatorRole]
@@ -255,11 +263,8 @@ class ModuleViewSet(ModelViewSet):
     def get_queryset(self):
         if getattr(self, "swagger_fake_view", False):
             return Module.objects.none()
-        return Module.objects.filter(
-            course_id=self.kwargs["course_pk"],
-            course__in=collaborator_service.get_courses_accessible_to(
-                self.request.user
-            ),
+        return collaborator_service.get_modules_accessible_to(
+            user=self.request.user, course_id=self.kwargs["course_pk"]
         )
 
     def get_serializer_class(self):
@@ -275,8 +280,18 @@ class ModuleViewSet(ModelViewSet):
         except Course.DoesNotExist as exc:
             raise exceptions.NotFound("Course not found.") from exc
 
+    def _require_manage_access(self, course: Course) -> None:
+        if not collaborator_service.has_manage_access(
+            course=course, user=self.request.user
+        ):
+            raise exceptions.PermissionDenied(
+                "Only the course creator or an Admin collaborator can add or "
+                "remove modules."
+            )
+
     def perform_create(self, serializer):
         course = self._get_course()
+        self._require_manage_access(course)
         if course.status != CourseStatus.DRAFT:
             raise exceptions.ValidationError(
                 "Modules can only be added while the course is Draft."
@@ -286,15 +301,100 @@ class ModuleViewSet(ModelViewSet):
         )
 
     def perform_update(self, serializer):
-        if serializer.instance.course.status != CourseStatus.DRAFT:
+        module = serializer.instance
+        if module.course.status != CourseStatus.DRAFT:
             raise exceptions.ValidationError(
                 "Modules can only be edited while the course is Draft."
             )
+        module_lock_service.check_not_locked(module=module, user=self.request.user)
         serializer.save(updated_by=self.request.user)
 
     def perform_destroy(self, instance):
+        self._require_manage_access(instance.course)
         if instance.course.status != CourseStatus.DRAFT:
             raise exceptions.ValidationError(
                 "Modules can only be deleted while the course is Draft."
             )
         instance.delete()
+
+    @extend_schema(
+        summary="Acquire the edit lock on a module",
+        description=(
+            "Acquires (or renews, if the caller already holds it) a "
+            "short-TTL edit lock on the module, so two collaborators don't "
+            "clobber each other's changes (SCCS PRD Section 14). This is a "
+            "simple REST lock with a heartbeat, not real-time presence.\n\n"
+            "**Auth:** Anyone with access to the module.\n\n"
+            "**Important:** Returns 423 Locked if someone else currently "
+            "holds an unexpired lock."
+        ),
+        tags=["Courses — Modules"],
+        parameters=[_COURSE_PK_PARAMETER],
+        request=None,
+        responses={
+            200: OpenApiResponse(response=ModuleSerializer),
+            423: OpenApiResponse(description="Locked by another user."),
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["not_found"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
+    @action(detail=True, methods=["post"])
+    def lock(self, request, *args, **kwargs):
+        module = module_lock_service.acquire_lock(
+            module=self.get_object(), user=request.user
+        )
+        return Response(ModuleSerializer(module).data)
+
+    @extend_schema(
+        summary="Release the edit lock on a module",
+        description=(
+            "Releases the caller's edit lock on the module, letting someone "
+            "else acquire it immediately.\n\n"
+            "**Auth:** Anyone with access to the module.\n\n"
+            "**Important:** No-op if the module isn't currently locked."
+        ),
+        tags=["Courses — Modules"],
+        parameters=[_COURSE_PK_PARAMETER],
+        request=None,
+        responses={
+            200: OpenApiResponse(response=ModuleSerializer),
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
+            **STANDARD_ERROR_RESPONSES["not_found"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
+    @action(detail=True, methods=["post"])
+    def unlock(self, request, *args, **kwargs):
+        module = module_lock_service.release_lock(
+            module=self.get_object(), user=request.user
+        )
+        return Response(ModuleSerializer(module).data)
+
+    @extend_schema(
+        summary="Extend the edit lock on a module",
+        description=(
+            "Extends the caller's existing edit lock, called periodically "
+            "while actively editing so the lock doesn't expire mid-edit.\n\n"
+            "**Auth:** Anyone with access to the module.\n\n"
+            "**Important:** Returns 423 Locked if the caller doesn't "
+            "currently hold an active lock (expired, or never acquired)."
+        ),
+        tags=["Courses — Modules"],
+        parameters=[_COURSE_PK_PARAMETER],
+        request=None,
+        responses={
+            200: OpenApiResponse(response=ModuleSerializer),
+            423: OpenApiResponse(description="No active lock held by the caller."),
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["not_found"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
+    @action(detail=True, methods=["post"])
+    def heartbeat(self, request, *args, **kwargs):
+        module = module_lock_service.heartbeat_lock(
+            module=self.get_object(), user=request.user
+        )
+        return Response(ModuleSerializer(module).data)

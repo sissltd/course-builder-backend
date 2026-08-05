@@ -26,6 +26,7 @@ class LessonSerializer(serializers.ModelSerializer):
             "title",
             "order",
             "script",
+            "video_url",
             "learning_objectives",
             "duration_minutes",
             "assessment",
@@ -57,6 +58,7 @@ class LessonWriteSerializer(serializers.ModelSerializer):
             "title",
             "order",
             "script",
+            "video_url",
             "learning_objectives",
             "duration_minutes",
         ]
