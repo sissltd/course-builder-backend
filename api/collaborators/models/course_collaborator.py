@@ -1,9 +1,8 @@
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
-from core.mixins import DateHistoryModelMixin, UUIDPrimaryKeyModelMixin
 from api.collaborators.enums import CollaboratorRole
-from includes.helpers import DateHistoryModelMixin, UUIDPrimaryKeyModelMixin
+from core.mixins import DateHistoryModelMixin, UUIDPrimaryKeyModelMixin
 
 
 class CourseCollaborator(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
