@@ -3,6 +3,7 @@ from rest_framework.routers import DefaultRouter
 
 from api.courses.views import (
     assessment_views,
+    course_appeal_views,
     course_views,
     lesson_views,
     module_views,
@@ -20,6 +21,11 @@ router.register(
 router.register("courses", course_views.CourseViewSet, basename="course")
 router.register(
     "review-queue", course_views.CourseReviewViewSet, basename="course-review"
+)
+router.register(
+    "course-appeals",
+    course_appeal_views.CourseAppealViewSet,
+    basename="course-appeal",
 )
 
 urlpatterns = router.urls + [

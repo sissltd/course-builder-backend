@@ -145,6 +145,9 @@ class UserActivityActionEnums(models.TextChoices):
     KYC_REJECTED = "KYC_REJECTED", "KYC Rejected"
     WITHDRAWAL_REQUESTED = "WITHDRAWAL_REQUESTED", "Withdrawal Requested"
     WITHDRAWAL_CONFIRMED = "WITHDRAWAL_CONFIRMED", "Withdrawal Confirmed"
+    APPEAL_SUBMITTED = "APPEAL_SUBMITTED", "Appeal Submitted"
+    APPEAL_APPROVED = "APPEAL_APPROVED", "Appeal Approved"
+    APPEAL_REJECTED = "APPEAL_REJECTED", "Appeal Rejected"
 
 
 class KYCDocumentType(models.TextChoices):
