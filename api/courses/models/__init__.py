@@ -1,6 +1,7 @@
 from .assessment import Assessment
 from .category_request import CategoryRequest
 from .course import Course
+from .course_appeal import CourseAppeal
 from .course_version import CourseVersion
 from .lesson import Lesson
 from .module import Module
@@ -12,6 +13,7 @@ __all__ = [
     "Assessment",
     "CategoryRequest",
     "Course",
+    "CourseAppeal",
     "CourseVersion",
     "Lesson",
     "Module",

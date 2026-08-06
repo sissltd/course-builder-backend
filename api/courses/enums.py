@@ -62,3 +62,13 @@ class ReservationStatus(models.TextChoices):
     PENDING = "PENDING", "Pending"
     APPROVED = "APPROVED", "Approved"
     REJECTED = "REJECTED", "Rejected"
+
+
+class AppealStatus(models.TextChoices):
+    """Lifecycle status of a creator's appeal against a course rejection
+    (PRD Section 12: "Creator disputes rejection... Escalated to Senior
+    Reviewer. Decision is final and logged.")."""
+
+    PENDING = "PENDING", "Pending"
+    APPROVED = "APPROVED", "Approved"
+    REJECTED = "REJECTED", "Rejected"

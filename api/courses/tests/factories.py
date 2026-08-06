@@ -17,6 +17,7 @@ from api.categories.models import Category
 from api.courses.models import (
     Assessment,
     Course,
+    CourseAppeal,
     Lesson,
     Module,
     Topic,
@@ -76,6 +77,26 @@ def make_topic_reservation_request(*, requested_by=None, category=None, **kwargs
     }
     defaults.update(kwargs)
     return TopicReservationRequest.objects.create(**defaults)
+
+
+def make_rejected_course(*, creator=None, category=None, **kwargs):
+    defaults = {"rejected_at": timezone.now()}
+    defaults.update(kwargs)
+    return make_draft_course(creator=creator, category=category, **defaults)
+
+
+def make_course_appeal(*, course=None, submitted_by=None, **kwargs):
+    n = next(_sequence)
+    course = course or make_rejected_course()
+    defaults = {
+        "course": course,
+        "submitted_by": submitted_by or course.creator,
+        "title": f"Appeal {n}",
+        "email": "creator@example.com",
+        "description": "word " * 30,
+    }
+    defaults.update(kwargs)
+    return CourseAppeal.objects.create(**defaults)
 
 
 def make_draft_course(*, creator=None, category=None, **kwargs):

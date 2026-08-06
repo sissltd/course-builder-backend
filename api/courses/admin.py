@@ -4,6 +4,7 @@ from api.courses.models import (
     Assessment,
     CategoryRequest,
     Course,
+    CourseAppeal,
     CourseVersion,
     Lesson,
     Module,
@@ -112,3 +113,16 @@ class TopicReservationRequestAdmin(admin.ModelAdmin):
     )
     list_filter = ("status",)
     search_fields = ("topic__name", "requested_by__email")
+
+
+@admin.register(CourseAppeal)
+class CourseAppealAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "course",
+        "submitted_by",
+        "status",
+        "created_datetime",
+    )
+    list_filter = ("status",)
+    search_fields = ("course__title", "submitted_by__email", "title")
