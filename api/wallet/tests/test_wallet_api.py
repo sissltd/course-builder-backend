@@ -148,3 +148,83 @@ class WithdrawalApiTests(APITestCase):
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+
+class AdminWalletApiTests(APITestCase):
+    def setUp(self):
+        self.creator = make_user(role=UserRole.COURSE_CREATOR)
+        self.admin = make_user(role=UserRole.ADMIN)
+        _approve_kyc(self.creator)
+        wallet_service.credit_wallet(user=self.creator, amount=Decimal("100.00"))
+
+    def test_creator_cannot_read_the_admin_wallet_list(self):
+        self.client.force_authenticate(self.creator)
+
+        response = self.client.get("/api/v1/admin/wallets/")
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_admin_can_see_a_creators_wallet(self):
+        """Regression: every creator-facing wallet route is gated on
+        IsCourseCreatorRole, so an admin used to be 403'd from all of them and
+        had no way to answer 'what is this creator's balance?'."""
+
+        self.client.force_authenticate(self.admin)
+
+        response = self.client.get("/api/v1/admin/wallets/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        rows = response.data["data"]["results"]
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["balance"], "100.00")
+        self.assertEqual(rows[0]["user"]["email"], self.creator.email)
+
+    def test_admin_transaction_ledger_includes_the_owner(self):
+        self.client.force_authenticate(self.admin)
+
+        response = self.client.get("/api/v1/admin/transactions/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        rows = response.data["data"]["results"]
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["user"]["email"], self.creator.email)
+        self.assertEqual(rows[0]["type"], "CREDIT")
+
+    def test_admin_transaction_ledger_filters_by_user(self):
+        other = make_user(role=UserRole.COURSE_CREATOR)
+        wallet_service.credit_wallet(user=other, amount=Decimal("40.00"))
+        self.client.force_authenticate(self.admin)
+
+        response = self.client.get(
+            "/api/v1/admin/transactions/", {"user": str(other.id)}
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        rows = response.data["data"]["results"]
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["user"]["email"], other.email)
+
+    def test_admin_sees_withdrawal_requests_with_destination_account(self):
+        payout_account = wallet_service.create_payout_account(
+            user=self.creator,
+            account_type="LOCAL",
+            provider_name="Access Bank",
+            account_number="1234567890",
+            account_name="Test User",
+        )
+        wallet_service.request_withdrawal(
+            user=self.creator,
+            amount=Decimal("60.00"),
+            payout_account_id=payout_account.id,
+        )
+        self.client.force_authenticate(self.admin)
+
+        response = self.client.get("/api/v1/admin/withdrawals/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        rows = response.data["data"]["results"]
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["status"], "PENDING_CONFIRMATION")
+        self.assertEqual(rows[0]["payout_account"]["account_number"], "1234567890")
+        self.assertEqual(rows[0]["user"]["email"], self.creator.email)
+
+    def test_admin_wallet_list_is_read_only(self):
+        self.client.force_authenticate(self.admin)
+
+        response = self.client.post("/api/v1/admin/wallets/", {}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)

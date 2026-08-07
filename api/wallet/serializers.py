@@ -37,6 +37,33 @@ class WalletSerializer(serializers.ModelSerializer):
         return wallet_service.get_wallet_totals(wallet=obj)["pending_balance"]
 
 
+class WalletOwnerMiniSerializer(serializers.Serializer):
+    """Lightweight User representation for nesting inside admin wallet payloads.
+
+    An admin reading a wallet row needs to know whose it is; the creator-facing
+    serializers omit this because the owner is always the caller.
+    """
+
+    id = serializers.UUIDField()
+    email = serializers.EmailField()
+    first_name = serializers.CharField()
+    last_name = serializers.CharField()
+
+
+class AdminWalletSerializer(serializers.ModelSerializer):
+    """Read-only representation of any creator's wallet, for the admin finance
+    view. WalletSerializer's totals are deliberately not repeated here - they
+    cost an aggregate query per row, which is affordable on the single-wallet
+    creator view but not down a paginated admin list."""
+
+    user = WalletOwnerMiniSerializer(read_only=True)
+
+    class Meta:
+        model = Wallet
+        fields = ["id", "user", "balance", "currency", "updated_datetime"]
+        read_only_fields = fields
+
+
 class CourseMiniSerializer(serializers.Serializer):
     """Lightweight Course representation for nesting inside Transaction payloads."""
 
@@ -165,3 +192,44 @@ class WithdrawalConfirmSerializer(serializers.Serializer):
 
     def to_representation(self, instance):
         return TransactionSerializer(instance, context=self.context).data
+
+
+class AdminTransactionSerializer(TransactionSerializer):
+    """TransactionSerializer plus the owning creator, for the admin ledger.
+
+    Subclasses rather than duplicates: an admin should see exactly what the
+    creator sees on their own statement, with the owner added - so a field
+    added to the creator view appears here automatically.
+    """
+
+    user = WalletOwnerMiniSerializer(source="wallet.user", read_only=True)
+
+    class Meta(TransactionSerializer.Meta):
+        fields = ["user"] + TransactionSerializer.Meta.fields
+        read_only_fields = fields
+
+
+class AdminWithdrawalRequestSerializer(serializers.ModelSerializer):
+    """Read-only representation of a withdrawal request for the admin payout
+    worklist, including the destination account and - once confirmed - the
+    reference of the transaction it produced."""
+
+    user = WalletOwnerMiniSerializer(read_only=True)
+    payout_account = PayoutAccountSerializer(read_only=True)
+    transaction_reference = serializers.CharField(
+        source="transaction.reference", read_only=True, default=None
+    )
+
+    class Meta:
+        model = WithdrawalRequest
+        fields = [
+            "id",
+            "user",
+            "amount",
+            "status",
+            "payout_account",
+            "transaction_reference",
+            "confirmed_at",
+            "created_datetime",
+        ]
+        read_only_fields = fields

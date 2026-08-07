@@ -44,7 +44,8 @@ class MeSerializer(serializers.ModelSerializer):
 
 class MeUpdateSerializer(serializers.ModelSerializer):
     """Write serializer for PATCH /users/me/. Email is deliberately excluded -
-    changing it needs its own re-verification flow, not built yet."""
+    changing it needs re-verification, which has its own flow at
+    /api/v1/auth/change-email/."""
 
     class Meta:
         model = User

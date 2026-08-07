@@ -21,9 +21,10 @@ Usage:
 
     responses={
         201: OpenApiResponse(...),
-        **STANDARD_ERROR_RESPONSES["validation"],   # 400
-        **STANDARD_ERROR_RESPONSES["auth"],         # 401
-        **STANDARD_ERROR_RESPONSES["permission"],   # 403
+        **STANDARD_ERROR_RESPONSES["validation"],    # 400
+        **STANDARD_ERROR_RESPONSES["auth"],          # 401
+        **STANDARD_ERROR_RESPONSES["permission"],    # 403
+        **STANDARD_ERROR_RESPONSES["rate_limited"],  # 429
     }
 
 Only spread the buckets a view can actually emit - the standard explicitly
@@ -156,6 +157,33 @@ STANDARD_ERROR_RESPONSES = {
                                 type_="client_error",
                                 code="not_found",
                                 message="No user found with this email.",
+                            )
+                        ]
+                    },
+                ),
+            ],
+        ),
+    },
+    "rate_limited": {
+        429: OpenApiResponse(
+            description=(
+                "Too many requests for this endpoint's rate limit. The "
+                "`Retry-After` response header carries the number of seconds "
+                "to wait. Limits are per client IP for anonymous callers and "
+                "per user once authenticated."
+            ),
+            examples=[
+                OpenApiExample(
+                    name="Rate limited",
+                    value={
+                        "errors": [
+                            _error(
+                                type_="client_error",
+                                code="throttled",
+                                message=(
+                                    "Request was throttled. Expected available "
+                                    "in 3600 seconds."
+                                ),
                             )
                         ]
                     },

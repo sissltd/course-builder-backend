@@ -6,7 +6,7 @@ class SuperAdminBootstrapSerializer(serializers.Serializer):
     """One-time bootstrap input for claiming the platform's Super Admin seat.
 
     `role` is deliberately absent - always forced to UserRole.SUPER_ADMIN
-    server-side in AdminService.bootstrap_superadmin, exactly as SignupSerializer
+    server-side in StaffService.bootstrap_superadmin, exactly as SignupSerializer
     forces COURSE_CREATOR.
     """
 
