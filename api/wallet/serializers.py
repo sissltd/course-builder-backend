@@ -3,8 +3,9 @@ from decimal import Decimal
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
+from api.payments.models.transaction_model import Transaction
 from api.wallet.enums import PayoutAccountType
-from api.wallet.models import PayoutAccount, Transaction, Wallet, WithdrawalRequest
+from api.wallet.models import PayoutAccount, Wallet, WithdrawalRequest
 from api.wallet.services import wallet_service
 
 

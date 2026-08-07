@@ -10,6 +10,8 @@ from api.authentication.enums import TokenPurpose
 from api.authentication.services import token_service
 from api.courses.models import Course
 from api.notification.models import Notification
+from api.payments.models.bankaccount_models import BankAccount
+from api.payments.models.transaction_model import Transaction
 from api.platform.services import platform_settings_service
 from api.users.models import User
 from api.users.permissions import IsCourseCreatorRole, require_role
@@ -19,7 +21,7 @@ from api.wallet.enums import (
     TransactionType,
     WithdrawalRequestStatus,
 )
-from api.wallet.models import PayoutAccount, Transaction, Wallet, WithdrawalRequest
+from api.wallet.models import PayoutAccount, Wallet, WithdrawalRequest, _generate_reference
 
 WITHDRAWAL_OTP_SUBJECT = "Confirm your withdrawal"
 
@@ -82,6 +84,7 @@ def credit_wallet(
             type=TransactionType.CREDIT,
             status=TransactionStatus.COMPLETED,
             description=description,
+            reference=_generate_reference(),
         )
         wallet.balance = wallet.balance + amount
         wallet.save(update_fields=["balance", "updated_datetime"])
@@ -105,11 +108,11 @@ def create_payout_account(
     *,
     user: User,
     account_type: str,
-    provider_name: str,
+    bank_name: str,
     account_number: str,
     account_name: str,
     is_default: bool = False,
-) -> PayoutAccount:
+) -> BankAccount:
     """Add a payout account for `user`.
 
     The first account a user adds automatically becomes their default
@@ -119,34 +122,32 @@ def create_payout_account(
     """
 
     require_role(user, IsCourseCreatorRole.allowed_roles)
-    has_existing = PayoutAccount.objects.filter(user=user).exists()
+    has_existing = BankAccount.objects.filter(user=user).exists()
     is_default = is_default or not has_existing
 
     with transaction.atomic():
         if is_default:
-            PayoutAccount.objects.filter(user=user, is_default=True).update(
-                is_default=False
-            )
-        return PayoutAccount.objects.create(
+            BankAccount.objects.filter(user=user, is_default=True).update(is_default=False)
+        return BankAccount.objects.create(
             user=user,
             account_type=account_type,
-            provider_name=provider_name,
+            bank_name=bank_name,
             account_number=account_number,
             account_name=account_name,
             is_default=is_default,
         )
 
 
-def delete_payout_account(*, user: User, payout_account_id) -> None:
-    """Remove one of `user`'s payout accounts.
+def delete_bank_account(*, user: User, bank_account_id) -> None:
+    """Remove one of `user`'s bank accounts.
 
     Raises NotFound if it doesn't exist or belongs to someone else.
     """
 
     require_role(user, IsCourseCreatorRole.allowed_roles)
-    account = PayoutAccount.objects.filter(user=user, pk=payout_account_id).first()
+    account = BankAccount.objects.filter(user=user, pk=bank_account_id).first()
     if account is None:
-        raise exceptions.NotFound("Payout account not found.")
+        raise exceptions.NotFound("Bank account not found.")
     account.delete()
 
 
@@ -177,9 +178,7 @@ def request_withdrawal(
     if amount > wallet.balance:
         raise exceptions.ValidationError("Withdrawal amount exceeds available balance.")
 
-    payout_account = PayoutAccount.objects.filter(
-        user=user, pk=payout_account_id
-    ).first()
+    payout_account = BankAccount.objects.filter(user=user, pk=payout_account_id).first()
     if payout_account is None:
         raise exceptions.NotFound("Payout account not found.")
 
@@ -249,7 +248,7 @@ def confirm_withdrawal(*, user: User, withdrawal_request_id, code: str) -> Trans
             description="Withdrawal request",
             recipient_account_name=payout_account.account_name,
             recipient_account_number=payout_account.account_number,
-            recipient_provider_name=payout_account.provider_name,
+            recipient_provider_name=payout_account.bank_name,
         )
         wallet.balance = wallet.balance - withdrawal_request.amount
         wallet.save(update_fields=["balance", "updated_datetime"])

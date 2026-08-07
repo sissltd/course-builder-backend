@@ -5,11 +5,6 @@ from api.wallet import views as wallet_views
 urlpatterns = [
     path("wallet/", wallet_views.WalletDetailView.as_view(), name="wallet-detail"),
     path(
-        "transactions/",
-        wallet_views.TransactionListView.as_view(),
-        name="wallet-transactions",
-    ),
-    path(
         "payout-accounts/",
         wallet_views.PayoutAccountListCreateView.as_view(),
         name="wallet-payout-accounts",

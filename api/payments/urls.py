@@ -8,6 +8,7 @@ from api.payments.views.bankaccount_views import (
     BankListView,
     VerifyBankAccountView,
 )
+from api.payments.views.transaction_views import TransactionListView
 
 urlpatterns = [
     path("bank-accounts/", BankAccountListCreateView.as_view(), name="bank-accounts-list-create"),
@@ -16,4 +17,5 @@ urlpatterns = [
     path("bank-accounts/<uuid:pk>/suspend/", BankAccountSuspendView.as_view(), name="bank-accounts-suspend"),
     path("bank-accounts/verify/", VerifyBankAccountView.as_view(), name="bank-accounts-verify"),
     path("banks/", BankListView.as_view(), name="banks-list"),
+    path("transactions/", TransactionListView.as_view(), name="wallet-transactions"),
 ]

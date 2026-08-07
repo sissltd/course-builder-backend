@@ -7,6 +7,7 @@ from shared.utils.encryption import decrypt_field
 
 
 class BankAccountCreateSerializer(serializers.ModelSerializer):
+    account_type = serializers.ChoiceField(choices=BankAccount.BankAccountType.choices)
 
     class Meta:
         model = BankAccount

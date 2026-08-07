@@ -21,6 +21,7 @@ CUSTOM_APPS = [
     "api.payments",
     "shared.audit",
     "api.platform",
+    "core",
 ]
 
 THIRD_PARTY_APPS = [

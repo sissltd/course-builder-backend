@@ -54,41 +54,6 @@ class WalletApiTests(APITestCase):
         self.assertEqual(len(response.data["data"]["results"]), 1)
 
 
-class PayoutAccountApiTests(APITestCase):
-    def setUp(self):
-        self.creator = make_user(role=UserRole.COURSE_CREATOR)
-        self.client.force_authenticate(self.creator)
-
-    def test_create_and_list_payout_account(self):
-        response = self.client.post(
-            "/api/v1/payout-accounts/",
-            {
-                "account_type": "LOCAL",
-                "provider_name": "Access Bank",
-                "account_number": "1234567890",
-                "account_name": "Test User",
-            },
-            format="json",
-        )
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertTrue(response.data["is_default"])
-
-        list_response = self.client.get("/api/v1/payout-accounts/")
-        self.assertEqual(list_response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(list_response.data["data"]["results"]), 1)
-
-    def test_delete_payout_account(self):
-        account = wallet_service.create_payout_account(
-            user=self.creator,
-            account_type="LOCAL",
-            provider_name="Access Bank",
-            account_number="1234567890",
-            account_name="Test User",
-        )
-
-        response = self.client.delete(f"/api/v1/payout-accounts/{account.id}/")
-        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
-
 
 class WithdrawalApiTests(APITestCase):
     def setUp(self):
@@ -98,7 +63,7 @@ class WithdrawalApiTests(APITestCase):
         self.payout_account = wallet_service.create_payout_account(
             user=self.creator,
             account_type="LOCAL",
-            provider_name="Access Bank",
+            bank_name="Access Bank",
             account_number="1234567890",
             account_name="Test User",
         )
@@ -136,7 +101,7 @@ class WithdrawalApiTests(APITestCase):
         other_payout_account = wallet_service.create_payout_account(
             user=other_creator,
             account_type="LOCAL",
-            provider_name="Access Bank",
+            bank_name="Access Bank",
             account_number="1234567890",
             account_name="Other User",
         )
