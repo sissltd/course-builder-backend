@@ -2,6 +2,7 @@ from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import OpenApiExample, OpenApiResponse, extend_schema
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from api.authentication.serializers import (
@@ -66,6 +67,8 @@ class SuperAdminBootstrapView(APIView):
     """Claim the platform's single Super Admin seat, once, using an env secret."""
 
     permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "superadmin_bootstrap"
     serializer_class = SuperAdminBootstrapSerializer  # schema generation only
 
     @extend_schema(
@@ -95,9 +98,14 @@ class SuperAdminBootstrapView(APIView):
             "one-super-admin rule is enforced by a database constraint, so "
             "concurrent calls cannot both succeed. The account is created with "
             "Django's `is_staff` and `is_superuser` flags set, granting access "
-            "to `/admin/` as well as the API. Unset "
-            "`SUPERADMIN_BOOTSTRAP_TOKEN` after bootstrapping so the secret "
-            "stops being a live credential in your environment."
+            "to `/admin/` as well as the API. Rate limited to **5 requests "
+            "per hour per IP**, since the bootstrap token is a shared secret "
+            "rather than a credential and an unthrottled endpoint would let it "
+            "be guessed at network speed; a legitimate operator only ever "
+            "calls this once. Success returns the profile but **no tokens** — "
+            "log in at `/api/v1/auth/login/` afterwards to get a JWT pair. "
+            "Unset `SUPERADMIN_BOOTSTRAP_TOKEN` after bootstrapping so the "
+            "secret stops being a live credential in your environment."
         ),
         tags=["Auth — Super Admin Bootstrap"],
         request=SuperAdminBootstrapSerializer,
@@ -195,6 +203,7 @@ class SuperAdminBootstrapView(APIView):
                     ),
                 ],
             ),
+            **STANDARD_ERROR_RESPONSES["rate_limited"],
             **STANDARD_ERROR_RESPONSES["server"],
         },
     )

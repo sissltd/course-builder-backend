@@ -2,6 +2,8 @@
 from django.contrib.auth.models import BaseUserManager
 from django.utils.translation import gettext_lazy as _
 
+from api.users.enums import AccountStatus, UserRole
+
 
 class CustomUserManager(BaseUserManager):
     """User manager for an email-first authentication model.
@@ -24,15 +26,48 @@ class CustomUserManager(BaseUserManager):
         return user
 
     def create_superuser(self, email, password=None, **extra_fields):
-        """Create an administrative user with the required permission flags."""
+        """Create an administrative user with the required permission flags.
+
+        Also assigns `role=SUPER_ADMIN` and `status=ACTIVE`, which the scaffold
+        version did not. Without them `createsuperuser` produced an account
+        that was `is_superuser=True` - and therefore passed every check in
+        api.users.permissions, since HasRole and require_role both bypass on
+        that flag - while carrying the default COURSE_CREATOR role. The result
+        was a full-authority account that reported itself as a public creator,
+        was routed to the creator dashboard at login, and was not covered by
+        the partial unique index (which only constrains rows whose role is
+        SUPER_ADMIN), so any number of them could exist.
+
+        Setting the role brings shell-created superusers under the same
+        one-seat rule as the bootstrap endpoint. That means `createsuperuser`
+        now fails once a Super Admin exists, which is the point: the second
+        account was never legitimate, it was just invisible.
+        """
 
         extra_fields.setdefault("is_staff", True)
         extra_fields.setdefault("is_superuser", True)
         extra_fields.setdefault("is_active", True)
+        extra_fields.setdefault("role", UserRole.SUPER_ADMIN)
+        extra_fields.setdefault("status", AccountStatus.ACTIVE)
 
         if extra_fields.get("is_staff") is not True:
             raise ValueError(_("Superuser must have is_staff=True."))
         if extra_fields.get("is_superuser") is not True:
             raise ValueError(_("Superuser must have is_superuser=True."))
+
+        # Checked here as well as by the database so the command-line failure
+        # is a readable sentence rather than a raw IntegrityError traceback.
+        # The constraint is still what actually guarantees uniqueness.
+        if (
+            extra_fields.get("role") == UserRole.SUPER_ADMIN
+            and self.filter(role=UserRole.SUPER_ADMIN).exists()
+        ):
+            raise ValueError(
+                _(
+                    "A super admin already exists for this platform. The seat is "
+                    "unique: demote the incumbent before creating another, or "
+                    "create a regular user and assign a role instead."
+                )
+            )
 
         return self.create_user(email, password, **extra_fields)

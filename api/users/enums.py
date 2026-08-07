@@ -108,6 +108,7 @@ class UserActivityActionEnums(models.TextChoices):
         "LOCKOUT_TRIGGERED",
         "Account Locked (Repeated Failed Logins)",
     )
+    LOCKOUT_CLEARED = "LOCKOUT_CLEARED", "Account Lockout Cleared"
     SESSIONS_REVOKED = "SESSIONS_REVOKED", "Sessions Revoked (All Devices)"
     TOKEN_REFRESHED = "TOKEN_REFRESHED", "Token Refreshed"
     ACCOUNT_VERIFIED = "ACCOUNT_VERIFIED", "Account Verified"
@@ -126,6 +127,9 @@ class UserActivityActionEnums(models.TextChoices):
     )
     STAFF_REVOKED = "STAFF_REVOKED", "Staff Revoked"
     STAFF_REACTIVATED = "STAFF_REACTIVATED", "Staff Reactivated"
+    ACCOUNT_SUSPENDED = "ACCOUNT_SUSPENDED", "Account Suspended"
+    ACCOUNT_REINSTATED = "ACCOUNT_REINSTATED", "Account Reinstated"
+    ACCOUNT_DEACTIVATED = "ACCOUNT_DEACTIVATED", "Account Deactivated"
     COURSE_ASSIGNED = "COURSE_ASSIGNED", "Course Assigned"
     COURSE_SUBMITTED = "COURSE_SUBMITTED", "Course Submitted"
     COURSE_APPROVED = "COURSE_APPROVED", "Course Approved"
