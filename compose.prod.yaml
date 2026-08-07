@@ -97,6 +97,8 @@ services:
 
   postgres:
     image: postgres:16-alpine
+    ports:
+      - "${DB_EXTERNAL_PORT:-6993}:5432"
     environment:
       POSTGRES_DB: ${DB_NAME:-postgres}
       POSTGRES_USER: ${DB_USER:-postgres}
