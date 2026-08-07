@@ -109,7 +109,7 @@ class Transaction(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, SoftDeleteMod
     )
     recipient_account_number = models.CharField(
         verbose_name=_("Recipient Account Number"),
-        max_length=255,
+        max_length=34,
         blank=True,
         default="",
         help_text=_("Snapshot of the payout account number at transaction time."),
