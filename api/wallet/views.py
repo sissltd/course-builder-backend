@@ -2,28 +2,17 @@
 from django_filters.rest_framework import DjangoFilterBackend
 from drf_spectacular.utils import OpenApiExample, OpenApiResponse, extend_schema
 from rest_framework import filters as drf_filters
-
 from rest_framework import status
-from rest_framework.generics import (
-    CreateAPIView,
-    DestroyAPIView,
-    ListCreateAPIView,
-    RetrieveAPIView,
-)
+from rest_framework.generics import CreateAPIView, DestroyAPIView, ListAPIView, ListCreateAPIView, RetrieveAPIView
 from rest_framework.views import APIView
 
-from api.payments.models.transaction_model import Transaction  # ruff: ignore[unused-import]
-from api.users.permissions import IsCourseCreatorRole
-from api.wallet.models import PayoutAccount
-
+from api.payments.models.transaction_model import Transaction
 from api.users.permissions import IsAdminOrSuperAdminRole, IsCourseCreatorRole
 from api.wallet.filters import (
     AdminTransactionFilter,
     AdminWithdrawalRequestFilter,
-    TransactionFilter,
 )
 from api.wallet.models import PayoutAccount, Wallet, WithdrawalRequest
-
 from api.wallet.serializers import (
     AdminTransactionSerializer,
     AdminWalletSerializer,
@@ -36,9 +25,9 @@ from api.wallet.serializers import (
     WithdrawalRequestCreateSerializer,
 )
 from api.wallet.services import wallet_service
+from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 from shared.response.error import custom_error_response
 from shared.response.success import custom_success_response
-from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 
 _WALLET_OWNER_EXAMPLE = {
     "id": "5a1f83c6-92b4-4e70-8d3f-1c7e6b409af2",

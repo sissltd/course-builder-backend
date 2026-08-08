@@ -4,6 +4,7 @@ from django.db.models import Count, Q, Sum
 
 from api.courses.enums import CourseStatus
 from api.courses.models import Course
+from api.payments.models.transaction_model import Transaction
 from api.users.enums import AccountStatus, KYCStatus
 from api.users.models import KYCVerification, User
 from api.users.permissions import IsAdminOrSuperAdminRole, require_role
@@ -12,7 +13,7 @@ from api.wallet.enums import (
     TransactionType,
     WithdrawalRequestStatus,
 )
-from api.wallet.models import Transaction, Wallet, WithdrawalRequest
+from api.wallet.models import Wallet, WithdrawalRequest
 
 
 def get_overview(*, actor: User) -> dict:

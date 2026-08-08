@@ -5,7 +5,7 @@ from django.conf import settings
 from django.db import transaction
 from django.db.models import Q, QuerySet, Sum
 from django.utils import timezone
-from api.users.services import kyc_service
+from django.contrib.contenttypes.models import ContentType
 from rest_framework import exceptions
 
 from api.authentication.enums import TokenPurpose
@@ -18,16 +18,12 @@ from api.payments.models.transaction_model import Transaction, generate_referenc
 from api.payments.services.transaction_services import get_paystack_recipient_code, internal_transfer
 from api.platform.services import platform_settings_service
 from api.users.models import User
-
-from api.users.permissions import IsCourseCreatorRole, require_role
-
 from api.users.permissions import (
     IsAdminOrSuperAdminRole,
     IsCourseCreatorRole,
     require_role,
 )
 from api.users.services import kyc_service
-
 from api.wallet.enums import (
     TransactionStatus,
     TransactionType,
@@ -95,7 +91,8 @@ def credit_wallet(
         wallet = Wallet.objects.select_for_update().get(pk=wallet.pk)
 
         txn = Transaction.objects.create(
-            wallet=wallet,
+            wallet_id=wallet.id,
+            wallet_type=ContentType.objects.get_for_model(wallet),
             course=course,
             amount=amount,
             type=TransactionType.CREDIT,
@@ -142,7 +139,7 @@ def list_all_transactions(*, actor: User) -> QuerySet[Transaction]:
     """
 
     require_role(actor, IsAdminOrSuperAdminRole.allowed_roles)
-    return Transaction.objects.select_related("wallet__user", "course")
+    return Transaction.objects.select_related("course")# wallet field is now a GenericForeign key
 
 
 def list_all_withdrawal_requests(*, actor: User) -> QuerySet[WithdrawalRequest]:
