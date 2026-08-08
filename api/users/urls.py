@@ -1,11 +1,13 @@
 from django.urls import path
 
 from api.users.views import (
+    AdminUserActivityLogListView,
     KYCReviewViewSet,
     KYCVerificationView,
     MeView,
     ReviewerAvailabilityView,
     UserActivityLogListView,
+    UserAdminViewSet,
 )
 
 urlpatterns = [
@@ -40,5 +42,35 @@ urlpatterns = [
         "users/kyc-review/<uuid:pk>/reject/",
         KYCReviewViewSet.as_view({"post": "reject"}),
         name="kyc-review-reject",
+    ),
+    path(
+        "users/admin/",
+        UserAdminViewSet.as_view({"get": "list"}),
+        name="user-admin-list",
+    ),
+    path(
+        "users/admin/<uuid:pk>/",
+        UserAdminViewSet.as_view({"get": "retrieve"}),
+        name="user-admin-detail",
+    ),
+    path(
+        "users/admin/<uuid:pk>/suspend/",
+        UserAdminViewSet.as_view({"post": "suspend"}),
+        name="user-admin-suspend",
+    ),
+    path(
+        "users/admin/<uuid:pk>/deactivate/",
+        UserAdminViewSet.as_view({"post": "deactivate"}),
+        name="user-admin-deactivate",
+    ),
+    path(
+        "users/admin/<uuid:pk>/reinstate/",
+        UserAdminViewSet.as_view({"post": "reinstate"}),
+        name="user-admin-reinstate",
+    ),
+    path(
+        "users/activity-log/",
+        AdminUserActivityLogListView.as_view(),
+        name="admin-activity-log",
     ),
 ]

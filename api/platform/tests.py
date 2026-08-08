@@ -3,12 +3,18 @@ from decimal import Decimal
 from rest_framework import status
 from rest_framework.test import APITestCase
 
+from django.contrib.auth import get_user_model
+
 from api.authentication.tests.factories import make_user
+from api.courses.enums import CourseStatus
 from api.courses.services import course_validation_service
 from api.courses.tests.factories import build_compliant_course, make_category
 from api.platform.models import PlatformSettings
 from api.platform.services import platform_settings_service
-from api.users.enums import UserRole
+from api.users.enums import AccountStatus, UserRole
+from api.wallet.services import wallet_service
+
+User = get_user_model()
 
 
 class PlatformSettingsServiceTests(APITestCase):
@@ -102,3 +108,48 @@ class PlatformSettingsApiTests(APITestCase):
             any("modules" in failure for failure in failures),
             failures,
         )
+
+
+class AdminOverviewApiTests(APITestCase):
+    def setUp(self):
+        self.admin = make_user(role=UserRole.ADMIN)
+        self.creator = make_user(role=UserRole.COURSE_CREATOR)
+
+    def test_requires_authentication(self):
+        response = self.client.get("/api/v1/admin/overview/")
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_creator_is_forbidden(self):
+        self.client.force_authenticate(self.creator)
+
+        response = self.client.get("/api/v1/admin/overview/")
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_admin_gets_every_status_key_including_zeroes(self):
+        """The dashboard renders a fixed set of tiles, so a status with no rows
+        must still be present rather than vanishing from the payload."""
+
+        self.client.force_authenticate(self.admin)
+
+        response = self.client.get("/api/v1/admin/overview/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(set(response.data["users"]), set(AccountStatus.values))
+        self.assertEqual(set(response.data["courses"]), set(CourseStatus.values))
+        self.assertEqual(response.data["courses"][CourseStatus.PUBLISHED], 0)
+
+    def test_counts_reflect_real_rows(self):
+        self.client.force_authenticate(self.admin)
+
+        response = self.client.get("/api/v1/admin/overview/")
+        user_counts = response.data["users"]
+        self.assertEqual(sum(user_counts.values()), User.objects.count())
+
+    def test_wallet_totals_reported(self):
+        wallet_service.credit_wallet(user=self.creator, amount=Decimal("120.00"))
+        self.client.force_authenticate(self.admin)
+
+        response = self.client.get("/api/v1/admin/overview/")
+        totals = response.data["wallet_totals"]
+        self.assertEqual(totals["balance_held"], "120.00")
+        self.assertEqual(totals["total_credited"], "120.00")
+        self.assertEqual(totals["awaiting_payout"], "0.00")

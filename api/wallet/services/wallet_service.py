@@ -18,7 +18,16 @@ from api.payments.models.transaction_model import Transaction, generate_referenc
 from api.payments.services.transaction_services import get_paystack_recipient_code, internal_transfer
 from api.platform.services import platform_settings_service
 from api.users.models import User
+
 from api.users.permissions import IsCourseCreatorRole, require_role
+
+from api.users.permissions import (
+    IsAdminOrSuperAdminRole,
+    IsCourseCreatorRole,
+    require_role,
+)
+from api.users.services import kyc_service
+
 from api.wallet.enums import (
     TransactionStatus,
     TransactionType,
@@ -110,6 +119,45 @@ def list_payout_accounts(*, user: User) -> QuerySet[PayoutAccount]:
     """Return `user`'s payout accounts, newest first."""
 
     return PayoutAccount.objects.filter(user=user)
+
+
+def list_all_wallets(*, actor: User) -> QuerySet[Wallet]:
+    """Return every creator wallet, for the admin finance view.
+
+    Creator-facing wallet endpoints are gated on IsCourseCreatorRole, so an
+    Admin is 403'd from all of them and has no way to answer "what is this
+    creator's balance?" - these admin readers exist to close that.
+    """
+
+    require_role(actor, IsAdminOrSuperAdminRole.allowed_roles)
+    return Wallet.objects.select_related("user").order_by("-updated_datetime")
+
+
+def list_all_transactions(*, actor: User) -> QuerySet[Transaction]:
+    """Return every wallet transaction across all creators, newest first.
+
+    select_related covers wallet__user and course because the admin serializer
+    renders both per row; without it the list is one extra query per
+    transaction.
+    """
+
+    require_role(actor, IsAdminOrSuperAdminRole.allowed_roles)
+    return Transaction.objects.select_related("wallet__user", "course")
+
+
+def list_all_withdrawal_requests(*, actor: User) -> QuerySet[WithdrawalRequest]:
+    """Return every withdrawal request across all creators, newest first.
+
+    This is the closest thing to a payout worklist the platform has. Note it
+    is read-only: confirming a withdrawal debits the wallet and leaves a
+    PENDING transaction, and nothing - here or anywhere - moves that to
+    COMPLETED or FAILED yet, so an admin can see the queue but not settle it.
+    """
+
+    require_role(actor, IsAdminOrSuperAdminRole.allowed_roles)
+    return WithdrawalRequest.objects.select_related(
+        "user", "payout_account", "transaction"
+    )
 
 
 def create_payout_account(

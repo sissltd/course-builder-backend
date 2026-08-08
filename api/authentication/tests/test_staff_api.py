@@ -8,6 +8,7 @@ able to mint a second Super Admin.
 
 from django.conf import settings
 from django.core import mail
+from django.core.cache import cache
 from django.test import override_settings
 from rest_framework import status
 from rest_framework.test import APITestCase
@@ -44,6 +45,13 @@ def reactivate_url(staff):
 
 @override_settings(SUPERADMIN_BOOTSTRAP_TOKEN=BOOTSTRAP_TOKEN)
 class SuperAdminBootstrapApiTests(APITestCase):
+    def setUp(self):
+        # Throttling is cache-backed (shared Redis, not DB-transaction-scoped
+        # like everything else in a TestCase), so it must be reset per test -
+        # otherwise unrelated test methods sharing the test client's fake IP
+        # would trip each other's rate limit.
+        cache.clear()
+
     def test_happy_path_creates_active_super_admin(self):
         response = self.client.post(
             BOOTSTRAP_URL, VALID_BOOTSTRAP_PAYLOAD, format="json"
@@ -704,3 +712,36 @@ class ReactivateStaffApiTests(APITestCase):
                 action=UserActivityActionEnums.STAFF_REACTIVATED
             ).exists()
         )
+
+
+@override_settings(SUPERADMIN_BOOTSTRAP_TOKEN=BOOTSTRAP_TOKEN)
+class BootstrapThrottleTests(APITestCase):
+    """The bootstrap endpoint is guarded by a shared secret rather than a
+    credential, so without a rate limit it is an unlimited guessing oracle
+    against SUPERADMIN_BOOTSTRAP_TOKEN."""
+
+    def setUp(self):
+        cache.clear()
+
+    def tearDown(self):
+        cache.clear()
+
+    def test_repeated_wrong_token_guesses_are_throttled(self):
+        codes = []
+        for attempt in range(7):
+            response = self.client.post(
+                BOOTSTRAP_URL,
+                {**VALID_BOOTSTRAP_PAYLOAD, "bootstrap_token": f"guess-{attempt}"},
+                format="json",
+            )
+            codes.append(response.status_code)
+
+        self.assertIn(status.HTTP_429_TOO_MANY_REQUESTS, codes)
+        self.assertEqual(codes[0], status.HTTP_403_FORBIDDEN)
+
+    def test_throttle_does_not_block_a_single_legitimate_bootstrap(self):
+        response = self.client.post(
+            BOOTSTRAP_URL, VALID_BOOTSTRAP_PAYLOAD, format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)

@@ -455,9 +455,44 @@ could not be replaced through the API.
 
 Django's `is_staff` / `is_superuser` flags are set on the bootstrapped Super
 Admin so it can also reach `/admin/`. Note that `is_superuser` bypasses every
-role check in `api.users.permissions.HasRole`, so a Django superuser created
-via `createsuperuser` passes as any role — that is Django's convention, but it
-means shell-created superusers sidestep the invitation chain above.
+role check in `api.users.permissions.HasRole` *and* in `require_role`, so a
+Django superuser passes as any role — including `IsCourseCreatorRole`. That is
+Django's convention, and it means role checks are not a boundary for such an
+account at all.
+
+`createsuperuser` therefore assigns `role=SUPER_ADMIN` and `status=ACTIVE`
+(`api.users.models.manager.CustomUserManager`). It previously left `role` at
+its `COURSE_CREATOR` default, which produced a full-authority account that
+reported itself as a public creator, was routed to the creator dashboard at
+login, and — because the partial unique index only constrains rows whose role
+*is* `SUPER_ADMIN` — escaped the one-seat rule entirely, so any number could
+exist. Shell-created superusers now fall under the same rule as the bootstrap
+endpoint: the second one fails with a readable message rather than silently
+becoming an invisible co-owner.
+
+The bootstrap endpoint is rate limited to **5 requests per hour per IP**. It is
+authorized by a shared secret rather than a credential, so an unthrottled
+version is a guessing oracle against `SUPERADMIN_BOOTSTRAP_TOKEN`; a genuine
+operator calls it once, so the limit costs nothing. The token comparison is
+constant-time (`secrets.compare_digest`) for the same reason.
+
+Two operational notes:
+
+- **Bootstrap returns the profile, not tokens.** Log in at
+  `/api/v1/auth/login/` afterwards. This differs from staff invitation
+  acceptance, which does return a JWT pair.
+- **A locked-out Super Admin has no API remedy**, by design — the seat cannot
+  be moderated through any route, so there is no endpoint that could clear its
+  lockout. The lockout expires on its own, and for when waiting is not
+  acceptable there is a break-glass command:
+
+  ```bash
+  python manage.py unlock_account owner@example.com
+  ```
+
+  It requires shell access, which is the same trust level as setting
+  `SUPERADMIN_BOOTSTRAP_TOKEN`, and writes a `LOCKOUT_CLEARED` entry to the
+  account's activity log so an unexplained unlock is still visible.
 
 ### Category Access
 
@@ -512,6 +547,72 @@ administrative tier rather than scoping to `creator`. Two deliberate limits:
 - **Workflow rules still apply.** Wider access changes *who* may act, not
   *what* the workflow allows — an Admin editing a Published course gets the
   same "Only Draft courses can be edited" error a creator would.
+
+### Admin Operations
+
+Two administrative tiers already exist and are kept apart on purpose. The
+Super Admin runs the *organization* — inviting, revoking, and reactivating
+staff through `/api/v1/auth/staff/…` — while Admins run the *platform*. The
+endpoints below are the Admin tier's, gated on `IsAdminOrSuperAdminRole`,
+which excludes Approvers: they are invited staff whose job is course
+approvals, not account moderation or platform configuration.
+
+All paths below are relative to `/api/v1/`.
+
+| Area               | Endpoint                             | Who                |
+| ------------------ | ------------------------------------ | ------------------ |
+| Dashboard counts   | `GET /admin/overview/`               | Admin, Super Admin |
+| User roster        | `GET /users/admin/`                  | Admin, Super Admin |
+| Suspend account    | `POST /users/admin/{id}/suspend/`    | Admin, Super Admin |
+| Deactivate account | `POST /users/admin/{id}/deactivate/` | Admin, Super Admin |
+| Reinstate account  | `POST /users/admin/{id}/reinstate/`  | Admin, Super Admin |
+| Platform-wide log  | `GET /users/activity-log/`           | Admin, Super Admin |
+| Creator wallets    | `GET /admin/wallets/`                | Admin, Super Admin |
+| Transaction ledger | `GET /admin/transactions/`           | Admin, Super Admin |
+| Withdrawal queue   | `GET /admin/withdrawals/`            | Admin, Super Admin |
+| Platform settings  | `PATCH /platform-settings/`          | Admin, Super Admin |
+| KYC review         | `GET/POST /users/kyc-review/…`       | Admin, Super Admin |
+
+Four things worth knowing:
+
+- **Account moderation is separate from staff revocation, and neither can
+  reach the other's targets.** `user_admin_service` refuses to act on `ADMIN`
+  and `SUPER_ADMIN` accounts; `staff_service` refuses anything that is not a
+  staff role and will not touch the Super Admin seat at all. An Admin
+  therefore cannot disable the tier that supervises them, and neither route
+  can strand the platform without an owner. Both refuse to act on your own
+  account.
+- **`SUSPENDED` was unreachable before these endpoints existed.** Login and
+  token refresh had always rejected the status, but nothing in the codebase
+  ever assigned it, so the policy was unenforceable — the enum value existed
+  and no code path produced it. `suspend_user` is now the only writer of it.
+  Suspension also blacklists outstanding refresh tokens, but an *access* token
+  already in hand keeps working until it expires, so the cut-off lands at the
+  user's next refresh rather than instantly.
+- **The admin wallet reads exist because the creator-facing ones 403 for
+  admins.** Every route under the creator wallet is gated on
+  `IsCourseCreatorRole` (Course Creator + Writer), so an Admin had no way to
+  answer "what is this creator's balance?" without a database console. These
+  are deliberately read-only: balances move only through `credit_wallet` on
+  course approval and a confirmed withdrawal, and there is no admin endpoint
+  that adjusts one.
+- **`/admin/withdrawals/` is a worklist, not a payout tool.** Confirming a
+  withdrawal debits the creator's wallet and writes a `PENDING` debit
+  transaction, and nothing — here, in the Django admin, or anywhere else —
+  advances that to `COMPLETED` or `FAILED`. Payout settlement is not
+  implemented, so read `CONFIRMED` as "awaiting a manual bank transfer". A
+  status dropdown was deliberately *not* added to the Django admin: letting an
+  operator mark a payout done without money moving is worse than the gap being
+  visible.
+
+In the Django admin, `User`, `KYCVerification`, `UserActivityLog`, and the four
+wallet models are registered read-mostly. `role` and `status` are read-only on
+the user form because both have service-layer rules behind them (session
+revocation, notifications, activity logging) that a direct database edit would
+skip; `Transaction` and `UserActivityLog` are fully immutable there, since an
+audit log that can be edited from the admin is not an audit log. `TopicAdmin`
+remains the one admin that *writes*, routing through `topic_service` so it
+cannot bypass the price-snapshot rules.
 
 ## User Model
 
