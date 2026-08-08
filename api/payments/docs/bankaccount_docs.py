@@ -130,14 +130,6 @@ BANK_ACCOUNT_DETAIL_DOCS = {
         "bank account must belong to the authenticated user and not be soft-deleted."
     ),
     "tags": ["Course Creator — Bank Accounts"],
-    "parameters": [
-        OpenApiParameter(
-            name="pk",
-            type=str,
-            location=OpenApiParameter.PATH,
-            description="Unique identifier of the bank account to retrieve.",
-        ),
-    ],
     "responses": {
         200: inline_success_response(
             description="Bank account retrieved successfully.",
