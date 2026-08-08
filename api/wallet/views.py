@@ -5,9 +5,9 @@ from rest_framework.generics import (
     ListCreateAPIView,
     RetrieveAPIView,
 )
-from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from api.payments.models.transaction_model import Transaction  # ruff: ignore[unused-import]
 from api.users.permissions import IsCourseCreatorRole
 from api.wallet.models import PayoutAccount
 from api.wallet.serializers import (
@@ -19,6 +19,8 @@ from api.wallet.serializers import (
     WithdrawalRequestCreateSerializer,
 )
 from api.wallet.services import wallet_service
+from shared.response.error import custom_error_response
+from shared.response.success import custom_success_response
 
 
 class WalletDetailView(RetrieveAPIView):
@@ -85,8 +87,17 @@ class WithdrawalConfirmView(APIView):
             },
         )
         serializer.is_valid(raise_exception=True)
-        txn = serializer.save()
-        return Response(
-            TransactionSerializer(txn, context={"request": request}).data,
-            status=status.HTTP_200_OK,
-        )
+        try:
+            txn = serializer.save()
+            return custom_success_response(
+                data=TransactionSerializer(txn, context={"request": request}).data,
+                message="Withdrawal request is being processed.",
+                status=status.HTTP_202_ACCEPTED,
+            )
+        except Exception as e:
+            return custom_error_response(
+                data=None,
+                message=str(e),
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+

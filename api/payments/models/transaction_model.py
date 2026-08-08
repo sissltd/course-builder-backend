@@ -11,7 +11,7 @@ from django.utils.translation import gettext_lazy as _
 from core.mixins import DateHistoryModelMixin, SoftDeleteModelMixin, UUIDPrimaryKeyModelMixin
 
 
-def _generate_reference() -> str:
+def generate_reference() -> str:
     """A short, unique, user-facing reference shown/copied on transaction
     detail screens - independent of the internal UUID primary key."""
 
@@ -109,7 +109,7 @@ class Transaction(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, SoftDeleteMod
     )
     recipient_account_number = models.CharField(
         verbose_name=_("Recipient Account Number"),
-        max_length=34,
+        max_length=255,
         blank=True,
         default="",
         help_text=_("Snapshot of the payout account number at transaction time."),

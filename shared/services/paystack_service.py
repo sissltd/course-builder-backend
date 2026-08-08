@@ -230,7 +230,6 @@ class PaystackService:
         if metadata is None:
             metadata = {}
         metadata["reason"] = reason
-        logger.warning(f"Initiating transfer with metadata: {metadata}")
         payload = {
             "source": "balance",
             "amount": amount_kobo,
@@ -254,33 +253,3 @@ class PaystackService:
         except requests.exceptions.RequestException as e:
             logger.error(f"Error initiating Paystack transfer: {e}")
             return False, {"message": f"Error initiating Paystack transfer: {e}"}
-
-    @staticmethod
-    def finalize_transfer(transfer_code: str, otp: str):
-        """
-        Completes a transfer that requires extra validation step of using OTP.
-        """
-
-        url = f"{PaystackService.BASE_URL}/transfer/finalize_transfer"
-
-        payload = {"transfer_code": transfer_code, "otp": otp}
-
-        try:
-            response = requests.post(
-                url,
-                json=payload,
-                headers=PaystackService._get_headers(),
-                timeout=PaystackService.TIMEOUT,
-            )
-            response_data = response.json()
-            data = response_data.get("data")
-
-            if response.status_code == 200:
-                return True, data
-            logger.error(f"Paystack transfer completion failed: {response_data.get('message')}")
-            message = response_data.get("message")
-            return False, {"message": message}
-
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Error charging Paystack payment: {e}")
-            return False, {"message": str(e)}

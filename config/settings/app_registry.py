@@ -22,6 +22,7 @@ CUSTOM_APPS = [
     "shared.audit",
     "api.platform",
     "core",
+    "api.webhooks",
 ]
 
 THIRD_PARTY_APPS = [

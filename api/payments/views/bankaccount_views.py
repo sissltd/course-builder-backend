@@ -87,6 +87,12 @@ class BankAccountListCreateView(APIView):
                 message=str(e),
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        except Exception as e:
+            logger.error(f"Error creating bank account: {e}")
+            return custom_error_response(
+                message="An error occurred while creating the bank account.",
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
         return custom_success_response(
             message="Bank account added successfully",
             data={"bank_account": BankAccountListSerializer(account).data},

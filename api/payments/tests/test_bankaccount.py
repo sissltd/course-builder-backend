@@ -14,8 +14,8 @@ from api.payments.models.bankaccount_models import BankAccount
 from api.payments.services.bankaccount_services import AccountDetailsError
 from api.users.enums import UserRole
 
-LIST_URL = "/api/v1/bank-accounts/"
-VERIFY_URL = "/api/v1/bank-accounts/verify/"
+LIST_URL = "/api/v1/payout-accounts/"
+VERIFY_URL = "/api/v1/payout-accounts/verify/"
 BANKS_URL = "/api/v1/banks/"
 
 VALID_PAYLOAD = {
@@ -28,15 +28,15 @@ VALID_PAYLOAD = {
 
 
 def detail_url(account):
-	return f"/api/v1/bank-accounts/{account.id}/"
+	return f"/api/v1/payout-accounts/{account.id}/"
 
 
 def default_url(account):
-	return f"/api/v1/bank-accounts/{account.id}/default/"
+	return f"/api/v1/payout-accounts/{account.id}/default/"
 
 
 def suspend_url(account):
-	return f"/api/v1/bank-accounts/{account.id}/suspend/"
+	return f"/api/v1/payout-accounts/{account.id}/suspend/"
 
 
 def make_bank_account(*, user, account_number="0123456789", **kwargs):

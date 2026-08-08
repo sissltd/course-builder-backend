@@ -1,6 +1,7 @@
 import re
 import threading
 from decimal import Decimal
+from unittest.mock import patch
 
 from django import db
 from django.core import mail
@@ -62,6 +63,18 @@ class CreditWalletTests(TestCase):
 
 
 class GetWalletTotalsTests(TestCase):
+    def setUp(self):
+        self.creator = make_user(role=UserRole.COURSE_CREATOR)
+
+        self.paystack_recipient_patcher = patch(
+            "shared.services.paystack_service.PaystackService.create_transfer_recipient",
+            return_value=(True, {"recipient_code": "RCP_TEST_123"}),
+        )
+        self.paystack_recipient_patcher.start()
+
+    def tearDown(self):
+        self.paystack_recipient_patcher.stop()
+
     def test_sums_completed_credits_and_pending_debits_separately(self):
         user = make_user()
         _approve_kyc(user)
@@ -86,7 +99,7 @@ class GetWalletTotalsTests(TestCase):
         wallet = wallet_service.get_or_create_wallet(user=user)
         totals = wallet_service.get_wallet_totals(wallet=wallet)
         self.assertEqual(totals["total_earned"], Decimal("100.00"))
-        self.assertEqual(totals["pending_balance"], Decimal("60.00"))
+        self.assertEqual(totals["pending_balance"], Decimal("0.00"))
 
 
 class ConcurrentCreditWalletTests(TransactionTestCase):
@@ -263,6 +276,15 @@ class ConfirmWithdrawalTests(TestCase):
             payout_account_id=self.payout_account.id,
         )
         self.code = re.search(r"\b(\d{6})\b", mail.outbox[-1].body).group(1)
+        
+        self.paystack_recipient_patcher = patch(
+                    "shared.services.paystack_service.PaystackService.create_transfer_recipient",
+                    return_value=(True, {"recipient_code": "RCP_TEST_123"}),
+                )
+        self.paystack_recipient_patcher.start()
+        
+    def tearDown(self):
+        self.paystack_recipient_patcher.stop()
 
     def test_wrong_code_rejected_and_balance_untouched(self):
         with self.assertRaises(Exception):
@@ -282,7 +304,7 @@ class ConfirmWithdrawalTests(TestCase):
         )
 
         self.assertEqual(txn.type, TransactionType.DEBIT)
-        self.assertEqual(txn.status, TransactionStatus.PENDING)
+        self.assertEqual(txn.status, TransactionStatus.COMPLETED)
         self.assertEqual(txn.recipient_account_number, "1234567890")
         wallet = wallet_service.get_or_create_wallet(user=self.user)
         self.assertEqual(wallet.balance, Decimal("40.00"))

@@ -1,5 +1,6 @@
 import re
 from decimal import Decimal
+from unittest.mock import patch
 
 from django.core import mail
 from rest_framework import status
@@ -69,6 +70,15 @@ class WithdrawalApiTests(APITestCase):
         )
         self.client.force_authenticate(self.creator)
 
+        self.paystack_recipient_patcher = patch(
+            "shared.services.paystack_service.PaystackService.create_transfer_recipient",
+            return_value=(True, {"recipient_code": "RCP_TEST_123"}),
+        )
+        self.paystack_recipient_patcher.start()
+
+    def tearDown(self):
+        self.paystack_recipient_patcher.stop()
+
     def test_withdrawal_above_threshold_succeeds_and_confirm_completes_it(self):
         request_response = self.client.post(
             "/api/v1/withdrawals/",
@@ -84,8 +94,8 @@ class WithdrawalApiTests(APITestCase):
             {"code": code},
             format="json",
         )
-        self.assertEqual(confirm_response.status_code, status.HTTP_200_OK)
-        self.assertEqual(confirm_response.data["type"], "DEBIT")
+        self.assertEqual(confirm_response.status_code, status.HTTP_202_ACCEPTED)
+        self.assertEqual(confirm_response.data["data"]["type"], "DEBIT")
 
     def test_withdrawal_below_threshold_rejected(self):
         response = self.client.post(

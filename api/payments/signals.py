@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 @receiver(post_save, sender=BankAccount)
 def generate_paystack_recipient_code(sender, instance, **kwargs):
-    if instance.paystack_recipient_code is not None:
+    if instance.paystack_recipient_code:
         return
     try:
         payload = {

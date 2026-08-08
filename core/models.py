@@ -69,6 +69,13 @@ class TransferOutboxEvent(UUIDPrimaryKeyModelMixin, SoftDeleteModelMixin, DateHi
     )  # May be Wallet, InternalAccount, etc. depending on the transaction context.
     wallet_id = models.UUIDField(null=True, blank=True)
     wallet = GenericForeignKey("wallet_type", "wallet_id")
+    transfer_request = models.ForeignKey(
+        "wallet.WithdrawalRequest",
+        on_delete=models.CASCADE,
+        related_name="transfer_outbox_events",
+        null=True,
+        blank=True,
+    )
 
     def __str__(self):
         return f"Transfer {self.reference} - {self.status}"
