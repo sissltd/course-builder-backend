@@ -54,4 +54,6 @@ urlpatterns = [
     path("api/v1/", include("api.wallet.urls")),
     path("api/v1/", include("api.notification.urls")),
     path("api/v1/", include("api.platform.urls")),
+    path("api/v1/", include("shared.uploads.urls")),
+    path("api/v1/", include("shared.audit.urls")),
 ]

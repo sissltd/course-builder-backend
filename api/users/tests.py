@@ -209,6 +209,60 @@ class ReviewerAvailabilityApiTests(APITestCase):
         )
 
 
+class QueueBehaviourPreferenceApiTests(APITestCase):
+    def test_requires_authentication(self):
+        response = self.client.get("/api/v1/users/me/queue-preferences/")
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_get_lazily_creates_defaults(self):
+        user = _make_user()
+        self.client.force_authenticate(user)
+
+        response = self.client.get("/api/v1/users/me/queue-preferences/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["default_sort_order"], "OLDEST_FIRST")
+        self.assertFalse(response.data["auto_advance_enabled"])
+        self.assertEqual(response.data["track_filter"], "ALL")
+
+    def test_patch_updates_one_field(self):
+        user = _make_user()
+        self.client.force_authenticate(user)
+
+        response = self.client.patch(
+            "/api/v1/users/me/queue-preferences/",
+            {"default_sort_order": "NEWEST_FIRST"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["default_sort_order"], "NEWEST_FIRST")
+        self.assertEqual(response.data["track_filter"], "ALL")
+
+    def test_patch_empty_body_rejected(self):
+        user = _make_user()
+        self.client.force_authenticate(user)
+
+        response = self.client.patch(
+            "/api/v1/users/me/queue-preferences/", {}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_patch_logs_configuration_activity(self):
+        user = _make_user()
+        self.client.force_authenticate(user)
+
+        self.client.patch(
+            "/api/v1/users/me/queue-preferences/",
+            {"auto_advance_enabled": True},
+            format="json",
+        )
+
+        self.assertTrue(
+            UserActivityLog.objects.filter(
+                user=user, action=UserActivityActionEnums.QUEUE_PREFERENCES_UPDATED
+            ).exists()
+        )
+
+
 class UserActivityLogApiTests(APITestCase):
     def test_requires_authentication(self):
         response = self.client.get("/api/v1/users/me/activity-log/")
@@ -267,6 +321,91 @@ class UserActivityLogApiTests(APITestCase):
         results = response.data["data"]["results"]
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0]["summary"], "Course assigned to you.")
+
+
+class UserActivityLogExportApiTests(APITestCase):
+    def test_requires_authentication(self):
+        response = self.client.get("/api/v1/users/me/activity-log/export/")
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def _csv_rows(self, response):
+        import csv
+        import io
+
+        content = b"".join(response.streaming_content).decode()
+        return list(csv.reader(io.StringIO(content)))
+
+    def test_export_scoped_to_own_user_with_correct_headers(self):
+        user = _make_user()
+        other = _make_user()
+        UserActivityLog.objects.create(
+            user=user,
+            actor_user=user,
+            category="CONFIGURATION",
+            action="PROFILE_UPDATED",
+            summary="You updated your profile.",
+            activity_datetime=timezone.now(),
+        )
+        UserActivityLog.objects.create(
+            user=other,
+            actor_user=other,
+            category="CONFIGURATION",
+            action="PROFILE_UPDATED",
+            summary="Someone else's activity.",
+            activity_datetime=timezone.now(),
+        )
+        self.client.force_authenticate(user)
+
+        response = self.client.get("/api/v1/users/me/activity-log/export/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response["Content-Type"], "text/csv")
+        self.assertIn("attachment", response["Content-Disposition"])
+
+        rows = self._csv_rows(response)
+        self.assertEqual(
+            rows[0], ["category", "action", "summary", "actor", "activity_datetime"]
+        )
+        summaries = [row[2] for row in rows[1:]]
+        self.assertEqual(summaries, ["You updated your profile."])
+
+    def test_category_filter_parity_with_list_endpoint(self):
+        user = _make_user()
+        UserActivityLog.objects.create(
+            user=user,
+            actor_user=user,
+            category="CONFIGURATION",
+            action="PROFILE_UPDATED",
+            summary="Config change.",
+            activity_datetime=timezone.now(),
+        )
+        UserActivityLog.objects.create(
+            user=user,
+            actor_user=user,
+            category="COURSE",
+            action="COURSE_ASSIGNED",
+            summary="Course assigned to you.",
+            activity_datetime=timezone.now(),
+        )
+        self.client.force_authenticate(user)
+
+        response = self.client.get(
+            "/api/v1/users/me/activity-log/export/", {"category": "COURSE"}
+        )
+        rows = self._csv_rows(response)
+        summaries = [row[2] for row in rows[1:]]
+        self.assertEqual(summaries, ["Course assigned to you."])
+
+    def test_export_action_itself_is_logged(self):
+        user = _make_user()
+        self.client.force_authenticate(user)
+
+        self.client.get("/api/v1/users/me/activity-log/export/")
+
+        self.assertTrue(
+            UserActivityLog.objects.filter(
+                user=user, action=UserActivityActionEnums.ACTIVITY_LOG_EXPORTED
+            ).exists()
+        )
 
 
 class KYCServiceTests(TestCase):

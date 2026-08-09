@@ -5,7 +5,9 @@ from api.users.views import (
     KYCReviewViewSet,
     KYCVerificationView,
     MeView,
+    QueueBehaviourPreferenceView,
     ReviewerAvailabilityView,
+    UserActivityLogExportView,
     UserActivityLogListView,
     UserAdminViewSet,
 )
@@ -18,9 +20,19 @@ urlpatterns = [
         name="user-reviewer-availability",
     ),
     path(
+        "users/me/queue-preferences/",
+        QueueBehaviourPreferenceView.as_view(),
+        name="user-queue-preferences",
+    ),
+    path(
         "users/me/activity-log/",
         UserActivityLogListView.as_view(),
         name="user-activity-log",
+    ),
+    path(
+        "users/me/activity-log/export/",
+        UserActivityLogExportView.as_view(),
+        name="user-activity-log-export",
     ),
     path("users/me/kyc/", KYCVerificationView.as_view(), name="user-kyc"),
     path(

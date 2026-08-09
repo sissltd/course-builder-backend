@@ -4,13 +4,14 @@ from rest_framework import status
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.test import APITestCase
 
+from api.categories.enums import TrackPreference
 from api.courses.enums import CourseStatus
 from api.courses.models import ReviewAction
 from api.courses.services import course_service, review_service
 from api.courses.tests.factories import build_compliant_course, make_category, make_user
 from api.users.enums import UserRole
 from api.users.models import UserActivityLog
-from api.users.services import reviewer_availability_service
+from api.users.services import queue_preference_service, reviewer_availability_service
 from api.wallet.services import wallet_service
 
 
@@ -21,8 +22,10 @@ class ReviewQueueApiTests(APITestCase):
         self.admin = make_user(role=UserRole.ADMIN)
         self.category = make_category(creator_price=Decimal("120.00"))
 
-    def _submitted_course(self):
-        course = build_compliant_course(creator=self.creator, category=self.category)
+    def _submitted_course(self, category=None):
+        course = build_compliant_course(
+            creator=self.creator, category=category or self.category
+        )
         return course_service.submit_course(course=course, actor=self.creator)
 
     def test_queue_lists_submitted_and_in_review_ordered_by_submitted_at(self):
@@ -72,6 +75,64 @@ class ReviewQueueApiTests(APITestCase):
         response = self.client.get("/api/v1/review-queue/", {"status": "PUBLISHED"})
         ids = {r["id"] for r in response.data["data"]["results"]}
         self.assertEqual(ids, {str(published_course.id)})
+
+    def test_stored_newest_first_preference_applies_with_no_ordering_param(self):
+        course1 = self._submitted_course()
+        course2 = self._submitted_course()
+        queue_preference_service.update_preference(
+            user=self.reviewer, default_sort_order="NEWEST_FIRST"
+        )
+        self.client.force_authenticate(self.reviewer)
+
+        response = self.client.get("/api/v1/review-queue/")
+        ids = [r["id"] for r in response.data["data"]["results"]]
+        self.assertEqual(ids, [str(course2.id), str(course1.id)])
+
+    def test_explicit_ordering_param_overrides_stored_preference(self):
+        course1 = self._submitted_course()
+        course2 = self._submitted_course()
+        queue_preference_service.update_preference(
+            user=self.reviewer, default_sort_order="NEWEST_FIRST"
+        )
+        self.client.force_authenticate(self.reviewer)
+
+        response = self.client.get(
+            "/api/v1/review-queue/", {"ordering": "submitted_at"}
+        )
+        ids = [r["id"] for r in response.data["data"]["results"]]
+        self.assertEqual(ids, [str(course1.id), str(course2.id)])
+
+    def test_stored_track_filter_excludes_other_track(self):
+        creator_category = make_category(
+            track_preference=TrackPreference.CREATOR_PREFERRED
+        )
+        ai_category = make_category(track_preference=TrackPreference.AI_PREFERRED)
+        creator_course = self._submitted_course(category=creator_category)
+        self._submitted_course(category=ai_category)
+        queue_preference_service.update_preference(
+            user=self.reviewer, track_filter="CREATOR_TRACK"
+        )
+        self.client.force_authenticate(self.reviewer)
+
+        response = self.client.get("/api/v1/review-queue/")
+        ids = {r["id"] for r in response.data["data"]["results"]}
+        self.assertEqual(ids, {str(creator_course.id)})
+
+    def test_explicit_track_param_overrides_stored_preference(self):
+        creator_category = make_category(
+            track_preference=TrackPreference.CREATOR_PREFERRED
+        )
+        ai_category = make_category(track_preference=TrackPreference.AI_PREFERRED)
+        self._submitted_course(category=creator_category)
+        ai_course = self._submitted_course(category=ai_category)
+        queue_preference_service.update_preference(
+            user=self.reviewer, track_filter="CREATOR_TRACK"
+        )
+        self.client.force_authenticate(self.reviewer)
+
+        response = self.client.get("/api/v1/review-queue/", {"track": "AI_TRACK"})
+        ids = {r["id"] for r in response.data["data"]["results"]}
+        self.assertEqual(ids, {str(ai_course.id)})
 
     def test_claim_transitions_to_in_review(self):
         course = self._submitted_course()

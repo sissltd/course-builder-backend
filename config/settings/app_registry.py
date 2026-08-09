@@ -19,6 +19,7 @@ CUSTOM_APPS = [
     "api.onboarding",
     "api.wallet",
     "shared.audit",
+    "shared.uploads",
     "api.platform",
 ]
 

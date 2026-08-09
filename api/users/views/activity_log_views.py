@@ -1,10 +1,18 @@
+import csv
+import io
+
+from django.http import StreamingHttpResponse
 from django_filters.rest_framework import DjangoFilterBackend
 from drf_spectacular.utils import OpenApiExample, OpenApiResponse, extend_schema
 from rest_framework import filters as drf_filters
 from rest_framework.generics import ListAPIView
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.views import APIView
 
 from api.users.filters import AdminUserActivityLogFilter, UserActivityLogFilter
+from api.authentication.services import activity_service
+from api.users.enums import UserActivityActionEnums, UserActivityCategoryEnums
+from api.users.filters import UserActivityLogFilter
 from api.users.models import UserActivityLog
 from api.users.permissions import IsAdminOrSuperAdminRole
 from api.users.serializers.activity_log_serializer import UserActivityLogSerializer
@@ -99,3 +107,57 @@ class AdminUserActivityLogListView(ListAPIView):
         if getattr(self, "swagger_fake_view", False):
             return UserActivityLog.objects.none()
         return UserActivityLog.objects.select_related("user", "actor_user")
+def _activity_log_csv_rows(entries):
+    """Yield CSV lines for `entries`, header first - one csv.writer row per
+    line via an in-memory buffer, the standard Django streaming-CSV idiom."""
+
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+
+    writer.writerow(["category", "action", "summary", "actor", "activity_datetime"])
+    yield buffer.getvalue()
+    buffer.seek(0)
+    buffer.truncate(0)
+
+    for entry in entries:
+        actor = entry.actor_user.email if entry.actor_user_id else ""
+        writer.writerow(
+            [entry.category, entry.action, entry.summary, actor, entry.activity_datetime]
+        )
+        yield buffer.getvalue()
+        buffer.seek(0)
+        buffer.truncate(0)
+
+
+class UserActivityLogExportView(APIView):
+    """Download the current authenticated user's own activity log as a CSV
+    file (the Data & Privacy settings screen's "download activity log").
+
+    Reuses UserActivityLogFilter - the same ?category=/?action= filtering
+    the list endpoint supports - rather than re-deriving the query logic.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        base_queryset = UserActivityLog.objects.filter(
+            user=request.user
+        ).select_related("actor_user")
+        queryset = UserActivityLogFilter(request.GET, queryset=base_queryset).qs
+        # Materialize before logging the export event itself, so that event
+        # never shows up inside the very file it produced.
+        entries = list(queryset)
+
+        activity_service.log_activity(
+            user=request.user,
+            category=UserActivityCategoryEnums.PRIVACY,
+            action=UserActivityActionEnums.ACTIVITY_LOG_EXPORTED,
+            summary="Exported activity log.",
+            request=request,
+        )
+
+        response = StreamingHttpResponse(
+            _activity_log_csv_rows(entries), content_type="text/csv"
+        )
+        response["Content-Disposition"] = 'attachment; filename="activity-log.csv"'
+        return response
