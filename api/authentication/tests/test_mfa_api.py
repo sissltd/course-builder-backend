@@ -1,5 +1,3 @@
-from unittest.mock import patch
-
 import pyotp
 from django.core.cache import cache
 from django.test import TestCase
@@ -8,10 +6,9 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
 
-from api.authentication.models import MFAChallenge, MFADevice, MFARecoveryCode
+from api.authentication.models import MFAChallenge, MFARecoveryCode
 from api.authentication.services import mfa_service
 from api.authentication.tests.factories import make_user
-from api.platform.services import platform_settings_service
 from api.users.enums import UserRole
 from api.users.models import UserActivityLog
 
