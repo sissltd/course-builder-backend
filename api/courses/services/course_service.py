@@ -1,19 +1,33 @@
 from datetime import timedelta
 
 from django.db import transaction
-from django.db.models import QuerySet
+from django.db.models import (
+    Case,
+    DurationField,
+    ExpressionWrapper,
+    F,
+    IntegerField,
+    QuerySet,
+    Value,
+    When,
+)
 from django.utils import timezone
 from rest_framework import exceptions
 
 from api.authentication.services import activity_service
-from api.categories.enums import CategoryStatus
+from api.categories.enums import CategoryStatus, TrackPreference
 from api.categories.models import Category
 from api.courses.enums import CourseStatus
 from api.courses.models import Course, CourseVersion, Topic
 from api.courses.services import course_validation_service
 from api.notification.models import Notification
+from api.notification.services import sla_threshold_service
 from api.platform.services import platform_settings_service
-from api.users.enums import UserActivityActionEnums, UserActivityCategoryEnums
+from api.users.enums import (
+    QueueTrackFilter,
+    UserActivityActionEnums,
+    UserActivityCategoryEnums,
+)
 from api.users.models import User
 from api.users.permissions import (
     IsAdminRole,
@@ -22,6 +36,13 @@ from api.users.permissions import (
     require_role,
 )
 from api.users.services import reviewer_availability_service
+
+#: Maps a reviewer's QueueTrackFilter preference onto the Category-level
+#: TrackPreference it should filter the queue by. ALL means "no filter".
+QUEUE_TRACK_FILTER_TO_CATEGORY_TRACK_PREFERENCE = {
+    QueueTrackFilter.CREATOR_TRACK: TrackPreference.CREATOR_PREFERRED,
+    QueueTrackFilter.AI_TRACK: TrackPreference.AI_PREFERRED,
+}
 
 DRAFT_EDITABLE_FIELDS = {
     "title",
@@ -336,13 +357,54 @@ def recalculate_duration_estimate(*, course: Course) -> Course:
     return course
 
 
-def get_review_queue(*, status_in: list | None = None) -> QuerySet[Course]:
-    """Return courses awaiting review, ordered oldest-submitted-first so a
-    future SLA dashboard/alert can be built on top of this ordering."""
+def get_review_queue(
+    *,
+    status_in: list | None = None,
+    sort_order: str | None = None,
+    track_filter: str | None = None,
+    sla_user: User | None = None,
+) -> QuerySet[Course]:
+    """Return courses awaiting review.
+
+    Defaults to oldest-submitted-first (unchanged from before Queue
+    Behaviour preferences existed). `sort_order` accepts a QueueSortOrder
+    value: NEWEST_FIRST reverses the default; SLA_URGENCY needs `sla_user`
+    (whose effective amber/red thresholds decide urgency) to rank
+    breached/red courses first, then amber, then everything else, oldest-
+    first within each tier. `track_filter` accepts a QueueTrackFilter value
+    and narrows to courses whose category matches that track preference.
+    """
 
     statuses = status_in or [CourseStatus.SUBMITTED, CourseStatus.IN_REVIEW]
-    return (
-        Course.objects.filter(status__in=statuses)
-        .select_related("category", "creator")
-        .order_by("submitted_at")
+    queryset = Course.objects.filter(status__in=statuses).select_related(
+        "category", "creator"
     )
+
+    category_track_preference = QUEUE_TRACK_FILTER_TO_CATEGORY_TRACK_PREFERENCE.get(
+        track_filter
+    )
+    if category_track_preference is not None:
+        queryset = queryset.filter(category__track_preference=category_track_preference)
+
+    if sort_order == "NEWEST_FIRST":
+        return queryset.order_by("-submitted_at")
+
+    if sort_order == "SLA_URGENCY" and sla_user is not None:
+        amber_hours, red_hours = sla_threshold_service.get_effective_thresholds(
+            user=sla_user
+        )
+        queryset = queryset.annotate(
+            queue_age=ExpressionWrapper(
+                timezone.now() - F("submitted_at"), output_field=DurationField()
+            )
+        ).annotate(
+            urgency_tier=Case(
+                When(queue_age__gte=timedelta(hours=red_hours), then=Value(0)),
+                When(queue_age__gte=timedelta(hours=amber_hours), then=Value(1)),
+                default=Value(2),
+                output_field=IntegerField(),
+            )
+        )
+        return queryset.order_by("urgency_tier", "submitted_at")
+
+    return queryset.order_by("submitted_at")

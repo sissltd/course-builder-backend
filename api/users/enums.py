@@ -92,6 +92,7 @@ class UserActivityCategoryEnums(models.TextChoices):
     ALERT = "ALERT", "Alert"
     KYC = "KYC", "KYC"
     WALLET = "WALLET", "Wallet"
+    PRIVACY = "PRIVACY", "Privacy"
 
 
 class UserActivityActionEnums(models.TextChoices):
@@ -140,6 +141,11 @@ class UserActivityActionEnums(models.TextChoices):
         "NOTIFICATION_PREFERENCES_UPDATED",
         "Notification Preferences Updated",
     )
+    QUEUE_PREFERENCES_UPDATED = (
+        "QUEUE_PREFERENCES_UPDATED",
+        "Queue Preferences Updated",
+    )
+    ACTIVITY_LOG_EXPORTED = "ACTIVITY_LOG_EXPORTED", "Activity Log Exported"
     KYC_SUBMITTED = "KYC_SUBMITTED", "KYC Submitted"
     KYC_APPROVED = "KYC_APPROVED", "KYC Approved"
     KYC_REJECTED = "KYC_REJECTED", "KYC Rejected"
@@ -148,6 +154,15 @@ class UserActivityActionEnums(models.TextChoices):
     APPEAL_SUBMITTED = "APPEAL_SUBMITTED", "Appeal Submitted"
     APPEAL_APPROVED = "APPEAL_APPROVED", "Appeal Approved"
     APPEAL_REJECTED = "APPEAL_REJECTED", "Appeal Rejected"
+    MFA_ENABLED = "MFA_ENABLED", "MFA Enabled"
+    MFA_DISABLED = "MFA_DISABLED", "MFA Disabled"
+    MFA_CHALLENGE_FAILED = "MFA_CHALLENGE_FAILED", "MFA Challenge Failed"
+    MFA_RECOVERY_CODE_USED = "MFA_RECOVERY_CODE_USED", "MFA Recovery Code Used"
+    MFA_RECOVERY_CODES_REGENERATED = (
+        "MFA_RECOVERY_CODES_REGENERATED",
+        "MFA Recovery Codes Regenerated",
+    )
+    MFA_RESET_BY_ADMIN = "MFA_RESET_BY_ADMIN", "MFA Reset By Admin"
 
 
 class KYCDocumentType(models.TextChoices):
@@ -165,6 +180,26 @@ class KYCStatus(models.TextChoices):
     PENDING = "PENDING", "Pending"
     APPROVED = "APPROVED", "Approved"
     REJECTED = "REJECTED", "Rejected"
+
+
+class QueueSortOrder(models.TextChoices):
+    """A reviewer's preferred default ordering for the review queue."""
+
+    OLDEST_FIRST = "OLDEST_FIRST", "Oldest First"
+    NEWEST_FIRST = "NEWEST_FIRST", "Newest First"
+    SLA_URGENCY = "SLA_URGENCY", "SLA Urgency"
+
+
+class QueueTrackFilter(models.TextChoices):
+    """A reviewer's preferred default track filter for the review queue.
+
+    Maps onto api.categories.enums.TrackPreference's CREATOR_PREFERRED /
+    AI_PREFERRED values; ALL applies no filter.
+    """
+
+    ALL = "ALL", "All Tracks"
+    CREATOR_TRACK = "CREATOR_TRACK", "Creator Track"
+    AI_TRACK = "AI_TRACK", "AI Track"
 
 
 class UnavailabilityReason(models.TextChoices):

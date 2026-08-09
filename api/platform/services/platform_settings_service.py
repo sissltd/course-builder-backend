@@ -18,6 +18,9 @@ UPDATABLE_FIELDS = {
     "course_duration_max_minutes",
     "course_final_assessment_min_questions",
     "topic_reservation_expiry_days",
+    "sla_amber_threshold_hours",
+    "sla_red_threshold_hours",
+    "mfa_enrollment_grace_period_days",
 }
 
 

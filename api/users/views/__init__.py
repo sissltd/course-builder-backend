@@ -9,7 +9,9 @@ __all__ = [
     "KYCReviewViewSet",
     "KYCVerificationView",
     "MeView",
+    "QueueBehaviourPreferenceView",
     "ReviewerAvailabilityView",
+    "UserActivityLogExportView",
     "UserActivityLogListView",
     "UserAdminViewSet",
 ]

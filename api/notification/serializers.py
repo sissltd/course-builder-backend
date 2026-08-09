@@ -21,6 +21,9 @@ class NotificationPreferenceSerializer(serializers.ModelSerializer):
             "account_deletion_detection_alert",
             "mie_recommendation_alert",
             "mie_pipeline_alert",
+            "in_app_enabled",
+            "sla_amber_threshold_hours_override",
+            "sla_red_threshold_hours_override",
         ]
         read_only_fields = fields
 
@@ -39,6 +42,13 @@ class NotificationPreferenceUpdateSerializer(serializers.Serializer):
     account_deletion_detection_alert = serializers.BooleanField(required=False)
     mie_recommendation_alert = serializers.BooleanField(required=False)
     mie_pipeline_alert = serializers.BooleanField(required=False)
+    in_app_enabled = serializers.BooleanField(required=False)
+    sla_amber_threshold_hours_override = serializers.IntegerField(
+        required=False, allow_null=True, min_value=1
+    )
+    sla_red_threshold_hours_override = serializers.IntegerField(
+        required=False, allow_null=True, min_value=1
+    )
 
     def validate(self, attrs):
         if not attrs:

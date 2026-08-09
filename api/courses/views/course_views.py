@@ -30,6 +30,7 @@ from api.users.permissions import (
     IsCourseCreatorRole,
     IsCreatorReviewerRole,
 )
+from api.users.services import queue_preference_service
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 
 OWNER_SCOPED_ACTIONS = {"retrieve", "update", "partial_update", "destroy"}
@@ -626,17 +627,43 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
     filterset_class = CourseReviewQueueFilter
     filter_backends = [DjangoFilterBackend, drf_filters.OrderingFilter]
     ordering_fields = ["submitted_at"]
-    ordering = ["submitted_at"]
+    #: Deliberately no `ordering` class default: OrderingFilter re-applies
+    #: `.order_by()` from this attribute whenever `?ordering=` is absent from
+    #: the request, which would silently overwrite the reviewer's stored
+    #: QueueBehaviourPreference sort order applied in get_queryset() below.
+    #: With no default, OrderingFilter only acts when `?ordering=` is
+    #: explicitly passed - which is exactly when it should override the
+    #: stored preference.
 
     def get_queryset(self):
         if self.action == "list":
+            # An explicit ?ordering=/?track= query param always wins over the
+            # reviewer's stored preference for that one axis - each is
+            # checked independently so overriding one doesn't disable the
+            # other's stored default.
+            sort_order = None
+            track_filter = None
+            if (
+                "ordering" not in self.request.query_params
+                or "track" not in self.request.query_params
+            ):
+                preference = queue_preference_service.get_or_create_preference(
+                    user=self.request.user
+                )
+                if "ordering" not in self.request.query_params:
+                    sort_order = preference.default_sort_order
+                if "track" not in self.request.query_params:
+                    track_filter = preference.track_filter
             return course_service.get_review_queue(
                 status_in=[
                     CourseStatus.SUBMITTED,
                     CourseStatus.IN_REVIEW,
                     CourseStatus.APPROVED,
                     CourseStatus.PUBLISHED,
-                ]
+                ],
+                sort_order=sort_order,
+                track_filter=track_filter,
+                sla_user=self.request.user,
             )
         return Course.objects.select_related("category", "creator")
 

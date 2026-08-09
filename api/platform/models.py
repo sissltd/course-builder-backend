@@ -75,6 +75,34 @@ class PlatformSettings(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
         default=30,
         help_text=_("How long an approved topic reservation lasts (BR-007)."),
     )
+    sla_amber_threshold_hours = models.PositiveIntegerField(
+        verbose_name=_("SLA Amber Threshold Hours"),
+        default=24,
+        help_text=_(
+            "Hours since submission before a queued course is flagged amber. "
+            "Platform-wide default; a reviewer may override it for themselves "
+            "via NotificationPreference."
+        ),
+    )
+    sla_red_threshold_hours = models.PositiveIntegerField(
+        verbose_name=_("SLA Red Threshold Hours"),
+        default=48,
+        help_text=_(
+            "Hours since submission before a queued course is flagged red/"
+            "critical. Platform-wide default; a reviewer may override it for "
+            "themselves via NotificationPreference."
+        ),
+    )
+    mfa_enrollment_grace_period_days = models.PositiveIntegerField(
+        verbose_name=_("MFA Enrollment Grace Period Days"),
+        default=7,
+        help_text=_(
+            "How many days an Admin/Super Admin may keep logging in without "
+            "MFA enrolled before enforcement on sensitive actions kicks in. "
+            "The clock starts once, at role assignment - not reset by "
+            "re-saving this setting."
+        ),
+    )
 
     class Meta:
         verbose_name = _("Platform Settings")
