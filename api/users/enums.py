@@ -2,27 +2,97 @@
 from django.db import models
 
 
+class Sex(models.TextChoices):
+    """Self-reported sex, shown on a user's profile (e.g. course-collaborator
+    detail panel)."""
+
+    MALE = "MALE", "Male"
+    FEMALE = "FEMALE", "Female"
+    PREFER_NOT_TO_SAY = "PREFER_NOT_TO_SAY", "Prefer not to say"
+
+
+class AccountStatus(models.TextChoices):
+    """Account activation and lifecycle status, independent of role.
+
+    Tracks whether a user has completed email verification, been suspended
+    for policy reasons, or been deactivated by administrative action. This
+    field is descriptive and human-facing; is_active remains the authentication
+    gate (Django/simplejwt convention) and is kept in sync.
+    """
+
+    PENDING_VERIFICATION = "PENDING_VERIFICATION", "Pending Verification"
+    ACTIVE = "ACTIVE", "Active"
+    SUSPENDED = "SUSPENDED", "Suspended"
+    DEACTIVATED = "DEACTIVATED", "Deactivated"
+
+
 class UserRole(models.TextChoices):
     """Primary role used for role-based permission checks across the platform.
 
-    Extend these choices as new operator roles are introduced (e.g. AI Track
-    Reviewer, QA Reviewer) once the corresponding review pipelines exist.
+    Roles fall into three groups, and the distinction matters:
+
+    * **Public** - COURSE_CREATOR is what public signup assigns. Anyone can
+      obtain it by registering.
+    * **Staff** - STAFF_WRITER / STAFF_VERIFIER / STAFF_APPROVER / AI_REVIEWER /
+      QA_REVIEWER are the roles offered in the "Invite a staff" dialog. They
+      are invitation-only: no public route assigns them. They mirror the
+      authoring and review pipelines and are deliberately kept distinct from
+      the public roles so a self-registered user is never mistaken for hired
+      staff in permissions, reporting, or the Teams page.
+    * **Privileged** - ADMIN and SUPER_ADMIN. SUPER_ADMIN is bootstrap-only and
+      unique platform-wide; it is the only role that can invite staff.
     """
 
     COURSE_CREATOR = "COURSE_CREATOR", "Course Creator"
     CREATOR_REVIEWER = "CREATOR_REVIEWER", "Creator Reviewer"
+    STAFF_WRITER = "STAFF_WRITER", "Writer"
+    STAFF_VERIFIER = "STAFF_VERIFIER", "Verifier"
+    STAFF_APPROVER = "STAFF_APPROVER", "Approver"
+    AI_REVIEWER = "AI_REVIEWER", "AI Reviewer"
+    QA_REVIEWER = "QA_REVIEWER", "QA Reviewer"
     ADMIN = "ADMIN", "Admin"
+    SUPER_ADMIN = "SUPER_ADMIN", "Super Admin"
+
+
+#: Roles a Super Admin may hand out via the "Invite a staff" dialog, in the
+#: order the dropdown shows them. SUPER_ADMIN is absent by design - the seat is
+#: unique and claimable only through the bootstrap endpoint - and so are the
+#: public roles, which are not staff positions.
+INVITABLE_STAFF_ROLES = (
+    UserRole.STAFF_WRITER,
+    UserRole.STAFF_VERIFIER,
+    UserRole.STAFF_APPROVER,
+    UserRole.AI_REVIEWER,
+    UserRole.QA_REVIEWER,
+)
+
+#: Every role that counts as staff for the Teams page: the invitable roles plus
+#: the privileged roles, which are staff too but are not handed out by invite.
+STAFF_ROLES = INVITABLE_STAFF_ROLES + (UserRole.ADMIN, UserRole.SUPER_ADMIN)
 
 
 class UserActivityCategoryEnums(models.TextChoices):
     """High-level buckets used to group user activity events.
 
     Extend these choices when a project introduces new audit domains such as
-    billing, security, or team management.
+    billing, security, or team management. PRODUCTION and ALERT are retained
+    for forward compatibility with the SCCS AI Auto-Production Engine and SLA
+    alerting subsystems (neither is implemented in this backend yet) - same
+    "reserved, unused for now" idiom as TrackPreference.AI_PREFERRED.
     """
 
     AUTH = "AUTH", "Authentication"
     PROFILE = "PROFILE", "Profile"
+    COURSE = "COURSE", "Course"
+    SUBMISSION = "SUBMISSION", "Submission"
+    APPROVAL = "APPROVAL", "Approval"
+    PUBLISH = "PUBLISH", "Publish"
+    CONFIGURATION = "CONFIGURATION", "Configuration"
+    PRODUCTION = "PRODUCTION", "Production"
+    ALERT = "ALERT", "Alert"
+    KYC = "KYC", "KYC"
+    WALLET = "WALLET", "Wallet"
+    PRIVACY = "PRIVACY", "Privacy"
 
 
 class UserActivityActionEnums(models.TextChoices):
@@ -32,8 +102,15 @@ class UserActivityActionEnums(models.TextChoices):
     introduced, while keeping values stable for reporting and analytics.
     """
 
+    ACCOUNT_CREATED = "ACCOUNT_CREATED", "Account Created"
     LOGIN = "LOGIN", "Login"
     LOGOUT = "LOGOUT", "Logout"
+    LOCKOUT_TRIGGERED = (
+        "LOCKOUT_TRIGGERED",
+        "Account Locked (Repeated Failed Logins)",
+    )
+    LOCKOUT_CLEARED = "LOCKOUT_CLEARED", "Account Lockout Cleared"
+    SESSIONS_REVOKED = "SESSIONS_REVOKED", "Sessions Revoked (All Devices)"
     TOKEN_REFRESHED = "TOKEN_REFRESHED", "Token Refreshed"
     ACCOUNT_VERIFIED = "ACCOUNT_VERIFIED", "Account Verified"
     PASSWORD_RESET_COMPLETED = (
@@ -43,3 +120,93 @@ class UserActivityActionEnums(models.TextChoices):
     PROFILE_UPDATED = "PROFILE_UPDATED", "Profile Updated"
     PASSWORD_CHANGED = "PASSWORD_CHANGED", "Password Changed"
     ONBOARDING_COMPLETED = "ONBOARDING_COMPLETED", "Onboarding Completed"
+    SUPERADMIN_BOOTSTRAPPED = "SUPERADMIN_BOOTSTRAPPED", "Super Admin Bootstrapped"
+    STAFF_INVITED = "STAFF_INVITED", "Staff Invited"
+    STAFF_INVITATION_ACCEPTED = (
+        "STAFF_INVITATION_ACCEPTED",
+        "Staff Invitation Accepted",
+    )
+    STAFF_REVOKED = "STAFF_REVOKED", "Staff Revoked"
+    STAFF_REACTIVATED = "STAFF_REACTIVATED", "Staff Reactivated"
+    ACCOUNT_SUSPENDED = "ACCOUNT_SUSPENDED", "Account Suspended"
+    ACCOUNT_REINSTATED = "ACCOUNT_REINSTATED", "Account Reinstated"
+    ACCOUNT_DEACTIVATED = "ACCOUNT_DEACTIVATED", "Account Deactivated"
+    COURSE_ASSIGNED = "COURSE_ASSIGNED", "Course Assigned"
+    COURSE_SUBMITTED = "COURSE_SUBMITTED", "Course Submitted"
+    COURSE_APPROVED = "COURSE_APPROVED", "Course Approved"
+    COURSE_REJECTED = "COURSE_REJECTED", "Course Rejected"
+    COURSE_PUBLISHED = "COURSE_PUBLISHED", "Course Published"
+    AVAILABILITY_UPDATED = "AVAILABILITY_UPDATED", "Availability Updated"
+    NOTIFICATION_PREFERENCES_UPDATED = (
+        "NOTIFICATION_PREFERENCES_UPDATED",
+        "Notification Preferences Updated",
+    )
+    QUEUE_PREFERENCES_UPDATED = (
+        "QUEUE_PREFERENCES_UPDATED",
+        "Queue Preferences Updated",
+    )
+    ACTIVITY_LOG_EXPORTED = "ACTIVITY_LOG_EXPORTED", "Activity Log Exported"
+    KYC_SUBMITTED = "KYC_SUBMITTED", "KYC Submitted"
+    KYC_APPROVED = "KYC_APPROVED", "KYC Approved"
+    KYC_REJECTED = "KYC_REJECTED", "KYC Rejected"
+    WITHDRAWAL_REQUESTED = "WITHDRAWAL_REQUESTED", "Withdrawal Requested"
+    WITHDRAWAL_CONFIRMED = "WITHDRAWAL_CONFIRMED", "Withdrawal Confirmed"
+    APPEAL_SUBMITTED = "APPEAL_SUBMITTED", "Appeal Submitted"
+    APPEAL_APPROVED = "APPEAL_APPROVED", "Appeal Approved"
+    APPEAL_REJECTED = "APPEAL_REJECTED", "Appeal Rejected"
+    MFA_ENABLED = "MFA_ENABLED", "MFA Enabled"
+    MFA_DISABLED = "MFA_DISABLED", "MFA Disabled"
+    MFA_CHALLENGE_FAILED = "MFA_CHALLENGE_FAILED", "MFA Challenge Failed"
+    MFA_RECOVERY_CODE_USED = "MFA_RECOVERY_CODE_USED", "MFA Recovery Code Used"
+    MFA_RECOVERY_CODES_REGENERATED = (
+        "MFA_RECOVERY_CODES_REGENERATED",
+        "MFA Recovery Codes Regenerated",
+    )
+    MFA_RESET_BY_ADMIN = "MFA_RESET_BY_ADMIN", "MFA Reset By Admin"
+
+
+class KYCDocumentType(models.TextChoices):
+    """Identity document types a user can submit for KYC verification."""
+
+    NATIONAL_ID = "NATIONAL_ID", "National ID (NIN)"
+    DRIVERS_LICENSE = "DRIVERS_LICENSE", "Driver's License"
+    INTERNATIONAL_PASSPORT = "INTERNATIONAL_PASSPORT", "International Passport"
+    VOTERS_ID = "VOTERS_ID", "Voter's ID"
+
+
+class KYCStatus(models.TextChoices):
+    """Review status of a KYC verification submission."""
+
+    PENDING = "PENDING", "Pending"
+    APPROVED = "APPROVED", "Approved"
+    REJECTED = "REJECTED", "Rejected"
+
+
+class QueueSortOrder(models.TextChoices):
+    """A reviewer's preferred default ordering for the review queue."""
+
+    OLDEST_FIRST = "OLDEST_FIRST", "Oldest First"
+    NEWEST_FIRST = "NEWEST_FIRST", "Newest First"
+    SLA_URGENCY = "SLA_URGENCY", "SLA Urgency"
+
+
+class QueueTrackFilter(models.TextChoices):
+    """A reviewer's preferred default track filter for the review queue.
+
+    Maps onto api.categories.enums.TrackPreference's CREATOR_PREFERRED /
+    AI_PREFERRED values; ALL applies no filter.
+    """
+
+    ALL = "ALL", "All Tracks"
+    CREATOR_TRACK = "CREATOR_TRACK", "Creator Track"
+    AI_TRACK = "AI_TRACK", "AI Track"
+
+
+class UnavailabilityReason(models.TextChoices):
+    """Why a Creator Reviewer marked themselves unavailable."""
+
+    VACATION = "VACATION", "Vacation"
+    SICK_LEAVE = "SICK_LEAVE", "Sick Leave"
+    PERSONAL = "PERSONAL", "Personal"
+    TRAINING = "TRAINING", "Training"
+    OTHER = "OTHER", "Other"

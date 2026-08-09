@@ -6,7 +6,7 @@ from api.onboarding.enums import (
     MonthlyCourseCapacity,
     VideoComfortLevel,
 )
-from includes.helpers import DateHistoryModelMixin, UUIDPrimaryKeyModelMixin
+from core.mixins import DateHistoryModelMixin, UUIDPrimaryKeyModelMixin
 
 
 class CreatorProfile(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
@@ -26,6 +26,15 @@ class CreatorProfile(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
         on_delete=models.CASCADE,
         related_name="creator_profile",
         help_text=_("User this onboarding profile belongs to."),
+    )
+    primary_expertise_category = models.ForeignKey(
+        "categories.Category",
+        verbose_name=_("Primary Expertise Category"),
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text=_("Primary area-of-expertise category selected during onboarding."),
     )
     primary_expertise_area = models.CharField(
         verbose_name=_("Primary Expertise Area"),

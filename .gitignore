@@ -30,3 +30,12 @@ media/
 openapi-schema.yaml
 test.txt
 .opencode
+
+# PR working files
+pullrequest.md
+
+
+# VS Code
+.vscode
+PRD.md
+.DS_Store

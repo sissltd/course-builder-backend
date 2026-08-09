@@ -319,6 +319,250 @@ The scaffold includes an abstract authentication contract in `api/authentication
 
 Projects can implement OTP, passwordless, social login, or vendor-backed authentication flows against this interface without rewriting the higher-level calling pattern.
 
+### Roles
+
+`UserRole` splits into three groups, and the distinction is load-bearing:
+
+| Group          | Roles                                                | How you get it            |
+| -------------- | ---------------------------------------------------- | ------------------------- |
+| **Public**     | `COURSE_CREATOR`                                     | Public signup             |
+| **Staff**      | `STAFF_WRITER`, `STAFF_VERIFIER`, `STAFF_APPROVER`   | Super Admin invitation    |
+| **Privileged** | `ADMIN`, `SUPER_ADMIN`                               | Bootstrap / direct assign |
+
+The three staff roles are the Writer / Verifier / Approver options in the
+"Invite a staff" dialog and mirror the authoring pipeline (write → verify →
+approve). They are kept distinct from `COURSE_CREATOR` on purpose: a
+self-registered member of the public and a hired writer do the same job but are
+not the same thing, and collapsing them would make staff unidentifiable in
+permissions, reporting, and the Teams page.
+
+Permission classes pair each legacy role with its staff equivalent, so
+endpoints do not need to enumerate both: `IsCourseCreatorRole` covers Writers,
+`IsCreatorReviewerRole` covers Verifiers, and `IsAdminRole` covers Approvers
+and Super Admins.
+
+### Staff Accounts
+
+Staff accounts are never self-service. Public signup always creates a
+`COURSE_CREATOR` regardless of what the client posts, so the only route to a
+staff or privileged role is the chain below (implemented in
+`api/authentication/services/staff_service.py`):
+
+1. **Bootstrap the Super Admin** — `POST /api/v1/auth/superadmin/bootstrap/`
+
+   Claims the platform's single `SUPER_ADMIN` seat. There is no logged-in user
+   to authorize this yet, so it is gated on a shared secret instead: the
+   request's `bootstrap_token` must match the `SUPERADMIN_BOOTSTRAP_TOKEN`
+   environment variable.
+
+   `SUPERADMIN_BOOTSTRAP_TOKEN` defaults to empty, and empty **disables** the
+   endpoint (403) rather than accepting an empty token — a deployment that
+   forgets the variable is not claimable by whoever finds the URL first. Set it
+   to a long random value (`openssl rand -hex 32`), bootstrap once, then clear
+   it so the secret stops being a live credential.
+
+   Exactly one `SUPER_ADMIN` can exist. That is enforced by a partial unique
+   index (`unique_super_admin` on `api.users.models.User`), not just an
+   application check, so two concurrent bootstrap requests cannot both win.
+   Replacing the Super Admin is therefore a deliberate operation — demote the
+   incumbent first — and not something the API will do for you.
+
+2. **Invite a staff member** — `POST /api/v1/auth/staff/invitations/`
+
+   Super Admin only; Approvers and Admins cannot invite, which is the
+   capability that sets the Super Admin apart. `role` accepts only the three
+   invitable staff roles — `SUPER_ADMIN` is rejected, so this endpoint cannot
+   mint a second platform owner. Creates the invitee inactive with an unusable
+   password (reserving the email) and emails a single-use link. Re-inviting
+   someone still pending reissues the link, invalidates the previous one, and
+   updates their role, which is how a mis-selected role gets corrected before
+   acceptance.
+
+3. **Accept the invitation** — `POST /api/v1/auth/staff/invitations/accept/`
+
+   The invitee sets their own password and the account activates in the
+   invited role, returning a JWT pair. Super Admins therefore never know
+   another operator's credentials, and the role cannot be influenced by the
+   invitee.
+
+The Teams page is backed by three more Super Admin endpoints:
+
+- `GET /api/v1/auth/staff/` — the roster, including pending and revoked rows.
+- `POST /api/v1/auth/staff/{id}/revoke/` — withdraw a pending invitation
+  (burning its token) or deactivate an active member.
+- `POST /api/v1/auth/staff/{id}/reactivate/` — restore a revoked member.
+
+Read `invitation_status` rather than `is_active` when rendering a row: `PENDING`
+and `REVOKED` are both inactive but offer different actions, and they are told
+apart by whether an unconsumed invitation token still exists. An invitation
+revoked *before* acceptance cannot be reactivated — that account has no usable
+password — so those must be re-invited instead.
+
+Neither revoke nor reactivate can target your own account, and the Super Admin
+seat cannot be revoked at all: it is bootstrap-only, so a revoked Super Admin
+could not be replaced through the API.
+
+Django's `is_staff` / `is_superuser` flags are set on the bootstrapped Super
+Admin so it can also reach `/admin/`. Note that `is_superuser` bypasses every
+role check in `api.users.permissions.HasRole` *and* in `require_role`, so a
+Django superuser passes as any role — including `IsCourseCreatorRole`. That is
+Django's convention, and it means role checks are not a boundary for such an
+account at all.
+
+`createsuperuser` therefore assigns `role=SUPER_ADMIN` and `status=ACTIVE`
+(`api.users.models.manager.CustomUserManager`). It previously left `role` at
+its `COURSE_CREATOR` default, which produced a full-authority account that
+reported itself as a public creator, was routed to the creator dashboard at
+login, and — because the partial unique index only constrains rows whose role
+*is* `SUPER_ADMIN` — escaped the one-seat rule entirely, so any number could
+exist. Shell-created superusers now fall under the same rule as the bootstrap
+endpoint: the second one fails with a readable message rather than silently
+becoming an invisible co-owner.
+
+The bootstrap endpoint is rate limited to **5 requests per hour per IP**. It is
+authorized by a shared secret rather than a credential, so an unthrottled
+version is a guessing oracle against `SUPERADMIN_BOOTSTRAP_TOKEN`; a genuine
+operator calls it once, so the limit costs nothing. The token comparison is
+constant-time (`secrets.compare_digest`) for the same reason.
+
+Two operational notes:
+
+- **Bootstrap returns the profile, not tokens.** Log in at
+  `/api/v1/auth/login/` afterwards. This differs from staff invitation
+  acceptance, which does return a JWT pair.
+- **A locked-out Super Admin has no API remedy**, by design — the seat cannot
+  be moderated through any route, so there is no endpoint that could clear its
+  lockout. The lockout expires on its own, and for when waiting is not
+  acceptable there is a break-glass command:
+
+  ```bash
+  python manage.py unlock_account owner@example.com
+  ```
+
+  It requires shell access, which is the same trust level as setting
+  `SUPERADMIN_BOOTSTRAP_TOKEN`, and writes a `LOCKOUT_CLEARED` entry to the
+  account's activity log so an unexplained unlock is still visible.
+
+### Category Access
+
+Categories live in their own app (`api/categories/`) with the standard
+model / serializers / services / views layout. Course and CreatorProfile both
+hold foreign keys into it, so `categories` is a dependency of `courses` and
+`onboarding` — never the reverse.
+
+Write access is narrower than everywhere else in the platform and does not
+follow the usual "admins can do anything" shape:
+
+| Action                | Who                       |
+| --------------------- | ------------------------- |
+| List / retrieve       | Any authenticated user    |
+| Create/update/delete  | Writer, Super Admin       |
+
+Admins and Approvers deliberately get **read only** here (`CanManageCategories`
+in `api.users.permissions`), even though they have full course CRUD. Note also
+that this permission is not `IsCourseCreatorRole`, which would let public
+Course Creators in — category management is a staff job, and public creators
+only browse categories to pick one.
+
+Two things worth knowing before changing a category:
+
+- **`creator_price` is a payout lever, and Writers can set it.** A Writer can
+  raise a category's price and then submit their own course against it. That is
+  an accepted trust decision for salaried staff, not an oversight. Price changes
+  are not retroactive — `Course.creator_price_snapshot` freezes the rate at
+  submission time.
+- **Deleting is restricted by the database, not just by convention.**
+  `Course.category` is `PROTECT`, so a category with courses cannot be deleted;
+  `category_service.delete_category` turns that into a 400 with a usable message
+  rather than the 500 an unhandled `ProtectedError` would produce. Creator
+  profiles are `SET_NULL`, so they do *not* block deletion and silently lose
+  their stated expertise — prefer setting `status` to `INACTIVE` to retire a
+  category people have already selected.
+
+Category once lived in `api/courses/`. It was moved with three state-only
+migrations plus one table rename (`categories.0001` → `courses.0002` →
+`onboarding.0002` → `categories.0002`), so no data was copied or dropped; see
+the docstrings on those migrations for why each step avoids touching the
+database.
+
+### Course Access
+
+Admins and Approvers have full CRUD over every course, not just their own:
+`CourseViewSet` widens its queryset and object permissions for the
+administrative tier rather than scoping to `creator`. Two deliberate limits:
+
+- **Submission stays owner-scoped.** Submitting is the author vouching for
+  their own work, so an Admin may submit only a course they created.
+- **Workflow rules still apply.** Wider access changes *who* may act, not
+  *what* the workflow allows — an Admin editing a Published course gets the
+  same "Only Draft courses can be edited" error a creator would.
+
+### Admin Operations
+
+Two administrative tiers already exist and are kept apart on purpose. The
+Super Admin runs the *organization* — inviting, revoking, and reactivating
+staff through `/api/v1/auth/staff/…` — while Admins run the *platform*. The
+endpoints below are the Admin tier's, gated on `IsAdminOrSuperAdminRole`,
+which excludes Approvers: they are invited staff whose job is course
+approvals, not account moderation or platform configuration.
+
+All paths below are relative to `/api/v1/`.
+
+| Area               | Endpoint                             | Who                |
+| ------------------ | ------------------------------------ | ------------------ |
+| Dashboard counts   | `GET /admin/overview/`               | Admin, Super Admin |
+| User roster        | `GET /users/admin/`                  | Admin, Super Admin |
+| Suspend account    | `POST /users/admin/{id}/suspend/`    | Admin, Super Admin |
+| Deactivate account | `POST /users/admin/{id}/deactivate/` | Admin, Super Admin |
+| Reinstate account  | `POST /users/admin/{id}/reinstate/`  | Admin, Super Admin |
+| Platform-wide log  | `GET /users/activity-log/`           | Admin, Super Admin |
+| Creator wallets    | `GET /admin/wallets/`                | Admin, Super Admin |
+| Transaction ledger | `GET /admin/transactions/`           | Admin, Super Admin |
+| Withdrawal queue   | `GET /admin/withdrawals/`            | Admin, Super Admin |
+| Platform settings  | `PATCH /platform-settings/`          | Admin, Super Admin |
+| KYC review         | `GET/POST /users/kyc-review/…`       | Admin, Super Admin |
+
+Four things worth knowing:
+
+- **Account moderation is separate from staff revocation, and neither can
+  reach the other's targets.** `user_admin_service` refuses to act on `ADMIN`
+  and `SUPER_ADMIN` accounts; `staff_service` refuses anything that is not a
+  staff role and will not touch the Super Admin seat at all. An Admin
+  therefore cannot disable the tier that supervises them, and neither route
+  can strand the platform without an owner. Both refuse to act on your own
+  account.
+- **`SUSPENDED` was unreachable before these endpoints existed.** Login and
+  token refresh had always rejected the status, but nothing in the codebase
+  ever assigned it, so the policy was unenforceable — the enum value existed
+  and no code path produced it. `suspend_user` is now the only writer of it.
+  Suspension also blacklists outstanding refresh tokens, but an *access* token
+  already in hand keeps working until it expires, so the cut-off lands at the
+  user's next refresh rather than instantly.
+- **The admin wallet reads exist because the creator-facing ones 403 for
+  admins.** Every route under the creator wallet is gated on
+  `IsCourseCreatorRole` (Course Creator + Writer), so an Admin had no way to
+  answer "what is this creator's balance?" without a database console. These
+  are deliberately read-only: balances move only through `credit_wallet` on
+  course approval and a confirmed withdrawal, and there is no admin endpoint
+  that adjusts one.
+- **`/admin/withdrawals/` is a worklist, not a payout tool.** Confirming a
+  withdrawal debits the creator's wallet and writes a `PENDING` debit
+  transaction, and nothing — here, in the Django admin, or anywhere else —
+  advances that to `COMPLETED` or `FAILED`. Payout settlement is not
+  implemented, so read `CONFIRMED` as "awaiting a manual bank transfer". A
+  status dropdown was deliberately *not* added to the Django admin: letting an
+  operator mark a payout done without money moving is worse than the gap being
+  visible.
+
+In the Django admin, `User`, `KYCVerification`, `UserActivityLog`, and the four
+wallet models are registered read-mostly. `role` and `status` are read-only on
+the user form because both have service-layer rules behind them (session
+revocation, notifications, activity logging) that a direct database edit would
+skip; `Transaction` and `UserActivityLog` are fully immutable there, since an
+audit log that can be edited from the admin is not an audit log. `TopicAdmin`
+remains the one admin that *writes*, routing through `topic_service` so it
+cannot bypass the price-snapshot rules.
+
 ## User Model
 
 The scaffold uses a custom user model at `api.users.models.user.User`.

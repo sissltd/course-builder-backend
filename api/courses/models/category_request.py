@@ -2,7 +2,7 @@ from django.db import models
 from django.utils.translation import gettext_lazy as _
 
 from api.courses.enums import CategoryRequestStatus
-from includes.helpers import DateHistoryModelMixin, UUIDPrimaryKeyModelMixin
+from core.mixins import DateHistoryModelMixin, UUIDPrimaryKeyModelMixin
 
 
 class CategoryRequest(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
@@ -34,7 +34,7 @@ class CategoryRequest(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
         help_text=_("Whether this request is pending, approved, or rejected."),
     )
     resulting_category = models.ForeignKey(
-        "courses.Category",
+        "categories.Category",
         verbose_name=_("Resulting Category"),
         on_delete=models.SET_NULL,
         null=True,

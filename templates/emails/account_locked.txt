@@ -1,0 +1,5 @@
+Hi {{ first_name }},
+
+Your SoluDesks Course Creator Studio account was temporarily locked after repeated failed login attempts. It will unlock automatically in {{ lock_minutes }} minutes.
+
+If this wasn't you, consider resetting your password once the lock clears.

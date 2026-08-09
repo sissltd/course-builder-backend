@@ -11,15 +11,17 @@ from itertools import count
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 
-from api.courses.enums import AssessmentLevel, CategoryStatus, TrackPreference
+from api.categories.enums import CategoryStatus, TrackPreference
+from api.courses.enums import AssessmentLevel
+from api.categories.models import Category
 from api.courses.models import (
     Assessment,
-    Category,
-    CategoryRequest,
     Course,
+    CourseAppeal,
     Lesson,
     Module,
     Topic,
+    TopicReservationRequest,
 )
 from api.users.enums import UserRole
 
@@ -66,14 +68,35 @@ def make_topic(*, category=None, **kwargs):
     return Topic.objects.create(**defaults)
 
 
-def make_category_request(*, requested_by=None, **kwargs):
+def make_topic_reservation_request(*, requested_by=None, category=None, **kwargs):
     n = next(_sequence)
     defaults = {
         "requested_by": requested_by or make_user(),
-        "name": f"Requested Category {n}",
+        "name": f"Requested Topic {n}",
+        "category": category or make_category(),
     }
     defaults.update(kwargs)
-    return CategoryRequest.objects.create(**defaults)
+    return TopicReservationRequest.objects.create(**defaults)
+
+
+def make_rejected_course(*, creator=None, category=None, **kwargs):
+    defaults = {"rejected_at": timezone.now()}
+    defaults.update(kwargs)
+    return make_draft_course(creator=creator, category=category, **defaults)
+
+
+def make_course_appeal(*, course=None, submitted_by=None, **kwargs):
+    n = next(_sequence)
+    course = course or make_rejected_course()
+    defaults = {
+        "course": course,
+        "submitted_by": submitted_by or course.creator,
+        "title": f"Appeal {n}",
+        "email": "creator@example.com",
+        "description": "word " * 30,
+    }
+    defaults.update(kwargs)
+    return CourseAppeal.objects.create(**defaults)
 
 
 def make_draft_course(*, creator=None, category=None, **kwargs):
@@ -95,8 +118,15 @@ def make_draft_course(*, creator=None, category=None, **kwargs):
 def make_questions(count_):
     return [
         {
+            "type": "MULTIPLE_CHOICE",
             "question": f"Question {i}?",
-            "options": ["A", "B", "C", "D"],
+            "points": 10,
+            "options": [
+                {"text": "A", "explanation": "Why A is right or wrong."},
+                {"text": "B", "explanation": "Why B is right or wrong."},
+                {"text": "C", "explanation": "Why C is right or wrong."},
+                {"text": "D", "explanation": "Why D is right or wrong."},
+            ],
             "correct_index": 0,
         }
         for i in range(count_)
