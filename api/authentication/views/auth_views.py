@@ -59,6 +59,30 @@ _TOKEN_PAIR_SCHEMA = {
     },
 }
 
+_REFRESH_RESPONSE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "access": {"type": "string"},
+        "refresh": {"type": "string"},
+    },
+}
+
+_LOGIN_RESPONSE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "access": {"type": "string"},
+        "refresh": {"type": "string"},
+        "user": {"type": "object"},
+        "role": {"type": "string"},
+        "workspace": {"type": "string"},
+        "mfa_required": {"type": "boolean"},
+        "challenge_token": {"type": "string"},
+        "mfa_enrollment_required": {"type": "boolean"},
+        "mfa_grace_period_ends_at": {"type": "string", "format": "date-time"},
+        "mfa_enrollment_overdue": {"type": "boolean"},
+    },
+}
+
 
 class SignupView(APIView):
     """Create an inactive user and email a signup-verification link."""
@@ -180,6 +204,21 @@ class ReviewerSignupView(SignupView):
         ),
         tags=["Auth — Signup & Verification"],
         request=SignupSerializer,
+        examples=[
+            OpenApiExample(
+                name="Sample Request",
+                request_only=True,
+                value={
+                    "email": "jane.doe@example.com",
+                    "password": "Rw4$eTn8Kp2q",
+                    "password_confirm": "Rw4$eTn8Kp2q",
+                    "first_name": "Jane",
+                    "last_name": "Doe",
+                    "country": "NG",
+                    "terms_accepted": True,
+                },
+            ),
+        ],
         responses={
             201: OpenApiResponse(
                 response=MeSerializer,
@@ -225,6 +264,16 @@ class VerifyEmailView(APIView):
         ),
         tags=["Auth — Signup & Verification"],
         request=VerifyEmailSerializer,
+        examples=[
+            OpenApiExample(
+                name="Sample Request",
+                request_only=True,
+                value={
+                    "email": "jane.doe@example.com",
+                    "token": "kQ3f7pR9sT2uV5wX8yZ1aB4cD6eF0gH2iJ4kL6mN8oP",
+                },
+            ),
+        ],
         responses={
             200: OpenApiResponse(
                 response=_TOKEN_PAIR_SCHEMA,
@@ -285,6 +334,8 @@ class ResendVerificationView(APIView):
     """Re-issue a verification link for signup verification or password reset."""
 
     permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "resend_verification"
     serializer_class = (
         ResendVerificationSerializer  # for schema generation only; not a GenericAPIView
     )
@@ -300,10 +351,17 @@ class ResendVerificationView(APIView):
             "action.\n\n"
             "**Auth:** Public.\n\n"
             "**Prerequisites:** A user must exist for the given email.\n\n"
-            "**Important:** Subject to a resend cooldown - calling this "
-            "again immediately after a previous send returns 400. This "
-            "endpoint does reveal whether the email exists (via 404), "
-            "unlike `/api/v1/auth/forgot-password/`, which never does."
+            "**Important:** `purpose` only accepts `SIGNUP_VERIFICATION` or "
+            "`PASSWORD_RESET` - the other `TokenPurpose` values (staff "
+            "invitations, withdrawal confirmations, email changes) are each "
+            "issued and resent through their own authorized flow and are "
+            "rejected here, since accepting them would let anyone who knows "
+            "a target's email silently invalidate that person's pending "
+            "invitation or in-flight OTP. Also rate-limited per IP, on top "
+            "of the per-email resend cooldown below - calling this again "
+            "immediately after a previous send returns 400. This endpoint "
+            "does reveal whether the email exists (via 404), unlike "
+            "`/api/v1/auth/forgot-password/`, which never does."
         ),
         tags=["Auth — Signup & Verification"],
         request=ResendVerificationSerializer,
@@ -383,12 +441,18 @@ class LoginView(APIView):
             "Called from the login form.\n\n"
             "**Auth:** Public.\n\n"
             "**Prerequisites:** The account must exist, be active/"
-            "verified, and not suspended or deactivated.\n\n"
-            "**Important:** Wrong email, wrong password, and an "
-            "unverified account are reported as distinct field-scoped "
-            "errors (a deliberate choice favoring specific feedback over "
-            "anti-enumeration) - do not rely on this endpoint hiding "
-            "whether an email is registered. `workspace` tells the "
+            "verified, and not suspended, deactivated, or locked out.\n\n"
+            "**Important:** An unknown email, a wrong password, a locked "
+            "account, and a suspended/deactivated account all return the "
+            "identical generic `\"Invalid email or password.\"` "
+            "non-field error whenever the submitted password is wrong - "
+            "this is a deliberate anti-enumeration choice, do not rely on "
+            "distinct error text to tell those cases apart. Only once the "
+            "**correct** password is supplied does the response reveal a "
+            "specific reason the login still can't proceed (suspended/"
+            "deactivated, locked out, or unverified) - since only someone "
+            "who already knows the password can trigger that, it doesn't "
+            "leak account existence to anyone else. `workspace` tells the "
             "frontend which dashboard to route to based on role; `role` is "
             "also embedded in the access token's claims."
         ),
@@ -403,6 +467,7 @@ class LoginView(APIView):
         ],
         responses={
             200: OpenApiResponse(
+                response=_LOGIN_RESPONSE_SCHEMA,
                 description="Logged in.",
                 examples=[
                     OpenApiExample(
@@ -416,36 +481,59 @@ class LoginView(APIView):
                 ],
             ),
             400: OpenApiResponse(
-                description="Wrong email, wrong password, unverified account, or suspended/deactivated account.",
+                description=(
+                    "Wrong email, wrong password, a locked-out account, or a "
+                    "suspended/deactivated account with the wrong password - "
+                    "all reported identically to avoid leaking which case "
+                    "applies. A correct password against a suspended/"
+                    "deactivated, locked, or unverified account instead "
+                    "reports that specific reason."
+                ),
                 examples=[
                     OpenApiExample(
-                        name="No account for email",
+                        name="Invalid credentials (unknown email, wrong password, or locked/suspended account with wrong password)",
                         value={
                             "errors": [
                                 {
                                     "type": "validation_error",
                                     "code": "invalid",
-                                    "message": "No account found with this email address.",
+                                    "message": "Invalid email or password.",
+                                    "field_name": None,
+                                }
+                            ]
+                        },
+                    ),
+                    OpenApiExample(
+                        name="Suspended/deactivated (correct password)",
+                        value={
+                            "errors": [
+                                {
+                                    "type": "validation_error",
+                                    "code": "invalid",
+                                    "message": (
+                                        "This account is not active. Please "
+                                        "contact support."
+                                    ),
                                     "field_name": "email",
                                 }
                             ]
                         },
                     ),
                     OpenApiExample(
-                        name="Incorrect password",
+                        name="Locked out (correct password)",
                         value={
                             "errors": [
                                 {
                                     "type": "validation_error",
                                     "code": "invalid",
-                                    "message": "Incorrect password.",
-                                    "field_name": "password",
+                                    "message": "Too many failed attempts. Try again in 15 minute(s).",
+                                    "field_name": None,
                                 }
                             ]
                         },
                     ),
                     OpenApiExample(
-                        name="Not verified",
+                        name="Not verified (correct password)",
                         value={
                             "errors": [
                                 {
@@ -498,6 +586,15 @@ class LogoutView(APIView):
         ),
         tags=["Auth — Session"],
         request=LogoutSerializer,
+        examples=[
+            OpenApiExample(
+                name="Sample Request",
+                request_only=True,
+                value={
+                    "refresh": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoicmVmcmVzaCJ9.9Lp4"
+                },
+            ),
+        ],
         responses={
             200: OpenApiResponse(
                 response=_DETAIL_SCHEMA,
@@ -609,8 +706,17 @@ class TokenRefreshView(SimpleJWTTokenRefreshView):
             "not just at login."
         ),
         tags=["Auth — Session"],
+        request=TokenRefreshSerializer,
+        examples=[
+            OpenApiExample(
+                name="Sample Request",
+                request_only=True,
+                value={"refresh": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."},
+            ),
+        ],
         responses={
             200: OpenApiResponse(
+                response=_REFRESH_RESPONSE_SCHEMA,
                 description="A new access (and refresh) token.",
                 examples=[
                     OpenApiExample(
