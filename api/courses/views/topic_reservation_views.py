@@ -121,6 +121,7 @@ _RESERVATION_EXAMPLE = {
             "is read-only, so a PUT body has nothing to change."
         ),
         tags=["Courses — Topic Reservations"],
+        request=None,
         responses={
             200: OpenApiResponse(
                 response=TopicReservationRequestSerializer,
@@ -148,6 +149,7 @@ _RESERVATION_EXAMPLE = {
             "is read-only, so a PATCH body has nothing to change."
         ),
         tags=["Courses — Topic Reservations"],
+        request=None,
         responses={
             200: OpenApiResponse(
                 response=TopicReservationRequestSerializer,
