@@ -728,6 +728,111 @@ class LogoutAllApiTests(APITestCase):
         )
 
 
+class UserSessionApiTests(APITestCase):
+    def setUp(self):
+        cache.clear()
+
+    def _login(self, email, password="testpass123"):
+        response = self.client.post(
+            "/api/v1/auth/login/",
+            {"email": email, "password": password},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        return response.data
+
+    def test_login_creates_a_session_with_matching_sid(self):
+        from api.authentication.models import UserSession
+        from rest_framework_simplejwt.tokens import AccessToken
+
+        user = make_user(email="sessioner@example.com")
+        tokens = self._login(user.email)
+
+        self.assertEqual(UserSession.objects.filter(user=user).count(), 1)
+        session = UserSession.objects.get(user=user)
+        access = AccessToken(tokens["access"])
+        self.assertEqual(access.get("sid"), str(session.id))
+
+    def test_requires_authentication(self):
+        response = self.client.get("/api/v1/auth/sessions/")
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_list_returns_own_sessions_with_is_current_flag(self):
+        user = make_user(email="lister@example.com")
+        tokens = self._login(user.email)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {tokens['access']}")
+
+        response = self.client.get("/api/v1/auth/sessions/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        results = response.data["data"]["results"]
+        self.assertEqual(len(results), 1)
+        self.assertTrue(results[0]["is_current"])
+
+    def test_refresh_keeps_the_same_session_and_bumps_last_seen(self):
+        from api.authentication.models import UserSession
+
+        user = make_user(email="refresher@example.com")
+        tokens = self._login(user.email)
+        session = UserSession.objects.get(user=user)
+        original_last_seen = session.last_seen_at
+
+        refresh_response = self.client.post(
+            "/api/v1/auth/token/refresh/",
+            {"refresh": tokens["refresh"]},
+            format="json",
+        )
+        self.assertEqual(refresh_response.status_code, status.HTTP_200_OK)
+
+        session.refresh_from_db()
+        self.assertEqual(UserSession.objects.filter(user=user).count(), 1)
+        self.assertGreaterEqual(session.last_seen_at, original_last_seen)
+
+    def test_revoke_blacklists_the_sessions_current_refresh_token(self):
+        from api.authentication.models import UserSession
+
+        user = make_user(email="revoker@example.com")
+        tokens = self._login(user.email)
+        session = UserSession.objects.get(user=user)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {tokens['access']}")
+
+        response = self.client.delete(f"/api/v1/auth/sessions/{session.id}/")
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+        session.refresh_from_db()
+        self.assertIsNotNone(session.revoked_at)
+
+        refresh_response = self.client.post(
+            "/api/v1/auth/token/refresh/",
+            {"refresh": tokens["refresh"]},
+            format="json",
+        )
+        self.assertEqual(refresh_response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_revoke_another_users_session_returns_404(self):
+        user = make_user(email="owner@example.com")
+        other_user = make_user(email="attacker@example.com")
+        from api.authentication.models import UserSession
+
+        self._login(user.email)
+        session = UserSession.objects.get(user=user)
+
+        other_tokens = self._login(other_user.email)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {other_tokens['access']}")
+
+        response = self.client.delete(f"/api/v1/auth/sessions/{session.id}/")
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_logout_all_empties_the_sessions_list(self):
+        user = make_user(email="logoutall@example.com")
+        tokens = self._login(user.email)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {tokens['access']}")
+
+        self.client.post("/api/v1/auth/logout-all/")
+
+        response = self.client.get("/api/v1/auth/sessions/")
+        self.assertEqual(response.data["data"]["results"], [])
+
+
 class ForgotPasswordApiTests(APITestCase):
     def test_existing_and_nonexistent_email_both_return_200(self):
         user = make_user()

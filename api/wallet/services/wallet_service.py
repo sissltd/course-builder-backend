@@ -260,6 +260,14 @@ def confirm_withdrawal(*, user: User, withdrawal_request_id, code: str) -> Trans
     Re-validates the balance at confirmation time (not just at request time),
     since it may have changed in between. Raises NotFound if the request
     doesn't exist, isn't the caller's, or isn't awaiting confirmation.
+
+    No MFA step-up here: require_role below only ever admits
+    IsCourseCreatorRole.allowed_roles (COURSE_CREATOR/STAFF_WRITER) - an
+    ADMIN/SUPER_ADMIN account can never reach this function at all, so an
+    MFA-mandated-role check would be unreachable dead code. The financial
+    actions an Admin/Super Admin can actually perform in this codebase are
+    PlatformSettings threshold changes and category pricing, both gated by
+    IsMFAVerifiedForSession at the view layer instead.
     """
 
     require_role(user, IsCourseCreatorRole.allowed_roles)

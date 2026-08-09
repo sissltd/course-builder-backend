@@ -5,6 +5,7 @@ from rest_framework_simplejwt.serializers import (
 from rest_framework_simplejwt.settings import api_settings
 from rest_framework_simplejwt.tokens import RefreshToken
 
+from api.authentication.services import session_service
 from api.users.enums import AccountStatus
 from api.users.models import User
 
@@ -36,4 +37,14 @@ class TokenRefreshSerializer(SimpleJWTTokenRefreshSerializer):
         ):
             raise InvalidToken("This account is not active. Please contact support.")
 
-        return super().validate(attrs)
+        # "sid" survives rotation unchanged (see UserSession's docstring), so
+        # it identifies which session this refresh belongs to before we know
+        # the new jti data["refresh"] will carry.
+        sid = token.get("sid")
+        data = super().validate(attrs)
+
+        if sid and "refresh" in data:
+            new_jti = RefreshToken(data["refresh"])["jti"]
+            session_service.bump_last_seen(session_id=sid, new_jti=new_jti)
+
+        return data
