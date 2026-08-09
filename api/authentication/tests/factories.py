@@ -38,6 +38,7 @@ def make_verification_token(
     expires_in_minutes=60,
     is_used=False,
     attempts=0,
+    **extra_fields,
 ):
     return EmailVerificationToken.objects.create(
         user=user,
@@ -46,4 +47,5 @@ def make_verification_token(
         expires_at=timezone.now() + timedelta(minutes=expires_in_minutes),
         is_used=is_used,
         attempts=attempts,
+        **extra_fields,
     )

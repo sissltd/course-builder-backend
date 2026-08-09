@@ -3,12 +3,12 @@ from django.contrib.auth.models import AbstractUser
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
-from api.users.enums import UserRole
+from api.users.enums import AccountStatus, Sex, UserRole
 from api.users.models.manager import CustomUserManager
-from includes.helpers import (
+from core.mixins import (
     DateHistoryModelMixin,
-    UUIDPrimaryKeyModelMixin,
     UserHistoryModelMixin,
+    UUIDPrimaryKeyModelMixin,
 )
 
 
@@ -34,6 +34,31 @@ class User(
         default=UserRole.COURSE_CREATOR,
         help_text=_("Primary role used for role-based permission checks."),
     )
+    status = models.CharField(
+        verbose_name=_("Account Status"),
+        max_length=25,
+        choices=AccountStatus.choices,
+        default=AccountStatus.PENDING_VERIFICATION,
+        help_text=_(
+            "Account activation/lifecycle status, independent of role."
+        ),
+    )
+    failed_login_attempts = models.PositiveIntegerField(
+        verbose_name=_("Failed Login Attempts"),
+        default=0,
+        help_text=_(
+            "Consecutive failed login attempts since the last successful login."
+        ),
+    )
+    locked_until = models.DateTimeField(
+        verbose_name=_("Locked Until"),
+        null=True,
+        blank=True,
+        help_text=_(
+            "Account is locked from logging in until this time, set after "
+            "repeated failed login attempts. Null means not locked."
+        ),
+    )
     country = models.CharField(
         verbose_name=_("Country"),
         max_length=2,
@@ -41,11 +66,43 @@ class User(
         default="",
         help_text=_("ISO 3166-1 alpha-2 country code."),
     )
+    sex = models.CharField(
+        verbose_name=_("Sex"),
+        max_length=20,
+        choices=Sex.choices,
+        blank=True,
+        default="",
+        help_text=_("Self-reported sex."),
+    )
     terms_accepted_at = models.DateTimeField(
         verbose_name=_("Terms Accepted At"),
         null=True,
         blank=True,
         help_text=_("When the user accepted the Terms and Conditions."),
+    )
+    timezone = models.CharField(
+        verbose_name=_("Timezone"),
+        max_length=50,
+        blank=True,
+        default="",
+        help_text=_("IANA timezone identifier, e.g. 'Africa/Lagos'."),
+    )
+    avatar_url = models.URLField(
+        verbose_name=_("Avatar URL"),
+        blank=True,
+        default="",
+        help_text=_("Profile picture URL."),
+    )
+    mfa_grace_period_ends_at = models.DateTimeField(
+        verbose_name=_("MFA Grace Period Ends At"),
+        null=True,
+        blank=True,
+        help_text=_(
+            "Deadline by which this user must enroll in MFA. Set once, the "
+            "first time this row is saved with role=ADMIN/SUPER_ADMIN - see "
+            "save() below - and never reset, so promoting-then-waiting "
+            "cannot be used to defer enrollment indefinitely."
+        ),
     )
 
     objects = CustomUserManager()
@@ -56,8 +113,64 @@ class User(
     class Meta:
         verbose_name = _("User")
         verbose_name_plural = _("Users")
+        constraints = [
+            # Partial unique index over the single value SUPER_ADMIN, which
+            # permits at most one such row platform-wide. This is what makes the
+            # bootstrap endpoint genuinely one-shot: an application-level
+            # "does one already exist?" check is a TOCTOU race that two
+            # concurrent requests can both pass, whereas this cannot be raced.
+            # Promoting a replacement super admin is therefore a deliberate
+            # operation (demote the incumbent first), not an API call.
+            models.UniqueConstraint(
+                fields=["role"],
+                condition=models.Q(role=UserRole.SUPER_ADMIN),
+                name="unique_super_admin",
+            ),
+        ]
 
     def __str__(self):
         """Use email as the human-readable identifier in admin and logs."""
 
         return self.email
+
+    def save(self, *args, **kwargs):
+        """Self-healing MFA grace-period trigger: the moment a row holding
+        role=ADMIN/SUPER_ADMIN is saved with no grace period set yet, start
+        the clock. Covers every path that can produce such a row (bootstrap,
+        a future staff-invite extension, a direct admin-site edit) without
+        needing to instrument each call site individually. Idempotent - only
+        fires while mfa_grace_period_ends_at is still None.
+
+        Local import of platform_settings_service (not module-level) mirrors
+        MeSerializer.get_has_completed_onboarding's rationale: keeps
+        api.users -> api.platform a one-directional runtime dependency
+        rather than a module-level import coupling.
+        """
+
+        if self.role in (UserRole.ADMIN, UserRole.SUPER_ADMIN) and (
+            self.mfa_grace_period_ends_at is None
+        ):
+            from datetime import timedelta
+
+            from django.utils import timezone
+
+            from api.platform.services import platform_settings_service
+
+            grace_days = (
+                platform_settings_service.get_settings().mfa_enrollment_grace_period_days
+            )
+            self.mfa_grace_period_ends_at = timezone.now() + timedelta(days=grace_days)
+
+            # A caller may have restricted this save to specific columns via
+            # update_fields (e.g. LoginSerializer only persists login-lockout
+            # fields) - without extending that list, Django would compute
+            # mfa_grace_period_ends_at above but silently never write it,
+            # and the next login would recompute a fresh one from "now"
+            # every time, defeating the entire point of a bounded window.
+            update_fields = kwargs.get("update_fields")
+            if update_fields is not None and (
+                "mfa_grace_period_ends_at" not in update_fields
+            ):
+                kwargs["update_fields"] = [*update_fields, "mfa_grace_period_ends_at"]
+
+        super().save(*args, **kwargs)

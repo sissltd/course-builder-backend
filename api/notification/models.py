@@ -9,7 +9,7 @@ from rest_framework import exceptions as rest_exceptions
 
 from api.notification import enums as notification_enums
 from api.notification.services import email_service
-from includes.helpers import DateHistoryModelMixin, UUIDPrimaryKeyModelMixin
+from core.mixins import DateHistoryModelMixin, UUIDPrimaryKeyModelMixin
 
 logger = logging.getLogger(__name__)
 
@@ -272,3 +272,118 @@ class Notification(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
             return cls.objects.get(**kwargs)
         except cls.DoesNotExist as exc:
             raise rest_exceptions.NotFound("Notification not found") from exc
+
+
+class NotificationPreference(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
+    """Per-user toggles for which alert types a Creator Reviewer wants to
+    receive. Preference storage only - it does not implement the underlying
+    SLA-threshold detection/alerting system itself (not built yet); toggling
+    sla_breached off, for instance, has no effect until that system exists.
+
+    Lazily provisioned via notification_preference_service.get_or_create,
+    mirroring CreatorProfile/ReviewerAvailability - no row exists until a
+    user first opens their Notification settings.
+    """
+
+    user = models.OneToOneField(
+        "users.User",
+        verbose_name=_("User"),
+        on_delete=models.CASCADE,
+        related_name="notification_preference",
+        help_text=_("User these notification preferences belong to."),
+    )
+    new_course_assigned = models.BooleanField(
+        verbose_name=_("New Course Assigned"),
+        default=True,
+        help_text=_("Notify when a course is assigned to this reviewer."),
+    )
+    escalation_assigned = models.BooleanField(
+        verbose_name=_("Escalation Assigned"),
+        default=True,
+        help_text=_("Notify when an escalation is assigned (QA Reviewer only)."),
+    )
+    creator_feedback = models.BooleanField(
+        verbose_name=_("Creator Feedback"),
+        default=True,
+        help_text=_("Notify when a creator appeals a course decision."),
+    )
+    sla_amber_warning = models.BooleanField(
+        verbose_name=_("SLA Amber Warning"),
+        default=True,
+        help_text=_("Notify when a course in the queue hits the amber threshold."),
+    )
+    sla_red_critical_alert = models.BooleanField(
+        verbose_name=_("SLA Red Critical Alert"),
+        default=True,
+        help_text=_("Notify when a course hits the critical threshold."),
+    )
+    sla_breached = models.BooleanField(
+        verbose_name=_("SLA Breached"),
+        default=True,
+        help_text=_("Notify immediately when the SLA window is missed."),
+    )
+    kyc_submission_alert = models.BooleanField(
+        verbose_name=_("KYC Submission Alert"),
+        default=True,
+        help_text=_("Notify Admins/Super Admins when a new KYC submission arrives."),
+    )
+    account_deletion_detection_alert = models.BooleanField(
+        verbose_name=_("Account/Course Deletion Detection Alert"),
+        default=True,
+        help_text=_(
+            "Reserved for a future suspicious-deletion detection system - no "
+            "trigger exists yet, same idiom as the PRODUCTION/ALERT activity "
+            "categories."
+        ),
+    )
+    mie_recommendation_alert = models.BooleanField(
+        verbose_name=_("MIE Recommendation Alert"),
+        default=True,
+        help_text=_(
+            "Reserved for the Market Intelligence Engine, which is not "
+            "implemented in this backend - inert while AI Creator is unavailable."
+        ),
+    )
+    mie_pipeline_alert = models.BooleanField(
+        verbose_name=_("MIE Pipeline Alert"),
+        default=True,
+        help_text=_(
+            "Reserved for the AI Auto-Production Engine, which is not "
+            "implemented in this backend - inert while AI Creator is unavailable."
+        ),
+    )
+    in_app_enabled = models.BooleanField(
+        verbose_name=_("In-App Notifications Enabled"),
+        default=True,
+        help_text=_(
+            "Master toggle for in-app notifications. Off suppresses all "
+            "in-app alerts regardless of the per-event toggles above."
+        ),
+    )
+    sla_amber_threshold_hours_override = models.PositiveIntegerField(
+        verbose_name=_("SLA Amber Threshold Hours Override"),
+        null=True,
+        blank=True,
+        help_text=_(
+            "Overrides PlatformSettings.sla_amber_threshold_hours for this "
+            "reviewer. Null uses the platform default."
+        ),
+    )
+    sla_red_threshold_hours_override = models.PositiveIntegerField(
+        verbose_name=_("SLA Red Threshold Hours Override"),
+        null=True,
+        blank=True,
+        help_text=_(
+            "Overrides PlatformSettings.sla_red_threshold_hours for this "
+            "reviewer. Null uses the platform default."
+        ),
+    )
+
+    class Meta:
+        verbose_name = _("Notification Preference")
+        verbose_name_plural = _("Notification Preferences")
+
+    def __str__(self):
+        """Use the owning user's id as the human-readable label."""
+
+        return f"NotificationPreference({self.user_id})"

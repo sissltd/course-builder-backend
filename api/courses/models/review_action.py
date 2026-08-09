@@ -2,7 +2,7 @@ from django.db import models
 from django.utils.translation import gettext_lazy as _
 
 from api.courses.enums import ReviewActionType
-from includes.helpers import DateHistoryModelMixin, UUIDPrimaryKeyModelMixin
+from core.mixins import DateHistoryModelMixin, UUIDPrimaryKeyModelMixin
 
 
 class ReviewAction(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):

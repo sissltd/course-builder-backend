@@ -1,0 +1,7 @@
+Hi {{ first_name }},
+
+You requested to change your SoluDesks Course Creator Studio email address to this one. Click the link below to confirm the change:
+
+{{ confirmation_link }}
+
+If you didn't request this, you can safely ignore this email and your address will remain unchanged.

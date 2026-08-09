@@ -12,6 +12,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('courses', '0001_initial'),
+        ('categories', '0001_initial'),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
@@ -50,7 +51,7 @@ class Migration(migrations.Migration):
                 ('name', models.CharField(help_text='Topic display name.', max_length=150, verbose_name='Name')),
                 ('creator_price', models.DecimalField(decimal_places=2, help_text='Fixed price paid to a creator for an approved course in this topic.', max_digits=10, validators=[django.core.validators.MinValueValidator(Decimal('0'))], verbose_name='Creator Price')),
                 ('status', models.CharField(choices=[('ACTIVE', 'Active'), ('INACTIVE', 'Inactive')], default='ACTIVE', help_text='Whether the topic currently accepts new course submissions.', max_length=10, verbose_name='Status')),
-                ('category', models.ForeignKey(help_text='Category this topic belongs to.', on_delete=django.db.models.deletion.CASCADE, related_name='topics', to='courses.category', verbose_name='Category')),
+                ('category', models.ForeignKey(help_text='Category this topic belongs to.', on_delete=django.db.models.deletion.CASCADE, related_name='topics', to='categories.category', verbose_name='Category')),
                 ('created_by', models.ForeignKey(blank=True, help_text='User who created the object', null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='%(app_label)s_%(class)s_created_by', to=settings.AUTH_USER_MODEL, verbose_name='Created by')),
                 ('updated_by', models.ForeignKey(blank=True, help_text='User who updated the object', null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='%(app_label)s_%(class)s_updated_by', to=settings.AUTH_USER_MODEL, verbose_name='Updated by')),
             ],
@@ -75,7 +76,7 @@ class Migration(migrations.Migration):
                 ('status', models.CharField(choices=[('PENDING', 'Pending'), ('APPROVED', 'Approved'), ('REJECTED', 'Rejected')], default='PENDING', help_text='Whether this request is pending, approved, or rejected.', max_length=10, verbose_name='Status')),
                 ('reviewed_at', models.DateTimeField(blank=True, null=True, verbose_name='Reviewed At')),
                 ('requested_by', models.ForeignKey(help_text='Creator who requested this category.', on_delete=django.db.models.deletion.CASCADE, related_name='category_requests', to=settings.AUTH_USER_MODEL, verbose_name='Requested By')),
-                ('resulting_category', models.ForeignKey(blank=True, help_text='The Category created when this request was approved.', null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='+', to='courses.category', verbose_name='Resulting Category')),
+                ('resulting_category', models.ForeignKey(blank=True, help_text='The Category created when this request was approved.', null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='+', to='categories.category', verbose_name='Resulting Category')),
                 ('reviewed_by', models.ForeignKey(blank=True, help_text='Admin who approved or rejected this request.', null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='+', to=settings.AUTH_USER_MODEL, verbose_name='Reviewed By')),
             ],
             options={

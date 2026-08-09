@@ -1,10 +1,10 @@
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
-from includes.helpers import (
+from core.mixins import (
     DateHistoryModelMixin,
-    UUIDPrimaryKeyModelMixin,
     UserHistoryModelMixin,
+    UUIDPrimaryKeyModelMixin,
 )
 
 
@@ -33,6 +33,14 @@ class Lesson(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMi
         default="",
         help_text=_(
             "Lesson narration/content script, 500-1500 words (SCCS PRD Section 6.2)."
+        ),
+    )
+    video_url = models.URLField(
+        verbose_name=_("Video URL"),
+        blank=True,
+        default="",
+        help_text=_(
+            "Optional lesson video link, same pattern as Course.preview_video_url."
         ),
     )
     learning_objectives = models.JSONField(

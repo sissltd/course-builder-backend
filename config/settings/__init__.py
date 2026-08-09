@@ -4,7 +4,6 @@ from .authentication import *
 from .celery import *
 from .commons import *
 from .cors import *
-from .courses import *
 from .db import *
 from .drf import *
 from .exception import *
@@ -19,7 +18,6 @@ __all__ = [
     "celery",
     "commons",
     "cors",
-    "courses",
     "db",
     "drf",
     "exception",

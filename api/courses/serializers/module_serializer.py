@@ -6,15 +6,36 @@ from api.courses.serializers.assessment_serializer import AssessmentSerializer
 from api.courses.serializers.lesson_serializer import LessonSerializer
 
 
-class ModuleSerializer(serializers.ModelSerializer):
-    """Read-only representation of a Module, including its lessons and assessment."""
-
-    lessons = LessonSerializer(many=True, read_only=True)
-    assessment = serializers.SerializerMethodField()
+class ModuleMiniSerializer(serializers.ModelSerializer):
+    """Lightweight Module representation for nesting inside other payloads
+    (e.g. a collaborator's assigned_modules)."""
 
     class Meta:
         model = Module
-        fields = ["id", "title", "order", "lessons", "assessment"]
+        fields = ["id", "title", "order"]
+        read_only_fields = fields
+
+
+class ModuleSerializer(serializers.ModelSerializer):
+    """Read-only representation of a Module, including its lessons and
+    assessment, and current edit-lock state (SCCS PRD Section 14)."""
+
+    lessons = LessonSerializer(many=True, read_only=True)
+    assessment = serializers.SerializerMethodField()
+    is_locked = serializers.BooleanField(read_only=True)
+
+    class Meta:
+        model = Module
+        fields = [
+            "id",
+            "title",
+            "order",
+            "lessons",
+            "assessment",
+            "locked_by",
+            "lock_expires_at",
+            "is_locked",
+        ]
         read_only_fields = fields
 
     @extend_schema_field(AssessmentSerializer(allow_null=True))

@@ -1,0 +1,7 @@
+Hi {{ first_name }},
+
+A one-time confirmation code is required to withdraw {{ amount }} from your SoluDesks Course Creator Studio wallet:
+
+{{ code }}
+
+This code expires in {{ expiry_minutes }} minutes. If you didn't request this withdrawal, you can safely ignore this email.

@@ -1,11 +1,11 @@
-from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
-from api.courses.models import Category, Course, ReviewAction, Topic
+from api.categories.models import Category
+from api.courses.models import Course, ReviewAction, Topic
 from api.courses.serializers.assessment_serializer import AssessmentSerializer
 from api.courses.serializers.module_serializer import ModuleSerializer
-from api.courses.services import course_service, course_validation_service
+from api.courses.services import course_service
 
 
 class CategoryMiniSerializer(serializers.ModelSerializer):
@@ -64,7 +64,6 @@ class CourseDetailSerializer(serializers.ModelSerializer):
     topic = TopicMiniSerializer(read_only=True)
     modules = ModuleSerializer(many=True, read_only=True)
     final_assessment = serializers.SerializerMethodField()
-    duration_estimate_minutes = serializers.SerializerMethodField()
 
     class Meta:
         model = Course
@@ -90,6 +89,7 @@ class CourseDetailSerializer(serializers.ModelSerializer):
             "modules",
             "final_assessment",
             "duration_estimate_minutes",
+            "version",
             "created_datetime",
             "updated_datetime",
         ]
@@ -99,10 +99,6 @@ class CourseDetailSerializer(serializers.ModelSerializer):
     def get_final_assessment(self, obj):
         assessment = getattr(obj, "final_assessment", None)
         return AssessmentSerializer(assessment).data if assessment else None
-
-    @extend_schema_field(OpenApiTypes.INT)
-    def get_duration_estimate_minutes(self, obj):
-        return course_validation_service.get_course_duration_minutes(obj)
 
 
 class CourseCreateSerializer(serializers.ModelSerializer):

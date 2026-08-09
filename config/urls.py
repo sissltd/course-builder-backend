@@ -17,6 +17,7 @@ Including another URLconf
 """
 
 from django.contrib import admin
+from django.http import JsonResponse
 from django.urls import include, path
 from drf_spectacular.views import (
     SpectacularAPIView,
@@ -24,7 +25,13 @@ from drf_spectacular.views import (
     SpectacularSwaggerView,
 )
 
+
+def health_check(request):
+    return JsonResponse({"status": "ok"})
+
+
 urlpatterns = [
+    path("health/", health_check, name="health-check"),
     path("admin/", admin.site.urls),
     # OpenAPI schema and interactive docs
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
@@ -40,7 +47,13 @@ urlpatterns = [
     ),
     path("api/v1/", include("api.authentication.urls")),
     path("api/v1/", include("api.users.urls")),
+    path("api/v1/", include("api.categories.urls")),
     path("api/v1/", include("api.courses.urls")),
+    path("api/v1/", include("api.collaborators.urls")),
     path("api/v1/", include("api.onboarding.urls")),
     path("api/v1/", include("api.wallet.urls")),
+    path("api/v1/", include("api.notification.urls")),
+    path("api/v1/", include("api.platform.urls")),
+    path("api/v1/", include("shared.uploads.urls")),
+    path("api/v1/", include("shared.audit.urls")),
 ]

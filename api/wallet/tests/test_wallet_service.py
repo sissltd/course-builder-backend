@@ -1,14 +1,28 @@
+import re
 import threading
 from decimal import Decimal
 
 from django import db
-from django.test import TestCase, TransactionTestCase, override_settings
-from rest_framework.exceptions import ValidationError
+from django.core import mail
+from django.test import TestCase, TransactionTestCase
+from rest_framework.exceptions import PermissionDenied, ValidationError
 
 from api.courses.tests.factories import make_user
-from api.wallet.enums import TransactionStatus, TransactionType
+from api.users.enums import KYCStatus, UserRole
+from api.users.models import KYCVerification
+from api.wallet.enums import TransactionStatus, TransactionType, WithdrawalRequestStatus
 from api.wallet.models import Wallet
 from api.wallet.services import wallet_service
+
+
+def _approve_kyc(user):
+    KYCVerification.objects.create(
+        user=user,
+        country_of_issue="NG",
+        document_type="NATIONAL_ID",
+        id_number="12345",
+        status=KYCStatus.APPROVED,
+    )
 
 
 class GetOrCreateWalletTests(TestCase):
@@ -33,6 +47,7 @@ class CreditWalletTests(TestCase):
 
         self.assertEqual(txn.type, TransactionType.CREDIT)
         self.assertEqual(txn.status, TransactionStatus.COMPLETED)
+        self.assertTrue(txn.reference.startswith("TXN-"))
         wallet = wallet_service.get_or_create_wallet(user=user)
         self.assertEqual(wallet.balance, Decimal("50.00"))
 
@@ -44,6 +59,34 @@ class CreditWalletTests(TestCase):
 
         wallet = wallet_service.get_or_create_wallet(user=user)
         self.assertEqual(wallet.balance, Decimal("25.50"))
+
+
+class GetWalletTotalsTests(TestCase):
+    def test_sums_completed_credits_and_pending_debits_separately(self):
+        user = make_user()
+        _approve_kyc(user)
+        wallet_service.credit_wallet(user=user, amount=Decimal("100.00"))
+        payout_account = wallet_service.create_payout_account(
+            user=user,
+            account_type="LOCAL",
+            provider_name="Access Bank",
+            account_number="1234567890",
+            account_name="Test User",
+        )
+        withdrawal_request = wallet_service.request_withdrawal(
+            user=user, amount=Decimal("60.00"), payout_account_id=payout_account.id
+        )
+        code = re.search(r"\b(\d{6})\b", mail.outbox[-1].body).group(1)
+        wallet_service.confirm_withdrawal(
+            user=user,
+            withdrawal_request_id=withdrawal_request.id,
+            code=code,
+        )
+
+        wallet = wallet_service.get_or_create_wallet(user=user)
+        totals = wallet_service.get_wallet_totals(wallet=wallet)
+        self.assertEqual(totals["total_earned"], Decimal("100.00"))
+        self.assertEqual(totals["pending_balance"], Decimal("60.00"))
 
 
 class ConcurrentCreditWalletTests(TransactionTestCase):
@@ -82,35 +125,184 @@ class ConcurrentCreditWalletTests(TransactionTestCase):
         self.assertEqual(wallet.balance, Decimal("20.00"))
 
 
-class CreateWithdrawalRequestTests(TestCase):
-    @override_settings(MINIMUM_WITHDRAWAL_THRESHOLD=Decimal("50.00"))
-    def test_raises_below_minimum_threshold(self):
+class PayoutAccountTests(TestCase):
+    def test_first_account_becomes_default_automatically(self):
         user = make_user()
-        wallet_service.credit_wallet(user=user, amount=Decimal("100.00"))
 
-        with self.assertRaises(ValidationError):
-            wallet_service.create_withdrawal_request(user=user, amount=Decimal("10.00"))
+        account = wallet_service.create_payout_account(
+            user=user,
+            account_type="LOCAL",
+            provider_name="Access Bank",
+            account_number="1234567890",
+            account_name="Test User",
+        )
 
-    @override_settings(MINIMUM_WITHDRAWAL_THRESHOLD=Decimal("50.00"))
-    def test_raises_when_amount_exceeds_balance(self):
+        self.assertTrue(account.is_default)
+
+    def test_second_default_account_demotes_the_first(self):
         user = make_user()
-        wallet_service.credit_wallet(user=user, amount=Decimal("60.00"))
+        first = wallet_service.create_payout_account(
+            user=user,
+            account_type="LOCAL",
+            provider_name="Access Bank",
+            account_number="1234567890",
+            account_name="Test User",
+        )
 
-        with self.assertRaises(ValidationError):
-            wallet_service.create_withdrawal_request(
-                user=user, amount=Decimal("100.00")
+        second = wallet_service.create_payout_account(
+            user=user,
+            account_type="MOBILE_MONEY",
+            provider_name="MTN",
+            account_number="0987654321",
+            account_name="Test User",
+            is_default=True,
+        )
+
+        first.refresh_from_db()
+        self.assertFalse(first.is_default)
+        self.assertTrue(second.is_default)
+
+    def test_wrong_role_cannot_create_payout_account(self):
+        reviewer = make_user(role=UserRole.CREATOR_REVIEWER)
+
+        with self.assertRaises(PermissionDenied):
+            wallet_service.create_payout_account(
+                user=reviewer,
+                account_type="LOCAL",
+                provider_name="Access Bank",
+                account_number="1234567890",
+                account_name="Test User",
             )
 
-    @override_settings(MINIMUM_WITHDRAWAL_THRESHOLD=Decimal("50.00"))
-    def test_happy_path_creates_pending_debit_and_decrements_balance(self):
-        user = make_user()
-        wallet_service.credit_wallet(user=user, amount=Decimal("100.00"))
 
-        txn = wallet_service.create_withdrawal_request(
-            user=user, amount=Decimal("60.00")
+class RequestWithdrawalTests(TestCase):
+    def setUp(self):
+        self.user = make_user()
+        wallet_service.credit_wallet(user=self.user, amount=Decimal("100.00"))
+        self.payout_account = wallet_service.create_payout_account(
+            user=self.user,
+            account_type="LOCAL",
+            provider_name="Access Bank",
+            account_number="1234567890",
+            account_name="Test User",
+        )
+
+    def test_raises_when_kyc_not_verified(self):
+        with self.assertRaises(ValidationError):
+            wallet_service.request_withdrawal(
+                user=self.user,
+                amount=Decimal("60.00"),
+                payout_account_id=self.payout_account.id,
+            )
+
+    def test_wrong_role_cannot_request_withdrawal(self):
+        _approve_kyc(self.user)
+        self.user.role = UserRole.ADMIN
+        self.user.save(update_fields=["role"])
+
+        with self.assertRaises(PermissionDenied):
+            wallet_service.request_withdrawal(
+                user=self.user,
+                amount=Decimal("60.00"),
+                payout_account_id=self.payout_account.id,
+            )
+
+    def test_raises_below_minimum_threshold(self):
+        _approve_kyc(self.user)
+
+        with self.assertRaises(ValidationError):
+            wallet_service.request_withdrawal(
+                user=self.user,
+                amount=Decimal("10.00"),
+                payout_account_id=self.payout_account.id,
+            )
+
+    def test_raises_when_amount_exceeds_balance(self):
+        _approve_kyc(self.user)
+
+        with self.assertRaises(ValidationError):
+            wallet_service.request_withdrawal(
+                user=self.user,
+                amount=Decimal("500.00"),
+                payout_account_id=self.payout_account.id,
+            )
+
+    def test_happy_path_creates_pending_request_without_touching_balance(self):
+        _approve_kyc(self.user)
+
+        withdrawal_request = wallet_service.request_withdrawal(
+            user=self.user,
+            amount=Decimal("60.00"),
+            payout_account_id=self.payout_account.id,
+        )
+
+        self.assertEqual(
+            withdrawal_request.status, WithdrawalRequestStatus.PENDING_CONFIRMATION
+        )
+        wallet = wallet_service.get_or_create_wallet(user=self.user)
+        self.assertEqual(wallet.balance, Decimal("100.00"))
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn("60.00", mail.outbox[0].body)
+
+
+class ConfirmWithdrawalTests(TestCase):
+    def setUp(self):
+        self.user = make_user()
+        _approve_kyc(self.user)
+        wallet_service.credit_wallet(user=self.user, amount=Decimal("100.00"))
+        self.payout_account = wallet_service.create_payout_account(
+            user=self.user,
+            account_type="LOCAL",
+            provider_name="Access Bank",
+            account_number="1234567890",
+            account_name="Test User",
+        )
+        self.withdrawal_request = wallet_service.request_withdrawal(
+            user=self.user,
+            amount=Decimal("60.00"),
+            payout_account_id=self.payout_account.id,
+        )
+        self.code = re.search(r"\b(\d{6})\b", mail.outbox[-1].body).group(1)
+
+    def test_wrong_code_rejected_and_balance_untouched(self):
+        with self.assertRaises(Exception):
+            wallet_service.confirm_withdrawal(
+                user=self.user,
+                withdrawal_request_id=self.withdrawal_request.id,
+                code="000000",
+            )
+        wallet = wallet_service.get_or_create_wallet(user=self.user)
+        self.assertEqual(wallet.balance, Decimal("100.00"))
+
+    def test_happy_path_creates_debit_transaction_and_decrements_balance(self):
+        txn = wallet_service.confirm_withdrawal(
+            user=self.user,
+            withdrawal_request_id=self.withdrawal_request.id,
+            code=self.code,
         )
 
         self.assertEqual(txn.type, TransactionType.DEBIT)
         self.assertEqual(txn.status, TransactionStatus.PENDING)
-        wallet = wallet_service.get_or_create_wallet(user=user)
+        self.assertEqual(txn.recipient_account_number, "1234567890")
+        wallet = wallet_service.get_or_create_wallet(user=self.user)
         self.assertEqual(wallet.balance, Decimal("40.00"))
+
+        self.withdrawal_request.refresh_from_db()
+        self.assertEqual(
+            self.withdrawal_request.status, WithdrawalRequestStatus.CONFIRMED
+        )
+        self.assertEqual(self.withdrawal_request.transaction_id, txn.id)
+
+    def test_cannot_confirm_twice(self):
+        wallet_service.confirm_withdrawal(
+            user=self.user,
+            withdrawal_request_id=self.withdrawal_request.id,
+            code=self.code,
+        )
+
+        with self.assertRaises(Exception):
+            wallet_service.confirm_withdrawal(
+                user=self.user,
+                withdrawal_request_id=self.withdrawal_request.id,
+                code=self.code,
+            )

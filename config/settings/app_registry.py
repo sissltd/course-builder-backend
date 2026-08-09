@@ -13,9 +13,14 @@ CUSTOM_APPS = [
     "api.users",
     "api.notification",
     "api.authentication",
+    "api.categories",
     "api.courses",
+    "api.collaborators",
     "api.onboarding",
     "api.wallet",
+    "shared.audit",
+    "shared.uploads",
+    "api.platform",
 ]
 
 THIRD_PARTY_APPS = [

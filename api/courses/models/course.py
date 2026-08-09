@@ -2,19 +2,20 @@ from django.db import models
 from django.utils.translation import gettext_lazy as _
 
 from api.courses.enums import CourseStatus, DifficultyLevel
-from includes.helpers import (
+from core.mixins import (
     DateHistoryModelMixin,
-    UUIDPrimaryKeyModelMixin,
     UserHistoryModelMixin,
+    UUIDPrimaryKeyModelMixin,
 )
 
 
 class Course(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMixin):
     """A course authored by a single Course Creator (SCCS PRD Track A).
 
-    Total duration is intentionally not denormalized here: it is computed on
-    read by summing Lesson.duration_minutes, avoiding a cache-invalidation
-    bug class for a field that is cheap to recompute.
+    duration_estimate_minutes is denormalized and kept in sync by
+    course_service.recalculate_duration_estimate, called on every Lesson
+    create/update/delete (see LessonViewSet) rather than via a model signal,
+    matching this app's explicit-service-call convention.
     """
 
     creator = models.ForeignKey(
@@ -25,7 +26,7 @@ class Course(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMi
         help_text=_("Course Creator who owns this course."),
     )
     category = models.ForeignKey(
-        "courses.Category",
+        "categories.Category",
         verbose_name=_("Category"),
         on_delete=models.PROTECT,
         related_name="courses",
@@ -114,6 +115,23 @@ class Course(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMi
         help_text=_(
             "Creator-declared course duration (entered as H/M/S), distinct from "
             "duration_estimate_minutes which is computed from actual lessons."
+        ),
+    )
+    duration_estimate_minutes = models.PositiveIntegerField(
+        verbose_name=_("Duration Estimate (minutes)"),
+        default=0,
+        help_text=_(
+            "Computed sum of Lesson.duration_minutes across the course, kept "
+            "in sync by course_service.recalculate_duration_estimate."
+        ),
+    )
+    version = models.CharField(
+        verbose_name=_("Version"),
+        max_length=10,
+        default="1.0",
+        help_text=_(
+            "Course version number (SCCS PRD Section 15). A CourseVersion "
+            "snapshot is recorded at this value when the course is published."
         ),
     )
     terms_accepted_at = models.DateTimeField(

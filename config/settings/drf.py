@@ -17,6 +17,22 @@ REST_FRAMEWORK = {
         "django_filters.rest_framework.DjangoFilterBackend",
         "rest_framework.filters.OrderingFilter",
     ],
+    # Not applied globally (DEFAULT_THROTTLE_CLASSES intentionally omitted) -
+    # only the specific auth views that declare throttle_classes/throttle_scope
+    # (signup, login, forgot/reset password) are rate-limited, so unrelated
+    # endpoints aren't silently throttled by a blanket default.
+    "DEFAULT_THROTTLE_RATES": {
+        "signup": "3/hour",
+        "login": "5/min",
+        "forgot_password": "3/hour",
+        "reset_password": "5/hour",
+        # Tighter than the rest: this endpoint is guarded by a shared secret
+        # rather than a credential, so an unthrottled version is an offline-
+        # speed guessing oracle against SUPERADMIN_BOOTSTRAP_TOKEN. A genuine
+        # operator bootstraps once, so 5/hour costs them nothing.
+        "superadmin_bootstrap": "5/hour",
+        "resend_verification": "3/hour",
+    },
 }
 
 SPECTACULAR_SETTINGS = {
@@ -41,8 +57,22 @@ SPECTACULAR_SETTINGS = {
         "persistAuthorization": True,
     },
     "ENUM_NAME_OVERRIDES": {
-        "CategoryStatusEnum": "api.courses.enums.CategoryStatus",
+        "CategoryStatusEnum": "api.categories.enums.CategoryStatus",
         "CourseStatusEnum": "api.courses.enums.CourseStatus",
         "TransactionStatusEnum": "api.wallet.enums.TransactionStatus",
+        "CollaboratorRoleEnum": "api.collaborators.enums.CollaboratorRole",
+        # CategoryRequestStatus and ReservationStatus share identical choices
+        # (PENDING/APPROVED/REJECTED) so drf-spectacular treats them as one
+        # component; give that shared component a single explicit name.
+        # KYCStatus has the same three values and folds into it too.
+        "RequestStatusEnum": "api.courses.enums.CategoryRequestStatus",
+        # Surfaced by the admin serializers, which are the first to expose
+        # these choice sets in a response body. Without explicit names they
+        # collide with the other "status"/"type"/"role" fields above and
+        # drf-spectacular invents suffixed names that churn between runs.
+        "AccountStatusEnum": "api.users.enums.AccountStatus",
+        "WithdrawalRequestStatusEnum": "api.wallet.enums.WithdrawalRequestStatus",
+        "TransactionTypeEnum": "api.wallet.enums.TransactionType",
+        "UserRoleEnum": "api.users.enums.UserRole",
     },
 }

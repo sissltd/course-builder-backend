@@ -1,0 +1,9 @@
+Hi {{ first_name }},
+
+{{ invited_by_name }} has invited you to join SoluDesks Course Creator Studio as a {{ role_label }}.
+
+Accept the invitation and set your password using the link below:
+
+{{ invitation_link }}
+
+This link expires in {{ expiry_minutes }} minutes and can only be used once. If you weren't expecting this invitation, you can safely ignore this email.

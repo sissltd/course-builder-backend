@@ -2,10 +2,14 @@ from django.db import transaction
 from django.utils import timezone
 from rest_framework import exceptions
 
+from api.authentication.services import activity_service
 from api.courses.enums import CourseStatus, ReviewActionType
 from api.courses.models import Course, ReviewAction
 from api.notification.models import Notification
+from api.users.enums import UserActivityActionEnums, UserActivityCategoryEnums
 from api.users.models import User
+from api.users.permissions import IsAdminRole, IsCreatorReviewerRole, require_role
+from api.users.services import reviewer_availability_service
 from api.wallet.services import wallet_service
 
 REVIEWABLE_STATUSES = (CourseStatus.SUBMITTED, CourseStatus.IN_REVIEW)
@@ -24,10 +28,14 @@ def approve_course(
     transaction so a failure partway through leaves nothing half-applied.
     """
 
+    require_role(
+        reviewer, IsCreatorReviewerRole.allowed_roles + IsAdminRole.allowed_roles
+    )
     if course.status not in REVIEWABLE_STATUSES:
         raise exceptions.ValidationError(
             f"Course cannot be approved from status '{course.status}'."
         )
+    reviewer_availability_service.require_reviewer_available(user=reviewer)
 
     with transaction.atomic():
         review_action = ReviewAction.objects.create(
@@ -56,6 +64,13 @@ def approve_course(
             content=f"Your course '{course.title}' has been approved and your wallet has been credited.",
             metadata={"course_id": course.id, "amount": course.creator_price_snapshot},
         )
+        activity_service.log_activity(
+            user=reviewer,
+            category=UserActivityCategoryEnums.APPROVAL,
+            action=UserActivityActionEnums.COURSE_APPROVED,
+            summary=f"You approved '{course.title}'.",
+            target=course,
+        )
 
     return review_action
 
@@ -70,6 +85,9 @@ def reject_course(*, course: Course, reviewer: User, feedback: dict) -> ReviewAc
     record and Course.rejected_at). Notifies the creator with the feedback.
     """
 
+    require_role(
+        reviewer, IsCreatorReviewerRole.allowed_roles + IsAdminRole.allowed_roles
+    )
     if not (feedback or {}).get("summary"):
         raise exceptions.ValidationError(
             {"feedback": "A summary is required when rejecting a course."}
@@ -78,6 +96,7 @@ def reject_course(*, course: Course, reviewer: User, feedback: dict) -> ReviewAc
         raise exceptions.ValidationError(
             f"Course cannot be rejected from status '{course.status}'."
         )
+    reviewer_availability_service.require_reviewer_available(user=reviewer)
 
     with transaction.atomic():
         review_action = ReviewAction.objects.create(
@@ -98,6 +117,13 @@ def reject_course(*, course: Course, reviewer: User, feedback: dict) -> ReviewAc
             title="Course rejected",
             content=f"Your course '{course.title}' was rejected and returned to Draft for revision.",
             metadata={"course_id": course.id, "feedback": feedback},
+        )
+        activity_service.log_activity(
+            user=reviewer,
+            category=UserActivityCategoryEnums.APPROVAL,
+            action=UserActivityActionEnums.COURSE_REJECTED,
+            summary=f"You rejected '{course.title}'.",
+            target=course,
         )
 
     return review_action
