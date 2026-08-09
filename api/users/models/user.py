@@ -93,6 +93,17 @@ class User(
         default="",
         help_text=_("Profile picture URL."),
     )
+    mfa_grace_period_ends_at = models.DateTimeField(
+        verbose_name=_("MFA Grace Period Ends At"),
+        null=True,
+        blank=True,
+        help_text=_(
+            "Deadline by which this user must enroll in MFA. Set once, the "
+            "first time this row is saved with role=ADMIN/SUPER_ADMIN - see "
+            "save() below - and never reset, so promoting-then-waiting "
+            "cannot be used to defer enrollment indefinitely."
+        ),
+    )
 
     objects = CustomUserManager()
 
@@ -121,3 +132,45 @@ class User(
         """Use email as the human-readable identifier in admin and logs."""
 
         return self.email
+
+    def save(self, *args, **kwargs):
+        """Self-healing MFA grace-period trigger: the moment a row holding
+        role=ADMIN/SUPER_ADMIN is saved with no grace period set yet, start
+        the clock. Covers every path that can produce such a row (bootstrap,
+        a future staff-invite extension, a direct admin-site edit) without
+        needing to instrument each call site individually. Idempotent - only
+        fires while mfa_grace_period_ends_at is still None.
+
+        Local import of platform_settings_service (not module-level) mirrors
+        MeSerializer.get_has_completed_onboarding's rationale: keeps
+        api.users -> api.platform a one-directional runtime dependency
+        rather than a module-level import coupling.
+        """
+
+        if self.role in (UserRole.ADMIN, UserRole.SUPER_ADMIN) and (
+            self.mfa_grace_period_ends_at is None
+        ):
+            from datetime import timedelta
+
+            from django.utils import timezone
+
+            from api.platform.services import platform_settings_service
+
+            grace_days = (
+                platform_settings_service.get_settings().mfa_enrollment_grace_period_days
+            )
+            self.mfa_grace_period_ends_at = timezone.now() + timedelta(days=grace_days)
+
+            # A caller may have restricted this save to specific columns via
+            # update_fields (e.g. LoginSerializer only persists login-lockout
+            # fields) - without extending that list, Django would compute
+            # mfa_grace_period_ends_at above but silently never write it,
+            # and the next login would recompute a fresh one from "now"
+            # every time, defeating the entire point of a bounded window.
+            update_fields = kwargs.get("update_fields")
+            if update_fields is not None and (
+                "mfa_grace_period_ends_at" not in update_fields
+            ):
+                kwargs["update_fields"] = [*update_fields, "mfa_grace_period_ends_at"]
+
+        super().save(*args, **kwargs)

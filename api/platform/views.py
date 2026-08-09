@@ -42,14 +42,15 @@ class PlatformSettingsView(APIView):
     live thresholds (e.g. "4-12 modules required") without hardcoding them.
     PATCH is Admin/Super Admin only (excludes Approver - these thresholds
     affect every course on the platform, a higher-stakes action than
-    ordinary admin-tier work).
+    ordinary admin-tier work) and additionally requires an MFA-verified
+    session - see IsMFAVerifiedForSession.
     """
 
     serializer_class = PlatformSettingsUpdateSerializer  # for schema generation only
 
     def get_permissions(self):
         if self.request.method == "PATCH":
-            return [IsAdminOrSuperAdminRole()]
+            return [IsAdminOrSuperAdminRole(), IsMFAVerifiedForSession()]
         return [IsAuthenticated()]
 
     @extend_schema(

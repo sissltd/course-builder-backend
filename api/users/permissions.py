@@ -125,3 +125,36 @@ class IsSuperAdminRole(HasRole):
     """
 
     allowed_roles = (UserRole.SUPER_ADMIN,)
+
+
+class IsMFAVerifiedForSession(BasePermission):
+    """Baseline session-level MFA gate for sensitive administrative actions
+    (PlatformSettings updates, category pricing).
+
+    Checks the "mfa_verified" claim LoginSerializer/mfa_views embed on the
+    access token - True for a role MFA was never mandatory for, or a
+    mandated role that actually completed an MFA challenge; False for a
+    mandated role logged in during (or past) its enrollment grace period
+    with no device yet. Compose alongside a role permission via DRF's
+    ANDed permission_classes list - this class does not check role itself.
+
+    request.auth is the validated AccessToken for JWT-authenticated
+    requests (supports dict-style .get); anything else (no token, a
+    different auth scheme) is treated as not verified.
+    """
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not (user and user.is_authenticated):
+            return False
+
+        from api.authentication.services import mfa_service
+
+        if user.role not in mfa_service.MFA_MANDATED_ROLES:
+            # This role was never required to have MFA - nothing to verify.
+            return True
+
+        auth = getattr(request, "auth", None)
+        if auth is None:
+            return False
+        return bool(auth.get("mfa_verified"))

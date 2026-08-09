@@ -10,6 +10,7 @@ from decimal import Decimal
 
 from rest_framework import status
 from rest_framework.test import APITestCase
+from rest_framework_simplejwt.tokens import AccessToken
 
 from api.categories.enums import CategoryStatus, TrackPreference
 from api.categories.models import Category
@@ -17,6 +18,16 @@ from api.categories.tests.factories import make_category, make_user
 from api.users.enums import UserRole
 
 LIST_URL = "/api/v1/categories/"
+
+
+def _force_authenticate_mfa_verified(client, user):
+    """ADMIN/SUPER_ADMIN are MFA-mandated roles - IsMFAVerifiedForSession
+    requires the token to carry mfa_verified=True, which plain
+    force_authenticate(user) (no token) never does."""
+
+    token = AccessToken.for_user(user)
+    token["mfa_verified"] = True
+    client.force_authenticate(user, token=token)
 
 VALID_PAYLOAD = {
     "name": "New Cat",
@@ -98,14 +109,14 @@ class CategoryWriteAccessTests(APITestCase):
         self.assertTrue(Category.objects.filter(name="New Cat").exists())
 
     def test_super_admin_can_create(self):
-        self.client.force_authenticate(make_user(role=UserRole.SUPER_ADMIN))
+        _force_authenticate_mfa_verified(self.client, make_user(role=UserRole.SUPER_ADMIN))
 
         response = self.client.post(LIST_URL, VALID_PAYLOAD)
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
     def test_admin_can_create(self):
-        self.client.force_authenticate(make_user(role=UserRole.ADMIN))
+        _force_authenticate_mfa_verified(self.client, make_user(role=UserRole.ADMIN))
 
         response = self.client.post(LIST_URL, VALID_PAYLOAD)
 
@@ -142,7 +153,7 @@ class CategoryWriteAccessTests(APITestCase):
 
     def test_admin_can_update_and_delete(self):
         category = make_category()
-        self.client.force_authenticate(make_user(role=UserRole.ADMIN))
+        _force_authenticate_mfa_verified(self.client, make_user(role=UserRole.ADMIN))
 
         patch = self.client.patch(
             detail_url(category), {"name": "Renamed"}, format="json"
