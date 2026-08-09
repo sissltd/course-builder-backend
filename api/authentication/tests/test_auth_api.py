@@ -69,10 +69,12 @@ class SignupApiTests(APITestCase):
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        # Generic message - doesn't confirm the email is already registered.
-        self.assertIn(
-            "Unable to create account",
-            " ".join(error["message"] for error in response.data["errors"]),
+        self.assertTrue(
+            any(
+                error["field_name"] == "email"
+                and error["message"] == "A user with this email already exists."
+                for error in response.data["errors"]
+            )
         )
 
     def test_creates_course_creator_role_by_default(self):

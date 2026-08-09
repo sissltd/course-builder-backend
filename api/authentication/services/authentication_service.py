@@ -69,13 +69,8 @@ class AuthenticationService(TsesAuthenticationInterface):
         """
 
         if User.objects.filter(email__iexact=email).exists():
-            # Generic message deliberately doesn't confirm the email is taken -
-            # avoids the classic signup-enumeration leak of a distinct
-            # "already exists" response (though the 400-vs-201 status code
-            # still technically distinguishes the two cases; only an
-            # accept-and-email-the-existing-user pattern closes that fully).
             raise exceptions.ValidationError(
-                "Unable to create account with the provided details."
+                {"email": "A user with this email already exists."}
             )
 
         with transaction.atomic():
