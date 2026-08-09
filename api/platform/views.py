@@ -9,7 +9,7 @@ from api.platform.serializers import (
     PlatformSettingsUpdateSerializer,
 )
 from api.platform.services import admin_overview_service, platform_settings_service
-from api.users.permissions import IsAdminOrSuperAdminRole
+from api.users.permissions import IsAdminOrSuperAdminRole, IsMFAVerifiedForSession
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 
 _SETTINGS_EXAMPLE = {

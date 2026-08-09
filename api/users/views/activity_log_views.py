@@ -9,10 +9,9 @@ from rest_framework.generics import ListAPIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 
-from api.users.filters import AdminUserActivityLogFilter, UserActivityLogFilter
 from api.authentication.services import activity_service
 from api.users.enums import UserActivityActionEnums, UserActivityCategoryEnums
-from api.users.filters import UserActivityLogFilter
+from api.users.filters import AdminUserActivityLogFilter, UserActivityLogFilter
 from api.users.models import UserActivityLog
 from api.users.permissions import IsAdminOrSuperAdminRole
 from api.users.serializers.activity_log_serializer import UserActivityLogSerializer

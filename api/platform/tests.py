@@ -119,6 +119,21 @@ class PlatformSettingsApiTests(APITestCase):
             failures,
         )
 
+    def test_sla_thresholds_default_and_admin_can_patch(self):
+        settings_row = platform_settings_service.get_settings()
+        self.assertEqual(settings_row.sla_amber_threshold_hours, 24)
+        self.assertEqual(settings_row.sla_red_threshold_hours, 48)
+
+        self._authenticate_mfa_verified(self.admin)
+        response = self.client.patch(
+            "/api/v1/platform-settings/",
+            {"sla_amber_threshold_hours": 12, "sla_red_threshold_hours": 36},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["sla_amber_threshold_hours"], 12)
+        self.assertEqual(response.data["sla_red_threshold_hours"], 36)
+
 
 class AdminOverviewApiTests(APITestCase):
     def setUp(self):
@@ -163,17 +178,3 @@ class AdminOverviewApiTests(APITestCase):
         self.assertEqual(totals["balance_held"], "120.00")
         self.assertEqual(totals["total_credited"], "120.00")
         self.assertEqual(totals["awaiting_payout"], "0.00")
-    def test_sla_thresholds_default_and_admin_can_patch(self):
-        settings_row = platform_settings_service.get_settings()
-        self.assertEqual(settings_row.sla_amber_threshold_hours, 24)
-        self.assertEqual(settings_row.sla_red_threshold_hours, 48)
-
-        self._authenticate_mfa_verified(self.admin)
-        response = self.client.patch(
-            "/api/v1/platform-settings/",
-            {"sla_amber_threshold_hours": 12, "sla_red_threshold_hours": 36},
-            format="json",
-        )
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data["sla_amber_threshold_hours"], 12)
-        self.assertEqual(response.data["sla_red_threshold_hours"], 36)
