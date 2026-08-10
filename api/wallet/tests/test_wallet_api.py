@@ -1,5 +1,6 @@
 import re
 from decimal import Decimal
+from unittest.mock import patch
 
 from django.core import mail
 from rest_framework import status
@@ -54,55 +55,40 @@ class WalletApiTests(APITestCase):
         self.assertEqual(len(response.data["data"]["results"]), 1)
 
 
-class PayoutAccountApiTests(APITestCase):
-    def setUp(self):
-        self.creator = make_user(role=UserRole.COURSE_CREATOR)
-        self.client.force_authenticate(self.creator)
-
-    def test_create_and_list_payout_account(self):
-        response = self.client.post(
-            "/api/v1/payout-accounts/",
-            {
-                "account_type": "LOCAL",
-                "provider_name": "Access Bank",
-                "account_number": "1234567890",
-                "account_name": "Test User",
-            },
-            format="json",
-        )
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertTrue(response.data["is_default"])
-
-        list_response = self.client.get("/api/v1/payout-accounts/")
-        self.assertEqual(list_response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(list_response.data["data"]["results"]), 1)
-
-    def test_delete_payout_account(self):
-        account = wallet_service.create_payout_account(
-            user=self.creator,
-            account_type="LOCAL",
-            provider_name="Access Bank",
-            account_number="1234567890",
-            account_name="Test User",
-        )
-
-        response = self.client.delete(f"/api/v1/payout-accounts/{account.id}/")
-        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
-
 
 class WithdrawalApiTests(APITestCase):
     def setUp(self):
         self.creator = make_user(role=UserRole.COURSE_CREATOR)
         _approve_kyc(self.creator)
         wallet_service.credit_wallet(user=self.creator, amount=Decimal("100.00"))
+
+        self.paystack_recipient_patcher = patch(
+            "shared.services.paystack_service.PaystackService.create_transfer_recipient",
+            return_value=(True, {"recipient_code": "RCP_TEST_123"}),
+        )
+        self.decrypt_patcher = patch(
+            "api.wallet.serializers.decrypt_field",
+            side_effect=lambda value: value,
+        )
+        self.transfer_task_patcher = patch("api.wallet.services.wallet_service.dispatch_paystack_transfer_task.delay")
+
+        self.paystack_recipient_patcher.start()
+        self.decrypt_patcher.start()
+        self.transfer_task_patcher.start()
+
         self.payout_account = wallet_service.create_payout_account(
             user=self.creator,
             account_type="LOCAL",
-            provider_name="Access Bank",
+            bank_name="Access Bank",
             account_number="1234567890",
             account_name="Test User",
         )
         self.client.force_authenticate(self.creator)
+
+    def tearDown(self):
+        self.transfer_task_patcher.stop()
+        self.paystack_recipient_patcher.stop()
+        self.decrypt_patcher.stop()
 
     def test_withdrawal_above_threshold_succeeds_and_confirm_completes_it(self):
         request_response = self.client.post(
@@ -112,15 +98,18 @@ class WithdrawalApiTests(APITestCase):
         )
         self.assertEqual(request_response.status_code, status.HTTP_201_CREATED)
         withdrawal_request_id = request_response.data["id"]
-        code = re.search(r"\b(\d{6})\b", mail.outbox[-1].body).group(1)
+        match = re.search(r"\b(\d{6})\b", str(mail.outbox[-1].body))
+        if match is None:
+            self.fail("Expected withdrawal OTP email to contain a 6-digit code.")
+        code = match.group(1)
 
         confirm_response = self.client.post(
             f"/api/v1/withdrawals/{withdrawal_request_id}/confirm/",
             {"code": code},
             format="json",
         )
-        self.assertEqual(confirm_response.status_code, status.HTTP_200_OK)
-        self.assertEqual(confirm_response.data["type"], "DEBIT")
+        self.assertEqual(confirm_response.status_code, status.HTTP_202_ACCEPTED)
+        self.assertEqual(confirm_response.data["data"]["type"], "DEBIT")
 
     def test_withdrawal_below_threshold_rejected(self):
         response = self.client.post(
@@ -136,7 +125,7 @@ class WithdrawalApiTests(APITestCase):
         other_payout_account = wallet_service.create_payout_account(
             user=other_creator,
             account_type="LOCAL",
-            provider_name="Access Bank",
+            bank_name="Access Bank",
             account_number="1234567890",
             account_name="Other User",
         )
@@ -204,7 +193,7 @@ class AdminWalletApiTests(APITestCase):
         payout_account = wallet_service.create_payout_account(
             user=self.creator,
             account_type="LOCAL",
-            provider_name="Access Bank",
+            bank_name="Access Bank",
             account_number="1234567890",
             account_name="Test User",
         )

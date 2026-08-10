@@ -1,19 +1,19 @@
 import uuid
 from decimal import Decimal
 
+from django.contrib.contenttypes.fields import GenericRelation
 from django.core.validators import MinValueValidator
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
 from api.wallet.enums import (
     PayoutAccountType,
-    TransactionStatus,
-    TransactionType,
     WithdrawalRequestStatus,
 )
 from core.mixins import DateHistoryModelMixin, UUIDPrimaryKeyModelMixin
 
 
+# This utility function is used in the migration file 0002_transaction_fee_transaction_recipient_account_name_and_more.py to backfill existing Transaction rows with unique references.
 def _generate_reference() -> str:
     """A short, unique, user-facing reference shown/copied on transaction
     detail screens - independent of the internal UUID primary key."""
@@ -21,7 +21,7 @@ def _generate_reference() -> str:
     return f"TXN-{uuid.uuid4().hex[:12].upper()}"
 
 
-class Wallet(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
+class Wallet(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, models.Model):
     """A creator's in-platform financial account (SCCS PRD Section 7.2).
 
     Wallets are lazily created on first access via wallet_service.get_or_create_wallet,
@@ -47,6 +47,9 @@ class Wallet(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
         max_length=3,
         default="USD",
         help_text=_("ISO 4217 currency code."),
+    )
+    transactions = GenericRelation(
+        "payments.Transaction", content_type_field="wallet_type", object_id_field="wallet_id"
     )
 
     class Meta:
@@ -118,117 +121,6 @@ class PayoutAccount(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
         return f"{self.account_type} {self.account_number} ({self.user_id})"
 
 
-class Transaction(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
-    """An immutable record of a wallet balance change."""
-
-    wallet = models.ForeignKey(
-        "wallet.Wallet",
-        verbose_name=_("Wallet"),
-        on_delete=models.CASCADE,
-        related_name="transactions",
-        help_text=_("Wallet this transaction belongs to."),
-    )
-    course = models.ForeignKey(
-        "courses.Course",
-        verbose_name=_("Course"),
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="wallet_transactions",
-        help_text=_("Course this transaction is associated with, if any."),
-    )
-    payout_account = models.ForeignKey(
-        "wallet.PayoutAccount",
-        verbose_name=_("Payout Account"),
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="transactions",
-        help_text=_("Payout account this withdrawal was sent to, if any."),
-    )
-    reference = models.CharField(
-        verbose_name=_("Reference"),
-        max_length=32,
-        unique=True,
-        default=_generate_reference,
-        help_text=_("Unique reference shown to the user, e.g. on a receipt."),
-    )
-    amount = models.DecimalField(
-        verbose_name=_("Amount"),
-        max_digits=12,
-        decimal_places=2,
-        validators=[MinValueValidator(Decimal("0.01"))],
-        help_text=_("Absolute transaction amount, always positive."),
-    )
-    fee = models.DecimalField(
-        verbose_name=_("Fee"),
-        max_digits=12,
-        decimal_places=2,
-        default=Decimal("0.00"),
-        help_text=_("Fee charged for this transaction, if any."),
-    )
-    type = models.CharField(
-        verbose_name=_("Type"),
-        max_length=10,
-        choices=TransactionType.choices,
-        help_text=_("Whether this transaction credits or debits the wallet."),
-    )
-    status = models.CharField(
-        verbose_name=_("Status"),
-        max_length=10,
-        choices=TransactionStatus.choices,
-        default=TransactionStatus.PENDING,
-        help_text=_("Settlement status of the transaction."),
-    )
-    description = models.CharField(
-        verbose_name=_("Description"),
-        max_length=255,
-        blank=True,
-        default="",
-        help_text=_("Human-readable description of the transaction."),
-    )
-    recipient_account_name = models.CharField(
-        verbose_name=_("Recipient Account Name"),
-        max_length=150,
-        blank=True,
-        default="",
-        help_text=_(
-            "Snapshot of the payout account's holder name at transaction time, "
-            "so the receipt stays accurate if the account is later edited/removed."
-        ),
-    )
-    recipient_account_number = models.CharField(
-        verbose_name=_("Recipient Account Number"),
-        max_length=34,
-        blank=True,
-        default="",
-        help_text=_("Snapshot of the payout account number at transaction time."),
-    )
-    recipient_provider_name = models.CharField(
-        verbose_name=_("Recipient Provider Name"),
-        max_length=100,
-        blank=True,
-        default="",
-        help_text=_("Snapshot of the bank/mobile-money provider at transaction time."),
-    )
-
-    class Meta:
-        verbose_name = _("Transaction")
-        verbose_name_plural = _("Transactions")
-        ordering = ["-created_datetime"]
-        indexes = [
-            models.Index(
-                fields=["wallet", "-created_datetime"], name="txn_wallet_dt_idx"
-            ),
-            models.Index(fields=["status"], name="txn_status_idx"),
-        ]
-
-    def __str__(self):
-        """Summarize the transaction for admin/debugging readability."""
-
-        return f"{self.type} {self.amount} ({self.status})"
-
-
 class WithdrawalRequest(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
     """The OTP-gated step between "Request withdrawal" and the resulting
     Transaction.
@@ -256,7 +148,7 @@ class WithdrawalRequest(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
         help_text=_("Wallet the withdrawal will be debited from."),
     )
     payout_account = models.ForeignKey(
-        "wallet.PayoutAccount",
+        "payments.BankAccount",
         verbose_name=_("Payout Account"),
         on_delete=models.CASCADE,
         related_name="withdrawal_requests",
@@ -277,7 +169,7 @@ class WithdrawalRequest(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
         help_text=_("State of this withdrawal request."),
     )
     transaction = models.OneToOneField(
-        "wallet.Transaction",
+        "payments.Transaction",
         verbose_name=_("Transaction"),
         on_delete=models.SET_NULL,
         null=True,

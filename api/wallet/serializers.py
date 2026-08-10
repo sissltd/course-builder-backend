@@ -3,9 +3,11 @@ from decimal import Decimal
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
+from api.payments.models.transaction_model import Transaction
 from api.wallet.enums import PayoutAccountType
-from api.wallet.models import PayoutAccount, Transaction, Wallet, WithdrawalRequest
+from api.wallet.models import PayoutAccount, Wallet, WithdrawalRequest
 from api.wallet.services import wallet_service
+from shared.utils.encryption import decrypt_field
 
 
 class WalletSerializer(serializers.ModelSerializer):
@@ -101,6 +103,14 @@ class TransactionSerializer(serializers.ModelSerializer):
         return CourseMiniSerializer(
             {"id": obj.course_id, "title": obj.course.title}
         ).data
+    
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        if instance.recipient_account_number:
+            representation['recipient_account_number'] = decrypt_field(instance.recipient_account_number)
+
+        return representation
+
 
 
 class PayoutAccountSerializer(serializers.ModelSerializer):

@@ -1,0 +1,4 @@
+Hi {{ first_name }},
+          
+Your request to withdraw {{ amount }} was successful.
+          

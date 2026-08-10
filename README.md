@@ -259,6 +259,57 @@ This project enforces **Conventional Commit** style using a Git `commit-msg` hoo
 
 ---
 
+## 🔍 Pull Request (PR) Guidelines
+
+Every PR **must** include the following sections:
+
+### 1️⃣ What has changed?
+
+A clear, concise summary of what this PR does.
+
+Example:
+
+> Added user login and JWT authentication endpoints.
+
+---
+
+### 2️⃣ Where were the changes done?
+
+List the main areas/files affected.
+
+Example:
+
+- `core/api/views/auth.py`
+- `core/api/serializers/auth.py`
+- `feexeet/settings/base.py`
+
+---
+
+### 3️⃣ What should the reviewer know?
+
+Important context for the reviewer:
+
+- Edge cases
+- Breaking changes
+- Things to pay extra attention to
+- Follow-up work (if any)
+
+Example:
+
+> Token expiry is set to 15 minutes. Refresh token rotation will be added in a follow-up PR.
+
+---
+
+## ✅ PR Checklist (before requesting review)
+
+- [ ] Code follows PEP 8
+- [ ] Commits follow Conventional Commit format
+- [ ] No secrets committed
+- [ ] API changes documented (Swagger updated)
+- [ ] Tests added or updated (where applicable)
+
+---
+
 ## Docker Compose Services
 
 ### `api`

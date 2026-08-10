@@ -51,36 +51,65 @@ from rest_framework import serializers
 ErrorEnvelopeSerializer = inline_serializer(
     name="ErrorEnvelope",
     fields={
-        "success": serializers.BooleanField(default=False),
-        "status": serializers.IntegerField(),
-        "message": serializers.CharField(),
-        "technical_message": serializers.CharField(allow_null=True, required=False),
-    },
-)
-
-ValidationErrorEnvelopeSerializer = inline_serializer(
-    name="ValidationErrorEnvelope",
-    fields={
-        "success": serializers.BooleanField(default=False),
-        "status": serializers.IntegerField(),
-        "message": serializers.CharField(),
-        "technical_message": serializers.CharField(allow_null=True, required=False),
-        # `data` is a per-field error map: { "<field_name>": ["<error msg>", ...] }
-        "data": serializers.DictField(
-            child=serializers.ListField(child=serializers.CharField()),
+        "errors": serializers.ListField(
+            child=serializers.DictField(),
         ),
     },
 )
 
 
-def _error_example(name: str, status: int, message: str) -> OpenApiExample:
+SuccessEnvelopeSerializer = inline_serializer(
+    name="SuccessEnvelope",
+    fields={
+        "success": serializers.BooleanField(default=True),
+        "status": serializers.IntegerField(),
+        "message": serializers.CharField(),
+        "data": serializers.JSONField(required=False),
+        "technical_message": serializers.CharField(allow_null=True, required=False),
+    },
+)
+
+
+def inline_success_response(*, description: str, examples: list) -> OpenApiResponse:
+    """Build an `OpenApiResponse` for a standard success envelope."""
+
+    return OpenApiResponse(
+        response=SuccessEnvelopeSerializer,
+        description=description,
+        examples=examples,
+    )
+
+
+ValidationErrorEnvelopeSerializer = inline_serializer(
+    name="ValidationErrorEnvelope",
+    fields={
+        "errors": serializers.ListField(
+            child=serializers.DictField(),
+        ),
+    },
+)
+
+
+def _error_example(
+    name: str,
+    status: int,
+    message: str,
+    *,
+    code: str,
+    type_: str,
+    field_name=None,
+) -> OpenApiExample:
     return OpenApiExample(
         name=name,
         value={
-            "success": False,
-            "status": status,
-            "message": message,
-            "technical_message": None,
+            "errors": [
+                {
+                    "type": type_,
+                    "code": code,
+                    "message": message,
+                    "field_name": field_name,
+                }
+            ],
         },
     )
 
@@ -138,16 +167,19 @@ STANDARD_ERROR_RESPONSES = {
                     name="Missing or invalid token",
                     status=401,
                     message="Authentication credentials were not provided.",
+                    code="not_authenticated",
+                    type_="client_error",
                 ),
                 _error_example(
                     name="Expired token",
                     status=401,
                     message="Token has expired. Please log in again.",
+                    code="token_not_valid",
+                    type_="client_error",
                 ),
             ],
         ),
     },
-
     # ---- 403 ----------------------------------------------------------
     # Use when the user IS authenticated but their role/permission does
     # not allow the action. Different from 401 — the credentials are
@@ -165,16 +197,19 @@ STANDARD_ERROR_RESPONSES = {
                     name="Wrong role",
                     status=403,
                     message="You do not have permission to perform this action.",
+                    code="permission_denied",
+                    type_="client_error",
                 ),
                 _error_example(
                     name="KYC required",
                     status=403,
                     message="Your account must be KYC-verified before trading.",
+                    code="permission_denied",
+                    type_="client_error",
                 ),
             ],
         ),
     },
-
     # ---- 404 ----------------------------------------------------------
     # Use on any endpoint that looks up a resource by ID or slug.
     "not_found": {
@@ -186,11 +221,12 @@ STANDARD_ERROR_RESPONSES = {
                     name="Not found",
                     status=404,
                     message="Resource not found.",
+                    code="not_found",
+                    type_="client_error",
                 ),
             ],
         ),
     },
-
     # ---- 409 ----------------------------------------------------------
     # Use on endpoints that can fail because of state — duplicate
     # creation, already-onboarded, double-spend, etc.
@@ -207,46 +243,48 @@ STANDARD_ERROR_RESPONSES = {
                     name="Already exists",
                     status=409,
                     message="A resource with this identifier already exists.",
+                    code="conflict",
+                    type_="client_error",
                 ),
             ],
         ),
     },
-
-    # ---- 422 ----------------------------------------------------------
+    # ---- 400 ----------------------------------------------------------
     # Use on every endpoint that accepts a request body. Covers all
     # serializer ValidationErrors — missing required fields, wrong
     # type, failed field-level validators.
     "validation": {
-        422: OpenApiResponse(
-            response=ValidationErrorEnvelopeSerializer,
+        400: OpenApiResponse(
+            response=ErrorEnvelopeSerializer,
             description=(
                 "Validation failed. One or more fields in the request "
                 "body are missing, malformed, or violate a field-level "
-                "validator. The `data` object lists each failing field "
-                "with an array of human-readable error strings."
+                "validator. The `errors` array lists each failing field "
+                "with a machine-readable code and human-readable message."
             ),
             examples=[
                 OpenApiExample(
                     name="Field-level validation error",
                     value={
-                        "success": False,
-                        "status": 422,
-                        "message": "Validation failed.",
-                        "technical_message": None,
-                        "data": {
-                            "phone_number": [
-                                "Phone number must be in international format: e.g., +23412345678",
-                            ],
-                            "password": [
-                                "Password must contain at least one uppercase letter.",
-                            ],
-                        },
+                        "errors": [
+                            {
+                                "type": "validation_error",
+                                "code": "invalid",
+                                "message": "Phone number must be in international format: e.g., +23412345678",
+                                "field_name": "phone_number",
+                            },
+                            {
+                                "type": "validation_error",
+                                "code": "invalid",
+                                "message": "Password must contain at least one uppercase letter.",
+                                "field_name": "password",
+                            },
+                        ],
                     },
                 ),
             ],
         ),
     },
-
     # ---- 429 ----------------------------------------------------------
     # Use on endpoints that are rate-limited (OTP request, liveness
     # checks, login attempts).
@@ -254,19 +292,19 @@ STANDARD_ERROR_RESPONSES = {
         429: OpenApiResponse(
             response=ErrorEnvelopeSerializer,
             description=(
-                "Too many requests in a short window. The client "
-                "should back off and retry after the cooldown."
+                "Too many requests in a short window. The client should back off and retry after the cooldown."
             ),
             examples=[
                 _error_example(
                     name="Rate limited",
                     status=429,
                     message="Too many requests. Please wait before trying again.",
+                    code="throttled",
+                    type_="client_error",
                 ),
             ],
         ),
     },
-
     # ---- 500 ----------------------------------------------------------
     # Use on every endpoint — anything can blow up.
     "server": {
@@ -283,6 +321,8 @@ STANDARD_ERROR_RESPONSES = {
                     name="Server error",
                     status=500,
                     message="Something went wrong. Please try again.",
+                    code="error",
+                    type_="server_error",
                 ),
             ],
         ),

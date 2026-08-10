@@ -18,8 +18,11 @@ CUSTOM_APPS = [
     "api.collaborators",
     "api.onboarding",
     "api.wallet",
+    "api.payments",
     "shared.audit",
     "api.platform",
+    "core",
+    "api.webhooks",
 ]
 
 THIRD_PARTY_APPS = [

@@ -1,24 +1,18 @@
+
 from django_filters.rest_framework import DjangoFilterBackend
 from drf_spectacular.utils import OpenApiExample, OpenApiResponse, extend_schema
 from rest_framework import filters as drf_filters
 from rest_framework import status
-from rest_framework.generics import (
-    CreateAPIView,
-    DestroyAPIView,
-    ListAPIView,
-    ListCreateAPIView,
-    RetrieveAPIView,
-)
-from rest_framework.response import Response
+from rest_framework.generics import CreateAPIView, DestroyAPIView, ListAPIView, ListCreateAPIView, RetrieveAPIView
 from rest_framework.views import APIView
 
+from api.payments.models.transaction_model import Transaction
 from api.users.permissions import IsAdminOrSuperAdminRole, IsCourseCreatorRole
 from api.wallet.filters import (
     AdminTransactionFilter,
     AdminWithdrawalRequestFilter,
-    TransactionFilter,
 )
-from api.wallet.models import PayoutAccount, Transaction, Wallet, WithdrawalRequest
+from api.wallet.models import PayoutAccount, Wallet, WithdrawalRequest
 from api.wallet.serializers import (
     AdminTransactionSerializer,
     AdminWalletSerializer,
@@ -32,6 +26,8 @@ from api.wallet.serializers import (
 )
 from api.wallet.services import wallet_service
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
+from shared.response.error import custom_error_response
+from shared.response.success import custom_success_response
 
 _WALLET_OWNER_EXAMPLE = {
     "id": "5a1f83c6-92b4-4e70-8d3f-1c7e6b409af2",
@@ -55,21 +51,6 @@ class WalletDetailView(RetrieveAPIView):
 
     def get_object(self):
         return wallet_service.get_or_create_wallet(user=self.request.user)
-
-
-class TransactionListView(ListAPIView):
-    """The current user's wallet transaction history."""
-
-    permission_classes = [IsCourseCreatorRole]
-    serializer_class = TransactionSerializer
-    filterset_class = TransactionFilter
-    filter_backends = [DjangoFilterBackend, drf_filters.OrderingFilter]
-    ordering_fields = ["created_datetime", "amount"]
-
-    def get_queryset(self):
-        if getattr(self, "swagger_fake_view", False):
-            return Transaction.objects.none()
-        return wallet_service.list_transactions(user=self.request.user)
 
 
 class PayoutAccountListCreateView(ListCreateAPIView):
@@ -126,11 +107,21 @@ class WithdrawalConfirmView(APIView):
             },
         )
         serializer.is_valid(raise_exception=True)
-        txn = serializer.save()
-        return Response(
-            TransactionSerializer(txn, context={"request": request}).data,
-            status=status.HTTP_200_OK,
-        )
+
+        try:
+            txn = serializer.save()
+            return custom_success_response(
+                data=TransactionSerializer(txn, context={"request": request}).data,
+                message="Withdrawal request is being processed.",
+                status=status.HTTP_202_ACCEPTED,
+            )
+        except Exception as e:
+            return custom_error_response(
+                data=None,
+                message=str(e),
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
 
 
 @extend_schema(

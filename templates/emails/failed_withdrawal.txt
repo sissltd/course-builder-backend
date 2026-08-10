@@ -1,0 +1,9 @@
+
+
+Hi {{ first_name }},
+          
+Your request to withdraw {{ amount }} was not successful.
+          
+The amount debited fro your wallet has now been returned.
+
+We sincerely apologise for the inconveniences

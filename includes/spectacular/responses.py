@@ -31,7 +31,8 @@ Only spread the buckets a view can actually emit - the standard explicitly
 forbids documenting errors that cannot happen (an AllowAny view has no 401).
 """
 
-from drf_spectacular.utils import OpenApiExample, OpenApiResponse
+from drf_spectacular.utils import OpenApiExample, OpenApiResponse, inline_serializer
+from rest_framework import serializers
 
 
 def _error(*, type_, code, message, field_name=None):
@@ -45,9 +46,42 @@ def _error(*, type_, code, message, field_name=None):
     }
 
 
+ErrorEnvelopeSerializer = inline_serializer(
+    name="ErrorEnvelope",
+    fields={
+        "errors": serializers.ListField(
+            child=serializers.DictField(),
+        ),
+    },
+)
+
+
+SuccessEnvelopeSerializer = inline_serializer(
+    name="SuccessEnvelope",
+    fields={
+        "success": serializers.BooleanField(default=True),
+        "status": serializers.IntegerField(),
+        "message": serializers.CharField(),
+        "data": serializers.JSONField(required=False),
+        "technical_message": serializers.CharField(allow_null=True, required=False),
+    },
+)
+
+
+def inline_success_response(*, description: str, examples: list) -> OpenApiResponse:
+    """Build an `OpenApiResponse` for a standard success envelope."""
+
+    return OpenApiResponse(
+        response=SuccessEnvelopeSerializer,
+        description=description,
+        examples=examples,
+    )
+
+
 STANDARD_ERROR_RESPONSES = {
     "validation": {
         400: OpenApiResponse(
+            response=ErrorEnvelopeSerializer,
             description=(
                 "Request body failed validation. `errors` contains one entry "
                 "per offending field; `field_name` identifies which."
@@ -73,10 +107,7 @@ STANDARD_ERROR_RESPONSES = {
                             _error(
                                 type_="validation_error",
                                 code="password_too_short",
-                                message=(
-                                    "This password is too short. It must "
-                                    "contain at least 8 characters."
-                                ),
+                                message=("This password is too short. It must contain at least 8 characters."),
                                 field_name="password",
                             )
                         ]
@@ -87,6 +118,7 @@ STANDARD_ERROR_RESPONSES = {
     },
     "auth": {
         401: OpenApiResponse(
+            response=ErrorEnvelopeSerializer,
             description=(
                 "No credentials were supplied, or the access token is expired "
                 "or malformed. Refresh via `/api/v1/auth/token/refresh/`."
@@ -99,9 +131,7 @@ STANDARD_ERROR_RESPONSES = {
                             _error(
                                 type_="client_error",
                                 code="not_authenticated",
-                                message=(
-                                    "Authentication credentials were not provided."
-                                ),
+                                message=("Authentication credentials were not provided."),
                             )
                         ]
                     },
@@ -123,10 +153,8 @@ STANDARD_ERROR_RESPONSES = {
     },
     "permission": {
         403: OpenApiResponse(
-            description=(
-                "The caller is authenticated but their role does not permit "
-                "this operation."
-            ),
+            response=ErrorEnvelopeSerializer,
+            description=("The caller is authenticated but their role does not permit this operation."),
             examples=[
                 OpenApiExample(
                     name="Wrong role",
@@ -135,9 +163,7 @@ STANDARD_ERROR_RESPONSES = {
                             _error(
                                 type_="client_error",
                                 code="permission_denied",
-                                message=(
-                                    "You do not have permission to perform this action."
-                                ),
+                                message=("You do not have permission to perform this action."),
                             )
                         ]
                     },
@@ -147,6 +173,7 @@ STANDARD_ERROR_RESPONSES = {
     },
     "not_found": {
         404: OpenApiResponse(
+            response=ErrorEnvelopeSerializer,
             description="The requested resource does not exist.",
             examples=[
                 OpenApiExample(
@@ -193,6 +220,7 @@ STANDARD_ERROR_RESPONSES = {
     },
     "server": {
         500: OpenApiResponse(
+            response=ErrorEnvelopeSerializer,
             description=(
                 "Unhandled server error. Safe to retry idempotent requests; "
                 "report the correlation ID from the response headers if it "

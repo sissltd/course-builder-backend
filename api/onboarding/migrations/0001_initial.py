@@ -12,7 +12,7 @@ class Migration(migrations.Migration):
     initial = True
 
     dependencies = [
-        ('courses', '0001_initial'),
+        ('categories', '0001_initial'),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
@@ -28,7 +28,7 @@ class Migration(migrations.Migration):
                 ('monthly_course_capacity', models.CharField(blank=True, choices=[('ONE', '1 course'), ('TWO_TO_THREE', '2-3 courses'), ('FOUR_TO_FIVE', '4-5 courses'), ('MORE_THAN_FIVE', 'More than 5 courses')], default='', help_text='Self-estimated number of courses producible per month.', max_length=20, verbose_name='Monthly Course Capacity')),
                 ('agreement_accepted_at', models.DateTimeField(blank=True, help_text='When the creator accepted the account-level NDA / content-ownership agreement.', null=True, verbose_name='Agreement Accepted At')),
                 ('onboarding_completed_at', models.DateTimeField(blank=True, help_text='Set when the final onboarding step (agreement) is submitted.', null=True, verbose_name='Onboarding Completed At')),
-                ('primary_expertise_category', models.ForeignKey(blank=True, help_text='Primary area-of-expertise category selected during onboarding.', null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='+', to='courses.category', verbose_name='Primary Expertise Category')),
+                ('primary_expertise_category', models.ForeignKey(blank=True, help_text='Primary area-of-expertise category selected during onboarding.', null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='+', to='categories.category', verbose_name='Primary Expertise Category')),
                 ('user', models.OneToOneField(help_text='User this onboarding profile belongs to.', on_delete=django.db.models.deletion.CASCADE, related_name='creator_profile', to=settings.AUTH_USER_MODEL, verbose_name='User')),
             ],
             options={

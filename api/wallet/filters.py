@@ -1,6 +1,8 @@
 import django_filters
 
-from api.wallet.models import Transaction, WithdrawalRequest
+from api.payments.models.transaction_model import Transaction
+from api.users.models.user import User
+from api.wallet.models import WithdrawalRequest
 
 
 class TransactionFilter(django_filters.FilterSet):
@@ -20,9 +22,7 @@ class AdminTransactionFilter(django_filters.FilterSet):
     admin view exists to answer.
     """
 
-    user = django_filters.UUIDFilter(
-        field_name="wallet__user_id", label="Wallet owner id"
-    )
+    user = django_filters.UUIDFilter(method="filter_user", label="Wallet owner id")
 
     class Meta:
         model = Transaction
@@ -30,6 +30,12 @@ class AdminTransactionFilter(django_filters.FilterSet):
             "type": ["exact"],
             "status": ["exact"],
         }
+
+    def filter_user(self, queryset, name, value):
+        user = User.objects.filter(id=value).first()
+        if user and user.wallet:
+            return queryset.filter(wallet_id=user.wallet.id)
+        return queryset
 
 
 class AdminWithdrawalRequestFilter(django_filters.FilterSet):
@@ -39,3 +45,4 @@ class AdminWithdrawalRequestFilter(django_filters.FilterSet):
             "status": ["exact"],
             "user": ["exact"],
         }
+
