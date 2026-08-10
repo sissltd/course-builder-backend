@@ -8,7 +8,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('payments', '0004_transaction'),
-        ('wallet', '0003_remove_transaction_txn_wallet_dt_idx_and_more'),
+        ('wallet', '0004_copy_transactions_and_payout_accounts_to_payments'),
     ]
 
     operations = [

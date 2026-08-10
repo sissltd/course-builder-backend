@@ -8,7 +8,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('core', '0001_initial'),
-        ('wallet', '0004_alter_withdrawalrequest_transaction_and_more'),
+        ('wallet', '0005_alter_withdrawalrequest_transaction_and_more'),
     ]
 
     operations = [
