@@ -47,7 +47,6 @@ class UserAdmin(admin.ModelAdmin):
     )
 
 
-
 @admin.register(KYCVerification)
 class KYCVerificationAdmin(admin.ModelAdmin):
     """KYC submissions, read-only.
@@ -92,10 +91,3 @@ class UserActivityLogAdmin(admin.ModelAdmin):
 
     def has_delete_permission(self, request, obj=None):
         return False
-
-
-@admin.register(User)
-class UserAdmin(admin.ModelAdmin):
-    list_display = ("id", "email", "role", "status", "created_datetime")
-    list_filter = ("role", "status")
-    search_fields = ("email",)
