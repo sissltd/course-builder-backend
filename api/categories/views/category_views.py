@@ -21,7 +21,7 @@ from api.categories.serializers import (
     CategoryWriteSerializer,
 )
 from api.categories.services import category_service
-from api.users.permissions import CanManageCategories
+from api.users.permissions import CanManageCategories, IsMFAVerifiedForSession
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 
 WRITE_ACTIONS = {"create", "update", "partial_update", "destroy"}
@@ -385,6 +385,8 @@ class CategoryViewSet(ModelViewSet):
     categories to pick one (US-101). Create/update/delete are restricted to
     Writers, Admins, and Super Admins via CanManageCategories; note this
     deliberately excludes Approvers, who read categories like everyone else.
+    Writes also require an MFA-verified session (IsMFAVerifiedForSession) -
+    categories carry creator_price, a financial policy change.
     """
 
     queryset = Category.objects.all()
@@ -401,7 +403,7 @@ class CategoryViewSet(ModelViewSet):
 
     def get_permissions(self):
         if self.action in WRITE_ACTIONS:
-            return [CanManageCategories()]
+            return [CanManageCategories(), IsMFAVerifiedForSession()]
         return super().get_permissions()
 
     @extend_schema(

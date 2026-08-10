@@ -1,6 +1,8 @@
+from datetime import timedelta
 from decimal import Decimal
 
 from django.test import TestCase
+from django.utils import timezone
 from rest_framework.exceptions import PermissionDenied, ValidationError
 
 from api.categories.enums import CategoryStatus
@@ -15,6 +17,7 @@ from api.courses.tests.factories import (
     make_user,
 )
 from api.notification.models import Notification
+from api.notification.services import notification_preference_service
 from api.users.enums import UserRole
 
 
@@ -360,3 +363,65 @@ class RecalculateDurationEstimateTests(TestCase):
         result = course_service.recalculate_duration_estimate(course=course)
 
         self.assertEqual(result.duration_estimate_minutes, 0)
+
+
+class GetReviewQueueSortingTests(TestCase):
+    def setUp(self):
+        self.reviewer = make_user(role=UserRole.CREATOR_REVIEWER)
+        self.category = make_category()
+
+    def _submitted_course_aged(self, hours_ago):
+        course = build_compliant_course(category=self.category)
+        course = course_service.submit_course(course=course, actor=course.creator)
+        course.submitted_at = timezone.now() - timedelta(hours=hours_ago)
+        course.save(update_fields=["submitted_at"])
+        return course
+
+    def test_newest_first_reverses_default_ordering(self):
+        older = self._submitted_course_aged(hours_ago=10)
+        newer = self._submitted_course_aged(hours_ago=1)
+
+        results = list(
+            course_service.get_review_queue(sort_order="NEWEST_FIRST")
+        )
+
+        self.assertEqual(results, [newer, older])
+
+    def test_sla_urgency_ranks_red_then_amber_then_normal(self):
+        notification_preference_service.update_preference(
+            user=self.reviewer,
+            sla_amber_threshold_hours_override=24,
+            sla_red_threshold_hours_override=48,
+        )
+        normal = self._submitted_course_aged(hours_ago=1)
+        amber = self._submitted_course_aged(hours_ago=30)
+        red = self._submitted_course_aged(hours_ago=60)
+
+        results = list(
+            course_service.get_review_queue(
+                sort_order="SLA_URGENCY", sla_user=self.reviewer
+            )
+        )
+
+        self.assertEqual(results, [red, amber, normal])
+
+    def test_track_filter_restricts_to_matching_category(self):
+        from api.categories.enums import TrackPreference
+
+        creator_category = make_category(
+            track_preference=TrackPreference.CREATOR_PREFERRED
+        )
+        ai_category = make_category(track_preference=TrackPreference.AI_PREFERRED)
+
+        creator_course = self._submit_in(creator_category)
+        self._submit_in(ai_category)
+
+        results = list(
+            course_service.get_review_queue(track_filter="CREATOR_TRACK")
+        )
+
+        self.assertEqual(results, [creator_course])
+
+    def _submit_in(self, category):
+        course = build_compliant_course(category=category)
+        return course_service.submit_course(course=course, actor=course.creator)

@@ -1,3 +1,4 @@
+from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework.generics import RetrieveUpdateAPIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -8,10 +9,13 @@ from api.users.enums import UserActivityActionEnums, UserActivityCategoryEnums
 from api.users.serializers import (
     MeSerializer,
     MeUpdateSerializer,
+    QueueBehaviourPreferenceSerializer,
+    QueueBehaviourPreferenceUpdateSerializer,
     ReviewerAvailabilitySerializer,
     ReviewerAvailabilityUpdateSerializer,
 )
-from api.users.services import reviewer_availability_service
+from api.users.services import queue_preference_service, reviewer_availability_service
+from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 
 
 class MeView(RetrieveUpdateAPIView):
@@ -55,12 +59,44 @@ class ReviewerAvailabilityView(APIView):
         ReviewerAvailabilityUpdateSerializer  # for schema generation only
     )
 
+    @extend_schema(
+        summary="Get reviewer availability",
+        description=(
+            "Returns the current user's reviewer-availability settings, "
+            "creating a default row on first call.\n\n"
+            "**Auth:** Any authenticated user.\n\n"
+            "**Prerequisites:** None."
+        ),
+        tags=["Users — Reviewer Preferences"],
+        responses={
+            200: OpenApiResponse(response=ReviewerAvailabilitySerializer),
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
     def get(self, request):
         availability = reviewer_availability_service.get_or_create_availability(
             user=request.user
         )
         return Response(ReviewerAvailabilitySerializer(availability).data)
 
+    @extend_schema(
+        summary="Update reviewer availability",
+        description=(
+            "Updates one or more of the current user's reviewer-"
+            "availability settings. All fields are optional.\n\n"
+            "**Auth:** Any authenticated user.\n\n"
+            "**Prerequisites:** None."
+        ),
+        tags=["Users — Reviewer Preferences"],
+        request=ReviewerAvailabilityUpdateSerializer,
+        responses={
+            200: OpenApiResponse(response=ReviewerAvailabilitySerializer),
+            **STANDARD_ERROR_RESPONSES["validation"],
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
     def patch(self, request):
         serializer = ReviewerAvailabilityUpdateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -75,3 +111,69 @@ class ReviewerAvailabilityView(APIView):
             request=request,
         )
         return Response(ReviewerAvailabilitySerializer(availability).data)
+
+
+class QueueBehaviourPreferenceView(APIView):
+    """GET/PATCH the current user's review-queue behaviour preferences.
+
+    Lazily creates the row on first GET, same pattern as
+    ReviewerAvailabilityView. Not role-gated, same rationale.
+    """
+
+    permission_classes = [IsAuthenticated]
+    serializer_class = (
+        QueueBehaviourPreferenceUpdateSerializer  # for schema generation only
+    )
+
+    @extend_schema(
+        summary="Get queue behaviour preferences",
+        description=(
+            "Returns the current user's review-queue behaviour "
+            "preferences, creating a default row on first call.\n\n"
+            "**Auth:** Any authenticated user.\n\n"
+            "**Prerequisites:** None."
+        ),
+        tags=["Users — Reviewer Preferences"],
+        responses={
+            200: OpenApiResponse(response=QueueBehaviourPreferenceSerializer),
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
+    def get(self, request):
+        preference = queue_preference_service.get_or_create_preference(
+            user=request.user
+        )
+        return Response(QueueBehaviourPreferenceSerializer(preference).data)
+
+    @extend_schema(
+        summary="Update queue behaviour preferences",
+        description=(
+            "Updates one or more of the current user's review-queue "
+            "behaviour preferences. All fields are optional.\n\n"
+            "**Auth:** Any authenticated user.\n\n"
+            "**Prerequisites:** None."
+        ),
+        tags=["Users — Reviewer Preferences"],
+        request=QueueBehaviourPreferenceUpdateSerializer,
+        responses={
+            200: OpenApiResponse(response=QueueBehaviourPreferenceSerializer),
+            **STANDARD_ERROR_RESPONSES["validation"],
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
+    def patch(self, request):
+        serializer = QueueBehaviourPreferenceUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        preference = queue_preference_service.update_preference(
+            user=request.user, **serializer.validated_data
+        )
+        activity_service.log_activity(
+            user=request.user,
+            category=UserActivityCategoryEnums.CONFIGURATION,
+            action=UserActivityActionEnums.QUEUE_PREFERENCES_UPDATED,
+            summary="Updated queue behaviour settings.",
+            request=request,
+        )
+        return Response(QueueBehaviourPreferenceSerializer(preference).data)

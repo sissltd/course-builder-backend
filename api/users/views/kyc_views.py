@@ -1,4 +1,5 @@
 from django_filters.rest_framework import DjangoFilterBackend
+from drf_spectacular.utils import OpenApiResponse, extend_schema, extend_schema_view
 from rest_framework import filters as drf_filters
 from rest_framework import status
 from rest_framework.decorators import action
@@ -24,6 +25,7 @@ from api.users.serializers import (
     KYCVerificationSubmitSerializer,
 )
 from api.users.services import kyc_service
+from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 
 
 class KYCVerificationView(APIView):
@@ -36,12 +38,44 @@ class KYCVerificationView(APIView):
     permission_classes = [IsAuthenticated]
     serializer_class = KYCVerificationSubmitSerializer  # for schema generation only
 
+    @extend_schema(
+        summary="Get latest KYC submission",
+        description=(
+            "Returns the current user's most recent KYC submission, or "
+            "`null` if none has been made yet.\n\n"
+            "**Auth:** Any authenticated user.\n\n"
+            "**Prerequisites:** None."
+        ),
+        tags=["Users — KYC"],
+        responses={
+            200: OpenApiResponse(response=KYCVerificationSerializer),
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
     def get(self, request):
         latest = kyc_service.get_latest_verification(user=request.user)
         if latest is None:
             return Response(None)
         return Response(KYCVerificationSerializer(latest).data)
 
+    @extend_schema(
+        summary="Submit KYC verification",
+        description=(
+            "Submits identity documents for KYC verification, starting a "
+            "new Pending review.\n\n"
+            "**Auth:** Any authenticated user.\n\n"
+            "**Prerequisites:** None - not role-gated."
+        ),
+        tags=["Users — KYC"],
+        request=KYCVerificationSubmitSerializer,
+        responses={
+            201: OpenApiResponse(response=KYCVerificationSerializer),
+            **STANDARD_ERROR_RESPONSES["validation"],
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
     def post(self, request):
         serializer = KYCVerificationSubmitSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -60,6 +94,42 @@ class KYCVerificationView(APIView):
         )
 
 
+@extend_schema_view(
+    list=extend_schema(
+        summary="List KYC review queue",
+        description=(
+            "Lists KYC submissions for admin review. Defaults to PENDING "
+            "submissions (the actual queue), narrowable via the `status` "
+            "query parameter.\n\n"
+            "**Auth:** Admin or Super Admin.\n\n"
+            "**Prerequisites:** None."
+        ),
+        tags=["Users — KYC Review"],
+        responses={
+            200: OpenApiResponse(response=KYCVerificationAdminSerializer(many=True)),
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    ),
+    retrieve=extend_schema(
+        summary="Retrieve a KYC submission",
+        description=(
+            "Returns a single KYC submission, including the submitting "
+            "user and raw `id_number`.\n\n"
+            "**Auth:** Admin or Super Admin.\n\n"
+            "**Prerequisites:** The submission must exist."
+        ),
+        tags=["Users — KYC Review"],
+        responses={
+            200: OpenApiResponse(response=KYCVerificationAdminSerializer),
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
+            **STANDARD_ERROR_RESPONSES["not_found"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    ),
+)
 class KYCReviewViewSet(ReadOnlyModelViewSet):
     """Admin review queue for KYC verification submissions.
 
@@ -90,6 +160,24 @@ class KYCReviewViewSet(ReadOnlyModelViewSet):
             return KYCReviewRejectSerializer
         return KYCVerificationAdminSerializer
 
+    @extend_schema(
+        summary="Approve a KYC submission",
+        description=(
+            "Approves a KYC submission. Takes no body - approval needs no "
+            "accompanying data.\n\n"
+            "**Auth:** Admin or Super Admin.\n\n"
+            "**Prerequisites:** The submission must exist."
+        ),
+        tags=["Users — KYC Review"],
+        request=KYCReviewApproveSerializer,
+        responses={
+            200: OpenApiResponse(response=KYCVerificationAdminSerializer),
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
+            **STANDARD_ERROR_RESPONSES["not_found"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
     @action(detail=True, methods=["post"])
     def approve(self, request, pk=None):
         verification = kyc_service.approve_verification(
@@ -97,6 +185,26 @@ class KYCReviewViewSet(ReadOnlyModelViewSet):
         )
         return Response(KYCVerificationAdminSerializer(verification).data)
 
+    @extend_schema(
+        summary="Reject a KYC submission",
+        description=(
+            "Rejects a KYC submission with a required "
+            "`rejection_reason` the submitter can act on when "
+            "resubmitting.\n\n"
+            "**Auth:** Admin or Super Admin.\n\n"
+            "**Prerequisites:** The submission must exist."
+        ),
+        tags=["Users — KYC Review"],
+        request=KYCReviewRejectSerializer,
+        responses={
+            200: OpenApiResponse(response=KYCVerificationAdminSerializer),
+            **STANDARD_ERROR_RESPONSES["validation"],
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
+            **STANDARD_ERROR_RESPONSES["not_found"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
     @action(detail=True, methods=["post"])
     def reject(self, request, pk=None):
         serializer = KYCReviewRejectSerializer(data=request.data)

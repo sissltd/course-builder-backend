@@ -31,6 +31,7 @@ REST_FRAMEWORK = {
         # speed guessing oracle against SUPERADMIN_BOOTSTRAP_TOKEN. A genuine
         # operator bootstraps once, so 5/hour costs them nothing.
         "superadmin_bootstrap": "5/hour",
+        "resend_verification": "3/hour",
     },
 }
 

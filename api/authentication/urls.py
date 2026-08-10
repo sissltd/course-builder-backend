@@ -27,6 +27,34 @@ urlpatterns = [
     path("auth/logout/", views.LogoutView.as_view(), name="auth-logout"),
     path("auth/logout-all/", views.LogoutAllView.as_view(), name="auth-logout-all"),
     path(
+        "auth/sessions/",
+        views.UserSessionListView.as_view(),
+        name="auth-session-list",
+    ),
+    path(
+        "auth/sessions/<uuid:pk>/",
+        views.UserSessionRevokeView.as_view(),
+        name="auth-session-revoke",
+    ),
+    path("auth/mfa/enroll/", views.MFAEnrollView.as_view(), name="auth-mfa-enroll"),
+    path(
+        "auth/mfa/enroll/confirm/",
+        views.MFAEnrollConfirmView.as_view(),
+        name="auth-mfa-enroll-confirm",
+    ),
+    path("auth/mfa/verify/", views.MFAVerifyView.as_view(), name="auth-mfa-verify"),
+    path(
+        "auth/mfa/recovery-codes/regenerate/",
+        views.MFARecoveryCodesRegenerateView.as_view(),
+        name="auth-mfa-recovery-codes-regenerate",
+    ),
+    path("auth/mfa/disable/", views.MFADisableView.as_view(), name="auth-mfa-disable"),
+    path(
+        "auth/mfa/admin-reset/<uuid:user_id>/",
+        views.MFAAdminResetView.as_view(),
+        name="auth-mfa-admin-reset",
+    ),
+    path(
         "auth/forgot-password/",
         views.ForgotPasswordView.as_view(),
         name="auth-forgot-password",

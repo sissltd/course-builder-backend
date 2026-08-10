@@ -101,6 +101,20 @@ jobs:
       REDIS_URL: redis://localhost:6379/1
       # ...one dummy entry for EVERY env var settings read with config() and no default.
       # If settings crash on import in CI, you missed one — the error names it.
+      # DigitalOcean Spaces (shared/constants/digital_ocean.py) — required, no
+      # default, only ever actually called by the (mocked-in-tests) uploads
+      # presign endpoint, but importing the module at all needs these set.
+      DIGITAL_OCEAN_ACCESS_KEY: ci-dummy-not-a-real-key
+      DIGITAL_OCEAN_SECRET_KEY: ci-dummy-not-a-real-secret
+      DIGITAL_OCEAN_BUCKET: ci-dummy-bucket
+      DIGITAL_OCEAN_ENDPOINT: https://ci-dummy.digitaloceanspaces.com
+      DIGITAL_OCEAN_REGION: lon1
+      DIGITAL_OCEAN_CDN_URL: https://ci-dummy.cdn.digitaloceanspaces.com
+      # Field-level encryption (shared/utils/encryption.py) — defaults to ""
+      # so it won't crash `check`, but MFA's encrypt_field/decrypt_field calls
+      # raise at runtime without a real Fernet key, so tests need one. Not a
+      # real secret — generated fresh for this comment, thrown away.
+      FIELD_ENCRYPTION_KEY: 6iYSAd8pRX8mSg1Uebfb7zGEvSEcjWDS8EwkefOjrsM=
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

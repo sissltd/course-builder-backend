@@ -6,7 +6,8 @@ from rest_framework.test import APITestCase
 
 from api.authentication.tests.factories import make_user
 from api.notification.models import Notification, NotificationPreference
-from api.notification.services import notification_preference_service
+from api.notification.services import notification_preference_service, sla_threshold_service
+from api.platform.services import platform_settings_service
 from api.users.models import UserActivityLog
 
 
@@ -152,3 +153,73 @@ class NotificationPreferenceApiTests(APITestCase):
                 user=user, action="NOTIFICATION_PREFERENCES_UPDATED"
             ).exists()
         )
+
+    def test_in_app_enabled_defaults_true_and_can_be_toggled(self):
+        user = make_user()
+        self.client.force_authenticate(user)
+
+        response = self.client.get("/api/v1/users/me/notification-preferences/")
+        self.assertTrue(response.data["in_app_enabled"])
+
+        response = self.client.patch(
+            "/api/v1/users/me/notification-preferences/",
+            {"in_app_enabled": False},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertFalse(response.data["in_app_enabled"])
+
+    def test_sla_threshold_overrides_default_null_and_round_trip(self):
+        user = make_user()
+        self.client.force_authenticate(user)
+
+        response = self.client.get("/api/v1/users/me/notification-preferences/")
+        self.assertIsNone(response.data["sla_amber_threshold_hours_override"])
+        self.assertIsNone(response.data["sla_red_threshold_hours_override"])
+
+        response = self.client.patch(
+            "/api/v1/users/me/notification-preferences/",
+            {"sla_amber_threshold_hours_override": 12},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["sla_amber_threshold_hours_override"], 12)
+
+        response = self.client.patch(
+            "/api/v1/users/me/notification-preferences/",
+            {"sla_amber_threshold_hours_override": None},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsNone(response.data["sla_amber_threshold_hours_override"])
+
+
+class SlaThresholdServiceTests(TestCase):
+    def test_falls_back_to_platform_defaults_when_no_override(self):
+        user = make_user()
+
+        amber, red = sla_threshold_service.get_effective_thresholds(user=user)
+
+        self.assertEqual(amber, 24)
+        self.assertEqual(red, 48)
+
+    def test_uses_reviewer_override_when_set(self):
+        user = make_user()
+        notification_preference_service.update_preference(
+            user=user,
+            sla_amber_threshold_hours_override=6,
+            sla_red_threshold_hours_override=12,
+        )
+
+        amber, red = sla_threshold_service.get_effective_thresholds(user=user)
+
+        self.assertEqual(amber, 6)
+        self.assertEqual(red, 12)
+
+    def test_platform_default_change_reflected_without_override(self):
+        user = make_user()
+        platform_settings_service.update_settings(sla_amber_threshold_hours=10)
+
+        amber, _red = sla_threshold_service.get_effective_thresholds(user=user)
+
+        self.assertEqual(amber, 10)

@@ -20,6 +20,7 @@ CUSTOM_APPS = [
     "api.wallet",
     "api.payments",
     "shared.audit",
+    "shared.uploads",
     "api.platform",
     "core",
     "api.webhooks",

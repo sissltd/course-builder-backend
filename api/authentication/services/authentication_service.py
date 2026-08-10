@@ -12,7 +12,8 @@ from rest_framework_simplejwt.token_blacklist.models import (
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from api.authentication.enums import TokenPurpose
-from api.authentication.services import activity_service, token_service
+from api.authentication.models import UserSession
+from api.authentication.services import activity_service, session_service, token_service
 from api.authentication.utils.base_auth import TsesAuthenticationInterface
 from api.authentication.utils.links import build_verification_link
 from api.notification.models import Notification
@@ -68,13 +69,8 @@ class AuthenticationService(TsesAuthenticationInterface):
         """
 
         if User.objects.filter(email__iexact=email).exists():
-            # Generic message deliberately doesn't confirm the email is taken -
-            # avoids the classic signup-enumeration leak of a distinct
-            # "already exists" response (though the 400-vs-201 status code
-            # still technically distinguishes the two cases; only an
-            # accept-and-email-the-existing-user pattern closes that fully).
             raise exceptions.ValidationError(
-                "Unable to create account with the provided details."
+                {"email": "A user with this email already exists."}
             )
 
         with transaction.atomic():
@@ -242,11 +238,21 @@ class AuthenticationService(TsesAuthenticationInterface):
         """Blacklist `refresh_token` so it can no longer mint new access tokens."""
 
         try:
-            RefreshToken(refresh_token).blacklist()
+            token = RefreshToken(refresh_token)
+            sid = token.get("sid")
+            token.blacklist()
         except TokenError as exc:
             raise exceptions.ValidationError(
                 "Invalid or already blacklisted token."
             ) from exc
+
+        if sid:
+            try:
+                session_service.revoke_session(user=user, session_id=sid)
+            except UserSession.DoesNotExist:
+                # Already revoked (e.g. via the sessions list) or predates
+                # this feature - logout itself still succeeded above.
+                pass
 
         activity_service.log_auth_activity(
             user=user,
@@ -267,6 +273,7 @@ class AuthenticationService(TsesAuthenticationInterface):
             (BlacklistedToken(token=token) for token in outstanding),
             ignore_conflicts=True,
         )
+        session_service.revoke_all_sessions(user=user)
 
         activity_service.log_auth_activity(
             user=user,
@@ -338,3 +345,61 @@ class AuthenticationService(TsesAuthenticationInterface):
             template_name="emails/password_reset_confirmation",
             context={"first_name": user.first_name},
         )
+
+
+#: Destination the frontend routes to immediately after login, by role.
+_WORKSPACE_BY_ROLE = {
+    UserRole.COURSE_CREATOR: "creator_studio",
+    UserRole.CREATOR_REVIEWER: "creator_review_dashboard",
+    UserRole.STAFF_WRITER: "staff_writer_dashboard",
+    UserRole.STAFF_VERIFIER: "staff_verifier_dashboard",
+    UserRole.STAFF_APPROVER: "staff_approver_dashboard",
+    UserRole.AI_REVIEWER: "ai_review_dashboard",
+    UserRole.QA_REVIEWER: "qa_review_dashboard",
+    UserRole.ADMIN: "admin_dashboard",
+    UserRole.SUPER_ADMIN: "admin_dashboard",
+}
+
+
+def finish_login(*, user: User, request=None, mfa_verified: bool) -> dict:
+    """Shared tail of a successful login, called once the caller has already
+    decided the account is fully authenticated - either LoginSerializer
+    (password-only, no MFA required or not yet enrolled) or the MFA-verify
+    endpoint (password + a passed challenge). Mints tokens, creates the
+    UserSession, and assembles the same response shape either way, so a
+    client can't tell which path was taken from the shape of the response.
+
+    `mfa_verified` is embedded as a token claim consumed by
+    IsMFAVerifiedForSession - True only when this login actually completed
+    an MFA challenge (or the role never required one), never merely because
+    the account happens to be inside its enrollment grace period.
+
+    Local import of LoginSerializer avoids a module-level import cycle:
+    login_serializer.py imports this module already.
+    """
+
+    from api.authentication.serializers.login_serializer import LoginSerializer
+    from api.users.serializers.user_serializer import MeSerializer
+
+    refresh = LoginSerializer.get_token(user)
+    session = session_service.create_session(
+        user=user, refresh_jti=refresh["jti"], request=request
+    )
+    refresh["sid"] = str(session.id)
+    refresh["mfa_verified"] = mfa_verified
+    access = refresh.access_token
+
+    activity_service.log_auth_activity(
+        user=user,
+        action=UserActivityActionEnums.LOGIN,
+        summary="User logged in.",
+        request=request,
+    )
+
+    return {
+        "refresh": str(refresh),
+        "access": str(access),
+        "user": MeSerializer(user).data,
+        "role": user.role,
+        "workspace": _WORKSPACE_BY_ROLE.get(user.role, "creator_studio"),
+    }

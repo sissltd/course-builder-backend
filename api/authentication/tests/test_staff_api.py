@@ -329,6 +329,7 @@ class InviteStaffApiTests(APITestCase):
 
 class AcceptStaffInvitationApiTests(APITestCase):
     def setUp(self):
+        cache.clear()
         self.invitee = make_user(
             email="pending@example.com",
             role=UserRole.STAFF_WRITER,
@@ -509,6 +510,7 @@ class StaffListApiTests(APITestCase):
 
 class RevokeStaffApiTests(APITestCase):
     def setUp(self):
+        cache.clear()
         self.super_admin = make_user(
             email="super@example.com", role=UserRole.SUPER_ADMIN
         )
@@ -643,6 +645,7 @@ class RevokeStaffApiTests(APITestCase):
 
 class ReactivateStaffApiTests(APITestCase):
     def setUp(self):
+        cache.clear()
         self.super_admin = make_user(
             email="super@example.com", role=UserRole.SUPER_ADMIN
         )

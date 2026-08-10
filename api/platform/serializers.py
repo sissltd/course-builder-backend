@@ -27,6 +27,9 @@ class PlatformSettingsSerializer(serializers.ModelSerializer):
             "course_duration_max_minutes",
             "course_final_assessment_min_questions",
             "topic_reservation_expiry_days",
+            "sla_amber_threshold_hours",
+            "sla_red_threshold_hours",
+            "mfa_enrollment_grace_period_days",
             "updated_datetime",
         ]
         read_only_fields = fields
@@ -127,6 +130,11 @@ class PlatformSettingsUpdateSerializer(serializers.Serializer):
             "Days a creator's topic reservation is held before it lapses and "
             "the topic returns to the pool."
         ),
+    )
+    sla_amber_threshold_hours = serializers.IntegerField(required=False, min_value=1)
+    sla_red_threshold_hours = serializers.IntegerField(required=False, min_value=1)
+    mfa_enrollment_grace_period_days = serializers.IntegerField(
+        required=False, min_value=0
     )
 
     def validate(self, attrs):

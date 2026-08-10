@@ -352,6 +352,32 @@ class NotificationPreference(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
             "implemented in this backend - inert while AI Creator is unavailable."
         ),
     )
+    in_app_enabled = models.BooleanField(
+        verbose_name=_("In-App Notifications Enabled"),
+        default=True,
+        help_text=_(
+            "Master toggle for in-app notifications. Off suppresses all "
+            "in-app alerts regardless of the per-event toggles above."
+        ),
+    )
+    sla_amber_threshold_hours_override = models.PositiveIntegerField(
+        verbose_name=_("SLA Amber Threshold Hours Override"),
+        null=True,
+        blank=True,
+        help_text=_(
+            "Overrides PlatformSettings.sla_amber_threshold_hours for this "
+            "reviewer. Null uses the platform default."
+        ),
+    )
+    sla_red_threshold_hours_override = models.PositiveIntegerField(
+        verbose_name=_("SLA Red Threshold Hours Override"),
+        null=True,
+        blank=True,
+        help_text=_(
+            "Overrides PlatformSettings.sla_red_threshold_hours for this "
+            "reviewer. Null uses the platform default."
+        ),
+    )
 
     class Meta:
         verbose_name = _("Notification Preference")

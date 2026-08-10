@@ -6,6 +6,10 @@ from .kyc_serializer import (
     KYCVerificationSerializer,
     KYCVerificationSubmitSerializer,
 )
+from .queue_preference_serializer import (
+    QueueBehaviourPreferenceSerializer,
+    QueueBehaviourPreferenceUpdateSerializer,
+)
 from .reviewer_availability_serializer import (
     ReviewerAvailabilitySerializer,
     ReviewerAvailabilityUpdateSerializer,
@@ -25,6 +29,8 @@ __all__ = [
     "KYCVerificationSubmitSerializer",
     "MeSerializer",
     "MeUpdateSerializer",
+    "QueueBehaviourPreferenceSerializer",
+    "QueueBehaviourPreferenceUpdateSerializer",
     "ReviewerAvailabilitySerializer",
     "ReviewerAvailabilityUpdateSerializer",
     "UserAdminSerializer",

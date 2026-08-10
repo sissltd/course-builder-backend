@@ -13,6 +13,15 @@ from .auth_views import (
     TokenRefreshView,
     VerifyEmailView,
 )
+from .mfa_views import (
+    MFAAdminResetView,
+    MFADisableView,
+    MFAEnrollConfirmView,
+    MFAEnrollView,
+    MFARecoveryCodesRegenerateView,
+    MFAVerifyView,
+)
+from .session_views import UserSessionListView, UserSessionRevokeView
 from .staff_views import (
     AcceptStaffInvitationView,
     InviteStaffView,
@@ -32,6 +41,12 @@ __all__ = [
     "LoginView",
     "LogoutAllView",
     "LogoutView",
+    "MFAAdminResetView",
+    "MFADisableView",
+    "MFAEnrollConfirmView",
+    "MFAEnrollView",
+    "MFARecoveryCodesRegenerateView",
+    "MFAVerifyView",
     "ReactivateStaffView",
     "ResendVerificationView",
     "ResetPasswordView",
@@ -41,5 +56,7 @@ __all__ = [
     "StaffListView",
     "SuperAdminBootstrapView",
     "TokenRefreshView",
+    "UserSessionListView",
+    "UserSessionRevokeView",
     "VerifyEmailView",
 ]

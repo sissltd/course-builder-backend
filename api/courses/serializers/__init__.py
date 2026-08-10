@@ -4,6 +4,11 @@ from .assessment_serializer import (
     QuizOptionSerializer,
     QuizQuestionSerializer,
 )
+from .course_appeal_serializer import (
+    CourseAppealCreateSerializer,
+    CourseAppealDecisionSerializer,
+    CourseAppealSerializer,
+)
 from .course_serializer import (
     CategoryMiniSerializer,
     CourseCreateSerializer,
@@ -36,6 +41,9 @@ __all__ = [
     "AssessmentSerializer",
     "AssessmentWriteSerializer",
     "CategoryMiniSerializer",
+    "CourseAppealCreateSerializer",
+    "CourseAppealDecisionSerializer",
+    "CourseAppealSerializer",
     "CourseCreateSerializer",
     "CourseDetailSerializer",
     "CourseListSerializer",
