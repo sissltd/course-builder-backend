@@ -3,13 +3,19 @@ from decimal import Decimal
 from django.contrib.contenttypes.fields import GenericRelation
 from django.db import models
 
-from core.mixins import DateHistoryModelMixin, SoftDeleteModelMixin, UUIDPrimaryKeyModelMixin
+from core.mixins import (
+    DateHistoryModelMixin,
+    SoftDeleteModelMixin,
+    UUIDPrimaryKeyModelMixin,
+)
 from core.models import TransferOutboxEvent
 
 # from shared.models.outbox_models import TransferOutboxEvent
 
 
-class InternalAccount(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, SoftDeleteModelMixin, models.Model):
+class InternalAccount(
+    UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, SoftDeleteModelMixin, models.Model
+):
     """Internal account for internal ledger transactions. This model represents a ledger account that is used to temporarily hold funds or transactions before they are allocated to their final destination. It is designed to facilitate the management of internal financial operations within the system.
 
     - Transit Account: This account acts as a temporary holding place for funds that are in transit between different accounts or systems. It ensures that transactions are properly tracked and managed during the transfer process.
@@ -47,13 +53,23 @@ class InternalAccount(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, SoftDelet
         decimal_places=2,
         default=Decimal("0.00"),
     )
-    last_withdrawal_timestamp = models.DateTimeField(help_text="Timestamp of last withdrawal", null=True, blank=True)
-    last_deposit_timestamp = models.DateTimeField(help_text="Timestamp of last deposit", null=True, blank=True)
+    last_withdrawal_timestamp = models.DateTimeField(
+        help_text="Timestamp of last withdrawal", null=True, blank=True
+    )
+    last_deposit_timestamp = models.DateTimeField(
+        help_text="Timestamp of last deposit", null=True, blank=True
+    )
     currency = models.CharField(max_length=10, choices=Currency.choices)
     transactions = GenericRelation(
-        "payments.Transaction", content_type_field="wallet_type", object_id_field="wallet_id"
+        "payments.Transaction",
+        content_type_field="wallet_type",
+        object_id_field="wallet_id",
     )
-    entries = GenericRelation(TransferOutboxEvent, content_type_field="wallet_type", object_id_field="wallet_id")
+    entries = GenericRelation(
+        TransferOutboxEvent,
+        content_type_field="wallet_type",
+        object_id_field="wallet_id",
+    )
 
     class Meta:
         db_table = "internal_account"

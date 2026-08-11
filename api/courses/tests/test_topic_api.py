@@ -123,7 +123,9 @@ class TopicApiTests(APITestCase):
         course.refresh_from_db()
         self.assertEqual(course.creator_price_snapshot, Decimal("30.00"))
 
-        self.client.post(f"/api/v1/review-queue/{course.id}/approve/", {}, format="json")
+        self.client.post(
+            f"/api/v1/review-queue/{course.id}/approve/", {}, format="json"
+        )
         wallet = wallet_service.get_or_create_wallet(user=self.creator)
         self.assertEqual(wallet.balance, Decimal("30.00"))
 

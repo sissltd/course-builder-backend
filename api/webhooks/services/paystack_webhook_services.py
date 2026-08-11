@@ -25,10 +25,8 @@ class NonRetryableWebhookError(WebhookProcessingError):
 
 
 class WebhookServices:
-
     @staticmethod
     def verify_paystack_webhook(payload, signature, secret_key):
-
         computed_hash = hmac.new(
             secret_key.encode("utf-8"), payload, hashlib.sha512
         ).hexdigest()
@@ -52,22 +50,30 @@ class WebhookServices:
                 case "transfer.failed" | "transfer.reversed":
                     return WebhookServices._handle_transfer_failure(data)
                 case _:
-                    raise NonRetryableWebhookError(f"Unhandled event type: {event_type}")
+                    raise NonRetryableWebhookError(
+                        f"Unhandled event type: {event_type}"
+                    )
 
         except Exception as e:
             logger.error(f"Error processing Paystack webhook event: {e!s}")
-            raise WebhookProcessingError(f"Error processing Paystack webhook event: {e!s}")
+            raise WebhookProcessingError(
+                f"Error processing Paystack webhook event: {e!s}"
+            )
 
     @staticmethod
     @django_transaction.atomic
     def _handle_transfer_success(data):
         reference = data.get("reference")
         metadata = data.get("metadata", {})
-        logger.warning(f"Handling transfer success for reference {reference} with metadata {metadata}")
+        logger.warning(
+            f"Handling transfer success for reference {reference} with metadata {metadata}"
+        )
         entry = TransferOutboxEvent.objects.filter(reference=reference).first()
         if not entry:
             logger.error(f"No TransferOutboxEvent found for reference {reference}")
-            raise WebhookProcessingError(f"No TransferOutboxEvent found for reference {reference}")
+            raise WebhookProcessingError(
+                f"No TransferOutboxEvent found for reference {reference}"
+            )
 
         with django_transaction.atomic():
             entry.status = "PROCESSED"
@@ -75,23 +81,31 @@ class WebhookServices:
 
             transaction_services.internal_transfer(
                 amount=data.get("amount") / 100,  # Convert from kobo to naira
-                from_ledger=InternalAccount.objects.select_for_update().get(code_name=INTERNAL_TRANSIT_ACCOUNT_NAME),
-                to_ledger=InternalAccount.objects.select_for_update().get(code_name=INTERNAL_TRANSIT_PAYSTACK_ACCOUNT_NAME),
+                from_ledger=InternalAccount.objects.select_for_update().get(
+                    code_name=INTERNAL_TRANSIT_ACCOUNT_NAME
+                ),
+                to_ledger=InternalAccount.objects.select_for_update().get(
+                    code_name=INTERNAL_TRANSIT_PAYSTACK_ACCOUNT_NAME
+                ),
                 reference=reference,
-                description=f"Transfer success for reference {reference}"
+                description=f"Transfer success for reference {reference}",
             )
 
             AuditService.log_event(
                 "WITHDRAWAL_REQUEST_SUCCESSFUL",
                 email=entry.user.email,
-                metadata={"user_id": str(entry.user.id), "amount": str(entry.amount), "reference": entry.reference},
+                metadata={
+                    "user_id": str(entry.user.id),
+                    "amount": str(entry.amount),
+                    "reference": entry.reference,
+                },
             )
             Notification.emit_email_notification(
-                    receivers=[entry.user.email],
-                    subject="Successful Withdrawal Notification",
-                    template_name="emails/successful_withdrawal",
-                    context={"first_name": entry.user.first_name, "amount": entry.amount}
-                )
+                receivers=[entry.user.email],
+                subject="Successful Withdrawal Notification",
+                template_name="emails/successful_withdrawal",
+                context={"first_name": entry.user.first_name, "amount": entry.amount},
+            )
 
     @staticmethod
     @django_transaction.atomic
@@ -106,10 +120,12 @@ class WebhookServices:
 
             transaction_services.internal_transfer(
                 amount=data.get("amount") / 100,  # Convert from kobo to naira
-                from_ledger=InternalAccount.objects.select_for_update().get(code_name=INTERNAL_TRANSIT_ACCOUNT_NAME),
+                from_ledger=InternalAccount.objects.select_for_update().get(
+                    code_name=INTERNAL_TRANSIT_ACCOUNT_NAME
+                ),
                 to_ledger=entry.wallet,
                 reference=reference,
-                description=f"Reversal of failed transfer for reference {reference} by {entry.user.email}"
+                description=f"Reversal of failed transfer for reference {reference} by {entry.user.email}",
             )
             try:
                 AuditService.log_event(
@@ -130,7 +146,12 @@ class WebhookServices:
                     receivers=[entry.user.email],
                     subject="Failed Withdrawal Notification",
                     template_name="emails/failed_withdrawal",
-                    context={"first_name": entry.user.first_name, "amount": entry.amount}
+                    context={
+                        "first_name": entry.user.first_name,
+                        "amount": entry.amount,
+                    },
                 )
             except Exception as e:
-                logger.error(f"Failed to send email notification for failed transfer: {e!s}")
+                logger.error(
+                    f"Failed to send email notification for failed transfer: {e!s}"
+                )

@@ -13,7 +13,9 @@ from api.users.models import User
 from api.users.permissions import IsAdminRole, IsCreatorReviewerRole
 
 
-def submit_request(*, user: User, name: str, category: Category) -> TopicReservationRequest:
+def submit_request(
+    *, user: User, name: str, category: Category
+) -> TopicReservationRequest:
     """Create a Pending TopicReservationRequest for a brand-new topic and
     notify Admins/Reviewers.
 
@@ -76,7 +78,13 @@ def approve_request(
     request.reviewed_by = actor
     request.reviewed_at = timezone.now()
     request.save(
-        update_fields=["topic", "status", "reviewed_by", "reviewed_at", "updated_datetime"]
+        update_fields=[
+            "topic",
+            "status",
+            "reviewed_by",
+            "reviewed_at",
+            "updated_datetime",
+        ]
     )
     return request
 

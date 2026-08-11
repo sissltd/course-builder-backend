@@ -3,7 +3,11 @@ from rest_framework.test import APITestCase
 
 from api.courses.enums import AppealStatus, CourseStatus
 from api.courses.models import CourseAppeal
-from api.courses.tests.factories import make_course_appeal, make_rejected_course, make_user
+from api.courses.tests.factories import (
+    make_course_appeal,
+    make_rejected_course,
+    make_user,
+)
 from api.users.enums import UserRole
 
 
@@ -47,7 +51,9 @@ class CourseAppealApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(response.data["status"], AppealStatus.PENDING)
         self.assertTrue(
-            CourseAppeal.objects.filter(course=course, submitted_by=self.creator).exists()
+            CourseAppeal.objects.filter(
+                course=course, submitted_by=self.creator
+            ).exists()
         )
 
     def test_cannot_appeal_a_course_that_was_never_rejected(self):

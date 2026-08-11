@@ -90,9 +90,7 @@ class TopicReservationRequestApiTests(APITestCase):
         )
         self.client.force_authenticate(self.creator)
 
-        response = self.client.post(
-            f"/api/v1/topic-reservations/{request.id}/approve/"
-        )
+        response = self.client.post(f"/api/v1/topic-reservations/{request.id}/approve/")
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_admin_approve_creates_and_reserves_topic(self):
@@ -101,9 +99,7 @@ class TopicReservationRequestApiTests(APITestCase):
         )
         self.client.force_authenticate(self.admin)
 
-        response = self.client.post(
-            f"/api/v1/topic-reservations/{request.id}/approve/"
-        )
+        response = self.client.post(f"/api/v1/topic-reservations/{request.id}/approve/")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["status"], ReservationStatus.APPROVED)
         self.assertIsNotNone(response.data["topic"])
@@ -122,9 +118,7 @@ class TopicReservationRequestApiTests(APITestCase):
         )
         self.client.force_authenticate(self.admin)
 
-        response = self.client.post(
-            f"/api/v1/topic-reservations/{request.id}/approve/"
-        )
+        response = self.client.post(f"/api/v1/topic-reservations/{request.id}/approve/")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_reviewer_can_reject_with_reason(self):

@@ -381,9 +381,7 @@ class GetReviewQueueSortingTests(TestCase):
         older = self._submitted_course_aged(hours_ago=10)
         newer = self._submitted_course_aged(hours_ago=1)
 
-        results = list(
-            course_service.get_review_queue(sort_order="NEWEST_FIRST")
-        )
+        results = list(course_service.get_review_queue(sort_order="NEWEST_FIRST"))
 
         self.assertEqual(results, [newer, older])
 
@@ -416,9 +414,7 @@ class GetReviewQueueSortingTests(TestCase):
         creator_course = self._submit_in(creator_category)
         self._submit_in(ai_category)
 
-        results = list(
-            course_service.get_review_queue(track_filter="CREATOR_TRACK")
-        )
+        results = list(course_service.get_review_queue(track_filter="CREATOR_TRACK"))
 
         self.assertEqual(results, [creator_course])
 

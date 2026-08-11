@@ -91,9 +91,7 @@ class PlatformSettingsApiTests(APITestCase):
     def test_patch_empty_body_rejected(self):
         self._authenticate_mfa_verified(self.admin)
 
-        response = self.client.patch(
-            "/api/v1/platform-settings/", {}, format="json"
-        )
+        response = self.client.patch("/api/v1/platform-settings/", {}, format="json")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_course_validation_reflects_updated_threshold(self):

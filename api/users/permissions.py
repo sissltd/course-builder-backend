@@ -21,7 +21,9 @@ class HasRole(BasePermission):
         return bool(user.is_superuser or user.role in self.allowed_roles)
 
 
-def require_role(user, allowed_roles, message="You do not have permission to perform this action."):
+def require_role(
+    user, allowed_roles, message="You do not have permission to perform this action."
+):
     """Raise PermissionDenied unless `user` is a superuser or holds one of
     `allowed_roles`. Mirrors HasRole.has_permission's bypass/check logic, for
     use inside service functions as defense-in-depth alongside view-level

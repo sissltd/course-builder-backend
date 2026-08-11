@@ -110,7 +110,9 @@ class MFAEnrollConfirmView(APIView):
             200: OpenApiResponse(
                 response=MFARecoveryCodesResponseSerializer,
                 description="Device enabled; fresh recovery codes issued.",
-                examples=[OpenApiExample(name="Success", value=_RECOVERY_CODES_EXAMPLE)],
+                examples=[
+                    OpenApiExample(name="Success", value=_RECOVERY_CODES_EXAMPLE)
+                ],
             ),
             **STANDARD_ERROR_RESPONSES["validation"],
             **STANDARD_ERROR_RESPONSES["auth"],
@@ -125,7 +127,9 @@ class MFAEnrollConfirmView(APIView):
             code=serializer.validated_data["code"],
             request=request,
         )
-        return Response(MFARecoveryCodesResponseSerializer({"recovery_codes": codes}).data)
+        return Response(
+            MFARecoveryCodesResponseSerializer({"recovery_codes": codes}).data
+        )
 
 
 class MFAVerifyView(APIView):
@@ -231,7 +235,9 @@ class MFARecoveryCodesRegenerateView(APIView):
             200: OpenApiResponse(
                 response=MFARecoveryCodesResponseSerializer,
                 description="A fresh batch of recovery codes.",
-                examples=[OpenApiExample(name="Success", value=_RECOVERY_CODES_EXAMPLE)],
+                examples=[
+                    OpenApiExample(name="Success", value=_RECOVERY_CODES_EXAMPLE)
+                ],
             ),
             **STANDARD_ERROR_RESPONSES["validation"],
             **STANDARD_ERROR_RESPONSES["auth"],
@@ -246,7 +252,9 @@ class MFARecoveryCodesRegenerateView(APIView):
             code=serializer.validated_data["code"],
             request=request,
         )
-        return Response(MFARecoveryCodesResponseSerializer({"recovery_codes": codes}).data)
+        return Response(
+            MFARecoveryCodesResponseSerializer({"recovery_codes": codes}).data
+        )
 
 
 class MFADisableView(APIView):

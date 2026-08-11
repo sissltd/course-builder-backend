@@ -7,12 +7,20 @@ from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
 from django.db import models
 
-from .mixins import DateHistoryModelMixin, SoftDeleteModelMixin, UUIDPrimaryKeyModelMixin
+from .mixins import (
+    DateHistoryModelMixin,
+    SoftDeleteModelMixin,
+    UUIDPrimaryKeyModelMixin,
+)
 
 User = get_user_model()
 
-class OutboxEvent(UUIDPrimaryKeyModelMixin, SoftDeleteModelMixin, DateHistoryModelMixin, models.Model):
+
+class OutboxEvent(
+    UUIDPrimaryKeyModelMixin, SoftDeleteModelMixin, DateHistoryModelMixin, models.Model
+):
     """Stores outbox events waiting to be dispatched safely to an event bus."""
+
     event_type = models.CharField(max_length=255)
     payload = models.JSONField()
     processed = models.BooleanField(default=False)
@@ -22,8 +30,10 @@ class OutboxEvent(UUIDPrimaryKeyModelMixin, SoftDeleteModelMixin, DateHistoryMod
         ordering = ["created_datetime"]
 
 
-class PaystackWebhookEvent(UUIDPrimaryKeyModelMixin, SoftDeleteModelMixin, DateHistoryModelMixin, models.Model):
-    STATUS_CHOICES:ClassVar = [
+class PaystackWebhookEvent(
+    UUIDPrimaryKeyModelMixin, SoftDeleteModelMixin, DateHistoryModelMixin, models.Model
+):
+    STATUS_CHOICES: ClassVar = [
         ("PENDING", "Pending"),
         ("PROCESSING", "Processing"),
         ("PROCESSED", "Processed"),
@@ -40,24 +50,33 @@ class PaystackWebhookEvent(UUIDPrimaryKeyModelMixin, SoftDeleteModelMixin, DateH
 
     def __str__(self):
         return f"{self.event_type} - {self.event_id} ({self.status})"
-    
+
     class Meta:
         db_table = "paystack_webhook_events"
         ordering = ["created_datetime"]
 
 
-class TransferOutboxEvent(UUIDPrimaryKeyModelMixin, SoftDeleteModelMixin, DateHistoryModelMixin, models.Model):
+class TransferOutboxEvent(
+    UUIDPrimaryKeyModelMixin, SoftDeleteModelMixin, DateHistoryModelMixin, models.Model
+):
     class Status(models.TextChoices):
         PENDING = "PENDING", "Pending API Call"
         PROCESSING = "PROCESSING", "API Call In Progress"
-        SUBMITTED = "SUBMITTED", "Sent to Paystack"  # Paystack accepted it, now awaiting webhook
+        SUBMITTED = (
+            "SUBMITTED",
+            "Sent to Paystack",
+        )  # Paystack accepted it, now awaiting webhook
         FAILED = "FAILED", "Failed Locally"
 
-    reference = models.CharField(max_length=255, unique=True)  # Unique reference for idempotency and tracking
+    reference = models.CharField(
+        max_length=255, unique=True
+    )  # Unique reference for idempotency and tracking
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     amount = models.DecimalField(max_digits=12, decimal_places=2)
     recipient_code = models.CharField(max_length=100)
-    status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
+    status = models.CharField(
+        max_length=20, choices=Status.choices, default=Status.PENDING
+    )
     reason = models.CharField(max_length=255, null=True, blank=True)
     paystack_transfer_code = models.CharField(max_length=100, null=True, blank=True)
     error_log = models.TextField(null=True, blank=True)

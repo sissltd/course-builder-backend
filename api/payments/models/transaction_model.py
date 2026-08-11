@@ -8,7 +8,11 @@ from django.core.validators import MinValueValidator
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
-from core.mixins import DateHistoryModelMixin, SoftDeleteModelMixin, UUIDPrimaryKeyModelMixin
+from core.mixins import (
+    DateHistoryModelMixin,
+    SoftDeleteModelMixin,
+    UUIDPrimaryKeyModelMixin,
+)
 
 
 def generate_reference() -> str:
@@ -18,15 +22,16 @@ def generate_reference() -> str:
     return f"TXN-{uuid.uuid4().hex[:12].upper()}"
 
 
-class Transaction(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, SoftDeleteModelMixin, models.Model):
+class Transaction(
+    UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, SoftDeleteModelMixin, models.Model
+):
     """An immutable record of a wallet balance change."""
-    
+
     class TransactionType(models.TextChoices):
         """Direction of a wallet transaction."""
 
         CREDIT = "CREDIT", "Credit"
         DEBIT = "DEBIT", "Debit"
-
 
     class TransactionStatus(models.TextChoices):
         """Settlement status of a wallet transaction.
@@ -61,7 +66,9 @@ class Transaction(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, SoftDeleteMod
     reference = models.CharField(
         verbose_name=_("Reference"),
         max_length=32,
-        help_text=_("This is non-unique, so the same reference can be associated with related transactions (e.g. a debit and credit pair)."),
+        help_text=_(
+            "This is non-unique, so the same reference can be associated with related transactions (e.g. a debit and credit pair)."
+        ),
     )
     amount = models.DecimalField(
         verbose_name=_("Amount"),
@@ -135,7 +142,10 @@ class Transaction(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, SoftDeleteMod
         verbose_name_plural = _("Transactions")
         ordering = ["-created_datetime"]
         indexes: ClassVar = [
-            models.Index(fields=["wallet_type", "wallet_id", "-created_datetime"], name="txn_wallet_cdt_idx"),
+            models.Index(
+                fields=["wallet_type", "wallet_id", "-created_datetime"],
+                name="txn_wallet_cdt_idx",
+            ),
             models.Index(fields=["status"], name="txn_status_idx2"),
         ]
 

@@ -8,9 +8,12 @@ from django.conf import settings
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
+
 def get_redis_client():
     from django_redis import get_redis_connection
+
     return get_redis_connection("default")
+
 
 # -- centralized Key naming schema (to help across the codebase) --
 
@@ -18,14 +21,18 @@ def get_redis_client():
 Since redis is a flat key-value store, we will use : as the naming convention to stimulate namespacing (e.g otp:value:user@email.com) - which also makes it readable.
 """
 
+
 def _otp_key(email):
     return f"otp:value:{email.lower()}"
+
 
 def _otp_email_rate_key(email):
     return f"rate:otp_req:email:{email.lower()}"
 
+
 def _otp_ip_rate_key(ip):
     return f"rate:otp_req:ip:{ip}"
+
 
 def _otp_failed_key(email):
     return f"rate:otp_fail:{email.lower()}"
@@ -87,7 +94,9 @@ class RedisService:
                 try:
                     return value.decode("utf-8")
                 except UnicodeDecodeError:
-                    logger.warning(f"Redis value for key {key} contains non-UTF8 bytes; returning repr safely")
+                    logger.warning(
+                        f"Redis value for key {key} contains non-UTF8 bytes; returning repr safely"
+                    )
                     return value.decode("utf-8", errors="replace")
             if isinstance(value, str):
                 return value
@@ -154,7 +163,9 @@ class RedisService:
                 try:
                     return value.decode("utf-8")
                 except UnicodeDecodeError:
-                    logger.warning(f"OTP value for {email} contains non-UTF8 bytes; returning decode replace")
+                    logger.warning(
+                        f"OTP value for {email} contains non-UTF8 bytes; returning decode replace"
+                    )
                     return value.decode("utf-8", errors="replace")
 
             if isinstance(value, str):
@@ -176,8 +187,7 @@ class RedisService:
             logger.info(f"OTP deleted for {email}")
         except Exception as e:
             logger.error(f"Error deleting OTP for {email}: {e}")
-            
-            
+
     @classmethod
     def store_otp_role(cls, email: str, role: str) -> None:
         """
@@ -185,9 +195,10 @@ class RedisService:
         Uses the same TTL as the OTP so it auto-expires together.
         """
         from django.conf import settings
+
         key = f"otp:role:{email}"
         get_redis_client().setex(key, settings.OTP_TTL_SECONDS, role)
-        
+
     @classmethod
     def get_otp_role(cls, email: str) -> str | None:
         """
@@ -196,15 +207,14 @@ class RedisService:
         key = f"otp:role:{email}"
         value = get_redis_client().get(key)
         return value.decode() if value else None
-    
+
     @classmethod
     def delete_otp_role(cls, email: str) -> None:
         """
         Cleans up the role key after it has been consumed.
         """
         get_redis_client().delete(f"otp:role:{email}")
-        
-        
+
     @staticmethod
     def verify_otp(email: str, otp: str) -> bool:
         """
@@ -242,7 +252,9 @@ class RedisService:
     @staticmethod
     def check_email_rate_limit(email):
         rl = settings.RATE_LIMIT
-        count, ttl = RedisService._atomic_increment(_otp_email_rate_key(email), rl["EMAIL_WINDOW"])
+        count, ttl = RedisService._atomic_increment(
+            _otp_email_rate_key(email), rl["EMAIL_WINDOW"]
+        )
         if count > rl["EMAIL_MAX"]:
             return True, max(ttl, 0)
         return False, 0
@@ -250,7 +262,9 @@ class RedisService:
     @staticmethod
     def check_ip_rate_limit(ip):
         rl = settings.RATE_LIMIT
-        count, ttl = RedisService._atomic_increment(_otp_ip_rate_key(ip), rl["IP_WINDOW"])
+        count, ttl = RedisService._atomic_increment(
+            _otp_ip_rate_key(ip), rl["IP_WINDOW"]
+        )
         if count > rl["IP_MAX"]:
             return True, max(ttl, 0)
         return False, 0
@@ -271,7 +285,9 @@ class RedisService:
     @staticmethod
     def record_failed_attempt(email):
         rl = settings.RATE_LIMIT
-        count, ttl = RedisService._atomic_increment(_otp_failed_key(email), rl["FAILED_WINDOW"])
+        count, ttl = RedisService._atomic_increment(
+            _otp_failed_key(email), rl["FAILED_WINDOW"]
+        )
         return count, max(ttl, 0)
 
     @staticmethod

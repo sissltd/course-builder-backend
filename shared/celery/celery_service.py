@@ -30,7 +30,9 @@ class CeleryService:
         return send_otp_email.delay(email, otp)
 
     @staticmethod
-    def write_audit_log(event: str, email: str, ip: str | None = None, meta: dict | None = None):
+    def write_audit_log(
+        event: str, email: str, ip: str | None = None, meta: dict | None = None
+    ):
         # Sanitize meta through DjangoJSONEncoder so that datetime/UUID/Decimal
         # values from QuerySet.values() don't cause "Object of type datetime is
         # not JSON serializable" when Celery serializes the task arguments.

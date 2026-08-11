@@ -15,7 +15,10 @@ from api.notification.models import Notification
 from api.payments.models.bankaccount_models import BankAccount
 from api.payments.models.ledgeraccount_models import InternalAccount
 from api.payments.models.transaction_model import Transaction, generate_reference
-from api.payments.services.transaction_services import get_paystack_recipient_code, internal_transfer
+from api.payments.services.transaction_services import (
+    get_paystack_recipient_code,
+    internal_transfer,
+)
 from api.platform.services import platform_settings_service
 from api.users.models import User
 from api.users.permissions import (
@@ -29,7 +32,12 @@ from api.wallet.enums import (
     TransactionType,
     WithdrawalRequestStatus,
 )
-from api.wallet.models import PayoutAccount, Wallet, WithdrawalRequest, _generate_reference
+from api.wallet.models import (
+    PayoutAccount,
+    Wallet,
+    WithdrawalRequest,
+    _generate_reference,
+)
 from api.wallet.tasks import dispatch_paystack_transfer_task
 from core.models import TransferOutboxEvent
 from shared.audit.audit_service import AuditService
@@ -139,7 +147,9 @@ def list_all_transactions(*, actor: User) -> QuerySet[Transaction]:
     """
 
     require_role(actor, IsAdminOrSuperAdminRole.allowed_roles)
-    return Transaction.objects.select_related("course")# wallet field is now a GenericForeign key
+    return Transaction.objects.select_related(
+        "course"
+    )  # wallet field is now a GenericForeign key
 
 
 def list_all_withdrawal_requests(*, actor: User) -> QuerySet[WithdrawalRequest]:
@@ -180,7 +190,9 @@ def create_payout_account(
 
     with transaction.atomic():
         if is_default:
-            BankAccount.objects.filter(user=user, is_default=True).update(is_default=False)
+            BankAccount.objects.filter(user=user, is_default=True).update(
+                is_default=False
+            )
         return BankAccount.objects.create(
             user=user,
             account_type=account_type,
@@ -288,12 +300,16 @@ def confirm_withdrawal(*, user: User, withdrawal_request_id, code: str) -> Trans
     if withdrawal_request is None:
         raise exceptions.NotFound("Withdrawal request not found.")
 
-    token_service.verify_token(user=user, purpose=TokenPurpose.WITHDRAWAL_CONFIRMATION, token=code)
+    token_service.verify_token(
+        user=user, purpose=TokenPurpose.WITHDRAWAL_CONFIRMATION, token=code
+    )
 
     try:
         wallet = Wallet.objects.get(pk=withdrawal_request.wallet_id)
         if withdrawal_request.amount > wallet.balance:
-            raise exceptions.ValidationError("Withdrawal amount exceeds available balance.")
+            raise exceptions.ValidationError(
+                "Withdrawal amount exceeds available balance."
+            )
 
         payout_account = withdrawal_request.payout_account
         recipient_code = payout_account.paystack_recipient_code
@@ -303,15 +319,21 @@ def confirm_withdrawal(*, user: User, withdrawal_request_id, code: str) -> Trans
         account_name = payout_account.account_name
         reference = generate_reference()
     except Exception as exc:
-        logger.error(f"Error preparing withdrawal confirmation for user {user.email}: {exc}")
+        logger.error(
+            f"Error preparing withdrawal confirmation for user {user.email}: {exc}"
+        )
         raise
 
     if not recipient_code:
-        recipient_code = get_paystack_recipient_code(account_number, bank_code, account_name)
+        recipient_code = get_paystack_recipient_code(
+            account_number, bank_code, account_name
+        )
     try:
         with transaction.atomic():
             # move the amount from the user's wallet into the suspense(transit) account before initiating the transfer to ensure funds are reserved and to prevent double spending in case of retries
-            credit_wallet = InternalAccount.objects.select_for_update().get(code_name="suspense")
+            credit_wallet = InternalAccount.objects.select_for_update().get(
+                code_name="suspense"
+            )
             debit_wallet = Wallet.objects.select_for_update().get(pk=wallet.pk)
             internal_transfer(
                 amount=withdrawal_request.amount,
@@ -339,7 +361,9 @@ def confirm_withdrawal(*, user: User, withdrawal_request_id, code: str) -> Trans
             )
 
             try:
-                transaction.on_commit(lambda: dispatch_paystack_transfer_task.delay(outbox_entry.id))
+                transaction.on_commit(
+                    lambda: dispatch_paystack_transfer_task.delay(outbox_entry.id)
+                )
                 # type: ignore
             except Exception as task_exc:
                 logger.error(
@@ -347,11 +371,20 @@ def confirm_withdrawal(*, user: User, withdrawal_request_id, code: str) -> Trans
                 )
                 raise
 
-            txn = Transaction.objects.get(reference=reference, type=TransactionType.DEBIT)
+            txn = Transaction.objects.get(
+                reference=reference, type=TransactionType.DEBIT
+            )
             withdrawal_request.status = WithdrawalRequestStatus.CONFIRMED
             withdrawal_request.transaction = txn
             withdrawal_request.confirmed_at = timezone.now()
-            withdrawal_request.save(update_fields=["status", "transaction", "confirmed_at", "updated_datetime"])
+            withdrawal_request.save(
+                update_fields=[
+                    "status",
+                    "transaction",
+                    "confirmed_at",
+                    "updated_datetime",
+                ]
+            )
         try:
             AuditService.log_event(
                 "WITHDRAWAL_INITIATED",
@@ -365,7 +398,9 @@ def confirm_withdrawal(*, user: User, withdrawal_request_id, code: str) -> Trans
             )
         except Exception as audit_exc:
             # Log the audit error but do not interrupt the main flow of withdrawal confirmation
-            logger.error(f"Error logging audit event for withdrawal initiation: {audit_exc}")
+            logger.error(
+                f"Error logging audit event for withdrawal initiation: {audit_exc}"
+            )
 
     except Exception as exc:
         logger.error(f"Error initiating withdrawal for user {user.email}: {exc}")

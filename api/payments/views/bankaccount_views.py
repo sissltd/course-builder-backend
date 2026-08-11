@@ -158,7 +158,7 @@ class BankAccountSetDefaultView(APIView):
             message="Bank account set as default successfully",
             status=status.HTTP_200_OK,
         )
-        
+
 
 @extend_schema(**BANK_ACCOUNT_SUSPEND_DOCS)
 class BankAccountSuspendView(APIView):
@@ -195,11 +195,14 @@ class VerifyBankAccountView(APIView):
 
         if not account_number or not bank_code:
             return custom_error_response(
-                status=status.HTTP_400_BAD_REQUEST, message="Both account number and bank code are required"
+                status=status.HTTP_400_BAD_REQUEST,
+                message="Both account number and bank code are required",
             )
 
         try:
-            verification_result = PaystackService.resolve_bank(account_number=account_number, bank_code=bank_code)
+            verification_result = PaystackService.resolve_bank(
+                account_number=account_number, bank_code=bank_code
+            )
             return custom_success_response(
                 status=status.HTTP_200_OK,
                 message="Bank account verified successfully",

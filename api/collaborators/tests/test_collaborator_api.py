@@ -105,9 +105,7 @@ class CollaboratorApiTests(APITestCase):
         make_collaborator(course=self.course, user=collaborator_user)
         self.client.force_authenticate(collaborator_user)
 
-        response = self.client.get(
-            f"/api/v1/collaborators/?course_id={self.course.id}"
-        )
+        response = self.client.get(f"/api/v1/collaborators/?course_id={self.course.id}")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
     def test_list_requires_course_id(self):
@@ -123,9 +121,7 @@ class CollaboratorApiTests(APITestCase):
         outsider = make_user()
         self.client.force_authenticate(outsider)
 
-        response = self.client.get(
-            f"/api/v1/collaborators/?course_id={self.course.id}"
-        )
+        response = self.client.get(f"/api/v1/collaborators/?course_id={self.course.id}")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data["data"]["results"]), 0)
 
@@ -145,9 +141,7 @@ class CollaboratorApiTests(APITestCase):
         other_collaborator = make_collaborator(course=self.course, user=self.invitee)
         self.client.force_authenticate(collaborator_user)
 
-        response = self.client.delete(
-            f"/api/v1/collaborators/{other_collaborator.id}/"
-        )
+        response = self.client.delete(f"/api/v1/collaborators/{other_collaborator.id}/")
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
         self.assertTrue(
             CourseCollaborator.objects.filter(id=acting_collaborator.id).exists()

@@ -290,18 +290,25 @@ def _verify_totp(*, device: MFADevice, code: str) -> bool:
         return False
 
     current_window = int(time.time() // TOTP_STEP_SECONDS)
-    if device.last_used_window is not None and current_window <= device.last_used_window:
+    if (
+        device.last_used_window is not None
+        and current_window <= device.last_used_window
+    ):
         # Replay: a code from an already-consumed (or earlier) window.
         return False
 
     device.last_used_window = current_window
     device.failed_attempts = 0
-    device.save(update_fields=["last_used_window", "failed_attempts", "updated_datetime"])
+    device.save(
+        update_fields=["last_used_window", "failed_attempts", "updated_datetime"]
+    )
     return True
 
 
 def _try_recovery_code(*, user: User, code: str, request=None) -> bool:
-    for recovery_code in MFARecoveryCode.objects.filter(user=user, used_at__isnull=True):
+    for recovery_code in MFARecoveryCode.objects.filter(
+        user=user, used_at__isnull=True
+    ):
         if decrypt_field(recovery_code.code_encrypted) == code:
             recovery_code.used_at = timezone.now()
             recovery_code.save(update_fields=["used_at", "updated_datetime"])

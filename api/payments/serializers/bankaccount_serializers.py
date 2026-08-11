@@ -23,7 +23,9 @@ class BankAccountCreateSerializer(serializers.ModelSerializer):
 
     def validate_account_number(self, value):
         if not value.isdigit():
-            raise serializers.ValidationError("Account number must contain only digits.")
+            raise serializers.ValidationError(
+                "Account number must contain only digits."
+            )
         return value
 
 

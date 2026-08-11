@@ -10,11 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 def send_email(subject, recipient, template):
-    if (
-        DJANGO_ENV == "development"
-        or DJANGO_ENV == "pre-production"
-    ):
-        
+    if DJANGO_ENV == "development" or DJANGO_ENV == "pre-production":
         print(">>> IGNORING SEND EMAIL")
         return
     try:

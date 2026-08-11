@@ -28,28 +28,28 @@ VALID_PAYLOAD = {
 
 
 def detail_url(account):
-	return f"/api/v1/payout-accounts/{account.id}/"
+    return f"/api/v1/payout-accounts/{account.id}/"
 
 
 def default_url(account):
-	return f"/api/v1/payout-accounts/{account.id}/default/"
+    return f"/api/v1/payout-accounts/{account.id}/default/"
 
 
 def suspend_url(account):
-	return f"/api/v1/payout-accounts/{account.id}/suspend/"
+    return f"/api/v1/payout-accounts/{account.id}/suspend/"
 
 
 def make_bank_account(*, user, account_number="0123456789", **kwargs):
-	defaults = {
-		"user": user,
-		"bank_name": "Access Bank",
-		"account_name": "Test User",
-		"account_number": account_number,
-		"bank_code": "044",
-		"is_default": False,
-	}
-	defaults.update(kwargs)
-	return BankAccount.objects.create(**defaults)
+    defaults = {
+        "user": user,
+        "bank_name": "Access Bank",
+        "account_name": "Test User",
+        "account_number": account_number,
+        "bank_code": "044",
+        "is_default": False,
+    }
+    defaults.update(kwargs)
+    return BankAccount.objects.create(**defaults)
 
 
 class BankAccountReadAccessTests(APITestCase):
@@ -70,7 +70,9 @@ class BankAccountReadAccessTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
     def test_authenticated_user_lists_only_owned_accounts(self):
-        mine = make_bank_account(user=self.creator, paystack_recipient_code="RCP_1234567890")
+        mine = make_bank_account(
+            user=self.creator, paystack_recipient_code="RCP_1234567890"
+        )
         make_bank_account(user=make_user(), paystack_recipient_code="RCP_0987654321")
         self.client.force_authenticate(self.creator)
 
@@ -91,7 +93,9 @@ class BankAccountReadAccessTests(APITestCase):
         self.assertEqual(len(response.data["data"]), 2)
 
     def test_detail_returns_owned_account(self):
-        account = make_bank_account(user=self.creator, paystack_recipient_code="RCP_1234567890")
+        account = make_bank_account(
+            user=self.creator, paystack_recipient_code="RCP_1234567890"
+        )
         self.client.force_authenticate(self.creator)
 
         response = self.client.get(detail_url(account))
@@ -100,7 +104,9 @@ class BankAccountReadAccessTests(APITestCase):
         self.assertEqual(response.data["data"]["id"], str(account.id))
 
     def test_detail_of_other_users_account_returns_404(self):
-        account = make_bank_account(user=make_user(), paystack_recipient_code="RCP_0987654321")
+        account = make_bank_account(
+            user=make_user(), paystack_recipient_code="RCP_0987654321"
+        )
         self.client.force_authenticate(self.creator)
 
         response = self.client.get(detail_url(account))
@@ -132,7 +138,9 @@ class BankAccountCreateTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
     @patch("api.payments.views.bankaccount_views.create_bank_account")
-    def test_create_persists_and_returns_created_bank_account(self, mock_create_bank_account):
+    def test_create_persists_and_returns_created_bank_account(
+        self, mock_create_bank_account
+    ):
         self.client.force_authenticate(self.creator)
         created = make_bank_account(user=self.creator)
         mock_create_bank_account.return_value = created
@@ -198,7 +206,9 @@ class BankAccountMutationTests(APITestCase):
         self.client.force_authenticate(self.creator)
 
     def test_delete_soft_deletes_account(self):
-        account = make_bank_account(user=self.creator, is_default=True, paystack_recipient_code="RCP_1234567890")
+        account = make_bank_account(
+            user=self.creator, is_default=True, paystack_recipient_code="RCP_1234567890"
+        )
 
         response = self.client.delete(detail_url(account))
 
@@ -208,9 +218,13 @@ class BankAccountMutationTests(APITestCase):
         self.assertFalse(account.is_default)
 
     def test_set_default_promotes_target_and_demotes_previous_default(self):
-        first = make_bank_account(user=self.creator, is_default=True, paystack_recipient_code="RCP_1234567890")
+        first = make_bank_account(
+            user=self.creator, is_default=True, paystack_recipient_code="RCP_1234567890"
+        )
         second = make_bank_account(
-            user=self.creator, account_number="1111111111", paystack_recipient_code="RCP_0987654321"
+            user=self.creator,
+            account_number="1111111111",
+            paystack_recipient_code="RCP_0987654321",
         )
 
         response = self.client.post(default_url(second), format="json")
@@ -237,7 +251,9 @@ class BankAccountSuspendAccessTests(APITestCase):
 
     def test_non_admin_role_cannot_suspend(self):
         creator = make_user(role=UserRole.COURSE_CREATOR)
-        account = make_bank_account(user=creator, is_default=True, paystack_recipient_code="RCP_1234567890")
+        account = make_bank_account(
+            user=creator, is_default=True, paystack_recipient_code="RCP_1234567890"
+        )
         self.client.force_authenticate(creator)
 
         response = self.client.post(suspend_url(account), format="json")
@@ -248,7 +264,9 @@ class BankAccountSuspendAccessTests(APITestCase):
         admin_ = make_user(role=UserRole.ADMIN)
         self.client.force_authenticate(admin_)
         acct_owner = make_user(role=UserRole.COURSE_CREATOR)
-        account = make_bank_account(user=acct_owner, is_default=True, paystack_recipient_code="RCP_1234567890")
+        account = make_bank_account(
+            user=acct_owner, is_default=True, paystack_recipient_code="RCP_1234567890"
+        )
 
         response = self.client.post(suspend_url(account), format="json")
 
@@ -305,7 +323,9 @@ class VerifyBankAccountViewTests(APITestCase):
             )
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data["errors"][0]["message"], "Bank account verification failed")
+        self.assertEqual(
+            response.data["errors"][0]["message"], "Bank account verification failed"
+        )
 
 
 class BankListViewTests(APITestCase):

@@ -6,7 +6,10 @@ from rest_framework.test import APITestCase
 
 from api.authentication.tests.factories import make_user
 from api.notification.models import Notification, NotificationPreference
-from api.notification.services import notification_preference_service, sla_threshold_service
+from api.notification.services import (
+    notification_preference_service,
+    sla_threshold_service,
+)
 from api.platform.services import platform_settings_service
 from api.users.models import UserActivityLog
 

@@ -61,9 +61,7 @@ class ApproveRequestTests(TestCase):
         )
         admin = make_user(role=UserRole.ADMIN)
 
-        result = topic_reservation_service.approve_request(
-            request=request, actor=admin
-        )
+        result = topic_reservation_service.approve_request(request=request, actor=admin)
 
         self.assertEqual(result.status, ReservationStatus.APPROVED)
         self.assertIsNotNone(result.topic_id)
@@ -129,14 +127,10 @@ class RejectRequestTests(TestCase):
 
 class ReleaseReservationTests(TestCase):
     def test_clears_active_reservation(self):
-        topic = make_topic(
-            reserved_by=make_user(), reserved_until=timezone.localdate()
-        )
+        topic = make_topic(reserved_by=make_user(), reserved_until=timezone.localdate())
         admin = make_user(role=UserRole.ADMIN)
 
-        result = topic_reservation_service.release_reservation(
-            topic=topic, actor=admin
-        )
+        result = topic_reservation_service.release_reservation(topic=topic, actor=admin)
 
         self.assertIsNone(result.reserved_by_id)
         self.assertIsNone(result.reserved_until)
@@ -145,8 +139,6 @@ class ReleaseReservationTests(TestCase):
         topic = make_topic()
         admin = make_user(role=UserRole.ADMIN)
 
-        result = topic_reservation_service.release_reservation(
-            topic=topic, actor=admin
-        )
+        result = topic_reservation_service.release_reservation(topic=topic, actor=admin)
 
         self.assertFalse(result.is_currently_reserved)

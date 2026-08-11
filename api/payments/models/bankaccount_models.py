@@ -1,17 +1,18 @@
-
 from django.contrib.auth import get_user_model
 from django.db import models, transaction
 from django.utils.translation import gettext_lazy as _
 
-from core.mixins import DateHistoryModelMixin, SoftDeleteModelMixin, UUIDPrimaryKeyModelMixin
+from core.mixins import (
+    DateHistoryModelMixin,
+    SoftDeleteModelMixin,
+    UUIDPrimaryKeyModelMixin,
+)
 
 User = get_user_model()
 
 
 class BankAccount(
-    UUIDPrimaryKeyModelMixin,
-    DateHistoryModelMixin,
-    SoftDeleteModelMixin
+    UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, SoftDeleteModelMixin
 ):
     """A model representing a bank account for a user. Extracted from the wallet module for ease of extension and reusability"""
 
@@ -21,7 +22,9 @@ class BankAccount(
         LOCAL = "Local Account", "Local Account"
         MOBILE_MONEY = "Mobile Money", "Mobile Money"
 
-    user = models.ForeignKey(User, related_name="bank_accounts", on_delete=models.PROTECT)
+    user = models.ForeignKey(
+        User, related_name="bank_accounts", on_delete=models.PROTECT
+    )
     bank_name = models.CharField(max_length=255)
     account_name = models.CharField(max_length=255)
     account_number = models.CharField(max_length=255)
@@ -50,4 +53,6 @@ class BankAccount(
             super().save(*args, **kwargs)
             # A user can only have  one default account at a time
             if self.is_default:
-                BankAccount.objects.select_for_update().filter(user=self.user).exclude(id=self.id).update(is_default=False)
+                BankAccount.objects.select_for_update().filter(user=self.user).exclude(
+                    id=self.id
+                ).update(is_default=False)

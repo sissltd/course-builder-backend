@@ -59,7 +59,6 @@ class PaystackService:
 
     @staticmethod
     def verify_webhook_signature(request_body, signature_header):
-
         secret_key = config("PAYSTACK_SECRET_KEY", default="")
         if not secret_key:
             logger.error("PAYSTACK_SECRET_KEY missing for webhook verification")
@@ -68,13 +67,20 @@ class PaystackService:
         if isinstance(request_body, str):
             request_body = request_body.encode("utf-8")
 
-        hash_object = hmac.new(secret_key.encode("utf-8"), msg=request_body, digestmod=hashlib.sha512) # type: ignore
+        hash_object = hmac.new(
+            secret_key.encode("utf-8"), msg=request_body, digestmod=hashlib.sha512
+        )  # type: ignore
         expected_signature = hash_object.hexdigest()
 
         return hmac.compare_digest(expected_signature, signature_header)
 
     @staticmethod
-    def initialize_payment(email: str, amount: Decimal, callback_url: str|None=None, metadata: dict|None=None) -> tuple[bool, dict]:
+    def initialize_payment(
+        email: str,
+        amount: Decimal,
+        callback_url: str | None = None,
+        metadata: dict | None = None,
+    ) -> tuple[bool, dict]:
         """
         Initialize payment using Paystack API
 
@@ -91,7 +97,9 @@ class PaystackService:
         url = f"{PaystackService.BASE_URL}/transaction/initialize"
         payload = {
             "email": email,
-            "amount": str(int(amount * PAYSTACK_MULTIPLIER)),  # Convert amount to Kobo (1 Naira = 100 Kobo)
+            "amount": str(
+                int(amount * PAYSTACK_MULTIPLIER)
+            ),  # Convert amount to Kobo (1 Naira = 100 Kobo)
             "callback_url": callback_url,
             "metadata": metadata,
             "channels": ["card", "bank_transfer"],
@@ -110,15 +118,14 @@ class PaystackService:
                 return True, {"message": response_data.get("data")}
 
             logger.error(f"Paystack initialize failed: {response_data.get('message')}")
-            return False, {"message": {'message': response_data.get("message")}}
+            return False, {"message": {"message": response_data.get("message")}}
 
         except requests.exceptions.RequestException as e:
             logger.error(f"Error initializing Paystack payment: {e}")
-            return False, {"message": {'message': str(e)}}
+            return False, {"message": {"message": str(e)}}
 
     @staticmethod
     def verify_payment(reference):
-
         url = f"{PaystackService.BASE_URL}/transaction/verify/{reference}"
 
         try:
@@ -132,8 +139,12 @@ class PaystackService:
             if response.status_code == 200 and response_data.get("status"):
                 return True, response_data.get("data")
 
-            logger.error(f"Paystack verification failed: {response_data.get('message')}")
-            return False, {"message": f"Paystack verification failed: {response_data.get('message')}"}
+            logger.error(
+                f"Paystack verification failed: {response_data.get('message')}"
+            )
+            return False, {
+                "message": f"Paystack verification failed: {response_data.get('message')}"
+            }
 
         except requests.exceptions.RequestException as e:
             logger.error(f"Error verifying Paystack payment: {e}")
@@ -169,7 +180,9 @@ class PaystackService:
         return bank_name
 
     @staticmethod
-    def create_transfer_recipient(account_number: str, bank_code: str, name: str) -> tuple[bool, dict]:
+    def create_transfer_recipient(
+        account_number: str, bank_code: str, name: str
+    ) -> tuple[bool, dict]:
         """
         Create a Paystack transfer recipient (NUBAN).
 
@@ -199,15 +212,25 @@ class PaystackService:
             response_data = response.json()
             if response.status_code in (200, 201) and response_data.get("status"):
                 return True, response_data.get("data", {})
-            logger.error(f"Paystack create_transfer_recipient failed: {response_data.get('message')}")
-            return False, {"message": f"Paystack create_transfer_recipient failed: {response_data.get('message')}"}
+            logger.error(
+                f"Paystack create_transfer_recipient failed: {response_data.get('message')}"
+            )
+            return False, {
+                "message": f"Paystack create_transfer_recipient failed: {response_data.get('message')}"
+            }
         except requests.exceptions.RequestException as e:
             logger.error(f"Error creating Paystack transfer recipient: {e}")
-            return False, {"message": f"Error creating Paystack transfer recipient: {e}"}
+            return False, {
+                "message": f"Error creating Paystack transfer recipient: {e}"
+            }
 
     @staticmethod
     def initiate_transfer(
-        amount_naira: "Decimal", recipient_code: str, reference: str, reason: str, metadata: dict | None = None
+        amount_naira: "Decimal",
+        recipient_code: str,
+        reference: str,
+        reason: str,
+        metadata: dict | None = None,
     ) -> tuple[bool, dict]:
         """
         Initiate a bank transfer from the Paystack balance.
@@ -226,7 +249,9 @@ class PaystackService:
             amount_kobo = int(Decimal(str(amount_naira)) * PAYSTACK_MULTIPLIER)
         except (ValueError, TypeError):
             logger.error(f"Invalid amount for Paystack transfer: {amount_naira}")
-            return False, {"message": f"Invalid amount for Paystack transfer: {amount_naira}"}
+            return False, {
+                "message": f"Invalid amount for Paystack transfer: {amount_naira}"
+            }
         if metadata is None:
             metadata = {}
         metadata["reason"] = reason
@@ -248,8 +273,12 @@ class PaystackService:
             if response.status_code in (200, 201) and response_data.get("status"):
                 return True, response_data.get("data", {})
 
-            logger.error(f"Paystack initiate transfer failed: {response_data.get('message')}")
-            return False, {"message": f"Paystack initiate transfer failed: {response_data.get('message')}"}
+            logger.error(
+                f"Paystack initiate transfer failed: {response_data.get('message')}"
+            )
+            return False, {
+                "message": f"Paystack initiate transfer failed: {response_data.get('message')}"
+            }
         except requests.exceptions.RequestException as e:
             logger.error(f"Error initiating Paystack transfer: {e}")
             return False, {"message": f"Error initiating Paystack transfer: {e}"}

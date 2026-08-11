@@ -244,7 +244,9 @@ class CanAccessModuleTests(TestCase):
         collaborator.assigned_modules.set([module])
 
         self.assertTrue(
-            collaborator_service.can_access_module(user=collaborator_user, module=module)
+            collaborator_service.can_access_module(
+                user=collaborator_user, module=module
+            )
         )
 
     def test_false_for_unassigned_module(self):
@@ -256,7 +258,9 @@ class CanAccessModuleTests(TestCase):
         )
 
         self.assertFalse(
-            collaborator_service.can_access_module(user=collaborator_user, module=module)
+            collaborator_service.can_access_module(
+                user=collaborator_user, module=module
+            )
         )
 
 

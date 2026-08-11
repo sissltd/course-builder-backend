@@ -14,9 +14,9 @@ def _get_fernet():
     if not _raw_key:
         raise RuntimeError(
             "FIELD_ENCRYPTION_KEY is not set. "
-            "Generate one with: python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\""
+            'Generate one with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"'
         )
-    return Fernet(_raw_key.encode() if isinstance(_raw_key, str) else _raw_key) # type: ignore
+    return Fernet(_raw_key.encode() if isinstance(_raw_key, str) else _raw_key)  # type: ignore
 
 
 def encrypt_field(value: str) -> str:

@@ -39,9 +39,7 @@ class User(
         max_length=25,
         choices=AccountStatus.choices,
         default=AccountStatus.PENDING_VERIFICATION,
-        help_text=_(
-            "Account activation/lifecycle status, independent of role."
-        ),
+        help_text=_("Account activation/lifecycle status, independent of role."),
     )
     failed_login_attempts = models.PositiveIntegerField(
         verbose_name=_("Failed Login Attempts"),
@@ -156,9 +154,7 @@ class User(
 
             from api.platform.services import platform_settings_service
 
-            grace_days = (
-                platform_settings_service.get_settings().mfa_enrollment_grace_period_days
-            )
+            grace_days = platform_settings_service.get_settings().mfa_enrollment_grace_period_days
             self.mfa_grace_period_ends_at = timezone.now() + timedelta(days=grace_days)
 
             # A caller may have restricted this save to specific columns via

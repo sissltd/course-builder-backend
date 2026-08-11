@@ -39,7 +39,9 @@ class Topic(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMix
         max_digits=10,
         decimal_places=2,
         validators=[MinValueValidator(Decimal(0))],
-        help_text=_("Fixed price paid to a creator for an approved course in this topic."),
+        help_text=_(
+            "Fixed price paid to a creator for an approved course in this topic."
+        ),
     )
     status = models.CharField(
         verbose_name=_("Status"),

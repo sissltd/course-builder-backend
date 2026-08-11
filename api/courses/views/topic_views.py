@@ -21,7 +21,10 @@ WRITE_ACTIONS = {"create", "update", "partial_update", "destroy"}
 
 _TOPIC_EXAMPLE = {
     "id": "e5f6a7b8-c9d0-4e1f-2a3b-4c5d6e7f8a9b",
-    "category": {"id": "7d2f4b18-3c9a-4e51-b8f0-1a6c5d3e9b74", "name": "Software Engineering"},
+    "category": {
+        "id": "7d2f4b18-3c9a-4e51-b8f0-1a6c5d3e9b74",
+        "name": "Software Engineering",
+    },
     "name": "Django REST Framework",
     "creator_price": "180.00",
     "status": "ACTIVE",

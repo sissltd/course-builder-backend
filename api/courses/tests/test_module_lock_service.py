@@ -42,7 +42,9 @@ class AcquireLockTests(TestCase):
         module_lock_service.acquire_lock(module=module, user=user, ttl_minutes=1)
         first_expiry = module.lock_expires_at
 
-        result = module_lock_service.acquire_lock(module=module, user=user, ttl_minutes=10)
+        result = module_lock_service.acquire_lock(
+            module=module, user=user, ttl_minutes=10
+        )
 
         self.assertGreater(result.lock_expires_at, first_expiry)
 

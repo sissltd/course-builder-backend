@@ -107,7 +107,9 @@ STANDARD_ERROR_RESPONSES = {
                             _error(
                                 type_="validation_error",
                                 code="password_too_short",
-                                message=("This password is too short. It must contain at least 8 characters."),
+                                message=(
+                                    "This password is too short. It must contain at least 8 characters."
+                                ),
                                 field_name="password",
                             )
                         ]
@@ -131,7 +133,9 @@ STANDARD_ERROR_RESPONSES = {
                             _error(
                                 type_="client_error",
                                 code="not_authenticated",
-                                message=("Authentication credentials were not provided."),
+                                message=(
+                                    "Authentication credentials were not provided."
+                                ),
                             )
                         ]
                     },
@@ -154,7 +158,9 @@ STANDARD_ERROR_RESPONSES = {
     "permission": {
         403: OpenApiResponse(
             response=ErrorEnvelopeSerializer,
-            description=("The caller is authenticated but their role does not permit this operation."),
+            description=(
+                "The caller is authenticated but their role does not permit this operation."
+            ),
             examples=[
                 OpenApiExample(
                     name="Wrong role",
@@ -163,7 +169,9 @@ STANDARD_ERROR_RESPONSES = {
                             _error(
                                 type_="client_error",
                                 code="permission_denied",
-                                message=("You do not have permission to perform this action."),
+                                message=(
+                                    "You do not have permission to perform this action."
+                                ),
                             )
                         ]
                     },

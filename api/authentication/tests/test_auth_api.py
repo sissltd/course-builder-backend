@@ -36,7 +36,6 @@ class SignupApiTests(APITestCase):
                 {
                     "email": "creator@example.com",
                     "password": "StrongPass123!",
-                    "password_confirm": "StrongPass123!",
                     "first_name": "Ada",
                     "last_name": "Lovelace",
                     "country": "NG",
@@ -61,7 +60,6 @@ class SignupApiTests(APITestCase):
             {
                 "email": "dupe@example.com",
                 "password": "StrongPass123!",
-                "password_confirm": "StrongPass123!",
                 "first_name": "A",
                 "last_name": "B",
                 "country": "NG",
@@ -83,7 +81,6 @@ class SignupApiTests(APITestCase):
             {
                 "email": "defaultrole@example.com",
                 "password": "StrongPass123!",
-                "password_confirm": "StrongPass123!",
                 "first_name": "A",
                 "last_name": "B",
                 "country": "NG",
@@ -92,27 +89,6 @@ class SignupApiTests(APITestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(response.data["role"], "COURSE_CREATOR")
-
-    def test_mismatched_password_confirm_rejected(self):
-        response = self.client.post(
-            "/api/v1/auth/signup/",
-            {
-                "email": "mismatch@example.com",
-                "password": "StrongPass123!",
-                "password_confirm": "DifferentPass456!",
-                "first_name": "A",
-                "last_name": "B",
-                "country": "NG",
-            },
-            format="json",
-        )
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertTrue(
-            any(
-                error["field_name"] == "password_confirm"
-                for error in response.data["errors"]
-            )
-        )
 
     def test_missing_country_rejected(self):
         response = self.client.post(
@@ -137,7 +113,6 @@ class SignupApiTests(APITestCase):
                 {
                     "email": "noterms@example.com",
                     "password": "StrongPass123!",
-                    "password_confirm": "StrongPass123!",
                     "first_name": "A",
                     "last_name": "B",
                     "country": "NG",
@@ -159,7 +134,6 @@ class ReviewerSignupApiTests(APITestCase):
                 {
                     "email": "reviewer@example.com",
                     "password": "StrongPass123!",
-                    "password_confirm": "StrongPass123!",
                     "first_name": "Rita",
                     "last_name": "Reviewer",
                     "country": "NG",
@@ -460,10 +434,7 @@ class AccountLockoutApiTests(APITestCase):
             ).exists()
         )
         self.assertTrue(
-            any(
-                m.subject == "Your account was temporarily locked"
-                for m in mail.outbox
-            )
+            any(m.subject == "Your account was temporarily locked" for m in mail.outbox)
         )
 
     def test_first_lockout_does_not_alert_admins(self):
@@ -535,7 +506,6 @@ class ThrottleApiTests(APITestCase):
                 {
                     "email": f"throttle-signup-{i}@example.com",
                     "password": "StrongPass123!",
-                    "password_confirm": "StrongPass123!",
                     "first_name": "A",
                     "last_name": "B",
                     "country": "NG",
@@ -549,7 +519,6 @@ class ThrottleApiTests(APITestCase):
             {
                 "email": "throttle-signup-extra@example.com",
                 "password": "StrongPass123!",
-                "password_confirm": "StrongPass123!",
                 "first_name": "A",
                 "last_name": "B",
                 "country": "NG",
@@ -696,9 +665,7 @@ class LogoutAllApiTests(APITestCase):
             refresh_response = self.client.post(
                 "/api/v1/auth/token/refresh/", {"refresh": str(refresh)}, format="json"
             )
-            self.assertEqual(
-                refresh_response.status_code, status.HTTP_401_UNAUTHORIZED
-            )
+            self.assertEqual(refresh_response.status_code, status.HTTP_401_UNAUTHORIZED)
 
     def test_logs_sessions_revoked_activity(self):
         user = make_user()

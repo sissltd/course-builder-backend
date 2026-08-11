@@ -96,7 +96,9 @@ _MANAGE_ACCESS_403 = OpenApiResponse(
             200: OpenApiResponse(
                 response=CollaboratorSerializer(many=True),
                 description="Collaborators on the course.",
-                examples=[OpenApiExample(name="Success", value=[_COLLABORATOR_EXAMPLE])],
+                examples=[
+                    OpenApiExample(name="Success", value=[_COLLABORATOR_EXAMPLE])
+                ],
             ),
             400: OpenApiResponse(
                 description="`course_id` was not supplied.",
