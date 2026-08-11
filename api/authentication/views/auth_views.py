@@ -122,7 +122,6 @@ class SignupView(APIView):
                 value={
                     "email": "jane.doe@example.com",
                     "password": "Rw4$eTn8Kp2q",
-                    "password_confirm": "Rw4$eTn8Kp2q",
                     "first_name": "Jane",
                     "last_name": "Doe",
                     "country": "NG",
@@ -137,7 +136,7 @@ class SignupView(APIView):
                 examples=[OpenApiExample(name="Success", value=_ME_EXAMPLE)],
             ),
             400: OpenApiResponse(
-                description="The email is taken, passwords don't match, or the password is too weak.",
+                description="The email is taken or the password is too weak.",
                 examples=[
                     OpenApiExample(
                         name="Email already taken",
@@ -148,19 +147,6 @@ class SignupView(APIView):
                                     "code": "invalid",
                                     "message": "A user with this email already exists.",
                                     "field_name": "email",
-                                }
-                            ]
-                        },
-                    ),
-                    OpenApiExample(
-                        name="Passwords don't match",
-                        value={
-                            "errors": [
-                                {
-                                    "type": "validation_error",
-                                    "code": "invalid",
-                                    "message": "Passwords do not match.",
-                                    "field_name": "password_confirm",
                                 }
                             ]
                         },
@@ -211,7 +197,6 @@ class ReviewerSignupView(SignupView):
                 value={
                     "email": "jane.doe@example.com",
                     "password": "Rw4$eTn8Kp2q",
-                    "password_confirm": "Rw4$eTn8Kp2q",
                     "first_name": "Jane",
                     "last_name": "Doe",
                     "country": "NG",
@@ -397,8 +382,7 @@ class ResendVerificationView(APIView):
                                     "type": "validation_error",
                                     "code": "invalid",
                                     "message": (
-                                        "Please wait before requesting "
-                                        "another link."
+                                        "Please wait before requesting " "another link."
                                     ),
                                     "field_name": None,
                                 }
@@ -444,7 +428,7 @@ class LoginView(APIView):
             "verified, and not suspended, deactivated, or locked out.\n\n"
             "**Important:** An unknown email, a wrong password, a locked "
             "account, and a suspended/deactivated account all return the "
-            "identical generic `\"Invalid email or password.\"` "
+            'identical generic `"Invalid email or password."` '
             "non-field error whenever the submitted password is wrong - "
             "this is a deliberate anti-enumeration choice, do not rely on "
             "distinct error text to tell those cases apart. Only once the "
@@ -599,7 +583,9 @@ class LogoutView(APIView):
             200: OpenApiResponse(
                 response=_DETAIL_SCHEMA,
                 description="Logged out.",
-                examples=[OpenApiExample(name="Success", value={"detail": "Logged out."})],
+                examples=[
+                    OpenApiExample(name="Success", value={"detail": "Logged out."})
+                ],
             ),
             400: OpenApiResponse(
                 description="The refresh token is invalid or already blacklisted.",
@@ -1096,7 +1082,9 @@ class ChangeEmailRequestView(APIView):
     def post(self, request):
         serializer = ChangeEmailRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        auth_service.request_email_change(user=request.user, **serializer.validated_data)
+        auth_service.request_email_change(
+            user=request.user, **serializer.validated_data
+        )
         return Response(
             {"detail": "A confirmation link has been sent to your new email address."},
             status=200,

@@ -62,7 +62,9 @@ class ModuleLessonAssessmentApiTests(APITestCase):
         # ADMIN collaborator (SCCS PRD Section 14).
         collaborator_user = make_user()
         make_collaborator(
-            course=self.course, user=collaborator_user, role=CollaboratorRole.COLLABORATOR
+            course=self.course,
+            user=collaborator_user,
+            role=CollaboratorRole.COLLABORATOR,
         )
         self.client.force_authenticate(collaborator_user)
 
@@ -276,7 +278,8 @@ class ModuleLessonAssessmentApiTests(APITestCase):
         self.assertEqual(questions[0]["points"], 10)
         self.assertEqual(questions[1]["type"], "ESSAY")
         self.assertEqual(
-            questions[1]["explanation"], "Model answer: lists are mutable, tuples are not."
+            questions[1]["explanation"],
+            "Model answer: lists are mutable, tuples are not.",
         )
 
         summary = response.data["summary"]

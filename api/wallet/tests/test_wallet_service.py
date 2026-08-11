@@ -276,13 +276,13 @@ class ConfirmWithdrawalTests(TestCase):
             payout_account_id=self.payout_account.id,
         )
         self.code = re.search(r"\b(\d{6})\b", mail.outbox[-1].body).group(1)
-        
+
         self.paystack_recipient_patcher = patch(
-                    "shared.services.paystack_service.PaystackService.create_transfer_recipient",
-                    return_value=(True, {"recipient_code": "RCP_TEST_123"}),
-                )
+            "shared.services.paystack_service.PaystackService.create_transfer_recipient",
+            return_value=(True, {"recipient_code": "RCP_TEST_123"}),
+        )
         self.paystack_recipient_patcher.start()
-        
+
     def tearDown(self):
         self.paystack_recipient_patcher.stop()
 

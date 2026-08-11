@@ -62,9 +62,11 @@ def can_access_module(*, user: User, module: Module) -> bool:
     ADMIN-role collaborator (full-course access), or a plain COLLABORATOR
     explicitly assigned this module."""
 
-    return get_modules_accessible_to(user=user, course_id=module.course_id).filter(
-        pk=module.pk
-    ).exists()
+    return (
+        get_modules_accessible_to(user=user, course_id=module.course_id)
+        .filter(pk=module.pk)
+        .exists()
+    )
 
 
 def invite_collaborator(

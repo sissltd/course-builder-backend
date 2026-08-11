@@ -10,7 +10,11 @@ class UploadPresignApiTests(APITestCase):
     def test_requires_authentication(self):
         response = self.client.post(
             "/api/v1/uploads/presign/",
-            {"filename": "avatar.jpg", "content_type": "image/jpeg", "folder": "profiles"},
+            {
+                "filename": "avatar.jpg",
+                "content_type": "image/jpeg",
+                "folder": "profiles",
+            },
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
@@ -25,7 +29,11 @@ class UploadPresignApiTests(APITestCase):
 
         response = self.client.post(
             "/api/v1/uploads/presign/",
-            {"filename": "avatar.jpg", "content_type": "image/jpeg", "folder": "profiles"},
+            {
+                "filename": "avatar.jpg",
+                "content_type": "image/jpeg",
+                "folder": "profiles",
+            },
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)

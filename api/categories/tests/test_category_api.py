@@ -29,6 +29,7 @@ def _force_authenticate_mfa_verified(client, user):
     token["mfa_verified"] = True
     client.force_authenticate(user, token=token)
 
+
 VALID_PAYLOAD = {
     "name": "New Cat",
     "creator_price": "100.00",
@@ -109,7 +110,9 @@ class CategoryWriteAccessTests(APITestCase):
         self.assertTrue(Category.objects.filter(name="New Cat").exists())
 
     def test_super_admin_can_create(self):
-        _force_authenticate_mfa_verified(self.client, make_user(role=UserRole.SUPER_ADMIN))
+        _force_authenticate_mfa_verified(
+            self.client, make_user(role=UserRole.SUPER_ADMIN)
+        )
 
         response = self.client.post(LIST_URL, VALID_PAYLOAD)
 

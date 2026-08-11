@@ -186,7 +186,9 @@ class AuthenticationService(TsesAuthenticationInterface):
             summary="Password changed.",
         )
 
-    def request_email_change(self, *, user: User, new_email: str, password: str) -> None:
+    def request_email_change(
+        self, *, user: User, new_email: str, password: str
+    ) -> None:
         """Start a two-step email change: verify identity, then email a
         confirmation link to the NEW address. User.email is not changed yet -
         only confirm_email_change() applies it, once the new inbox proves

@@ -27,6 +27,8 @@ class WalletAdmin(admin.ModelAdmin):
 
     def has_add_permission(self, request):
         return False
+
+
 @admin.register(WithdrawalRequest)
 class WithdrawalRequestAdmin(admin.ModelAdmin):
     """Withdrawal requests, read-only.

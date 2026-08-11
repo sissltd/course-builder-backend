@@ -4,7 +4,11 @@ from django.utils import timezone
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
-from api.authentication.services import activity_service, authentication_service, mfa_service
+from api.authentication.services import (
+    activity_service,
+    authentication_service,
+    mfa_service,
+)
 from api.notification.models import Notification
 from api.users.enums import UserActivityActionEnums, AccountStatus
 from api.users.models import User, UserActivityLog
@@ -42,9 +46,7 @@ class LoginSerializer(TokenObtainPairSerializer):
         # Wrong email and wrong password are reported identically (a
         # non-field error) so neither response tells an attacker which part
         # was wrong - the classic enumeration vector this replaces.
-        invalid_credentials = serializers.ValidationError(
-            "Invalid email or password."
-        )
+        invalid_credentials = serializers.ValidationError("Invalid email or password.")
         if user is None:
             raise invalid_credentials
 
@@ -59,7 +61,9 @@ class LoginSerializer(TokenObtainPairSerializer):
             user.locked_until = None
             user.save(update_fields=["failed_login_attempts", "locked_until"])
 
-        currently_locked = bool(user.locked_until and user.locked_until > timezone.now())
+        currently_locked = bool(
+            user.locked_until and user.locked_until > timezone.now()
+        )
 
         # The password check happens before any account-status check, and
         # every status (suspended/deactivated, locked out, unknown email) is

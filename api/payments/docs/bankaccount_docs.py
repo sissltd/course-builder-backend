@@ -7,8 +7,8 @@ from api.payments.serializers.bankaccount_serializers import (
     BankAccountVerifySerializer,
 )
 from shared.spectacular.responses import (
-	STANDARD_ERROR_RESPONSES,
-	inline_success_response,
+    STANDARD_ERROR_RESPONSES,
+    inline_success_response,
 )
 
 _BANK_ACCOUNT_LIST_EXAMPLE = {
@@ -46,19 +46,19 @@ BANK_ACCOUNT_LIST_DOCS = {
     ),
     "tags": ["Course Creator — Bank Accounts"],
     "responses": {
-		200: inline_success_response(
-			description="Bank accounts retrieved successfully.",
-			examples=[
-				OpenApiExample(
-					name="Success",
-					value={
-						"success": True,
-						"status": 200,
-						"message": "Retrieved successfully",
-						"data": [_BANK_ACCOUNT_LIST_EXAMPLE],
-					},
-				),
-			],
+        200: inline_success_response(
+            description="Bank accounts retrieved successfully.",
+            examples=[
+                OpenApiExample(
+                    name="Success",
+                    value={
+                        "success": True,
+                        "status": 200,
+                        "message": "Retrieved successfully",
+                        "data": [_BANK_ACCOUNT_LIST_EXAMPLE],
+                    },
+                ),
+            ],
         ),
         **STANDARD_ERROR_RESPONSES["auth"],
         **STANDARD_ERROR_RESPONSES["server"],

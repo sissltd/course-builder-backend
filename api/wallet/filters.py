@@ -45,4 +45,3 @@ class AdminWithdrawalRequestFilter(django_filters.FilterSet):
             "status": ["exact"],
             "user": ["exact"],
         }
-

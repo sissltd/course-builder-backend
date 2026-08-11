@@ -70,9 +70,10 @@ class UserHistoryModelMixin(models.Model):
         null=True,
         help_text=_("User who updated the object"),
     )
-    
+
     class Meta:
-            abstract = True
+        abstract = True
+
 
 class SoftDeleteModelMixin(models.Model):
     deleted_datetime = models.DateTimeField(

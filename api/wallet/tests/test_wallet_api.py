@@ -55,7 +55,6 @@ class WalletApiTests(APITestCase):
         self.assertEqual(len(response.data["data"]["results"]), 1)
 
 
-
 class WithdrawalApiTests(APITestCase):
     def setUp(self):
         self.creator = make_user(role=UserRole.COURSE_CREATOR)
@@ -70,7 +69,9 @@ class WithdrawalApiTests(APITestCase):
             "api.wallet.serializers.decrypt_field",
             side_effect=lambda value: value,
         )
-        self.transfer_task_patcher = patch("api.wallet.services.wallet_service.dispatch_paystack_transfer_task.delay")
+        self.transfer_task_patcher = patch(
+            "api.wallet.services.wallet_service.dispatch_paystack_transfer_task.delay"
+        )
 
         self.paystack_recipient_patcher.start()
         self.decrypt_patcher.start()

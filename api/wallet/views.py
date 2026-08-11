@@ -1,9 +1,14 @@
-
 from django_filters.rest_framework import DjangoFilterBackend
 from drf_spectacular.utils import OpenApiExample, OpenApiResponse, extend_schema
 from rest_framework import filters as drf_filters
 from rest_framework import status
-from rest_framework.generics import CreateAPIView, DestroyAPIView, ListAPIView, ListCreateAPIView, RetrieveAPIView
+from rest_framework.generics import (
+    CreateAPIView,
+    DestroyAPIView,
+    ListAPIView,
+    ListCreateAPIView,
+    RetrieveAPIView,
+)
 from rest_framework.views import APIView
 
 from api.payments.models.transaction_model import Transaction
@@ -121,7 +126,6 @@ class WithdrawalConfirmView(APIView):
                 message=str(e),
                 status=status.HTTP_400_BAD_REQUEST,
             )
-
 
 
 @extend_schema(

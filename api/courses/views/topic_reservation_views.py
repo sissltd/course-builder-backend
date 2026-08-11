@@ -15,7 +15,11 @@ from api.courses.serializers import (
     TopicReservationRequestSerializer,
 )
 from api.courses.services import topic_reservation_service
-from api.users.permissions import IsAdminRole, IsCourseCreatorRole, IsCreatorReviewerRole
+from api.users.permissions import (
+    IsAdminRole,
+    IsCourseCreatorRole,
+    IsCreatorReviewerRole,
+)
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 
 MANAGE_ACTIONS = {"approve", "reject"}

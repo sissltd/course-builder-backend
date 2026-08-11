@@ -58,17 +58,17 @@ class QuizQuestionSerializer(serializers.Serializer):
                 0 <= correct_index < len(options)
             ):
                 raise serializers.ValidationError(
-                    {
-                        "correct_index": "Must be a valid index into 'options'."
-                    }
+                    {"correct_index": "Must be a valid index into 'options'."}
                 )
         else:  # ESSAY
-            if attrs.get("options") is not None or attrs.get("correct_index") is not None:
+            if (
+                attrs.get("options") is not None
+                or attrs.get("correct_index") is not None
+            ):
                 raise serializers.ValidationError(
                     {
                         "options": (
-                            "Essay questions don't take options or a "
-                            "correct_index."
+                            "Essay questions don't take options or a " "correct_index."
                         )
                     }
                 )
@@ -114,7 +114,9 @@ class AssessmentSerializer(serializers.ModelSerializer):
                 == QuestionType.MULTIPLE_CHOICE
             ),
             "essay_count": sum(
-                1 for question in questions if question.get("type") == QuestionType.ESSAY
+                1
+                for question in questions
+                if question.get("type") == QuestionType.ESSAY
             ),
         }
 

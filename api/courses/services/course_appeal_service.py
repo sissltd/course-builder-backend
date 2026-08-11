@@ -8,7 +8,11 @@ from api.courses.models import Course, CourseAppeal
 from api.notification.models import Notification
 from api.users.enums import UserActivityActionEnums, UserActivityCategoryEnums
 from api.users.models import User
-from api.users.permissions import IsAdminOrSuperAdminRole, IsCourseCreatorRole, require_role
+from api.users.permissions import (
+    IsAdminOrSuperAdminRole,
+    IsCourseCreatorRole,
+    require_role,
+)
 
 
 def submit_appeal(
@@ -69,7 +73,9 @@ def submit_appeal(
     return appeal
 
 
-def approve_appeal(*, appeal: CourseAppeal, actor: User, notes: str = "") -> CourseAppeal:
+def approve_appeal(
+    *, appeal: CourseAppeal, actor: User, notes: str = ""
+) -> CourseAppeal:
     """Approve a Pending appeal: reopen the course for review (status ->
     SUBMITTED) and notify the creator. Decision is final per the PRD - once
     decided, this appeal can't be re-decided."""
@@ -117,7 +123,9 @@ def approve_appeal(*, appeal: CourseAppeal, actor: User, notes: str = "") -> Cou
     return appeal
 
 
-def reject_appeal(*, appeal: CourseAppeal, actor: User, notes: str = "") -> CourseAppeal:
+def reject_appeal(
+    *, appeal: CourseAppeal, actor: User, notes: str = ""
+) -> CourseAppeal:
     """Reject a Pending appeal. Decision is final per the PRD - the course
     is left untouched (still Draft)."""
 

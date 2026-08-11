@@ -117,7 +117,9 @@ class EmailService:
         Sends a vendor invitation email.
         """
         try:
-            first_name = vendor_name.split()[0] if vendor_name else vendor_email.split("@")[0]
+            first_name = (
+                vendor_name.split()[0] if vendor_name else vendor_email.split("@")[0]
+            )
             signup_url = f"{FRONTEND_URL}/vendor/register"
 
             context = {
@@ -129,23 +131,33 @@ class EmailService:
                 "support_email": SUPPORT_EMAIL,
             }
 
-            html_content = render_to_string("emails/vendor_invitation_email.html", context)
+            html_content = render_to_string(
+                "emails/vendor_invitation_email.html", context
+            )
             subject = f"You're Invited to Join {COMPANY_NAME} as a Vendor"
 
             response = EmailService._send_email(subject, vendor_email, html_content)
             return bool(response)
 
         except Exception as e:
-            logger.error(f"Error sending vendor invitation email to {vendor_email}: {e}")
+            logger.error(
+                f"Error sending vendor invitation email to {vendor_email}: {e}"
+            )
             return False
 
     @staticmethod
-    def send_occupant_invitation_email(occupant_email, occupant_name="", home_unit_name="", estate_name=""):
+    def send_occupant_invitation_email(
+        occupant_email, occupant_name="", home_unit_name="", estate_name=""
+    ):
         """
         Sends a B2B occupant (tenant) invitation email — "join your home".
         """
         try:
-            first_name = occupant_name.split()[0] if occupant_name else occupant_email.split("@")[0]
+            first_name = (
+                occupant_name.split()[0]
+                if occupant_name
+                else occupant_email.split("@")[0]
+            )
             signup_url = f"{FRONTEND_URL}/occupant/register"
 
             context = {
@@ -159,14 +171,18 @@ class EmailService:
                 "support_email": SUPPORT_EMAIL,
             }
 
-            html_content = render_to_string("emails/occupant_invitation_email.html", context)
+            html_content = render_to_string(
+                "emails/occupant_invitation_email.html", context
+            )
             subject = f"You've been invited to join your home on {COMPANY_NAME}"
 
             response = EmailService._send_email(subject, occupant_email, html_content)
             return bool(response)
 
         except Exception as e:
-            logger.error(f"Error sending occupant invitation email to {occupant_email}: {e}")
+            logger.error(
+                f"Error sending occupant invitation email to {occupant_email}: {e}"
+            )
             return False
 
     @staticmethod
@@ -175,7 +191,11 @@ class EmailService:
         Sends a courier-organization invitation email.
         """
         try:
-            first_name = organization_name.split()[0] if organization_name else org_email.split("@")[0]
+            first_name = (
+                organization_name.split()[0]
+                if organization_name
+                else org_email.split("@")[0]
+            )
             signup_url = f"{FRONTEND_URL}/courier-organization/register"
 
             context = {
@@ -187,14 +207,18 @@ class EmailService:
                 "support_email": SUPPORT_EMAIL,
             }
 
-            html_content = render_to_string("emails/courier_org_invitation_email.html", context)
+            html_content = render_to_string(
+                "emails/courier_org_invitation_email.html", context
+            )
             subject = f"You're Invited to Join {COMPANY_NAME} as a Courier Organisation"
 
             response = EmailService._send_email(subject, org_email, html_content)
             return bool(response)
 
         except Exception as e:
-            logger.error(f"Error sending courier org invitation email to {org_email}: {e}")
+            logger.error(
+                f"Error sending courier org invitation email to {org_email}: {e}"
+            )
             return False
 
     @staticmethod
@@ -204,7 +228,9 @@ class EmailService:
         Mirrors send_staff_invitation_email().
         """
         try:
-            first_name = admin_name.split()[0] if admin_name else admin_email.split("@")[0]
+            first_name = (
+                admin_name.split()[0] if admin_name else admin_email.split("@")[0]
+            )
             context = {
                 "FirstName": first_name,
                 "admin_name": admin_name,
@@ -215,18 +241,24 @@ class EmailService:
                 "support_email": SUPPORT_EMAIL,
             }
 
-            html_content = render_to_string("emails/superadmin_invitation_email.html", context)
+            html_content = render_to_string(
+                "emails/superadmin_invitation_email.html", context
+            )
             subject = f"You've Been Invited as a SuperAdmin on {COMPANY_NAME}"
 
             response = EmailService._send_email(subject, admin_email, html_content)
             return bool(response)
 
         except Exception as e:
-            logger.error(f"Error sending SuperAdmin invitation email to {admin_email}: {e}")
+            logger.error(
+                f"Error sending SuperAdmin invitation email to {admin_email}: {e}"
+            )
             return False
 
     @staticmethod
-    def send_payment_confirmation_email(user_email, user_name, amount, transaction_id, booking_id, currency="NGN"):
+    def send_payment_confirmation_email(
+        user_email, user_name, amount, transaction_id, booking_id, currency="NGN"
+    ):
         """Send payment confirmation email"""
         try:
             first_name = user_name.split()[0] if user_name else "User"
@@ -242,7 +274,9 @@ class EmailService:
                 "support_email": SUPPORT_EMAIL,
             }
 
-            html_content = render_to_string("emails/payment_confirmation_email.html", context)
+            html_content = render_to_string(
+                "emails/payment_confirmation_email.html", context
+            )
             subject = "Payment Confirmation"
 
             response = EmailService._send_email(subject, user_email, html_content)
@@ -265,7 +299,9 @@ class EmailService:
                 "support_email": SUPPORT_EMAIL,
             }
 
-            html_content = render_to_string("emails/password_changed_email.html", context)
+            html_content = render_to_string(
+                "emails/password_changed_email.html", context
+            )
             subject = "Your Password Has Been Changed"
 
             response = EmailService._send_email(subject, user_email, html_content)
@@ -291,7 +327,9 @@ class EmailService:
                 "support_email": SUPPORT_EMAIL,
             }
 
-            html_content = render_to_string("emails/account_deactivated_email.html", context)
+            html_content = render_to_string(
+                "emails/account_deactivated_email.html", context
+            )
             subject = f"Account {status.title()} - Feexeet"
 
             response = EmailService._send_email(subject, user_email, html_content)
@@ -302,7 +340,9 @@ class EmailService:
             return False
 
     @staticmethod
-    def send_support_request_update_email(user_email, user_name, ticket_id, status, admin_message=None):
+    def send_support_request_update_email(
+        user_email, user_name, ticket_id, status, admin_message=None
+    ):
         """Send support request update email"""
         try:
             first_name = user_name.split()[0] if user_name else "User"
@@ -318,7 +358,9 @@ class EmailService:
                 "support_email": SUPPORT_EMAIL,
             }
 
-            html_content = render_to_string("emails/support_request_update_email.html", context)
+            html_content = render_to_string(
+                "emails/support_request_update_email.html", context
+            )
             subject = f"Support Request Update - Ticket #{ticket_id}"
 
             response = EmailService._send_email(subject, user_email, html_content)
@@ -342,7 +384,9 @@ class EmailService:
                 "support_email": SUPPORT_EMAIL,
             }
 
-            html_content = render_to_string("emails/host_account_created_email.html", context)
+            html_content = render_to_string(
+                "emails/host_account_created_email.html", context
+            )
             subject = "Host Account Created Successfully"
 
             response = EmailService._send_email(subject, user_email, html_content)
@@ -368,7 +412,9 @@ class EmailService:
                 "login_url": "https://feexeet.com/auth/login",
             }
 
-            html_content = render_to_string("emails/admin_account_created_email.html", context)
+            html_content = render_to_string(
+                "emails/admin_account_created_email.html", context
+            )
             subject = "Admin Account Created - Feexeet"
 
             response = EmailService._send_email(subject, user_email, html_content)
@@ -404,7 +450,9 @@ class EmailService:
             return False
 
     @staticmethod
-    def send_staff_invitation_email(user_email, user_name, host_name, accept_url, designation=""):
+    def send_staff_invitation_email(
+        user_email, user_name, host_name, accept_url, designation=""
+    ):
         try:
             first_name = user_name.split()[0] if user_name else "User"
             context = {
@@ -420,7 +468,9 @@ class EmailService:
                 "support_email": SUPPORT_EMAIL,
             }
 
-            html_content = render_to_string("emails/staff_invitation_email.html", context)
+            html_content = render_to_string(
+                "emails/staff_invitation_email.html", context
+            )
             subject = f"You're Invited to Join {COMPANY_NAME}"
 
             response = EmailService._send_email(subject, user_email, html_content)
@@ -456,7 +506,14 @@ class EmailService:
 
     @staticmethod
     def send_booking_status_email(
-        user_email, user_name, booking, subject, message, extra_message=None, guest_name=None, host_name=None
+        user_email,
+        user_name,
+        booking,
+        subject,
+        message,
+        extra_message=None,
+        guest_name=None,
+        host_name=None,
     ):
         try:
             first_name = user_name.split()[0] if user_name else "User"
@@ -477,7 +534,9 @@ class EmailService:
                 "support_email": SUPPORT_EMAIL,
             }
 
-            html_content = render_to_string("emails/booking_status_change_email.html", context)
+            html_content = render_to_string(
+                "emails/booking_status_change_email.html", context
+            )
             response = EmailService._send_email(subject, user_email, html_content)
             return bool(response)
 

@@ -89,8 +89,8 @@ _APPEAL_EXAMPLE = {
         summary="File an appeal against a course rejection",
         description=(
             "Submits a Pending appeal disputing a course's rejection (PRD "
-            "Section 12: \"Creator disputes rejection... Creator submits "
-            "written dispute through platform...\"), and notifies Admins/"
+            'Section 12: "Creator disputes rejection... Creator submits '
+            'written dispute through platform..."), and notifies Admins/'
             "Super Admins in-app. This is the Figma 'Request for an appeal' "
             "form.\n\n"
             "Called from the Support page's 'Request for an appeal' "

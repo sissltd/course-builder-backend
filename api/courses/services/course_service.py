@@ -143,7 +143,9 @@ def create_draft_course(
             )
             topic.reserved_by = creator
             topic.reserved_until = timezone.localdate() + timedelta(days=expiry_days)
-            topic.save(update_fields=["reserved_by", "reserved_until", "updated_datetime"])
+            topic.save(
+                update_fields=["reserved_by", "reserved_until", "updated_datetime"]
+            )
 
     return course
 
@@ -350,8 +352,8 @@ def recalculate_duration_estimate(*, course: Course) -> Course:
     """Recompute and persist Course.duration_estimate_minutes from its
     current Lesson tree. Call after any Lesson create/update/delete."""
 
-    course.duration_estimate_minutes = course_validation_service.get_course_duration_minutes(
-        course
+    course.duration_estimate_minutes = (
+        course_validation_service.get_course_duration_minutes(course)
     )
     course.save(update_fields=["duration_estimate_minutes", "updated_datetime"])
     return course

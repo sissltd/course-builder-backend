@@ -49,7 +49,9 @@ class Wallet(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, models.Model):
         help_text=_("ISO 4217 currency code."),
     )
     transactions = GenericRelation(
-        "payments.Transaction", content_type_field="wallet_type", object_id_field="wallet_id"
+        "payments.Transaction",
+        content_type_field="wallet_type",
+        object_id_field="wallet_id",
     )
 
     class Meta:

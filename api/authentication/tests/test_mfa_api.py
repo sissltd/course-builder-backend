@@ -272,7 +272,9 @@ class LoginMFAFlowApiTests(APITestCase):
         self.assertEqual(verify_response.status_code, status.HTTP_200_OK)
         access = AccessToken(verify_response.data["access"])
         self.assertTrue(access.get("mfa_verified"))
-        self.assertEqual(access.get("sid"), RefreshToken(verify_response.data["refresh"])["sid"])
+        self.assertEqual(
+            access.get("sid"), RefreshToken(verify_response.data["refresh"])["sid"]
+        )
 
     def test_verify_with_wrong_code_generic_error(self):
         user = make_user(role=UserRole.ADMIN)
@@ -316,7 +318,9 @@ class MFAEnrollmentApiTests(APITestCase):
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data["recovery_codes"]), mfa_service.RECOVERY_CODE_COUNT)
+        self.assertEqual(
+            len(response.data["recovery_codes"]), mfa_service.RECOVERY_CODE_COUNT
+        )
 
 
 class MFAAdminResetApiTests(APITestCase):
@@ -346,7 +350,9 @@ class IsMFAVerifiedForSessionApiTests(APITestCase):
         token["mfa_verified"] = mfa_verified
         return token
 
-    def test_admin_without_mfa_verified_claim_blocked_from_platform_settings_patch(self):
+    def test_admin_without_mfa_verified_claim_blocked_from_platform_settings_patch(
+        self,
+    ):
         admin = make_user(role=UserRole.ADMIN)
         self.client.force_authenticate(admin, token=self._token(admin, False))
 

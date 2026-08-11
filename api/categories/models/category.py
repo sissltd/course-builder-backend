@@ -37,7 +37,9 @@ class Category(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModel
         max_digits=10,
         decimal_places=2,
         validators=[MinValueValidator(Decimal(0))],
-        help_text=_("Fixed price paid to a creator for an approved course in this category."),
+        help_text=_(
+            "Fixed price paid to a creator for an approved course in this category."
+        ),
     )
     track_preference = models.CharField(
         verbose_name=_("Track Preference"),

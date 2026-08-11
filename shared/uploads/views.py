@@ -7,7 +7,11 @@ from shared.serializers.storage_serializer import (
     UploadRequestSerializer,
     UploadResponseSerializer,
 )
-from shared.services.storage_service import InvalidFileType, StorageError, StorageService
+from shared.services.storage_service import (
+    InvalidFileType,
+    StorageError,
+    StorageService,
+)
 
 
 class UploadPresignView(APIView):

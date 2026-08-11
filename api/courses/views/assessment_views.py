@@ -22,7 +22,10 @@ _MULTIPLE_CHOICE_QUESTION = {
     "points": 10,
     "options": [
         {"text": "2var", "explanation": "Identifiers can't start with a digit."},
-        {"text": "var_2", "explanation": "Correct - letters, digits, underscores are fine."},
+        {
+            "text": "var_2",
+            "explanation": "Correct - letters, digits, underscores are fine.",
+        },
         {"text": "var-2", "explanation": "Hyphens aren't allowed in identifiers."},
     ],
     "correct_index": 1,
@@ -186,7 +189,9 @@ class LessonAssessmentView(APIView):
         ],
         request=AssessmentWriteSerializer,
         examples=[
-            OpenApiExample(name="Sample Request", request_only=True, value=_QUESTIONS_SAMPLE)
+            OpenApiExample(
+                name="Sample Request", request_only=True, value=_QUESTIONS_SAMPLE
+            )
         ],
         responses={
             200: OpenApiResponse(
@@ -306,7 +311,9 @@ class ModuleAssessmentView(APIView):
         ],
         request=AssessmentWriteSerializer,
         examples=[
-            OpenApiExample(name="Sample Request", request_only=True, value=_QUESTIONS_SAMPLE)
+            OpenApiExample(
+                name="Sample Request", request_only=True, value=_QUESTIONS_SAMPLE
+            )
         ],
         responses={
             200: OpenApiResponse(
@@ -422,7 +429,9 @@ class CourseAssessmentView(APIView):
         parameters=[OpenApiParameter("course_pk", str, OpenApiParameter.PATH)],
         request=AssessmentWriteSerializer,
         examples=[
-            OpenApiExample(name="Sample Request", request_only=True, value=_QUESTIONS_SAMPLE)
+            OpenApiExample(
+                name="Sample Request", request_only=True, value=_QUESTIONS_SAMPLE
+            )
         ],
         responses={
             200: OpenApiResponse(

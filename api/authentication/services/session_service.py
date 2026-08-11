@@ -1,5 +1,8 @@
 from django.utils import timezone
-from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
+from rest_framework_simplejwt.token_blacklist.models import (
+    BlacklistedToken,
+    OutstandingToken,
+)
 
 from api.authentication.models import UserSession
 from api.users.models import User

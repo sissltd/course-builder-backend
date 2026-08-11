@@ -43,4 +43,3 @@ class TransactionSerializer(serializers.ModelSerializer):
         return CourseMiniSerializer(
             {"id": obj.course_id, "title": obj.course.title}
         ).data
-

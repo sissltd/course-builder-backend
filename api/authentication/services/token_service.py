@@ -83,6 +83,10 @@ def verify_token(*, user: User, purpose: str, token: str) -> EmailVerificationTo
             "Invalid or expired verification code. Please request a new one."
         )
 
+    # Increment attempts for abuse protection
+    record.attempts += 1
+    record.save(update_fields=["attempts", "updated_datetime"])
+
     if record.attempts >= settings.EMAIL_TOKEN_MAX_ATTEMPTS:
         raise exceptions.ValidationError(
             "Too many attempts. Please request a new code."
@@ -115,6 +119,10 @@ def verify_token_without_user(*, purpose: str, token: str) -> EmailVerificationT
         raise exceptions.NotFound(
             "Invalid or expired verification link. Please request a new one."
         )
+
+    # Increment attempts for abuse protection
+    record.attempts += 1
+    record.save(update_fields=["attempts", "updated_datetime"])
 
     if record.attempts >= settings.EMAIL_TOKEN_MAX_ATTEMPTS:
         raise exceptions.ValidationError(

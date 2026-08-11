@@ -20,7 +20,13 @@ class AuditService:
         return "test" in sys.argv or "PYTEST_CURRENT_TEST" in os.environ
 
     @staticmethod
-    def log_event(event: str, email: str, ip: str | None = None, user_agent: str = "", metadata: dict | None = None):
+    def log_event(
+        event: str,
+        email: str,
+        ip: str | None = None,
+        user_agent: str = "",
+        metadata: dict | None = None,
+    ):
         """Create an audit log entry.
 
         Args:
@@ -35,13 +41,20 @@ class AuditService:
             return
 
         try:
-            CeleryService.write_audit_log(event=event, email=email, ip=ip, meta=metadata or {})
+            CeleryService.write_audit_log(
+                event=event, email=email, ip=ip, meta=metadata or {}
+            )
         except Exception:
             # Audit logging is best-effort and should never block user flows.
             return
 
     @staticmethod
-    def log_otp_requested(email: str, ip: str | None = None, user_agent: str = "", metadata: dict | None = None):
+    def log_otp_requested(
+        email: str,
+        ip: str | None = None,
+        user_agent: str = "",
+        metadata: dict | None = None,
+    ):
         return AuditService.log_event(
             event="OTP_REQUESTED",
             email=email,
@@ -51,7 +64,12 @@ class AuditService:
         )
 
     @staticmethod
-    def log_otp_verified(email: str, ip: str | None = None, user_agent: str = "", metadata: dict | None = None):
+    def log_otp_verified(
+        email: str,
+        ip: str | None = None,
+        user_agent: str = "",
+        metadata: dict | None = None,
+    ):
         return AuditService.log_event(
             event="OTP_VERIFIED",
             email=email,
@@ -61,7 +79,12 @@ class AuditService:
         )
 
     @staticmethod
-    def log_otp_failed(email: str, ip: str | None = None, user_agent: str = "", metadata: dict | None = None):
+    def log_otp_failed(
+        email: str,
+        ip: str | None = None,
+        user_agent: str = "",
+        metadata: dict | None = None,
+    ):
         return AuditService.log_event(
             event="OTP_FAILED",
             email=email,
@@ -71,7 +94,12 @@ class AuditService:
         )
 
     @staticmethod
-    def log_otp_locked(email: str, ip: str | None = None, user_agent: str = "", metadata: dict | None = None):
+    def log_otp_locked(
+        email: str,
+        ip: str | None = None,
+        user_agent: str = "",
+        metadata: dict | None = None,
+    ):
         return AuditService.log_event(
             event="OTP_LOCKED",
             email=email,
@@ -80,9 +108,10 @@ class AuditService:
             metadata=metadata,
         )
 
-
     @staticmethod
-    def log_job_offer_accepted(email: str, ip: str | None = None, metadata: dict | None = None):
+    def log_job_offer_accepted(
+        email: str, ip: str | None = None, metadata: dict | None = None
+    ):
         return AuditService.log_event(
             event="JOB_OFFER_ACCEPTED",
             email=email,
@@ -91,7 +120,9 @@ class AuditService:
         )
 
     @staticmethod
-    def log_job_offer_rejected(email: str, ip: str | None = None, metadata: dict | None = None):
+    def log_job_offer_rejected(
+        email: str, ip: str | None = None, metadata: dict | None = None
+    ):
         return AuditService.log_event(
             event="JOB_OFFER_REJECTED",
             email=email,

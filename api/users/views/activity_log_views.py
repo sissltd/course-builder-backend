@@ -106,6 +106,8 @@ class AdminUserActivityLogListView(ListAPIView):
         if getattr(self, "swagger_fake_view", False):
             return UserActivityLog.objects.none()
         return UserActivityLog.objects.select_related("user", "actor_user")
+
+
 def _activity_log_csv_rows(entries):
     """Yield CSV lines for `entries`, header first - one csv.writer row per
     line via an in-memory buffer, the standard Django streaming-CSV idiom."""
@@ -121,7 +123,13 @@ def _activity_log_csv_rows(entries):
     for entry in entries:
         actor = entry.actor_user.email if entry.actor_user_id else ""
         writer.writerow(
-            [entry.category, entry.action, entry.summary, actor, entry.activity_datetime]
+            [
+                entry.category,
+                entry.action,
+                entry.summary,
+                actor,
+                entry.activity_datetime,
+            ]
         )
         yield buffer.getvalue()
         buffer.seek(0)

@@ -49,7 +49,10 @@ SUBMIT_PERMISSION = (IsCourseCreatorRole | IsAdminRole) & IsCourseOwner
 _COURSE_LIST_EXAMPLE = {
     "id": "3f9a2e11-6b7c-4d2a-9e5f-1c8d4a7b2f30",
     "title": "Intro to Python",
-    "category": {"id": "7d2f4b18-3c9a-4e51-b8f0-1a6c5d3e9b74", "name": "Software Engineering"},
+    "category": {
+        "id": "7d2f4b18-3c9a-4e51-b8f0-1a6c5d3e9b74",
+        "name": "Software Engineering",
+    },
     "topic": None,
     "status": "DRAFT",
     "creator_price_snapshot": None,
@@ -79,7 +82,10 @@ _COURSE_DETAIL_EXAMPLE = {
 _REVIEW_ACTION_EXAMPLE = {
     "id": "9a1c3e5f-2b4d-4a6e-8f0c-3d5e7a9b1c2d",
     "course": "3f9a2e11-6b7c-4d2a-9e5f-1c8d4a7b2f30",
-    "reviewer": {"id": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d", "email": "reviewer@example.com"},
+    "reviewer": {
+        "id": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+        "email": "reviewer@example.com",
+    },
     "action": "APPROVE",
     "feedback": {},
     "created_datetime": "2026-07-15T14:02:33.001Z",
@@ -437,9 +443,7 @@ class CourseViewSet(ModelViewSet):
                 ],
             ),
             400: OpenApiResponse(
-                description=(
-                    "The course isn't Draft, or fails structural validation."
-                ),
+                description=("The course isn't Draft, or fails structural validation."),
                 examples=[
                     OpenApiExample(
                         name="Not a draft",
