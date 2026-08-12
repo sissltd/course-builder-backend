@@ -73,7 +73,7 @@ class PlatformSettingsView(APIView):
             "Values can change at any time without a deploy; do not cache them "
             "across sessions."
         ),
-        tags=["Admin — Platform Settings"],
+        tags=["Creator — Platform Settings"],
         responses={
             200: OpenApiResponse(
                 response=PlatformSettingsSerializer,

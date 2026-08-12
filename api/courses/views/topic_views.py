@@ -62,7 +62,7 @@ _AUTH_LINE = (
             "reads as `false` even if `reserved_by`/`reserved_until` are "
             "still set. Results are paginated."
         ),
-        tags=["Courses — Topics"],
+        tags=["Creator — Topics"],
         responses={
             200: OpenApiResponse(
                 response=TopicSerializer(many=True),
@@ -82,7 +82,7 @@ _AUTH_LINE = (
             "**Prerequisites:** None beyond being signed in.\n\n"
             "**Important:** None."
         ),
-        tags=["Courses — Topics"],
+        tags=["Creator — Topics"],
         responses={
             200: OpenApiResponse(
                 response=TopicSerializer,
@@ -109,7 +109,7 @@ _AUTH_LINE = (
             "retroactive, mirroring Category - it only affects courses "
             "submitted afterwards."
         ),
-        tags=["Courses — Topics"],
+        tags=["Admin — Topics"],
         request=TopicWriteSerializer,
         examples=[
             OpenApiExample(
@@ -146,7 +146,7 @@ _AUTH_LINE = (
             "**Prerequisites:** The topic must exist.\n\n"
             "**Important:** None."
         ),
-        tags=["Courses — Topics"],
+        tags=["Admin — Topics"],
         request=TopicWriteSerializer,
         responses={
             200: OpenApiResponse(
@@ -174,7 +174,7 @@ _AUTH_LINE = (
             "submissions but leaves courses already using the topic "
             "untouched."
         ),
-        tags=["Courses — Topics"],
+        tags=["Admin — Topics"],
         request=TopicWriteSerializer,
         examples=[
             OpenApiExample(
@@ -209,7 +209,7 @@ _AUTH_LINE = (
             "**Important:** To retire a topic without deleting it, PATCH "
             "`status` to `INACTIVE` instead."
         ),
-        tags=["Courses — Topics"],
+        tags=["Admin — Topics"],
         responses={
             204: OpenApiResponse(description="Topic deleted."),
             **STANDARD_ERROR_RESPONSES["auth"],
@@ -257,7 +257,7 @@ class TopicViewSet(ModelViewSet):
             "**Important:** Idempotent - releasing a topic that isn't "
             "currently reserved is a harmless no-op, not an error."
         ),
-        tags=["Courses — Topics"],
+        tags=["Admin — Topics"],
         request=None,
         responses={
             200: OpenApiResponse(

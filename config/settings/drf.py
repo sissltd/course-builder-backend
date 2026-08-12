@@ -26,10 +26,7 @@ REST_FRAMEWORK = {
         "login": "5/min",
         "forgot_password": "3/hour",
         "reset_password": "5/hour",
-        # Tighter than the rest: this endpoint is guarded by a shared secret
-        # rather than a credential, so an unthrottled version is an offline-
-        # speed guessing oracle against SUPERADMIN_BOOTSTRAP_TOKEN. A genuine
-        # operator bootstraps once, so 5/hour costs them nothing.
+        # Tighter than the rest because this is a public account-creation route.
         "superadmin_bootstrap": "5/hour",
         "resend_verification": "3/hour",
     },
@@ -41,6 +38,299 @@ SPECTACULAR_SETTINGS = {
     "SERVE_INCLUDE_SCHEMA": False,
     "COMPONENT_SPLIT_REQUEST": True,
     "SCHEMA_PATH_PREFIX": "/api/v[0-9]",
+    # Tag list controls both the order Swagger UI shows groups in and the
+    # description shown under each. Every tag follows the
+    # "Audience - Resource" convention (see swagger_standard.md), and every
+    # endpoint carries exactly one.
+    "TAGS": [
+        {
+            "name": "Public — Bank Accounts",
+            "description": (
+                "Bank lookup endpoints (no authentication required): the "
+                "supported-banks list and one-off account-number verification."
+            ),
+        },
+        {
+            "name": "Auth — Signup & Verification",
+            "description": (
+                "Account creation (Course Creator and Reviewer signup), email "
+                "verification, and verification-email resend."
+            ),
+        },
+        {
+            "name": "Auth — Session",
+            "description": (
+                "Login, logout (one device or all), token refresh, and active-"
+                "session listing/revocation."
+            ),
+        },
+        {
+            "name": "Auth — Password",
+            "description": (
+                "Forgot-password, password reset, and authenticated password change."
+            ),
+        },
+        {
+            "name": "Auth — Email Change",
+            "description": (
+                "Requesting and confirming a change of the account email address."
+            ),
+        },
+        {
+            "name": "Auth — MFA",
+            "description": (
+                "Multi-factor authentication enrollment, verification, recovery "
+                "codes, and disable, for the caller's own account."
+            ),
+        },
+        {
+            "name": "Auth — Super Admin Bootstrap",
+            "description": (
+                "One-time claim of the platform's single Super Admin seat using "
+                "the deployment environment."
+            ),
+        },
+        {
+            "name": "Auth — Staff Invitation",
+            "description": (
+                "Accepting a staff invitation to set a password and activate "
+                "the invited staff account."
+            ),
+        },
+        {
+            "name": "Creator — Profile",
+            "description": (
+                "The signed-in user's own profile: retrieve and update "
+                "(excluding email)."
+            ),
+        },
+        {
+            "name": "Creator — Onboarding",
+            "description": (
+                "The multi-step onboarding profile for Course Creators, "
+                "resumable via partial updates."
+            ),
+        },
+        {
+            "name": "Creator — Courses",
+            "description": (
+                "Course authoring: create, edit, delete, and submit Draft "
+                "courses, and read courses the caller owns or collaborates on."
+            ),
+        },
+        {
+            "name": "Creator — Modules",
+            "description": "Authoring modules within a Draft course.",
+        },
+        {
+            "name": "Creator — Lessons",
+            "description": "Authoring lessons (scripts, media) within modules.",
+        },
+        {
+            "name": "Creator — Assessments",
+            "description": (
+                "Setting and editing the quiz attached to a lesson, module, or "
+                "course (final assessment)."
+            ),
+        },
+        {
+            "name": "Creator — Topics",
+            "description": (
+                "Browsing the topic taxonomy to narrow a course during creation."
+            ),
+        },
+        {
+            "name": "Creator — Topic Reservations",
+            "description": (
+                "Requesting a brand-new topic: file, view, and manage the "
+                "caller's own reservation requests."
+            ),
+        },
+        {
+            "name": "Creator — Categories",
+            "description": (
+                "Browsing the category taxonomy (with prices and status) to "
+                "pick where a new course belongs."
+            ),
+        },
+        {
+            "name": "Creator — Collaborators",
+            "description": (
+                "Course collaborators: invite, list, change role, and remove "
+                "people with access to a course."
+            ),
+        },
+        {
+            "name": "Creator — Platform Settings",
+            "description": (
+                "Reading the live platform-wide thresholds (module counts, word "
+                "limits, withdrawal minimum) the builder UI displays."
+            ),
+        },
+        {
+            "name": "Creator — KYC",
+            "description": (
+                "Submitting and reading the caller's own identity-verification "
+                "documents."
+            ),
+        },
+        {
+            "name": "Creator — Notifications",
+            "description": "The signed-in user's in-app notification preferences.",
+        },
+        {
+            "name": "Creator — Activity Log",
+            "description": (
+                "The signed-in user's own activity history, including CSV export."
+            ),
+        },
+        {
+            "name": "Creator — Wallet",
+            "description": (
+                "The creator wallet: balance, payout accounts, and the two-step "
+                "withdrawal flow (request + OTP confirm)."
+            ),
+        },
+        {
+            "name": "Creator — Transactions",
+            "description": "The creator's own wallet transaction history.",
+        },
+        {
+            "name": "Creator — Bank Accounts",
+            "description": (
+                "The creator's saved bank accounts for wallet payouts: list, "
+                "add, retrieve, delete, and set default."
+            ),
+        },
+        {
+            "name": "Creator — Uploads",
+            "description": (
+                "Requesting a presigned URL to upload files directly to storage."
+            ),
+        },
+        {
+            "name": "Creator — Appeals",
+            "description": (
+                "Filing and tracking the caller's own appeals against a course "
+                "rejection."
+            ),
+        },
+        {
+            "name": "Reviewer — Review Queue",
+            "description": (
+                "The course review queue: browse, claim, approve, and reject "
+                "submitted courses."
+            ),
+        },
+        {
+            "name": "Reviewer — Availability",
+            "description": (
+                "The reviewer's availability settings that gate whether they "
+                "can claim new courses."
+            ),
+        },
+        {
+            "name": "Reviewer — Queue Preferences",
+            "description": (
+                "The reviewer's default queue sort order and track filter."
+            ),
+        },
+        {
+            "name": "Reviewer — Topic Reservations",
+            "description": (
+                "Deciding creators' brand-new-topic requests: approve (creates "
+                "the topic and reserves it) or reject."
+            ),
+        },
+        {
+            "name": "Admin — Overview",
+            "description": (
+                "Aggregate platform counts and wallet totals for the admin dashboard."
+            ),
+        },
+        {
+            "name": "Admin — Users",
+            "description": "Listing, filtering, and managing user accounts.",
+        },
+        {
+            "name": "Admin — Staff",
+            "description": (
+                "Managing staff: invite, list, revoke, and reactivate staff accounts."
+            ),
+        },
+        {
+            "name": "Admin — Categories",
+            "description": (
+                "Managing the category taxonomy: create, reprice, activate, "
+                "and delete categories."
+            ),
+        },
+        {
+            "name": "Admin — Topics",
+            "description": (
+                "Managing the topic taxonomy (including pricing) and manually "
+                "releasing topic reservations."
+            ),
+        },
+        {
+            "name": "Admin — Wallets",
+            "description": (
+                "Platform-wide finance: every creator wallet, the transaction "
+                "ledger, and all withdrawal requests."
+            ),
+        },
+        {
+            "name": "Admin — KYC Review",
+            "description": (
+                "The KYC review queue: list, retrieve, approve, and reject "
+                "identity-verification submissions."
+            ),
+        },
+        {
+            "name": "Admin — Activity Log",
+            "description": (
+                "The platform-wide audit trail of user activity across every account."
+            ),
+        },
+        {
+            "name": "Admin — Platform Settings",
+            "description": (
+                "Updating the platform-wide thresholds that govern course "
+                "validation and withdrawals."
+            ),
+        },
+        {
+            "name": "Admin — Courses",
+            "description": (
+                "Admin-only course actions such as publishing an approved course."
+            ),
+        },
+        {
+            "name": "Admin — Appeals",
+            "description": (
+                "Deciding creators' course-rejection appeals (approve reopens "
+                "the course for review; reject is final)."
+            ),
+        },
+        {
+            "name": "Admin — Bank Accounts",
+            "description": "Suspending a creator's bank account.",
+        },
+        {
+            "name": "Admin — MFA",
+            "description": (
+                "Super-Admin lost-device recovery: resetting another user's "
+                "MFA enrollment."
+            ),
+        },
+        {
+            "name": "Admin — Audit",
+            "description": (
+                "The platform-wide audit log (OTP events, administrative "
+                "actions), filterable by email, event, and date range."
+            ),
+        },
+    ],
     "COMPONENTS": {
         "securitySchemes": {
             "bearerAuth": {

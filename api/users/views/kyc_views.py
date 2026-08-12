@@ -46,7 +46,7 @@ class KYCVerificationView(APIView):
             "**Auth:** Any authenticated user.\n\n"
             "**Prerequisites:** None."
         ),
-        tags=["Users — KYC"],
+        tags=["Creator — KYC"],
         responses={
             200: OpenApiResponse(response=KYCVerificationSerializer),
             **STANDARD_ERROR_RESPONSES["auth"],
@@ -67,7 +67,7 @@ class KYCVerificationView(APIView):
             "**Auth:** Any authenticated user.\n\n"
             "**Prerequisites:** None - not role-gated."
         ),
-        tags=["Users — KYC"],
+        tags=["Creator — KYC"],
         request=KYCVerificationSubmitSerializer,
         responses={
             201: OpenApiResponse(response=KYCVerificationSerializer),
@@ -104,7 +104,7 @@ class KYCVerificationView(APIView):
             "**Auth:** Admin or Super Admin.\n\n"
             "**Prerequisites:** None."
         ),
-        tags=["Users — KYC Review"],
+        tags=["Admin — KYC Review"],
         responses={
             200: OpenApiResponse(response=KYCVerificationAdminSerializer(many=True)),
             **STANDARD_ERROR_RESPONSES["auth"],
@@ -120,7 +120,7 @@ class KYCVerificationView(APIView):
             "**Auth:** Admin or Super Admin.\n\n"
             "**Prerequisites:** The submission must exist."
         ),
-        tags=["Users — KYC Review"],
+        tags=["Admin — KYC Review"],
         responses={
             200: OpenApiResponse(response=KYCVerificationAdminSerializer),
             **STANDARD_ERROR_RESPONSES["auth"],
@@ -168,7 +168,7 @@ class KYCReviewViewSet(ReadOnlyModelViewSet):
             "**Auth:** Admin or Super Admin.\n\n"
             "**Prerequisites:** The submission must exist."
         ),
-        tags=["Users — KYC Review"],
+        tags=["Admin — KYC Review"],
         request=KYCReviewApproveSerializer,
         responses={
             200: OpenApiResponse(response=KYCVerificationAdminSerializer),
@@ -194,7 +194,7 @@ class KYCReviewViewSet(ReadOnlyModelViewSet):
             "**Auth:** Admin or Super Admin.\n\n"
             "**Prerequisites:** The submission must exist."
         ),
-        tags=["Users — KYC Review"],
+        tags=["Admin — KYC Review"],
         request=KYCReviewRejectSerializer,
         responses={
             200: OpenApiResponse(response=KYCVerificationAdminSerializer),

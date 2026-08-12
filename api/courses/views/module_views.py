@@ -94,7 +94,7 @@ _MODULE_LOCKED_423 = OpenApiResponse(
             "- it returns an empty result set instead, since `list` doesn't "
             "call `get_object()`."
         ),
-        tags=["Courses — Modules"],
+        tags=["Creator — Modules"],
         parameters=[_COURSE_PK_PARAMETER],
         responses={
             200: OpenApiResponse(
@@ -117,7 +117,7 @@ _MODULE_LOCKED_423 = OpenApiResponse(
             "course.\n\n"
             "**Important:** None."
         ),
-        tags=["Courses — Modules"],
+        tags=["Creator — Modules"],
         parameters=[_COURSE_PK_PARAMETER],
         responses={
             200: OpenApiResponse(
@@ -144,7 +144,7 @@ _MODULE_LOCKED_423 = OpenApiResponse(
             "400 - the whole structural tree is frozen once a course leaves "
             "Draft."
         ),
-        tags=["Courses — Modules"],
+        tags=["Creator — Modules"],
         parameters=[_COURSE_PK_PARAMETER],
         request=ModuleWriteSerializer,
         examples=[
@@ -178,7 +178,7 @@ _MODULE_LOCKED_423 = OpenApiResponse(
             "by another user - acquire the lock first via "
             "`POST .../lock/`."
         ),
-        tags=["Courses — Modules"],
+        tags=["Creator — Modules"],
         parameters=[_COURSE_PK_PARAMETER],
         request=ModuleWriteSerializer,
         responses={
@@ -208,7 +208,7 @@ _MODULE_LOCKED_423 = OpenApiResponse(
             "by another user - acquire the lock first via "
             "`POST .../lock/`."
         ),
-        tags=["Courses — Modules"],
+        tags=["Creator — Modules"],
         parameters=[_COURSE_PK_PARAMETER],
         request=ModuleWriteSerializer,
         examples=[
@@ -243,7 +243,7 @@ _MODULE_LOCKED_423 = OpenApiResponse(
             "**Prerequisites:** The parent course must be `DRAFT`.\n\n"
             "**Important:** None."
         ),
-        tags=["Courses — Modules"],
+        tags=["Creator — Modules"],
         parameters=[_COURSE_PK_PARAMETER],
         responses={
             204: OpenApiResponse(description="Module deleted."),
@@ -359,7 +359,7 @@ class ModuleViewSet(ModelViewSet):
             "**Important:** Returns 423 Locked if someone else currently "
             "holds an unexpired lock."
         ),
-        tags=["Courses — Modules"],
+        tags=["Creator — Modules"],
         parameters=[_COURSE_PK_PARAMETER],
         request=None,
         responses={
@@ -385,7 +385,7 @@ class ModuleViewSet(ModelViewSet):
             "**Auth:** Anyone with access to the module.\n\n"
             "**Important:** No-op if the module isn't currently locked."
         ),
-        tags=["Courses — Modules"],
+        tags=["Creator — Modules"],
         parameters=[_COURSE_PK_PARAMETER],
         request=None,
         responses={
@@ -412,7 +412,7 @@ class ModuleViewSet(ModelViewSet):
             "**Important:** Returns 423 Locked if the caller doesn't "
             "currently hold an active lock (expired, or never acquired)."
         ),
-        tags=["Courses — Modules"],
+        tags=["Creator — Modules"],
         parameters=[_COURSE_PK_PARAMETER],
         request=None,
         responses={

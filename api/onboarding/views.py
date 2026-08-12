@@ -1,3 +1,4 @@
+from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -26,10 +27,29 @@ class OnboardingView(APIView):
         OnboardingUpdateSerializer  # for schema generation only; not a GenericAPIView
     )
 
+    @extend_schema(
+        summary="Retrieve my onboarding profile",
+        tags=["Creator — Onboarding"],
+        responses={200: OpenApiResponse(response=CreatorProfileSerializer)},
+    )
     def get(self, request):
         profile = creator_profile_service.get_or_create_profile(user=request.user)
         return Response(CreatorProfileSerializer(profile).data)
 
+    @extend_schema(
+        summary="Update my onboarding profile",
+        description=(
+            "Partially updates the current user's creator profile - one "
+            "wizard step at a time. Only supplied fields are touched, so a "
+            "dropped-off wizard can resume freely.\n\n"
+            "**Auth:** Any authenticated user.\n\n"
+            "**Prerequisites:** None.\n\n"
+            "**Important:** Setting `agreement_accepted` to true returns a "
+            "fresh access token in the response body."
+        ),
+        tags=["Creator — Onboarding"],
+        request=OnboardingUpdateSerializer,
+    )
     def patch(self, request):
         serializer = OnboardingUpdateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)

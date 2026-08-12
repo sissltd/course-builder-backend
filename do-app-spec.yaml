@@ -55,8 +55,6 @@ services:
       - key: FRONTEND_URL
         scope: RUN_TIME
         value: "${FRONTEND_URL}"
-      - key: SUPERADMIN_BOOTSTRAP_TOKEN
-        type: SECRET
       - key: EMAIL_HOST
         scope: RUN_TIME
         value: "${EMAIL_HOST}"

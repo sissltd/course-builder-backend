@@ -328,7 +328,7 @@ class MFAAdminResetView(APIView):
             "the target's role requires MFA, they must re-enroll before "
             "resuming normal access."
         ),
-        tags=["Auth — MFA"],
+        tags=["Admin — MFA"],
         request=None,
         parameters=[
             OpenApiParameter(

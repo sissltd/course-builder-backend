@@ -64,7 +64,7 @@ _ACTIVE_STAFF_EXAMPLE = {
 
 
 class SuperAdminBootstrapView(APIView):
-    """Claim the platform's single Super Admin seat, once, using an env secret."""
+    """Claim the platform's single Super Admin seat in enabled environments."""
 
     permission_classes = [AllowAny]
     throttle_classes = [ScopedRateThrottle]
@@ -79,33 +79,25 @@ class SuperAdminBootstrapView(APIView):
             "only role that can invite staff, and staff roles cannot be "
             "self-registered through any public route. Because no privileged "
             "account exists yet when this is called, the request is authorized "
-            "by a shared secret held in the server environment rather than by a "
-            "logged-in user.\n\n"
+            "by the deployment environment rather than by a logged-in user.\n\n"
             "This is the very first call made against a fresh deployment, "
             "before any other staff flow is usable: **bootstrap** → invite "
             "staff → staff accepts. The account returned is active immediately "
             "and can log in at `/api/v1/auth/login/` with the email and "
             "password supplied here.\n\n"
-            "**Auth:** Public — no bearer token. Authorized instead by the "
-            "`bootstrap_token` field, which must match the "
-            "`SUPERADMIN_BOOTSTRAP_TOKEN` environment variable on the server.\n\n"
-            "**Prerequisites:** `SUPERADMIN_BOOTSTRAP_TOKEN` must be set to a "
-            "non-empty value in the server environment. If it is unset the "
-            "endpoint is disabled and returns 403 — an unset secret never "
-            "means 'anyone may claim the seat'. No Super Admin may exist yet.\n\n"
+            "**Auth:** Public — no bearer token. This route is enabled only "
+            "for local, development, and staging-like environments. Production "
+            "must set `DJANGO_ENV=production`, which disables it. No Super Admin "
+            "may exist yet.\n\n"
             "**Important:** This works exactly once per deployment and is "
             "irreversible through the API. A second call returns 400, and the "
             "one-super-admin rule is enforced by a database constraint, so "
             "concurrent calls cannot both succeed. The account is created with "
             "Django's `is_staff` and `is_superuser` flags set, granting access "
             "to `/admin/` as well as the API. Rate limited to **5 requests "
-            "per hour per IP**, since the bootstrap token is a shared secret "
-            "rather than a credential and an unthrottled endpoint would let it "
-            "be guessed at network speed; a legitimate operator only ever "
-            "calls this once. Success returns the profile but **no tokens** — "
-            "log in at `/api/v1/auth/login/` afterwards to get a JWT pair. "
-            "Unset `SUPERADMIN_BOOTSTRAP_TOKEN` after bootstrapping so the "
-            "secret stops being a live credential in your environment."
+            "per hour per IP** because this is a public account-creation route. "
+            "Success returns the profile but **no tokens** — log in at "
+            "`/api/v1/auth/login/` afterwards to get a JWT pair."
         ),
         tags=["Auth — Super Admin Bootstrap"],
         request=SuperAdminBootstrapSerializer,
@@ -114,7 +106,6 @@ class SuperAdminBootstrapView(APIView):
                 name="Sample Request",
                 request_only=True,
                 value={
-                    "bootstrap_token": "9f2c1e7a4b8d6035ae19cf47b2d80a63",
                     "email": "ops@soludesks.com",
                     "password": "Kt7#pQz2Lm9v",
                     "first_name": "Amara",
@@ -167,24 +158,8 @@ class SuperAdminBootstrapView(APIView):
                 ],
             ),
             403: OpenApiResponse(
-                description=(
-                    "The bootstrap token was wrong, or bootstrapping is "
-                    "disabled because the server has no token configured."
-                ),
+                description="Bootstrapping is disabled in this environment.",
                 examples=[
-                    OpenApiExample(
-                        name="Invalid bootstrap token",
-                        value={
-                            "errors": [
-                                {
-                                    "type": "client_error",
-                                    "code": "permission_denied",
-                                    "message": "Invalid bootstrap token.",
-                                    "field_name": None,
-                                }
-                            ]
-                        },
-                    ),
                     OpenApiExample(
                         name="Bootstrap disabled",
                         value={

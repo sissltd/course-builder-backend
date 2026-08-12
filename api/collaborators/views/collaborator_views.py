@@ -85,7 +85,7 @@ _MANAGE_ACCESS_403 = OpenApiResponse(
             "`course_id` returns 400, not an unscoped list of every "
             "collaborator on the platform."
         ),
-        tags=["Collaborators"],
+        tags=["Creator — Collaborators"],
         parameters=[
             OpenApiParameter(
                 name="course_id",
@@ -136,7 +136,7 @@ _MANAGE_ACCESS_403 = OpenApiResponse(
             "**Important:** A collaborator on a course the caller can't "
             "access 404s rather than 403s, so existence isn't leaked."
         ),
-        tags=["Collaborators"],
+        tags=["Creator — Collaborators"],
         responses={
             200: OpenApiResponse(
                 response=CollaboratorSerializer,
@@ -163,7 +163,7 @@ _MANAGE_ACCESS_403 = OpenApiResponse(
             "course's own creator can never be removed this way; they "
             "aren't stored as a collaborator row at all."
         ),
-        tags=["Collaborators"],
+        tags=["Creator — Collaborators"],
         responses={
             204: OpenApiResponse(description="Collaborator removed."),
             403: _MANAGE_ACCESS_403,
@@ -247,7 +247,7 @@ class CourseCollaboratorViewSet(ModelViewSet):
             "edit; an `ADMIN`-role collaborator always has full-course "
             "access regardless of this list."
         ),
-        tags=["Collaborators"],
+        tags=["Creator — Collaborators"],
         request=CollaboratorInviteSerializer,
         examples=[
             OpenApiExample(
@@ -363,7 +363,7 @@ class CourseCollaboratorViewSet(ModelViewSet):
             "ignored in effect for an `ADMIN`-role collaborator, who always "
             "has full-course access."
         ),
-        tags=["Collaborators"],
+        tags=["Creator — Collaborators"],
         request=CollaboratorRoleUpdateSerializer,
         examples=[
             OpenApiExample(

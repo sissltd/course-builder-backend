@@ -117,7 +117,7 @@ _AUTH_LINE_COURSE = (
             "endpoint never returns courses the caller doesn't own or "
             "collaborate on unless they are an Admin. Results are paginated."
         ),
-        tags=["Courses"],
+        tags=["Creator — Courses"],
         responses={
             200: OpenApiResponse(
                 response=CourseListSerializer(many=True),
@@ -141,7 +141,7 @@ _AUTH_LINE_COURSE = (
             "**Important:** A course the caller can't access 404s rather than "
             "403s, so existence isn't leaked."
         ),
-        tags=["Courses"],
+        tags=["Creator — Courses"],
         responses={
             200: OpenApiResponse(
                 response=CourseDetailSerializer,
@@ -175,7 +175,7 @@ _AUTH_LINE_COURSE = (
             "are write-only inputs combined into `planned_duration_seconds` "
             "on the stored course."
         ),
-        tags=["Courses"],
+        tags=["Creator — Courses"],
         request=CourseCreateSerializer,
         examples=[
             OpenApiExample(
@@ -271,7 +271,7 @@ _AUTH_LINE_COURSE = (
             "returns 400 - resubmission after rejection means the course is "
             "already back in Draft, so no separate 'unlock' step exists."
         ),
-        tags=["Courses"],
+        tags=["Creator — Courses"],
         request=CourseUpdateSerializer,
         responses={
             200: OpenApiResponse(
@@ -299,7 +299,7 @@ _AUTH_LINE_COURSE = (
             "`planned_duration_seconds` (missing ones treated as 0 for that "
             "call); omitting all three leaves the stored duration untouched."
         ),
-        tags=["Courses"],
+        tags=["Creator — Courses"],
         request=CourseUpdateSerializer,
         examples=[
             OpenApiExample(
@@ -333,7 +333,7 @@ _AUTH_LINE_COURSE = (
             "deleted this way - there is deliberately no destructive path "
             "once a course has entered review."
         ),
-        tags=["Courses"],
+        tags=["Creator — Courses"],
         responses={
             204: OpenApiResponse(description="Course deleted."),
             **STANDARD_ERROR_RESPONSES["validation"],
@@ -430,7 +430,7 @@ class CourseViewSet(ModelViewSet):
             "field at a time, so the UI can show every outstanding issue at "
             "once."
         ),
-        tags=["Courses"],
+        tags=["Creator — Courses"],
         request=None,
         responses={
             200: OpenApiResponse(
@@ -509,7 +509,7 @@ class CourseViewSet(ModelViewSet):
             "**Important:** Publishing is not reversible through this API - "
             "there is no unpublish action."
         ),
-        tags=["Courses"],
+        tags=["Admin — Courses"],
         request=None,
         responses={
             200: OpenApiResponse(
@@ -575,7 +575,7 @@ class CourseViewSet(ModelViewSet):
             "paginated and ordered by `submitted_at` ascending, so the "
             "oldest-waiting course is always first."
         ),
-        tags=["Courses — Review Queue"],
+        tags=["Reviewer — Review Queue"],
         responses={
             200: OpenApiResponse(
                 response=CourseListSerializer(many=True),
@@ -600,7 +600,7 @@ class CourseViewSet(ModelViewSet):
             "the action endpoint rather than a misleading 404 at retrieve "
             "time."
         ),
-        tags=["Courses — Review Queue"],
+        tags=["Reviewer — Review Queue"],
         responses={
             200: OpenApiResponse(
                 response=CourseDetailSerializer,
@@ -698,7 +698,7 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
             "re-claim a course they already hold; only a *new* claim is "
             "blocked."
         ),
-        tags=["Courses — Review Queue"],
+        tags=["Reviewer — Review Queue"],
         request=None,
         responses={
             200: OpenApiResponse(
@@ -763,7 +763,7 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
             "never the category/topic's current price. `feedback` is "
             "optional here (unlike reject, where a summary is required)."
         ),
-        tags=["Courses — Review Queue"],
+        tags=["Reviewer — Review Queue"],
         request=ReviewApproveSerializer,
         examples=[
             OpenApiExample(
@@ -789,8 +789,7 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
                                     "type": "validation_error",
                                     "code": "invalid",
                                     "message": (
-                                        "Course cannot be approved from "
-                                        "status 'DRAFT'."
+                                        "Course cannot be approved from status 'DRAFT'."
                                     ),
                                     "field_name": None,
                                 }
@@ -836,7 +835,7 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
             "via the returned ReviewAction and `Course.rejected_at` while "
             "the course itself shows `DRAFT`."
         ),
-        tags=["Courses — Review Queue"],
+        tags=["Reviewer — Review Queue"],
         request=ReviewRejectSerializer,
         examples=[
             OpenApiExample(
@@ -877,8 +876,7 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
                                     "type": "validation_error",
                                     "code": "invalid",
                                     "message": (
-                                        "A summary is required when "
-                                        "rejecting a course."
+                                        "A summary is required when rejecting a course."
                                     ),
                                     "field_name": "feedback",
                                 }

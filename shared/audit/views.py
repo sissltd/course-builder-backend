@@ -36,7 +36,7 @@ class AuditLogListView(ListAPIView):
             OpenApiParameter("from_date", str, OpenApiParameter.QUERY, required=False),
             OpenApiParameter("to_date", str, OpenApiParameter.QUERY, required=False),
         ],
-        tags=["Audit"],
+        tags=["Admin — Audit"],
     )
     def get(self, request, *args, **kwargs):
         return super().get(request, *args, **kwargs)

@@ -68,7 +68,7 @@ class QuizQuestionSerializer(serializers.Serializer):
                 raise serializers.ValidationError(
                     {
                         "options": (
-                            "Essay questions don't take options or a " "correct_index."
+                            "Essay questions don't take options or a correct_index."
                         )
                     }
                 )

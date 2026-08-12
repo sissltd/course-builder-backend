@@ -12,86 +12,108 @@ logger = logging.getLogger(__name__)
 
 
 # send via gmail using Django's SMTP
-def _send_via_gmail(subject: str, recipient: str, html_content: str) -> dict:
+def _send_via_gmail(
+    subject: str,
+    recipients: list[str],
+    text_content: str,
+    html_content: str,
+    from_email: str | None = None,
+    cc_emails: list[str] | None = None,
+    bcc_emails: list[str] | None = None,
+    reply_to: list[str] | None = None,
+    attachments: list[tuple] | None = None,
+) -> dict:
     """
-    Using EmailMultiAlternatives as it allow us to attach both a plain-text body AND an HTML body. to avoid our messages going into the spam folder, we make the HTML an "alternative" — to make the client pick the best one.
-
+    Using EmailMultiAlternatives to attach both a plain-text body AND an HTML body.
     """
-
-    # importing inside here to avoid circular imports
     from django.conf import settings
     from django.core.mail import EmailMultiAlternatives
 
-    # if the email is not compatible in the mail client, we will use this plain text
-    plain_text = "[Incompatible] Please open this email in an HTML-compatible mail client (e.g., google mail, yahoo mail, etc)"
-
-    # message body
     message = EmailMultiAlternatives(
         subject=subject,
-        body=plain_text,
-        from_email=settings.DEFAULT_FROM_EMAIL,
-        to=[recipient],
+        body=text_content,
+        from_email=from_email or settings.DEFAULT_FROM_EMAIL,
+        to=recipients,
+        cc=cc_emails,
+        bcc=bcc_emails,
+        reply_to=reply_to,
     )
-
     message.attach_alternative(html_content, "text/html")
 
-    # send message
-    message.send()
+    for attachment in attachments or []:
+        message.attach(*attachment)
 
+    message.send()
     return {"status": "sent", "provider": "gmail"}
 
 
 # send via resend
-def _send_via_resend(subject: str, recipient: str, html_content: str) -> dict:
-    """
-    Normal setup, aside from the importing of resend and config inside the function - not at module level - to
-    avoid import errors on machines where RESEND_API_KEY isn't set — that is, where (team) is testing only on gmail
-
-    """
-
-    # Import resend and config
+def _send_via_resend(
+    subject: str,
+    recipients: list[str],
+    text_content: str,
+    html_content: str,
+    from_email: str | None = None,
+) -> dict:
     import resend
     from decouple import config
     from django.conf import settings
 
-    # resend configuration
     resend.api_key = config("RESEND_API_KEY")
 
-    # sending email payload
     response = resend.Emails.send(
         {
-            "from": f"Feexeet <{settings.DEFAULT_FROM_EMAIL}>",
-            "to": str(recipient),
+            "from": f"Feexeet <{from_email or settings.DEFAULT_FROM_EMAIL}>",
+            "to": recipients,
             "subject": str(subject),
+            "text": str(text_content),
             "html": str(html_content),
         }
     )
-
     return {"status": "sent", "provider": "resend", "id": response.get("id")}
 
 
-# the general function that dispatches the email
-def _dispatch_email(subject: str, recipient: str, html_content: str) -> dict:
+def dispatch_email(
+    subject: str,
+    recipients: list[str],
+    text_content: str,
+    html_content: str,
+    from_email: str | None = None,
+    cc_emails: list[str] | None = None,
+    bcc_emails: list[str] | None = None,
+    reply_to: list[str] | None = None,
+    attachments: list[tuple] | None = None,
+) -> dict:
     """
-    This is the only place in the codebase that will call the two providers to make switching easy
-
-    Routes to the configured email provider.
+    Central dispatcher — routes to the configured email provider.
     Provider is set via EMAIL_PROVIDER in .env — "gmail" (default) or "resend".
 
-    Every task calls this — so switching providers is a single .env change. (EMAIL_PROVIDER)
+    This is the single place to add new providers.
     """
-
     from django.conf import settings
 
-    # get the provider (defaulting to gmail)
     provider = getattr(settings, "EMAIL_PROVIDER", "gmail")
 
-    # the switch
     if provider == "resend":
-        return _send_via_resend(subject, recipient, html_content)
+        return _send_via_resend(
+            subject=subject,
+            recipients=recipients,
+            text_content=text_content,
+            html_content=html_content,
+            from_email=from_email,
+        )
 
-    # else send via gmail
-    return _send_via_gmail(subject, recipient, html_content)
+    return _send_via_gmail(
+        subject=subject,
+        recipients=recipients,
+        text_content=text_content,
+        html_content=html_content,
+        from_email=from_email,
+        cc_emails=cc_emails,
+        bcc_emails=bcc_emails,
+        reply_to=reply_to,
+        attachments=attachments,
+    )
 
 
 # >>>>>>>>>>>>General Shared Tasks<<<<<<<<<<<<<<<<<<<<<
@@ -100,10 +122,24 @@ def _dispatch_email(subject: str, recipient: str, html_content: str) -> dict:
 
 # This is a shared task for sending email generally to users
 @shared_task(bind=True, max_retries=3, default_retry_delay=30)
-def send_email_task(self, subject: str, recipient: str, html_content: str):
+def send_email_task(
+    self,
+    subject: str,
+    recipient: str,
+    html_content: str,
+    text_content: str | None = None,
+):
     try:
-        # Now we will use dispatch email to send email task
-        result = _dispatch_email(subject, recipient, html_content)
+        # Generate a basic text fallback if not provided
+        if text_content is None:
+            text_content = f"{subject}\n\n{html_content}"
+
+        result = dispatch_email(
+            subject=subject,
+            recipients=[recipient],
+            text_content=text_content,
+            html_content=html_content,
+        )
         logger.info(f"Email sent successfully to {recipient} with subject: {subject}")
         return result
 
@@ -151,14 +187,14 @@ def send_otp_email(self, email, otp):
 
         # >>>>>>>>>>>>>>>>>>>>>>>>> PROD <<<<<<<<<<<<<<<<<<<<<<<<<<
         from django.template.loader import render_to_string
+        from django.template.exceptions import TemplateDoesNotExist
 
-        from shared.constants.authentication import (  # TODO: Will add more imports after authentication is fully integrated
+        from shared.constants.authentication import (
             COMPANY_NAME,
             SUPPORT_EMAIL,
         )
 
         # payload
-        # TODO: Will configure the context well in future
         context = {
             "user_name": email,
             "verification_code": otp,
@@ -168,10 +204,22 @@ def send_otp_email(self, email, otp):
 
         html_content = render_to_string("emails/verification_email.html", context)
 
+        # Try to render text template, fallback to simple text if missing
+        try:
+            text_content = render_to_string("emails/verification_email.txt", context)
+        except TemplateDoesNotExist:
+            text_content = (
+                f"Your login code is: {otp}\n\n"
+                f"This code expires in 5 minutes.\n\n"
+                f"If you didn't request this, please ignore this email.\n\n"
+                f"– {COMPANY_NAME} ({SUPPORT_EMAIL})"
+            )
+
         # send email payload
-        result = _dispatch_email(
+        result = dispatch_email(
             subject="Your Login code",
-            recipient=email,
+            recipients=[email],
+            text_content=text_content,
             html_content=html_content,
         )
 
