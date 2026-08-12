@@ -160,7 +160,7 @@ class AdminOverviewView(APIView):
         summary="Retrieve the admin dashboard overview",
         description=(
             "Returns the counts an Admin's home screen leads with: users by "
-            "account status, courses by lifecycle status, KYC submissions and "
+            "their account status, courses by lifecycle status, KYC submissions and "
             "withdrawal requests by status, plus platform-wide wallet totals. "
             "It answers 'what needs my attention today?' in one call.\n\n"
             "Called when the admin dashboard loads.\n\n"
