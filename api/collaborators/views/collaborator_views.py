@@ -31,6 +31,9 @@ _COLLABORATOR_EXAMPLE = {
         "sex": "FEMALE",
     },
     "role": "COLLABORATOR",
+    "assigned_modules": [
+        {"id": "b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e", "title": "Getting Started", "order": 1}
+    ],
     "created_datetime": "2026-07-20T11:00:00.000Z",
 }
 
@@ -238,7 +241,11 @@ class CourseCollaboratorViewSet(ModelViewSet):
             "have an account and not already be a collaborator or the "
             "course's own creator.\n\n"
             "**Important:** `role` defaults to `COLLABORATOR` if omitted - "
-            "pass `ADMIN` to grant the invitee manage access too."
+            "pass `ADMIN` to grant the invitee manage access too. "
+            "`assigned_modules` is optional and only meaningful for a plain "
+            "`COLLABORATOR` - it restricts which modules they can see and "
+            "edit; an `ADMIN`-role collaborator always has full-course "
+            "access regardless of this list."
         ),
         tags=["Collaborators"],
         request=CollaboratorInviteSerializer,
@@ -250,6 +257,7 @@ class CourseCollaboratorViewSet(ModelViewSet):
                     "course_id": "3f9a2e11-6b7c-4d2a-9e5f-1c8d4a7b2f30",
                     "email": "jane.doe@example.com",
                     "role": "COLLABORATOR",
+                    "assigned_modules": ["b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e"],
                 },
             ),
         ],
@@ -337,27 +345,40 @@ class CourseCollaboratorViewSet(ModelViewSet):
         )
 
     @extend_schema(
-        summary="Change a collaborator's role",
+        summary="Change a collaborator's role or module assignment",
         description=(
-            "Updates only the fields supplied - in practice, just `role` - "
-            "the way to promote a Collaborator to Admin or demote an "
-            "Admin back to Collaborator.\n\n"
-            "Called from the role dropdown in the manage collaborators "
-            "panel.\n\n"
+            "Updates only the fields supplied - `role`, `assigned_modules`, "
+            "or both. Used to promote a Collaborator to Admin (or demote an "
+            "Admin back to Collaborator), and/or to change which modules a "
+            "plain Collaborator is restricted to.\n\n"
+            "Called from the role dropdown and the module-assignment picker "
+            "in the manage collaborators panel.\n\n"
             f"{_AUTH_LINE}\n\n"
             "**Prerequisites:** The caller must be the course's creator or "
             "an Admin-role collaborator on it.\n\n"
             "**Important:** There is no PUT (full replace) on this "
-            "resource - only PATCH, since `role` is the only field a "
-            "manager can ever change."
+            "resource - only PATCH, since both fields are independently "
+            "optional. Sending `assigned_modules` replaces the full list, "
+            "it does not merge with the existing one. `assigned_modules` is "
+            "ignored in effect for an `ADMIN`-role collaborator, who always "
+            "has full-course access."
         ),
         tags=["Collaborators"],
         request=CollaboratorRoleUpdateSerializer,
         examples=[
             OpenApiExample(
-                name="Sample Request",
+                name="Change role",
                 request_only=True,
                 value={"role": "ADMIN"},
+            ),
+            OpenApiExample(
+                name="Change module assignment",
+                request_only=True,
+                value={
+                    "assigned_modules": [
+                        "b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e"
+                    ]
+                },
             ),
         ],
         responses={

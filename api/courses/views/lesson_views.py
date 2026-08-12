@@ -21,6 +21,7 @@ _LESSON_EXAMPLE = {
     "title": "Variables and Data Types",
     "order": 1,
     "script": "In this lesson we cover Python's core data types...",
+    "video_url": "https://example.com/lessons/variables.mp4",
     "learning_objectives": ["Identify Python's built-in data types"],
     "duration_minutes": 15,
     "assessment": None,
@@ -52,6 +53,28 @@ _DRAFT_ONLY_400 = OpenApiResponse(
                         "type": "validation_error",
                         "code": "invalid",
                         "message": "Lessons can only be edited while the course is Draft.",
+                        "field_name": None,
+                    }
+                ]
+            },
+        ),
+    ],
+)
+
+_MODULE_LOCKED_423 = OpenApiResponse(
+    description=(
+        "The parent module is currently locked for editing by another user "
+        "(see `POST .../modules/{module_pk}/lock/`)."
+    ),
+    examples=[
+        OpenApiExample(
+            name="Module locked",
+            value={
+                "errors": [
+                    {
+                        "type": "client_error",
+                        "code": "locked",
+                        "message": "This module is currently being edited by another user.",
                         "field_name": None,
                     }
                 ]
@@ -122,7 +145,9 @@ _DRAFT_ONLY_400 = OpenApiResponse(
             "**Prerequisites:** The parent course must be `DRAFT`.\n\n"
             "**Important:** `learning_objectives` is only validated for "
             "shape here (a list of non-empty strings) - the 2-5 "
-            "count-per-lesson rule is enforced later, at submit time."
+            "count-per-lesson rule is enforced later, at submit time. "
+            "`video_url` is optional. Returns 423 if the parent module is "
+            "currently locked by another user."
         ),
         tags=["Courses — Lessons"],
         parameters=_PATH_PARAMETERS,
@@ -135,6 +160,7 @@ _DRAFT_ONLY_400 = OpenApiResponse(
                     "title": "Variables and Data Types",
                     "order": 1,
                     "script": "In this lesson we cover Python's core data types...",
+                    "video_url": "https://example.com/lessons/variables.mp4",
                     "learning_objectives": ["Identify Python's built-in data types"],
                     "duration_minutes": 15,
                 },
@@ -147,6 +173,7 @@ _DRAFT_ONLY_400 = OpenApiResponse(
                 examples=[OpenApiExample(name="Success", value=_LESSON_EXAMPLE)],
             ),
             400: _DRAFT_ONLY_400,
+            423: _MODULE_LOCKED_423,
             **STANDARD_ERROR_RESPONSES["auth"],
             **STANDARD_ERROR_RESPONSES["permission"],
             **STANDARD_ERROR_RESPONSES["not_found"],
@@ -160,7 +187,8 @@ _DRAFT_ONLY_400 = OpenApiResponse(
             "Called from the lesson edit form.\n\n"
             "**Auth:** Course Creator/Writer with access to the course.\n\n"
             "**Prerequisites:** The parent course must be `DRAFT`.\n\n"
-            "**Important:** None."
+            "**Important:** Returns 423 if the parent module is currently "
+            "locked by another user."
         ),
         tags=["Courses — Lessons"],
         parameters=_PATH_PARAMETERS,
@@ -172,6 +200,7 @@ _DRAFT_ONLY_400 = OpenApiResponse(
                 examples=[OpenApiExample(name="Success", value=_LESSON_EXAMPLE)],
             ),
             400: _DRAFT_ONLY_400,
+            423: _MODULE_LOCKED_423,
             **STANDARD_ERROR_RESPONSES["auth"],
             **STANDARD_ERROR_RESPONSES["permission"],
             **STANDARD_ERROR_RESPONSES["not_found"],
@@ -187,7 +216,8 @@ _DRAFT_ONLY_400 = OpenApiResponse(
             "course builder.\n\n"
             "**Auth:** Course Creator/Writer with access to the course.\n\n"
             "**Prerequisites:** The parent course must be `DRAFT`.\n\n"
-            "**Important:** None."
+            "**Important:** Returns 423 if the parent module is currently "
+            "locked by another user."
         ),
         tags=["Courses — Lessons"],
         parameters=_PATH_PARAMETERS,
@@ -206,6 +236,7 @@ _DRAFT_ONLY_400 = OpenApiResponse(
                 examples=[OpenApiExample(name="Success", value=_LESSON_EXAMPLE)],
             ),
             400: _DRAFT_ONLY_400,
+            423: _MODULE_LOCKED_423,
             **STANDARD_ERROR_RESPONSES["auth"],
             **STANDARD_ERROR_RESPONSES["permission"],
             **STANDARD_ERROR_RESPONSES["not_found"],
@@ -221,7 +252,8 @@ _DRAFT_ONLY_400 = OpenApiResponse(
             "builder.\n\n"
             "**Auth:** Course Creator/Writer with access to the course.\n\n"
             "**Prerequisites:** The parent course must be `DRAFT`.\n\n"
-            "**Important:** None."
+            "**Important:** Returns 423 if the parent module is currently "
+            "locked by another user."
         ),
         tags=["Courses — Lessons"],
         parameters=_PATH_PARAMETERS,
@@ -248,6 +280,7 @@ _DRAFT_ONLY_400 = OpenApiResponse(
                     ),
                 ],
             ),
+            423: _MODULE_LOCKED_423,
             **STANDARD_ERROR_RESPONSES["auth"],
             **STANDARD_ERROR_RESPONSES["permission"],
             **STANDARD_ERROR_RESPONSES["not_found"],
