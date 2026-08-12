@@ -151,6 +151,9 @@ class ReviewQueueApiTests(APITestCase):
             f"/api/v1/review-queue/{course.id}/approve/", {}, format="json"
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            response.data["reviewer"]["user_type"], UserRole.CREATOR_REVIEWER
+        )
 
         course.refresh_from_db()
         self.assertEqual(course.status, CourseStatus.APPROVED)

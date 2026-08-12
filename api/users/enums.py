@@ -83,6 +83,7 @@ class UserActivityCategoryEnums(models.TextChoices):
 
     AUTH = "AUTH", "Authentication"
     PROFILE = "PROFILE", "Profile"
+    ONBOARDING = "ONBOARDING", "Onboarding"
     COURSE = "COURSE", "Course"
     SUBMISSION = "SUBMISSION", "Submission"
     APPROVAL = "APPROVAL", "Approval"
@@ -119,7 +120,13 @@ class UserActivityActionEnums(models.TextChoices):
     )
     PROFILE_UPDATED = "PROFILE_UPDATED", "Profile Updated"
     PASSWORD_CHANGED = "PASSWORD_CHANGED", "Password Changed"
+    ONBOARDING_STEP_UPDATED = "ONBOARDING_STEP_UPDATED", "Onboarding Step Updated"
+    POLICY_ACCEPTED = "POLICY_ACCEPTED", "Policy Accepted"
     ONBOARDING_COMPLETED = "ONBOARDING_COMPLETED", "Onboarding Completed"
+    COURSE_BUILDER_ACCESS_GRANTED = (
+        "COURSE_BUILDER_ACCESS_GRANTED",
+        "Course Builder Access Granted",
+    )
     SUPERADMIN_BOOTSTRAPPED = "SUPERADMIN_BOOTSTRAPPED", "Super Admin Bootstrapped"
     STAFF_INVITED = "STAFF_INVITED", "Staff Invited"
     STAFF_INVITATION_ACCEPTED = (

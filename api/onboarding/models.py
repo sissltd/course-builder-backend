@@ -83,6 +83,16 @@ class CreatorProfile(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
         blank=True,
         help_text=_("Set when the final onboarding step (agreement) is submitted."),
     )
+    agreement_accepted_version = models.CharField(
+        verbose_name=_("Agreement Accepted Version"),
+        max_length=10,
+        null=True,
+        blank=True,
+        help_text=_(
+            "Policy version the creator accepted, for comparison against "
+            "the platform's current creator_agreement_policy_version."
+        ),
+    )
 
     class Meta:
         verbose_name = _("Creator Profile")
@@ -96,6 +106,24 @@ class CreatorProfile(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
     @property
     def has_completed_onboarding(self) -> bool:
         return self.onboarding_completed_at is not None
+
+    @property
+    def needs_policy_reacceptance(self) -> bool:
+        """Whether the creator must re-accept the agreement because the
+        platform's policy version has changed since they last accepted it.
+        Meaningless before onboarding is complete - always False then, since
+        the creator hasn't accepted anything yet (that's covered by the
+        normal first-time acceptance flow, not re-acceptance)."""
+
+        if not self.has_completed_onboarding:
+            return False
+
+        from api.platform.services import platform_settings_service
+
+        current_version = (
+            platform_settings_service.get_settings().creator_agreement_policy_version
+        )
+        return self.agreement_accepted_version != current_version
 
     def __str__(self):
         """Use the owning user's id as the human-readable label."""

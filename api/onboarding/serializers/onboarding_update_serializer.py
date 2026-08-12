@@ -15,20 +15,48 @@ class OnboardingUpdateSerializer(serializers.Serializer):
     category_id = serializers.PrimaryKeyRelatedField(
         required=False,
         queryset=Category.objects.filter(status=CategoryStatus.ACTIVE),
+        help_text=(
+            "Step 1: id of the creator's primary area-of-expertise Category. "
+            "Must currently be ACTIVE."
+        ),
     )
     expertise_area = serializers.ChoiceField(
-        choices=ExpertiseArea.choices, required=False
+        choices=ExpertiseArea.choices,
+        required=False,
+        help_text="Step 1: fixed-choice primary area of expertise.",
     )
     other_expertise = serializers.CharField(
-        required=False, allow_blank=True, max_length=255
+        required=False,
+        allow_blank=True,
+        max_length=255,
+        help_text=(
+            "Free-text expertise description, required when expertise_area "
+            "is 'OTHERS'."
+        ),
     )
     video_comfort_level = serializers.ChoiceField(
-        choices=VideoComfortLevel.choices, required=False
+        choices=VideoComfortLevel.choices,
+        required=False,
+        help_text="Step 2: self-reported comfort producing video content.",
     )
     monthly_course_capacity = serializers.ChoiceField(
-        choices=MonthlyCourseCapacity.choices, required=False
+        choices=MonthlyCourseCapacity.choices,
+        required=False,
+        help_text="Step 3: self-estimated number of courses producible per month.",
     )
-    agreement_accepted = serializers.BooleanField(required=False)
+    agreement_accepted = serializers.BooleanField(
+        required=False,
+        help_text=(
+            "Step 4 (final step): pass true to accept the creator agreement. "
+            "The first time this is sent, it also completes onboarding and "
+            "unlocks Course Builder access. Sending it again later "
+            "re-accepts the agreement at whatever policy version is "
+            "currently in effect - required if the platform's "
+            "creator_agreement_policy_version has changed since the "
+            "creator's last acceptance (see needs_policy_reacceptance on "
+            "GET), without resetting when onboarding was first completed."
+        ),
+    )
 
     def validate(self, attrs):
         if not attrs:

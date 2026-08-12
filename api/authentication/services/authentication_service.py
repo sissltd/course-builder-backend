@@ -56,6 +56,7 @@ class AuthenticationService(TsesAuthenticationInterface):
         first_name: str,
         last_name: str,
         country: str,
+        phone_number: str,
         terms_accepted: bool = False,
         role: str = UserRole.COURSE_CREATOR,
     ) -> User:
@@ -80,6 +81,7 @@ class AuthenticationService(TsesAuthenticationInterface):
                 first_name=first_name,
                 last_name=last_name,
                 country=country,
+                phone_number=phone_number,
                 terms_accepted_at=timezone.now() if terms_accepted else None,
                 role=role,
                 is_active=False,

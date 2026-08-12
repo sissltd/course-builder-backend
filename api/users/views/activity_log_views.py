@@ -84,8 +84,14 @@ class UserActivityLogListView(ListAPIView):
                             "category": "AUTH",
                             "action": "ACCOUNT_SUSPENDED",
                             "summary": "Suspended chidera.nwosu@example.com.",
-                            "actor_user": "ops@soludesks.com",
-                            "ip_address": "102.89.34.17",
+                            "details": {},
+                            "actor": {
+                                "id": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+                                "first_name": "Ops",
+                                "last_name": "Admin",
+                                "email": "ops@soludesks.com",
+                                "user_type": "ADMIN",
+                            },
                             "activity_datetime": "2026-08-06T11:47:12.408Z",
                         }
                     ],
@@ -126,19 +132,23 @@ def _activity_log_csv_rows(entries):
     buffer = io.StringIO()
     writer = csv.writer(buffer)
 
-    writer.writerow(["category", "action", "summary", "actor", "activity_datetime"])
+    writer.writerow(
+        ["category", "action", "summary", "actor", "user_type", "activity_datetime"]
+    )
     yield buffer.getvalue()
     buffer.seek(0)
     buffer.truncate(0)
 
     for entry in entries:
         actor = entry.actor_user.email if entry.actor_user_id else ""
+        user_type = entry.actor_user.role if entry.actor_user_id else ""
         writer.writerow(
             [
                 entry.category,
                 entry.action,
                 entry.summary,
                 actor,
+                user_type,
                 entry.activity_datetime,
             ]
         )

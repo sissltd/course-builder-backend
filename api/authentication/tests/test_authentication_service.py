@@ -22,11 +22,13 @@ class SignupTests(TestCase):
             first_name="A",
             last_name="B",
             country="NG",
+            phone_number="+2348012345678",
         )
 
         self.assertFalse(user.is_active)
         self.assertEqual(user.role, UserRole.COURSE_CREATOR)
         self.assertEqual(user.country, "NG")
+        self.assertEqual(user.phone_number, "+2348012345678")
         self.assertIsNone(user.terms_accepted_at)
 
     def test_terms_accepted_true_stamps_timestamp(self):
@@ -36,6 +38,7 @@ class SignupTests(TestCase):
             first_name="A",
             last_name="B",
             country="NG",
+            phone_number="+2348012345678",
             terms_accepted=True,
         )
 
@@ -51,6 +54,7 @@ class SignupTests(TestCase):
                 first_name="A",
                 last_name="B",
                 country="NG",
+                phone_number="+2348012345678",
             )
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn("new2@example.com", mail.outbox[0].to)
@@ -66,6 +70,7 @@ class SignupTests(TestCase):
                 first_name="A",
                 last_name="B",
                 country="NG",
+                phone_number="+2348012345678",
             )
 
 

@@ -528,6 +528,112 @@ migrations plus one table rename (`categories.0001` → `courses.0002` →
 the docstrings on those migrations for why each step avoids touching the
 database.
 
+### Onboarding
+
+Onboarding lives in `api/onboarding/`, one resource (`CreatorProfile`) behind
+one endpoint pair: `GET`/`PATCH /api/v1/users/me/onboarding/`. It is a
+four-step wizard collected as partial updates rather than four separate
+endpoints — `PATCH` once per step with just that step's field(s), and
+`creator_profile_service.update_profile` only touches fields actually
+provided, so a creator who drops off mid-wizard resumes exactly where they
+left off. The profile itself is lazily created on first `GET`/`PATCH`, same
+idiom as `wallet_service.get_or_create_wallet`.
+
+| Step | Field(s)                                          |
+| ---- | -------------------------------------------------- |
+| 1    | `category_id`, `expertise_area`, `other_expertise` |
+| 2    | `video_comfort_level`                              |
+| 3    | `monthly_course_capacity`                          |
+| 4    | `agreement_accepted` (final step)                  |
+
+Sending `agreement_accepted: true` the **first** time stamps
+`onboarding_completed_at`, unlocks Course Builder access (see below), and
+returns a fresh `access`/`refresh` token pair in the same response so the
+frontend can land the creator straight in the dashboard. Every call —
+including plain step updates — is logged to `UserActivityLog` under
+`category=ONBOARDING`, so the whole wizard is traceable as one group
+(`ONBOARDING_STEP_UPDATED`, `POLICY_ACCEPTED`, `ONBOARDING_COMPLETED`,
+`COURSE_BUILDER_ACCESS_GRANTED`).
+
+**Policy versioning and re-acceptance.** The creator agreement has a version,
+`PlatformSettings.creator_agreement_policy_version` (default `"1.0"`,
+editable via `PATCH /api/v1/platform-settings/`, same admin-configurable
+pattern as every other platform knob — see Admin Operations below).
+`CreatorProfile.agreement_accepted_version` stamps whichever version was in
+effect the moment a creator accepted. If an Admin bumps the platform version
+after a creator already completed onboarding,
+`CreatorProfile.needs_policy_reacceptance` (exposed on `GET
+/users/me/onboarding/`) flips to `true`, and **Course Builder access is
+re-blocked** until the creator sends `agreement_accepted: true` again.
+Re-acceptance updates `agreement_accepted_version` and logs
+`POLICY_ACCEPTED` again, but deliberately does **not** reset
+`onboarding_completed_at`, re-log `ONBOARDING_COMPLETED`, or re-issue tokens
+— it isn't onboarding a second time, just re-confirming the agreement.
+
+**Course Builder access gate.** `POST /api/v1/courses/` additionally requires
+`HasCompletedOnboarding` (`api/courses/permissions.py`), composed with the
+existing `IsCourseCreatorRole` check: `(IsCourseCreatorRole &
+HasCompletedOnboarding)`. A creator who hasn't finished onboarding, or whose
+`needs_policy_reacceptance` is `true`, gets 403 with a message telling them
+which of the two to resolve. The gate applies only to course *creation* —
+not to adding modules/lessons to a course that already exists, since
+reaching that point already proved the gate once.
+
+Three things worth knowing:
+
+- **The permission check never creates a `CreatorProfile` row.** Unlike
+  `get_or_create_profile` (used by the onboarding endpoints themselves),
+  `HasCompletedOnboarding` does a plain read (`CreatorProfile.objects.filter(
+  user=user).first()`) — checking whether you're allowed to create a course
+  should never have the side effect of creating onboarding data.
+- **Superusers bypass the gate**, matching `HasRole`'s own superuser
+  convention elsewhere in this codebase — but course creation is
+  creator-role-only regardless, so in practice this only matters for a
+  superuser account that also holds the `COURSE_CREATOR`/`STAFF_WRITER` role.
+- **First-time completion vs. re-acceptance is tracked with a transient,
+  non-persisted attribute** (`profile.is_first_completion`), not by comparing
+  timestamps — `update_profile` sets it directly so the view can decide
+  whether to issue tokens without re-deriving the answer.
+
+#### Setup & testing guidance
+
+To exercise the policy-version-bump flow locally without a frontend:
+
+```bash
+# 1. Complete onboarding as a creator (repeat PATCH per step, then):
+curl -X PATCH {{base_url}}/api/v1/users/me/onboarding/ \
+  -H "Authorization: Bearer {{creator_access_token}}" \
+  -H "Content-Type: application/json" \
+  -d '{"agreement_accepted": true}'
+
+# 2. Bump the platform's policy version as an Admin:
+curl -X PATCH {{base_url}}/api/v1/platform-settings/ \
+  -H "Authorization: Bearer {{admin_access_token}}" \
+  -H "Content-Type: application/json" \
+  -d '{"creator_agreement_policy_version": "2.0"}'
+
+# 3. Confirm the creator is now blocked, then re-accept:
+curl -X POST {{base_url}}/api/v1/courses/ ...        # -> 403
+curl -X PATCH {{base_url}}/api/v1/users/me/onboarding/ \
+  -H "Authorization: Bearer {{creator_access_token}}" \
+  -d '{"agreement_accepted": true}'                  # -> 200, re-accepted
+curl -X POST {{base_url}}/api/v1/courses/ ...        # -> 201 again
+```
+
+Or do the same directly in a shell (`python manage.py shell`) via
+`api.platform.services.platform_settings_service.update_settings(
+creator_agreement_policy_version="2.0")`.
+
+Test coverage lives in `api/onboarding/tests/test_creator_profile_service.py`
+(service-level: logging, versioning, re-acceptance) and
+`api/onboarding/tests/test_onboarding_api.py` (API-level, including
+`needs_policy_reacceptance` visibility). The Course Builder gate itself is
+covered separately in `api/courses/tests/test_course_api.py`'s
+`OnboardingGateTests` (incomplete onboarding, completed onboarding, the
+version-bump-then-reaccept round trip, and that the role check and the
+onboarding check are independent — completing onboarding never substitutes
+for holding the right role).
+
 ### Course Access
 
 Admins and Approvers have full CRUD over every course, not just their own:

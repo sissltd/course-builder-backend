@@ -29,6 +29,7 @@ _COLLABORATOR_EXAMPLE = {
         "email": "jane.doe@example.com",
         "country": "NG",
         "sex": "FEMALE",
+        "user_type": "COURSE_CREATOR",
     },
     "role": "COLLABORATOR",
     "assigned_modules": [

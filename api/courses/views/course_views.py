@@ -14,7 +14,7 @@ from api.collaborators.services import collaborator_service
 from api.courses.enums import CourseStatus
 from api.courses.filters import CourseReviewQueueFilter
 from api.courses.models import Course
-from api.courses.permissions import IsCourseOwner
+from api.courses.permissions import HasCompletedOnboarding, IsCourseOwner
 from api.courses.serializers import (
     CourseCreateSerializer,
     CourseDetailSerializer,
@@ -45,6 +45,12 @@ OWNER_OR_ADMIN = (IsCourseCreatorRole & IsCourseOwner) | IsAdminRole
 #: course_service.submit_course), so an Admin may submit only a course they
 #: themselves created - in which case IsCourseOwner passes anyway.
 SUBMIT_PERMISSION = (IsCourseCreatorRole | IsAdminRole) & IsCourseOwner
+
+#: Course creation additionally requires a completed onboarding profile (and,
+#: if the creator agreement's policy version has since changed, a
+#: re-acceptance) - see HasCompletedOnboarding. Superusers bypass both
+#: checks, matching HasRole's own superuser bypass convention.
+CREATE_PERMISSION = IsCourseCreatorRole & HasCompletedOnboarding
 
 _COURSE_LIST_EXAMPLE = {
     "id": "3f9a2e11-6b7c-4d2a-9e5f-1c8d4a7b2f30",
@@ -86,6 +92,7 @@ _REVIEW_ACTION_EXAMPLE = {
     "reviewer": {
         "id": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
         "email": "reviewer@example.com",
+        "user_type": "STAFF_VERIFIER",
     },
     "action": "APPROVE",
     "feedback": {},
@@ -163,9 +170,12 @@ _AUTH_LINE_COURSE = (
             "time.\n\n"
             "Called from the 'Create course' action on the My Courses "
             "screen.\n\n"
-            "**Auth:** Course Creator or Writer.\n\n"
-            "**Prerequisites:** `terms_accepted` must be `true` (BR-005) and "
-            "the target category must be `ACTIVE`.\n\n"
+            "**Auth:** Course Creator or Writer, with a completed onboarding "
+            "profile (see `GET /api/v1/users/me/onboarding/`).\n\n"
+            "**Prerequisites:** `terms_accepted` must be `true` (BR-005), "
+            "the target category must be `ACTIVE`, and the caller's "
+            "`CreatorProfile.has_completed_onboarding` must be `true` with "
+            "no pending policy re-acceptance.\n\n"
             "**Important:** If `topic` is supplied it must belong to the "
             "chosen `category`, or the request 400s. Selecting an available "
             "topic reserves it for the creator immediately - same expiry "
@@ -173,7 +183,11 @@ _AUTH_LINE_COURSE = (
             "request 400s if the topic is currently reserved by someone "
             "else. `duration_hours`/`duration_minutes`/`duration_seconds` "
             "are write-only inputs combined into `planned_duration_seconds` "
-            "on the stored course."
+            "on the stored course. A creator who hasn't finished onboarding, "
+            "or whose accepted creator-agreement version is stale relative "
+            "to the platform's current one, gets 403 here rather than a "
+            "validation error - complete/re-accept via "
+            "`PATCH /api/v1/users/me/onboarding/` first."
         ),
         tags=["Creator — Courses"],
         request=CourseCreateSerializer,
@@ -253,8 +267,64 @@ _AUTH_LINE_COURSE = (
                     ),
                 ],
             ),
+            403: OpenApiResponse(
+                description=(
+                    "Wrong role, onboarding not completed, or the creator "
+                    "agreement needs re-accepting."
+                ),
+                examples=[
+                    OpenApiExample(
+                        name="Wrong role",
+                        value={
+                            "errors": [
+                                {
+                                    "type": "client_error",
+                                    "code": "permission_denied",
+                                    "message": (
+                                        "You do not have permission to "
+                                        "perform this action."
+                                    ),
+                                    "field_name": None,
+                                }
+                            ]
+                        },
+                    ),
+                    OpenApiExample(
+                        name="Onboarding not completed",
+                        value={
+                            "errors": [
+                                {
+                                    "type": "client_error",
+                                    "code": "permission_denied",
+                                    "message": (
+                                        "You must complete onboarding "
+                                        "before creating a course."
+                                    ),
+                                    "field_name": None,
+                                }
+                            ]
+                        },
+                    ),
+                    OpenApiExample(
+                        name="Creator agreement needs re-accepting",
+                        value={
+                            "errors": [
+                                {
+                                    "type": "client_error",
+                                    "code": "permission_denied",
+                                    "message": (
+                                        "The creator agreement has been "
+                                        "updated - please re-accept it "
+                                        "before creating a course."
+                                    ),
+                                    "field_name": None,
+                                }
+                            ]
+                        },
+                    ),
+                ],
+            ),
             **STANDARD_ERROR_RESPONSES["auth"],
-            **STANDARD_ERROR_RESPONSES["permission"],
             **STANDARD_ERROR_RESPONSES["server"],
         },
     ),
@@ -402,7 +472,7 @@ class CourseViewSet(ModelViewSet):
         if self.action == "publish":
             return [IsAdminRole()]
         if self.action == "create":
-            return [IsCourseCreatorRole()]
+            return [CREATE_PERMISSION()]
         return super().get_permissions()
 
     def perform_destroy(self, instance):

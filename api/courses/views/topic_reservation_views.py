@@ -50,6 +50,7 @@ _RESERVATION_EXAMPLE = {
     "status": "PENDING",
     "rejection_reason": None,
     "reviewed_at": None,
+    "user_type": "COURSE_CREATOR",
     "created_datetime": "2026-07-20T11:00:00.000Z",
 }
 

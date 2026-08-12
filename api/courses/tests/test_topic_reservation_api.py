@@ -42,6 +42,7 @@ class TopicReservationRequestApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(response.data["status"], ReservationStatus.PENDING)
         self.assertIsNone(response.data["topic"])
+        self.assertEqual(response.data["user_type"], UserRole.COURSE_CREATOR)
         self.assertTrue(
             TopicReservationRequest.objects.filter(
                 requested_by=self.creator, name="New Topic", category=self.category

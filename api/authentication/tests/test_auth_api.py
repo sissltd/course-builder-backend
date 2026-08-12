@@ -39,6 +39,7 @@ class SignupApiTests(APITestCase):
                     "first_name": "Ada",
                     "last_name": "Lovelace",
                     "country": "NG",
+                    "phone_number": "+2348012345678",
                     "terms_accepted": True,
                 },
                 format="json",
@@ -63,6 +64,7 @@ class SignupApiTests(APITestCase):
                 "first_name": "A",
                 "last_name": "B",
                 "country": "NG",
+                "phone_number": "+2348012345678",
             },
             format="json",
         )
@@ -84,6 +86,7 @@ class SignupApiTests(APITestCase):
                 "first_name": "A",
                 "last_name": "B",
                 "country": "NG",
+                "phone_number": "+2348012345678",
             },
             format="json",
         )
@@ -98,12 +101,54 @@ class SignupApiTests(APITestCase):
                 "password": "StrongPass123!",
                 "first_name": "A",
                 "last_name": "B",
+                "phone_number": "+2348012345678",
             },
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertTrue(
             any(error["field_name"] == "country" for error in response.data["errors"])
+        )
+
+    def test_missing_phone_number_rejected(self):
+        response = self.client.post(
+            "/api/v1/auth/signup/",
+            {
+                "email": "nophone@example.com",
+                "password": "StrongPass123!",
+                "first_name": "A",
+                "last_name": "B",
+                "country": "NG",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertTrue(
+            any(
+                error["field_name"] == "phone_number"
+                for error in response.data["errors"]
+            )
+        )
+
+    def test_invalid_phone_number_format_rejected(self):
+        response = self.client.post(
+            "/api/v1/auth/signup/",
+            {
+                "email": "badphone@example.com",
+                "password": "StrongPass123!",
+                "first_name": "A",
+                "last_name": "B",
+                "country": "NG",
+                "phone_number": "not-a-number",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertTrue(
+            any(
+                error["field_name"] == "phone_number"
+                for error in response.data["errors"]
+            )
         )
 
     def test_terms_accepted_defaults_false(self):
@@ -116,6 +161,7 @@ class SignupApiTests(APITestCase):
                     "first_name": "A",
                     "last_name": "B",
                     "country": "NG",
+                    "phone_number": "+2348012345678",
                 },
                 format="json",
             )
@@ -137,6 +183,7 @@ class ReviewerSignupApiTests(APITestCase):
                     "first_name": "Rita",
                     "last_name": "Reviewer",
                     "country": "NG",
+                    "phone_number": "+2348012345678",
                 },
                 format="json",
             )
@@ -509,6 +556,7 @@ class ThrottleApiTests(APITestCase):
                     "first_name": "A",
                     "last_name": "B",
                     "country": "NG",
+                    "phone_number": "+2348012345678",
                 },
                 format="json",
             )
@@ -522,6 +570,7 @@ class ThrottleApiTests(APITestCase):
                 "first_name": "A",
                 "last_name": "B",
                 "country": "NG",
+                "phone_number": "+2348012345678",
             },
             format="json",
         )

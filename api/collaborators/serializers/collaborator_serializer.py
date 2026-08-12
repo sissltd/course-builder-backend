@@ -10,9 +10,14 @@ from api.users.models import User
 class CollaboratorUserMiniSerializer(serializers.ModelSerializer):
     """Lightweight User representation for a collaborator row/detail panel."""
 
+    # This is the invited user's platform role (User.role), not
+    # CourseCollaborator.role (CollaboratorRole) exposed one level up on
+    # CollaboratorSerializer - same field name, different concept.
+    user_type = serializers.CharField(source="role", read_only=True)
+
     class Meta:
         model = User
-        fields = ["id", "first_name", "last_name", "email", "country", "sex"]
+        fields = ["id", "first_name", "last_name", "email", "country", "sex", "user_type"]
         read_only_fields = fields
 
 

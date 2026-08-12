@@ -15,6 +15,7 @@ class TopicReservationRequestSerializer(serializers.ModelSerializer):
 
     category = CategoryMiniSerializer(read_only=True)
     topic = TopicSerializer(read_only=True)
+    user_type = serializers.CharField(source="requested_by.role", read_only=True)
 
     class Meta:
         model = TopicReservationRequest
@@ -26,6 +27,7 @@ class TopicReservationRequestSerializer(serializers.ModelSerializer):
             "status",
             "rejection_reason",
             "reviewed_at",
+            "user_type",
             "created_datetime",
         ]
         read_only_fields = fields

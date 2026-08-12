@@ -103,6 +103,16 @@ class PlatformSettings(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
             "re-saving this setting."
         ),
     )
+    creator_agreement_policy_version = models.CharField(
+        verbose_name=_("Creator Agreement Policy Version"),
+        max_length=10,
+        default="1.0",
+        help_text=_(
+            "Current version of the creator agreement/NDA. Bumping this "
+            "requires creators who already completed onboarding to "
+            "re-accept before they can create new courses."
+        ),
+    )
 
     class Meta:
         verbose_name = _("Platform Settings")

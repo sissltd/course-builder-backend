@@ -12,12 +12,20 @@ from api.courses.tests.factories import (
     make_topic,
     make_user,
 )
+from api.onboarding.services import creator_profile_service
+from api.platform.services import platform_settings_service
 from api.users.enums import UserRole
 
 
 class CourseApiTests(APITestCase):
     def setUp(self):
         self.creator = make_user(role=UserRole.COURSE_CREATOR)
+        # Course creation requires completed onboarding (HasCompletedOnboarding) -
+        # most tests here are about course-creation behavior itself, not the
+        # onboarding gate, which has its own dedicated test class below.
+        creator_profile_service.update_profile(
+            user=self.creator, agreement_accepted=True
+        )
         self.other_creator = make_user(role=UserRole.COURSE_CREATOR)
         self.admin = make_user(role=UserRole.ADMIN)
         self.category = make_category()
@@ -405,3 +413,81 @@ class AdminCourseCrudTests(APITestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+
+class OnboardingGateTests(APITestCase):
+    """Course creation additionally requires a completed onboarding profile
+    (and, if the platform's creator-agreement policy version has since
+    changed, a re-acceptance) - see HasCompletedOnboarding."""
+
+    def setUp(self):
+        self.creator = make_user(role=UserRole.COURSE_CREATOR)
+        self.category = make_category()
+        self.payload = {
+            "category": str(self.category.id),
+            "title": "My Course",
+            "description": "d" * 20,
+            "terms_accepted": True,
+        }
+
+    def test_incomplete_onboarding_creator_cannot_create_course(self):
+        self.client.force_authenticate(self.creator)
+
+        response = self.client.post(
+            "/api/v1/courses/", self.payload, format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertFalse(Course.objects.filter(creator=self.creator).exists())
+
+    def test_completed_onboarding_creator_can_create_course(self):
+        creator_profile_service.update_profile(
+            user=self.creator, agreement_accepted=True
+        )
+        self.client.force_authenticate(self.creator)
+
+        response = self.client.post(
+            "/api/v1/courses/", self.payload, format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+    def test_policy_version_bump_blocks_until_reaccepted(self):
+        creator_profile_service.update_profile(
+            user=self.creator, agreement_accepted=True
+        )
+        platform_settings_service.update_settings(
+            creator_agreement_policy_version="2.0"
+        )
+        self.client.force_authenticate(self.creator)
+
+        blocked = self.client.post(
+            "/api/v1/courses/", self.payload, format="json"
+        )
+        self.assertEqual(blocked.status_code, status.HTTP_403_FORBIDDEN)
+
+        self.client.patch(
+            "/api/v1/users/me/onboarding/",
+            {"agreement_accepted": True},
+            format="json",
+        )
+
+        allowed = self.client.post(
+            "/api/v1/courses/", self.payload, format="json"
+        )
+        self.assertEqual(allowed.status_code, status.HTTP_201_CREATED)
+
+    def test_wrong_role_still_blocked_even_with_completed_onboarding(self):
+        # The role check and the onboarding check are independent gates -
+        # completing onboarding never substitutes for holding the right role.
+        admin = make_user(role=UserRole.ADMIN)
+        creator_profile_service.update_profile(
+            user=admin, agreement_accepted=True
+        )
+        self.client.force_authenticate(admin)
+
+        response = self.client.post(
+            "/api/v1/courses/", self.payload, format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)

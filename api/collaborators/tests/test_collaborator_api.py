@@ -28,6 +28,7 @@ class CollaboratorApiTests(APITestCase):
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["user"]["user_type"], UserRole.COURSE_CREATOR)
         self.assertTrue(
             CourseCollaborator.objects.filter(
                 course=self.course, user=self.invitee

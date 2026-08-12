@@ -62,12 +62,12 @@ Auth: AllowAny. Creates an inactive user (role always forced to `COURSE_CREATOR`
 
 **Body**
 ```json
-{ "email": "creator@example.com", "password": "StrongPass123!", "password_confirm": "StrongPass123!", "first_name": "Ada", "last_name": "Lovelace" }
+{ "email": "creator@example.com", "password": "StrongPass123!", "first_name": "Ada", "last_name": "Lovelace", "country": "NG", "phone_number": "+2348012345678", "terms_accepted": true }
 ```
 
 **201 Created**
 ```json
-{ "id": "...", "email": "creator@example.com", "first_name": "Ada", "last_name": "Lovelace", "role": "COURSE_CREATOR", "is_active": false, "status": "PENDING_VERIFICATION", "created_datetime": "2026-07-12T12:00:00Z", "updated_datetime": "2026-07-12T12:00:00Z", "has_completed_onboarding": false }
+{ "id": "...", "email": "creator@example.com", "first_name": "Ada", "last_name": "Lovelace", "country": "NG", "phone_number": "+2348012345678", "role": "COURSE_CREATOR", "is_active": false, "status": "PENDING_VERIFICATION", "created_datetime": "2026-07-12T12:00:00Z", "updated_datetime": "2026-07-12T12:00:00Z", "has_completed_onboarding": false }
 ```
 
 **400 Bad Request** (duplicate email)
@@ -256,6 +256,11 @@ Agreement Policy) is one resource with partial updates — call `PATCH` once per
 step with just that step's field(s); a dropped-off wizard resumes automatically since
 only the fields you send are touched.
 
+Course creation (`POST /api/v1/courses/`) is blocked until
+`has_completed_onboarding` is `true`, and re-blocked if `needs_policy_reacceptance`
+later flips to `true` (see the re-acceptance example below and the Courses folder's
+403 example).
+
 ### Get Onboarding Status
 `GET {{base_url}}/api/v1/users/me/onboarding/`
 Auth: IsAuthenticated. Lazily creates an empty profile on first call.
@@ -265,26 +270,35 @@ Auth: IsAuthenticated. Lazily creates an empty profile on first call.
 {
   "id": "...",
   "primary_expertise_category": null,
+  "primary_expertise_area": "",
   "primary_expertise_other": "",
   "video_comfort_level": "",
   "monthly_course_capacity": "",
   "agreement_accepted_at": null,
+  "agreement_accepted_version": null,
   "onboarding_completed_at": null,
-  "has_completed_onboarding": false
+  "has_completed_onboarding": false,
+  "needs_policy_reacceptance": false
 }
 ```
+Note `primary_expertise_category` is the Category's plain `id` (or `null`), not a
+nested object.
 
 ### Update Onboarding (one call per wizard step)
 `PATCH {{base_url}}/api/v1/users/me/onboarding/`
 Auth: IsAuthenticated. All fields optional — at least one required per call.
 
-**Step 1 — Area of expertise** (single-select; `category_id` references an existing active `Category`, or use `other_expertise` alone for "Others (Specify)")
+**Step 1 — Area of expertise** (`expertise_area` is a fixed enum, required
+alongside `category_id`; `other_expertise` is required only when
+`expertise_area` is `OTHERS`)
 ```json
-{ "category_id": "{{category_id}}" }
+{ "category_id": "{{category_id}}", "expertise_area": "WEB_DEVELOPMENT" }
 ```
-or
+Values: `WEB_DEVELOPMENT`, `DATA_SCIENCE_ANALYTICS`, `AI_MACHINE_LEARNING`,
+`BUSINESS_MANAGEMENT`, `DIGITAL_MARKETING`, `LEADERSHIP_SOFT_SKILLS`,
+`FINANCE_ACCOUNTING`, `OTHERS`.
 ```json
-{ "other_expertise": "Podcast production" }
+{ "expertise_area": "OTHERS", "other_expertise": "Podcast production" }
 ```
 
 **Step 2 — Level of proficiency** (really: video-content comfort)
@@ -299,28 +313,59 @@ Values: `NEEDS_GUIDANCE`, `SOMEWHAT_COMFORTABLE`, `VERY_COMFORTABLE`, `PREFERS_T
 ```
 Values: `ONE`, `TWO_TO_THREE`, `FOUR_TO_FIVE`, `MORE_THAN_FIVE`.
 
-**Step 4 — Agreement policy** (final step — completes onboarding)
+**Step 4 — Agreement policy** (final step — completes onboarding on first
+call, and unlocks Course Builder access)
 ```json
 { "agreement_accepted": true }
 ```
 
-**200 OK** (after the final step)
+**200 OK** (first time `agreement_accepted: true` is sent — also includes a
+fresh token pair)
 ```json
 {
   "id": "...",
-  "primary_expertise_category": { "id": "...", "name": "Web Development" },
+  "primary_expertise_category": "{{category_id}}",
+  "primary_expertise_area": "WEB_DEVELOPMENT",
   "primary_expertise_other": "",
   "video_comfort_level": "VERY_COMFORTABLE",
   "monthly_course_capacity": "TWO_TO_THREE",
   "agreement_accepted_at": "2026-07-12T19:23:12Z",
+  "agreement_accepted_version": "1.0",
   "onboarding_completed_at": "2026-07-12T19:23:12Z",
-  "has_completed_onboarding": true
+  "has_completed_onboarding": true,
+  "needs_policy_reacceptance": false,
+  "access": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "refresh": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
 }
 ```
 
 **400 Bad Request** (empty body, or `category_id` references an inactive/nonexistent category)
 ```json
 { "errors": [ { "type": "validation_error", "code": "invalid", "message": "At least one onboarding field must be provided.", "field_name": "non_field_errors" } ] }
+```
+
+### Re-accepting after a policy version bump
+
+If an Admin bumps `PlatformSettings.creator_agreement_policy_version` after a
+creator already completed onboarding, `GET /users/me/onboarding/` starts
+returning `needs_policy_reacceptance: true`, and `POST /api/v1/courses/`
+403s until the creator sends `agreement_accepted: true` again:
+
+```json
+{ "agreement_accepted": true }
+```
+
+**200 OK** (re-acceptance — `onboarding_completed_at` is unchanged from the
+original completion, and no token pair is issued this time)
+```json
+{
+  "...": "...",
+  "agreement_accepted_at": "2026-08-01T09:00:00Z",
+  "agreement_accepted_version": "1.1",
+  "onboarding_completed_at": "2026-07-12T19:23:12Z",
+  "has_completed_onboarding": true,
+  "needs_policy_reacceptance": false
+}
 ```
 
 ---
@@ -448,7 +493,9 @@ courses — another creator's course 404s rather than 403s (existence isn't leak
 
 ### Create Draft Course
 `POST {{base_url}}/api/v1/courses/`
-Auth: Course Creator role
+Auth: Course Creator role, with a completed onboarding profile (see the
+Onboarding folder) — a creator who hasn't finished onboarding, or who needs
+to re-accept an updated creator agreement, gets 403 here.
 
 **Body**
 ```json
@@ -493,6 +540,21 @@ Auth: Course Creator role
       "code": "invalid",
       "message": "You must accept the category Terms and Conditions to create a course.",
       "field_name": "non_field_errors"
+    }
+  ]
+}
+```
+
+**403 Forbidden** (onboarding not completed — see the Onboarding folder to
+resolve)
+```json
+{
+  "errors": [
+    {
+      "type": "client_error",
+      "code": "permission_denied",
+      "message": "You must complete onboarding before creating a course.",
+      "field_name": null
     }
   ]
 }
@@ -793,7 +855,7 @@ Auth: Creator Reviewer or Admin — full `CourseDetailSerializer`.
 {
   "id": "ra1...",
   "course": "8a1e2b3c-4444-4a11-9f3a-000000000010",
-  "reviewer": { "id": "u1...", "email": "reviewer@example.com" },
+  "reviewer": { "id": "u1...", "email": "reviewer@example.com", "user_type": "CREATOR_REVIEWER" },
   "action": "APPROVE",
   "feedback": { "summary": "Great course, approved as-is." },
   "created_datetime": "2026-07-11T12:00:00Z"

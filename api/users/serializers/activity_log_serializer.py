@@ -32,4 +32,5 @@ class UserActivityLogSerializer(serializers.ModelSerializer):
             "first_name": obj.actor_user.first_name,
             "last_name": obj.actor_user.last_name,
             "email": obj.actor_user.email,
+            "user_type": obj.actor_user.role,
         }

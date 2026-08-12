@@ -294,6 +294,7 @@ class UserActivityLogApiTests(APITestCase):
         results = response.data["data"]["results"]
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0]["summary"], "You updated your profile.")
+        self.assertEqual(results[0]["actor"]["user_type"], UserRole.COURSE_CREATOR)
 
     def test_filter_by_category(self):
         user = _make_user()
@@ -363,10 +364,13 @@ class UserActivityLogExportApiTests(APITestCase):
 
         rows = self._csv_rows(response)
         self.assertEqual(
-            rows[0], ["category", "action", "summary", "actor", "activity_datetime"]
+            rows[0],
+            ["category", "action", "summary", "actor", "user_type", "activity_datetime"],
         )
         summaries = [row[2] for row in rows[1:]]
         self.assertEqual(summaries, ["You updated your profile."])
+        user_types = [row[4] for row in rows[1:]]
+        self.assertEqual(user_types, [UserRole.COURSE_CREATOR])
 
     def test_category_filter_parity_with_list_endpoint(self):
         user = _make_user()

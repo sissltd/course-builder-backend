@@ -30,6 +30,7 @@ class PlatformSettingsSerializer(serializers.ModelSerializer):
             "sla_amber_threshold_hours",
             "sla_red_threshold_hours",
             "mfa_enrollment_grace_period_days",
+            "creator_agreement_policy_version",
             "updated_datetime",
         ]
         read_only_fields = fields
@@ -135,6 +136,15 @@ class PlatformSettingsUpdateSerializer(serializers.Serializer):
     sla_red_threshold_hours = serializers.IntegerField(required=False, min_value=1)
     mfa_enrollment_grace_period_days = serializers.IntegerField(
         required=False, min_value=0
+    )
+    creator_agreement_policy_version = serializers.CharField(
+        required=False,
+        max_length=10,
+        help_text=(
+            "Version identifier for the creator agreement/NDA. Bumping this "
+            "requires any creator who already completed onboarding to "
+            "re-accept before they can create new courses."
+        ),
     )
 
     def validate(self, attrs):

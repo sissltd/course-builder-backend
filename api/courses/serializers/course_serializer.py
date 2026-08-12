@@ -1,3 +1,4 @@
+from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
@@ -242,10 +243,15 @@ class ReviewActionSerializer(serializers.ModelSerializer):
         fields = ["id", "course", "reviewer", "action", "feedback", "created_datetime"]
         read_only_fields = fields
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_reviewer(self, obj):
         if not obj.reviewer_id:
             return None
-        return {"id": obj.reviewer_id, "email": obj.reviewer.email}
+        return {
+            "id": obj.reviewer_id,
+            "email": obj.reviewer.email,
+            "user_type": obj.reviewer.role,
+        }
 
 
 class ReviewApproveSerializer(serializers.Serializer):

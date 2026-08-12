@@ -52,7 +52,7 @@ approval and topic creation.
 
 ## 1. Signup & Authentication
 
-### 1.1 Signup (now requires `country`, optionally `terms_accepted`)
+### 1.1 Signup (now requires `country` and `phone_number`, optionally `terms_accepted`)
 ```bash
 curl -s -X POST $BASE_URL/api/v1/auth/signup/ \
   -H "Content-Type: application/json" \
@@ -62,12 +62,15 @@ curl -s -X POST $BASE_URL/api/v1/auth/signup/ \
     "first_name": "Grace",
     "last_name": "Hopper",
     "country": "US",
+    "phone_number": "+12025550123",
     "terms_accepted": true
   }'
 ```
 **Expect 201.** `country` is required (ISO 3166-1 alpha-2, e.g. `"US"`,
-`"NG"`) — omitting it now 400s, unlike before this cycle. Account is inactive
-until verified; a verification link prints to the console.
+`"NG"`) — omitting it now 400s, unlike before this cycle. `phone_number` is
+also required (optional leading `+`, 7-15 digits) and 400s on both missing
+and malformed values. Account is inactive until verified; a verification
+link prints to the console.
 
 ### 1.2 Verify Email
 Copy the `token` query param from the printed link, then:
@@ -85,8 +88,9 @@ export ACCESS_TOKEN="paste the access value here"
 ```bash
 curl -s $BASE_URL/api/v1/users/me/ -H "Authorization: Bearer $ACCESS_TOKEN"
 ```
-**Expect 200.** Confirm `country: "US"`, `terms_accepted_at` is set (non-null,
-since you passed `terms_accepted: true`), and `has_completed_onboarding: false`.
+**Expect 200.** Confirm `country: "US"`, `phone_number: "+12025550123"`,
+`terms_accepted_at` is set (non-null, since you passed
+`terms_accepted: true`), and `has_completed_onboarding: false`.
 
 ### 1.4 Admin Login (for later steps)
 ```bash
@@ -162,6 +166,35 @@ curl -s $BASE_URL/api/v1/users/me/ -H "Authorization: Bearer $ACCESS_TOKEN"
 ```
 **Expect** `has_completed_onboarding: true`.
 
+### 2.7 Policy re-acceptance after an Admin bumps the agreement version
+
+This confirms the second half of `HasCompletedOnboarding` — see §5.0 for the
+matching Course Builder gate check.
+
+```bash
+# As Admin, bump the platform's policy version:
+curl -s -X PATCH $BASE_URL/api/v1/platform-settings/ \
+  -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
+  -d '{ "creator_agreement_policy_version": "2.0" }'
+```
+```bash
+# As the creator who already completed onboarding, confirm the flag flips:
+curl -s $BASE_URL/api/v1/users/me/onboarding/ -H "Authorization: Bearer $ACCESS_TOKEN"
+```
+**Expect** `needs_policy_reacceptance: true`, `has_completed_onboarding`
+still `true`, `onboarding_completed_at` unchanged from §2.5.
+
+```bash
+# Re-accept:
+curl -s -X PATCH $BASE_URL/api/v1/users/me/onboarding/ \
+  -H "Authorization: Bearer $ACCESS_TOKEN" -H "Content-Type: application/json" \
+  -d '{ "agreement_accepted": true }'
+```
+**Expect 200**, `agreement_accepted_version: "2.0"`,
+`needs_policy_reacceptance: false`, `onboarding_completed_at` **still
+unchanged** (not a second completion), and **no** `access`/`refresh` keys
+this time (those are only issued on first-time completion, §2.5).
+
 ---
 
 ## 3. Category Request Flow
@@ -227,6 +260,23 @@ Creating a second Topic with the **same name in the same category** → **400**
 ---
 
 ## 5. Course Creation (with the new Course Information fields)
+
+By this point `$ACCESS_TOKEN` belongs to a creator who completed onboarding
+in §2 - required for every request below (`HasCompletedOnboarding`, composed
+with the role check on `POST /courses/`).
+
+### 5.0 Negative Case — Onboarding Not Completed
+
+Using a **freshly signed-up** creator who has not touched `/users/me/onboarding/`
+at all (repeat §1 with a new email to get a second token, `$NEW_ACCESS_TOKEN`):
+```bash
+curl -s -X POST $BASE_URL/api/v1/courses/ \
+  -H "Authorization: Bearer $NEW_ACCESS_TOKEN" -H "Content-Type: application/json" \
+  -d "{ \"category\": \"$CATEGORY_ID\", \"title\": \"X\", \"description\": \"d\", \"terms_accepted\": true }"
+```
+**Expect 403** - `"You must complete onboarding before creating a course."`.
+See §2.7 for the matching "policy needs re-acceptance" 403 variant, which
+uses the *same* endpoint and role but a *different* message.
 
 ### 5.1 Create a Draft Course
 ```bash
@@ -416,6 +466,7 @@ should show the creator's balance credited by `creator_price_snapshot`.
 ## Sign-off checklist
 
 - [ ] Signup rejects a missing `country`
+- [ ] Signup rejects a missing or malformed `phone_number`
 - [ ] Onboarding's final step returns `access`/`refresh`; no other step does
 - [ ] `OTHERS` expertise without `other_expertise` is rejected
 - [ ] Category request → approve creates a real Category and emails the requester

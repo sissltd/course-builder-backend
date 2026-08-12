@@ -44,3 +44,39 @@ class IsCourseOwner(BasePermission):
             return course
         module = getattr(obj, "module", None)
         return getattr(module, "course", None) if module else None
+
+
+class HasCompletedOnboarding(BasePermission):
+    """Blocks course creation until the creator has finished the onboarding
+    wizard and, if the platform's creator-agreement policy version has since
+    changed, re-accepted it.
+
+    Superusers bypass, matching HasRole's convention elsewhere
+    (api/users/permissions.py). A read-only lookup - unlike
+    creator_profile_service.get_or_create_profile, this never creates a
+    CreatorProfile row as a side effect of merely checking a permission.
+    """
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not (user and user.is_authenticated):
+            return False
+        if user.is_superuser:
+            return True
+
+        # Local import: keeps this permission module decoupled from the
+        # onboarding app at import time, mirroring the pattern used above
+        # for the collaborators app.
+        from api.onboarding.models import CreatorProfile
+
+        profile = CreatorProfile.objects.filter(user=user).first()
+        if profile is None or not profile.has_completed_onboarding:
+            self.message = "You must complete onboarding before creating a course."
+            return False
+        if profile.needs_policy_reacceptance:
+            self.message = (
+                "The creator agreement has been updated - please re-accept "
+                "it before creating a course."
+            )
+            return False
+        return True

@@ -18,6 +18,7 @@ class MeSerializer(serializers.ModelSerializer):
             "first_name",
             "last_name",
             "country",
+            "phone_number",
             "timezone",
             "avatar_url",
             "terms_accepted_at",
