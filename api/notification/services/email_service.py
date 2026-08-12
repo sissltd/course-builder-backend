@@ -32,7 +32,9 @@ def send_templated_email(
     provider = getattr(settings, "EMAIL_PROVIDER", "gmail")
 
     # Use the unified dispatcher for the common case (no advanced features)
-    if provider == "resend" and not (attachments or cc_emails or bcc_emails or reply_to):
+    if provider == "resend" and not (
+        attachments or cc_emails or bcc_emails or reply_to
+    ):
         dispatch_email(
             subject=subject,
             recipients=receivers,

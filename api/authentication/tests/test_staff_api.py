@@ -1,9 +1,9 @@
 """End-to-end coverage for the staff provisioning flows.
 
-Covers the gates that matter most: the bootstrap endpoint must be unusable
-without the environment secret, staff roles must be unreachable except through
-a Super Admin's invitation, and the invite dialog's role choice must never be
-able to mint a second Super Admin.
+Covers the gates that matter most: the bootstrap endpoint must be disabled in
+production, staff roles must be unreachable except through a Super Admin's
+invitation, and the invite dialog's role choice must never be able to mint a
+second Super Admin.
 """
 
 from django.conf import settings
@@ -24,10 +24,7 @@ STAFF_URL = "/api/v1/auth/staff/"
 INVITE_URL = "/api/v1/auth/staff/invitations/"
 ACCEPT_URL = "/api/v1/auth/staff/invitations/accept/"
 
-BOOTSTRAP_TOKEN = "test-bootstrap-secret"
-
 VALID_BOOTSTRAP_PAYLOAD = {
-    "bootstrap_token": BOOTSTRAP_TOKEN,
     "email": "ops@example.com",
     "password": "StrongPass123!",
     "first_name": "Amara",
@@ -43,7 +40,6 @@ def reactivate_url(staff):
     return f"/api/v1/auth/staff/{staff.id}/reactivate/"
 
 
-@override_settings(SUPERADMIN_BOOTSTRAP_TOKEN=BOOTSTRAP_TOKEN)
 class SuperAdminBootstrapApiTests(APITestCase):
     def setUp(self):
         # Throttling is cache-backed (shared Redis, not DB-transaction-scoped
@@ -79,40 +75,14 @@ class SuperAdminBootstrapApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIn("access", response.data)
 
-    def test_wrong_bootstrap_token_rejected(self):
+    @override_settings(SUPERADMIN_BOOTSTRAP_ENABLED=False)
+    def test_disabled_environment_rejects_bootstrap(self):
         response = self.client.post(
             BOOTSTRAP_URL,
-            {**VALID_BOOTSTRAP_PAYLOAD, "bootstrap_token": "wrong-secret"},
+            VALID_BOOTSTRAP_PAYLOAD,
             format="json",
         )
-
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-        self.assertFalse(User.objects.filter(email="ops@example.com").exists())
-
-    @override_settings(SUPERADMIN_BOOTSTRAP_TOKEN="")
-    def test_unset_server_token_disables_endpoint(self):
-        # The critical case: a deployment that forgot to set the variable must
-        # not be claimable by whoever finds the URL first.
-        response = self.client.post(
-            BOOTSTRAP_URL,
-            {**VALID_BOOTSTRAP_PAYLOAD, "bootstrap_token": "any-guess"},
-            format="json",
-        )
-
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-        self.assertFalse(User.objects.filter(role=UserRole.SUPER_ADMIN).exists())
-
-    @override_settings(SUPERADMIN_BOOTSTRAP_TOKEN="")
-    def test_blank_token_never_matches_unset_server_token(self):
-        # Rejected at field validation (400) rather than the service's 403, but
-        # what matters is that empty == empty never grants the seat.
-        response = self.client.post(
-            BOOTSTRAP_URL,
-            {**VALID_BOOTSTRAP_PAYLOAD, "bootstrap_token": ""},
-            format="json",
-        )
-
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertFalse(User.objects.filter(role=UserRole.SUPER_ADMIN).exists())
 
     def test_second_bootstrap_rejected(self):
@@ -717,11 +687,8 @@ class ReactivateStaffApiTests(APITestCase):
         )
 
 
-@override_settings(SUPERADMIN_BOOTSTRAP_TOKEN=BOOTSTRAP_TOKEN)
 class BootstrapThrottleTests(APITestCase):
-    """The bootstrap endpoint is guarded by a shared secret rather than a
-    credential, so without a rate limit it is an unlimited guessing oracle
-    against SUPERADMIN_BOOTSTRAP_TOKEN."""
+    """The public bootstrap endpoint remains rate limited."""
 
     def setUp(self):
         cache.clear()
@@ -729,18 +696,18 @@ class BootstrapThrottleTests(APITestCase):
     def tearDown(self):
         cache.clear()
 
-    def test_repeated_wrong_token_guesses_are_throttled(self):
+    def test_repeated_bootstrap_requests_are_throttled(self):
         codes = []
         for attempt in range(7):
             response = self.client.post(
                 BOOTSTRAP_URL,
-                {**VALID_BOOTSTRAP_PAYLOAD, "bootstrap_token": f"guess-{attempt}"},
+                {**VALID_BOOTSTRAP_PAYLOAD, "email": f"ops-{attempt}@example.com"},
                 format="json",
             )
             codes.append(response.status_code)
 
         self.assertIn(status.HTTP_429_TOO_MANY_REQUESTS, codes)
-        self.assertEqual(codes[0], status.HTTP_403_FORBIDDEN)
+        self.assertEqual(codes[0], status.HTTP_201_CREATED)
 
     def test_throttle_does_not_block_a_single_legitimate_bootstrap(self):
         response = self.client.post(

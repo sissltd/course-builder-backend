@@ -1,5 +1,3 @@
-import secrets
-
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
@@ -48,10 +46,8 @@ class StaffService:
 
     Two entry paths exist, and they are deliberately asymmetric:
 
-    * `bootstrap_superadmin` runs exactly once per deployment, gated by a shared
-      secret held in the server environment rather than by an authenticated
-      caller - there is nobody to authenticate as before the first account
-      exists.
+    * `bootstrap_superadmin` runs exactly once in enabled environments - there
+      is nobody to authenticate as before the first account exists.
     * `invite_staff` / `accept_staff_invitation` is the ongoing flow, gated the
       normal way: only an authenticated Super Admin can invite, and the invitee
       proves control of their inbox before the account activates.
@@ -60,7 +56,6 @@ class StaffService:
     def bootstrap_superadmin(
         self,
         *,
-        bootstrap_token: str,
         email: str,
         password: str,
         first_name: str,
@@ -71,10 +66,7 @@ class StaffService:
 
         Gated by two independent conditions, both of which must hold:
 
-        1. `bootstrap_token` matches settings.SUPERADMIN_BOOTSTRAP_TOKEN. An
-           unset (empty) setting disables the endpoint entirely rather than
-           accepting an empty token - otherwise deploying with the variable
-           missing would leave the seat open to whoever found the URL first.
+        1. The deployment environment enables bootstrap.
         2. No Super Admin exists yet.
 
         The second check is backed by a partial unique constraint on the users
@@ -83,16 +75,10 @@ class StaffService:
         exactly like the sequential case.
         """
 
-        configured_token = settings.SUPERADMIN_BOOTSTRAP_TOKEN
-        if not configured_token:
+        if not settings.SUPERADMIN_BOOTSTRAP_ENABLED:
             raise exceptions.PermissionDenied(
                 "Super admin bootstrap is disabled on this deployment."
             )
-
-        # Constant-time comparison: a plain != leaks the shared secret one
-        # character at a time to an attacker who can measure response timing.
-        if not secrets.compare_digest(str(bootstrap_token), str(configured_token)):
-            raise exceptions.PermissionDenied("Invalid bootstrap token.")
 
         if User.objects.filter(role=UserRole.SUPER_ADMIN).exists():
             raise exceptions.ValidationError(

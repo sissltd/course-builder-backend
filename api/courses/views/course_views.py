@@ -788,8 +788,7 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
                                     "type": "validation_error",
                                     "code": "invalid",
                                     "message": (
-                                        "Course cannot be approved from "
-                                        "status 'DRAFT'."
+                                        "Course cannot be approved from status 'DRAFT'."
                                     ),
                                     "field_name": None,
                                 }
@@ -876,8 +875,7 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
                                     "type": "validation_error",
                                     "code": "invalid",
                                     "message": (
-                                        "A summary is required when "
-                                        "rejecting a course."
+                                        "A summary is required when rejecting a course."
                                     ),
                                     "field_name": "feedback",
                                 }

@@ -13,7 +13,8 @@ class Command(BaseCommand):
     user_admin_service both refuse it - so an endpoint that could clear its
     lockout would be the one privileged-account write the API otherwise does
     not expose, and would need protecting accordingly. Requiring shell access
-    puts this at the same trust level as setting SUPERADMIN_BOOTSTRAP_TOKEN,
+    puts this at the same trust level as changing the deployment bootstrap
+    policy,
     which is where operations of this kind already live.
 
     A lockout expires on its own after the window in

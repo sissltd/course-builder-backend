@@ -382,7 +382,7 @@ class ResendVerificationView(APIView):
                                     "type": "validation_error",
                                     "code": "invalid",
                                     "message": (
-                                        "Please wait before requesting " "another link."
+                                        "Please wait before requesting another link."
                                     ),
                                     "field_name": None,
                                 }

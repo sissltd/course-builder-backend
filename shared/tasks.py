@@ -122,7 +122,13 @@ def dispatch_email(
 
 # This is a shared task for sending email generally to users
 @shared_task(bind=True, max_retries=3, default_retry_delay=30)
-def send_email_task(self, subject: str, recipient: str, html_content: str, text_content: str | None = None):
+def send_email_task(
+    self,
+    subject: str,
+    recipient: str,
+    html_content: str,
+    text_content: str | None = None,
+):
     try:
         # Generate a basic text fallback if not provided
         if text_content is None:

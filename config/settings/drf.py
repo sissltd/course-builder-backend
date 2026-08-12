@@ -26,10 +26,7 @@ REST_FRAMEWORK = {
         "login": "5/min",
         "forgot_password": "3/hour",
         "reset_password": "5/hour",
-        # Tighter than the rest: this endpoint is guarded by a shared secret
-        # rather than a credential, so an unthrottled version is an offline-
-        # speed guessing oracle against SUPERADMIN_BOOTSTRAP_TOKEN. A genuine
-        # operator bootstraps once, so 5/hour costs them nothing.
+        # Tighter than the rest because this is a public account-creation route.
         "superadmin_bootstrap": "5/hour",
         "resend_verification": "3/hour",
     },
@@ -70,13 +67,13 @@ SPECTACULAR_SETTINGS = {
         {
             "name": "Auth — Password",
             "description": (
-                "Forgot-password, password reset, and authenticated password " "change."
+                "Forgot-password, password reset, and authenticated password change."
             ),
         },
         {
             "name": "Auth — Email Change",
             "description": (
-                "Requesting and confirming a change of the account email " "address."
+                "Requesting and confirming a change of the account email address."
             ),
         },
         {
@@ -90,7 +87,7 @@ SPECTACULAR_SETTINGS = {
             "name": "Auth — Super Admin Bootstrap",
             "description": (
                 "One-time claim of the platform's single Super Admin seat using "
-                "an environment secret."
+                "the deployment environment."
             ),
         },
         {
@@ -139,7 +136,7 @@ SPECTACULAR_SETTINGS = {
         {
             "name": "Creator — Topics",
             "description": (
-                "Browsing the topic taxonomy to narrow a course during " "creation."
+                "Browsing the topic taxonomy to narrow a course during creation."
             ),
         },
         {
@@ -184,7 +181,7 @@ SPECTACULAR_SETTINGS = {
         {
             "name": "Creator — Activity Log",
             "description": (
-                "The signed-in user's own activity history, including CSV " "export."
+                "The signed-in user's own activity history, including CSV export."
             ),
         },
         {
@@ -208,7 +205,7 @@ SPECTACULAR_SETTINGS = {
         {
             "name": "Creator — Uploads",
             "description": (
-                "Requesting a presigned URL to upload files directly to " "storage."
+                "Requesting a presigned URL to upload files directly to storage."
             ),
         },
         {
@@ -248,8 +245,7 @@ SPECTACULAR_SETTINGS = {
         {
             "name": "Admin — Overview",
             "description": (
-                "Aggregate platform counts and wallet totals for the admin "
-                "dashboard."
+                "Aggregate platform counts and wallet totals for the admin dashboard."
             ),
         },
         {
@@ -259,8 +255,7 @@ SPECTACULAR_SETTINGS = {
         {
             "name": "Admin — Staff",
             "description": (
-                "Managing staff: invite, list, revoke, and reactivate staff "
-                "accounts."
+                "Managing staff: invite, list, revoke, and reactivate staff accounts."
             ),
         },
         {
@@ -294,8 +289,7 @@ SPECTACULAR_SETTINGS = {
         {
             "name": "Admin — Activity Log",
             "description": (
-                "The platform-wide audit trail of user activity across every "
-                "account."
+                "The platform-wide audit trail of user activity across every account."
             ),
         },
         {
@@ -308,7 +302,7 @@ SPECTACULAR_SETTINGS = {
         {
             "name": "Admin — Courses",
             "description": (
-                "Admin-only course actions such as publishing an approved " "course."
+                "Admin-only course actions such as publishing an approved course."
             ),
         },
         {

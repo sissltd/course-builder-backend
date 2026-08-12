@@ -402,15 +402,9 @@ staff or privileged role is the chain below (implemented in
 1. **Bootstrap the Super Admin** — `POST /api/v1/auth/superadmin/bootstrap/`
 
    Claims the platform's single `SUPER_ADMIN` seat. There is no logged-in user
-   to authorize this yet, so it is gated on a shared secret instead: the
-   request's `bootstrap_token` must match the `SUPERADMIN_BOOTSTRAP_TOKEN`
-   environment variable.
-
-   `SUPERADMIN_BOOTSTRAP_TOKEN` defaults to empty, and empty **disables** the
-   endpoint (403) rather than accepting an empty token — a deployment that
-   forgets the variable is not claimable by whoever finds the URL first. Set it
-   to a long random value (`openssl rand -hex 32`), bootstrap once, then clear
-   it so the secret stops being a live credential.
+   to authorize this yet, so it is enabled by code only for local,
+   development, and staging-like environments. Set `DJANGO_ENV=production`
+   on production deployments to disable the route.
 
    Exactly one `SUPER_ADMIN` can exist. That is enforced by a partial unique
    index (`unique_super_admin` on `api.users.models.User`), not just an
@@ -471,10 +465,8 @@ endpoint: the second one fails with a readable message rather than silently
 becoming an invisible co-owner.
 
 The bootstrap endpoint is rate limited to **5 requests per hour per IP**. It is
-authorized by a shared secret rather than a credential, so an unthrottled
-version is a guessing oracle against `SUPERADMIN_BOOTSTRAP_TOKEN`; a genuine
-operator calls it once, so the limit costs nothing. The token comparison is
-constant-time (`secrets.compare_digest`) for the same reason.
+authorized by the deployment environment rather than a credential, so the
+public route remains rate limited to protect account creation.
 
 Two operational notes:
 
@@ -491,7 +483,7 @@ Two operational notes:
   ```
 
   It requires shell access, which is the same trust level as setting
-  `SUPERADMIN_BOOTSTRAP_TOKEN`, and writes a `LOCKOUT_CLEARED` entry to the
+  deployment environment policy, and writes a `LOCKOUT_CLEARED` entry to the
   account's activity log so an unexplained unlock is still visible.
 
 ### Category Access
