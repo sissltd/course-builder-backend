@@ -135,7 +135,7 @@ class LessonAssessmentView(APIView):
             "use PUT to create one if it doesn't.\n\n"
             "**Important:** None."
         ),
-        tags=["Quiz"],
+        tags=["Creator — Assessments"],
         parameters=[
             OpenApiParameter("course_pk", str, OpenApiParameter.PATH),
             OpenApiParameter("module_pk", str, OpenApiParameter.PATH),
@@ -181,7 +181,7 @@ class LessonAssessmentView(APIView):
             "questions-per-lesson count threshold is enforced separately at "
             "submit time, not on every save."
         ),
-        tags=["Quiz"],
+        tags=["Creator — Assessments"],
         parameters=[
             OpenApiParameter("course_pk", str, OpenApiParameter.PATH),
             OpenApiParameter("module_pk", str, OpenApiParameter.PATH),
@@ -260,7 +260,7 @@ class ModuleAssessmentView(APIView):
             "use PUT to create one if it doesn't.\n\n"
             "**Important:** None."
         ),
-        tags=["Quiz"],
+        tags=["Creator — Assessments"],
         parameters=[
             OpenApiParameter("course_pk", str, OpenApiParameter.PATH),
             OpenApiParameter("module_pk", str, OpenApiParameter.PATH),
@@ -304,7 +304,7 @@ class ModuleAssessmentView(APIView):
             "per-question shape is validated here; count-per-level "
             "thresholds are enforced separately at submit time."
         ),
-        tags=["Quiz"],
+        tags=["Creator — Assessments"],
         parameters=[
             OpenApiParameter("course_pk", str, OpenApiParameter.PATH),
             OpenApiParameter("module_pk", str, OpenApiParameter.PATH),
@@ -381,7 +381,7 @@ class CourseAssessmentView(APIView):
             "- use PUT to create one if it doesn't.\n\n"
             "**Important:** None."
         ),
-        tags=["Quiz"],
+        tags=["Creator — Assessments"],
         parameters=[OpenApiParameter("course_pk", str, OpenApiParameter.PATH)],
         responses={
             200: OpenApiResponse(
@@ -425,7 +425,7 @@ class CourseAssessmentView(APIView):
             "threshold is enforced separately at submit time, not on every "
             "save."
         ),
-        tags=["Quiz"],
+        tags=["Creator — Assessments"],
         parameters=[OpenApiParameter("course_pk", str, OpenApiParameter.PATH)],
         request=AssessmentWriteSerializer,
         examples=[

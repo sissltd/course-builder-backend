@@ -1,4 +1,4 @@
-from drf_spectacular.utils import OpenApiResponse, extend_schema
+from drf_spectacular.utils import OpenApiResponse, extend_schema, extend_schema_view
 from rest_framework.generics import RetrieveUpdateAPIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -18,6 +18,16 @@ from api.users.services import queue_preference_service, reviewer_availability_s
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 
 
+@extend_schema_view(
+    get=extend_schema(
+        summary="Retrieve the current user's profile",
+        tags=["Creator — Profile"],
+    ),
+    patch=extend_schema(
+        summary="Update the current user's profile",
+        tags=["Creator — Profile"],
+    ),
+)
 class MeView(RetrieveUpdateAPIView):
     """Retrieve or partially update the current authenticated user's profile.
 
@@ -67,7 +77,7 @@ class ReviewerAvailabilityView(APIView):
             "**Auth:** Any authenticated user.\n\n"
             "**Prerequisites:** None."
         ),
-        tags=["Users — Reviewer Preferences"],
+        tags=["Reviewer — Availability"],
         responses={
             200: OpenApiResponse(response=ReviewerAvailabilitySerializer),
             **STANDARD_ERROR_RESPONSES["auth"],
@@ -88,7 +98,7 @@ class ReviewerAvailabilityView(APIView):
             "**Auth:** Any authenticated user.\n\n"
             "**Prerequisites:** None."
         ),
-        tags=["Users — Reviewer Preferences"],
+        tags=["Reviewer — Availability"],
         request=ReviewerAvailabilityUpdateSerializer,
         responses={
             200: OpenApiResponse(response=ReviewerAvailabilitySerializer),
@@ -133,7 +143,7 @@ class QueueBehaviourPreferenceView(APIView):
             "**Auth:** Any authenticated user.\n\n"
             "**Prerequisites:** None."
         ),
-        tags=["Users — Reviewer Preferences"],
+        tags=["Reviewer — Queue Preferences"],
         responses={
             200: OpenApiResponse(response=QueueBehaviourPreferenceSerializer),
             **STANDARD_ERROR_RESPONSES["auth"],
@@ -154,7 +164,7 @@ class QueueBehaviourPreferenceView(APIView):
             "**Auth:** Any authenticated user.\n\n"
             "**Prerequisites:** None."
         ),
-        tags=["Users — Reviewer Preferences"],
+        tags=["Reviewer — Queue Preferences"],
         request=QueueBehaviourPreferenceUpdateSerializer,
         responses={
             200: OpenApiResponse(response=QueueBehaviourPreferenceSerializer),

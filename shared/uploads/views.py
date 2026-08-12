@@ -1,3 +1,4 @@
+from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework import exceptions
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -23,6 +24,11 @@ class UploadPresignView(APIView):
     permission_classes = [IsAuthenticated]
     serializer_class = UploadRequestSerializer
 
+    @extend_schema(
+        summary="Request a presigned upload URL",
+        tags=["Creator — Uploads"],
+        responses={200: OpenApiResponse(response=UploadResponseSerializer)},
+    )
     def post(self, request):
         serializer = UploadRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)

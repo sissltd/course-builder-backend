@@ -74,7 +74,7 @@ _DRAFT_ONLY_400 = OpenApiResponse(
             "module the caller can't reach - it returns an empty result "
             "set instead."
         ),
-        tags=["Courses — Lessons"],
+        tags=["Creator — Lessons"],
         parameters=_PATH_PARAMETERS,
         responses={
             200: OpenApiResponse(
@@ -97,7 +97,7 @@ _DRAFT_ONLY_400 = OpenApiResponse(
             "module.\n\n"
             "**Important:** None."
         ),
-        tags=["Courses — Lessons"],
+        tags=["Creator — Lessons"],
         parameters=_PATH_PARAMETERS,
         responses={
             200: OpenApiResponse(
@@ -124,7 +124,7 @@ _DRAFT_ONLY_400 = OpenApiResponse(
             "shape here (a list of non-empty strings) - the 2-5 "
             "count-per-lesson rule is enforced later, at submit time."
         ),
-        tags=["Courses — Lessons"],
+        tags=["Creator — Lessons"],
         parameters=_PATH_PARAMETERS,
         request=LessonWriteSerializer,
         examples=[
@@ -162,7 +162,7 @@ _DRAFT_ONLY_400 = OpenApiResponse(
             "**Prerequisites:** The parent course must be `DRAFT`.\n\n"
             "**Important:** None."
         ),
-        tags=["Courses — Lessons"],
+        tags=["Creator — Lessons"],
         parameters=_PATH_PARAMETERS,
         request=LessonWriteSerializer,
         responses={
@@ -189,7 +189,7 @@ _DRAFT_ONLY_400 = OpenApiResponse(
             "**Prerequisites:** The parent course must be `DRAFT`.\n\n"
             "**Important:** None."
         ),
-        tags=["Courses — Lessons"],
+        tags=["Creator — Lessons"],
         parameters=_PATH_PARAMETERS,
         request=LessonWriteSerializer,
         examples=[
@@ -223,7 +223,7 @@ _DRAFT_ONLY_400 = OpenApiResponse(
             "**Prerequisites:** The parent course must be `DRAFT`.\n\n"
             "**Important:** None."
         ),
-        tags=["Courses — Lessons"],
+        tags=["Creator — Lessons"],
         parameters=_PATH_PARAMETERS,
         responses={
             204: OpenApiResponse(description="Lesson deleted."),

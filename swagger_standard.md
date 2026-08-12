@@ -81,43 +81,47 @@ description=(
 
 ### Approved audiences
 
-| Audience    | When to use                                             |
-| ----------- | ------------------------------------------------------- |
-| `Public`    | No auth required — anyone can call (e.g. health checks) |
-| `Auth`      | Auth lifecycle — login, OTP, password reset, onboarding |
-| `Admin`     | Requires admin/staff role                               |
-| `Vendor`    | Called by vendor users                                  |
-| `Artisan`   | Called by artisan users                                 |
-| `Homeowner` | Called by homeowner users                               |
-| `System`    | Webhooks, internal callbacks                            |
+| Audience   | When to use                                                        |
+| ---------- | ------------------------------------------------------------------- |
+| `Public`   | No auth required — anyone can call (e.g. bank lookup, health checks) |
+| `Auth`     | Auth lifecycle — signup, login, OTP/email verification, password, MFA, sessions, staff invitation |
+| `Creator`  | Called by Course Creators and Writers (course authoring, wallet, collaborators) |
+| `Reviewer` | Called by Creator Reviewers / Verifiers / Approvers / AI / QA (review queues) |
+| `Admin`    | Called by Admins and Super Admins (platform management, KYC review, staff) |
+| `System`   | Webhooks, internal callbacks (e.g. Paystack)                        |
 
 ### Approved tag examples
 
 ```
-"Auth — Onboarding"
-"Auth — Login"
-"Auth — Vendor Invitation"
+"Auth — Session"
+"Auth — Signup & Verification"
+"Auth — Password"
+"Auth — MFA"
 "Admin — Categories"
-"Admin — Tasks"
-"Admin — Quotations"
-"Vendor — Stores"
-"Vendor — Brands"
-"Admin — Brands"
-"Public — Brands"
-"Vendor — Inventory"
-"Vendor — Product Taxonomy"
-"Artisan — Jobs"
-"Artisan — Tasks"
-"Homeowner — Jobs"
-"Homeowner — Quotations"
+"Admin — Users"
+"Admin — Wallets"
+"Admin — Staff"
+"Creator — Courses"
+"Creator — Modules"
+"Creator — Lessons"
+"Creator — Assessments"
+"Creator — Topics"
+"Creator — Topic Reservations"
+"Creator — Collaborators"
+"Creator — Wallet"
+"Reviewer — Review Queue"
+"Reviewer — Availability"
+"Reviewer — Queue Preferences"
+"Reviewer — Topic Reservations"
 "System — Webhooks"
 ```
 
 ### Not allowed
 
-- Other separators: `"Vendor • Stores"`, `"Vendor-Brands"`, `"Jobs--Artisan"`.
+- Other separators: `"Creator • Courses"`, `"Creator-Courses"`, `"Courses--Creator"`.
 - Multiple tags on one endpoint.
-- Tags without audience: `"Stores"`, `"Brands"`.
+- Tags without audience: `"Courses"`, `"Wallet"`, `"Quiz"`.
+- Resource-first tags: `"Courses — Topics"`, `"Users — KYC"`.
 
 ---
 
@@ -241,4 +245,7 @@ For every endpoint in a PR, we will check:
 
 ## Reference implementation
 
-The gold-standard reference is [vendor_onboarding_view.py](../api/authentication/views/onboarding/vendor_onboarding_view.py). When in doubt, mirror it.
+The gold-standard references are the admin-side views in
+[course_views.py](../api/courses/views/course_views.py) (review queue) and
+[platform/views.py](../api/platform/views.py) (platform settings). When in
+doubt, mirror their summary/description/tags/responses structure.

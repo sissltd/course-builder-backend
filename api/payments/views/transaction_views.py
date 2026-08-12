@@ -1,4 +1,5 @@
 from django_filters.rest_framework import DjangoFilterBackend
+from drf_spectacular.utils import extend_schema, extend_schema_view
 from rest_framework import filters as drf_filters
 from rest_framework.generics import ListAPIView
 
@@ -9,6 +10,12 @@ from api.payments.services.transaction_services import list_transactions
 from api.users.permissions import IsCourseCreatorRole
 
 
+@extend_schema_view(
+    get=extend_schema(
+        summary="List my wallet transactions",
+        tags=["Creator — Transactions"],
+    ),
+)
 class TransactionListView(ListAPIView):
     """The current user's wallet transaction history."""
 

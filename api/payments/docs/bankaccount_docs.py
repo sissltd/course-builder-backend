@@ -44,7 +44,7 @@ BANK_ACCOUNT_LIST_DOCS = {
         "the authenticated user, and the account number is returned in its "
         "decrypted form for display."
     ),
-    "tags": ["Course Creator — Bank Accounts"],
+    "tags": ["Creator — Bank Accounts"],
     "responses": {
         200: inline_success_response(
             description="Bank accounts retrieved successfully.",
@@ -82,7 +82,7 @@ BANK_ACCOUNT_CREATE_DOCS = {
         "is valid, for example if the account name does not match the user "
         "profile or the account is suspended."
     ),
-    "tags": ["Course Creator — Bank Accounts"],
+    "tags": ["Creator — Bank Accounts"],
     "request": BankAccountCreateSerializer,
     "examples": [
         OpenApiExample(
@@ -129,7 +129,7 @@ BANK_ACCOUNT_DETAIL_DOCS = {
         "**Prerequisites:** The caller must have a valid access token and the "
         "bank account must belong to the authenticated user and not be soft-deleted."
     ),
-    "tags": ["Course Creator — Bank Accounts"],
+    "tags": ["Creator — Bank Accounts"],
     "responses": {
         200: inline_success_response(
             description="Bank account retrieved successfully.",
@@ -165,7 +165,7 @@ BANK_ACCOUNT_DELETE_DOCS = {
         "bank account must belong to the authenticated user and not already "
         "be soft-deleted."
     ),
-    "tags": ["Course Creator — Bank Accounts"],
+    "tags": ["Creator — Bank Accounts"],
     "parameters": [
         OpenApiParameter(
             name="pk",
@@ -205,7 +205,7 @@ BANK_ACCOUNT_SET_DEFAULT_DOCS = {
         "selected bank account must belong to the authenticated user and not "
         "already be the default account."
     ),
-    "tags": ["Course Creator — Bank Accounts"],
+    "tags": ["Creator — Bank Accounts"],
     "parameters": [
         OpenApiParameter(
             name="pk",
@@ -285,7 +285,7 @@ BANK_ACCOUNT_VERIFY_DOCS = {
         "**Prerequisites:** The caller must provide a valid bank code and "
         "account number."
     ),
-    "tags": ["Course Creator — Bank Accounts"],
+    "tags": ["Public — Bank Accounts"],
     "request": BankAccountVerifySerializer,
     "examples": [
         OpenApiExample(

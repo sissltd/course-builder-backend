@@ -73,7 +73,7 @@ _RESERVATION_EXAMPLE = {
             "`POST /api/v1/courses/`), no request needed. Results are "
             "paginated."
         ),
-        tags=["Courses — Topic Reservations"],
+        tags=["Creator — Topic Reservations"],
         responses={
             200: OpenApiResponse(
                 response=TopicReservationRequestSerializer(many=True),
@@ -98,7 +98,7 @@ _RESERVATION_EXAMPLE = {
             "**Important:** A creator requesting someone else's request "
             "gets 404, not 403 - existence isn't leaked."
         ),
-        tags=["Courses — Topic Reservations"],
+        tags=["Creator — Topic Reservations"],
         responses={
             200: OpenApiResponse(
                 response=TopicReservationRequestSerializer,
@@ -124,7 +124,7 @@ _RESERVATION_EXAMPLE = {
             "**Important:** Every field on `TopicReservationRequestSerializer` "
             "is read-only, so a PUT body has nothing to change."
         ),
-        tags=["Courses — Topic Reservations"],
+        tags=["Creator — Topic Reservations"],
         request=None,
         responses={
             200: OpenApiResponse(
@@ -152,7 +152,7 @@ _RESERVATION_EXAMPLE = {
             "**Important:** Every field on `TopicReservationRequestSerializer` "
             "is read-only, so a PATCH body has nothing to change."
         ),
-        tags=["Courses — Topic Reservations"],
+        tags=["Creator — Topic Reservations"],
         request=None,
         responses={
             200: OpenApiResponse(
@@ -181,7 +181,7 @@ _RESERVATION_EXAMPLE = {
             "release the Topic it created - use `release-reservation` on "
             "the topic for that."
         ),
-        tags=["Courses — Topic Reservations"],
+        tags=["Creator — Topic Reservations"],
         responses={
             204: OpenApiResponse(description="Request deleted."),
             **STANDARD_ERROR_RESPONSES["auth"],
@@ -212,7 +212,7 @@ _RESERVATION_EXAMPLE = {
             "start a Draft course with that topic selected via "
             "`POST /api/v1/courses/`, which reserves it automatically."
         ),
-        tags=["Courses — Topic Reservations"],
+        tags=["Creator — Topic Reservations"],
         request=TopicReservationRequestCreateSerializer,
         examples=[
             OpenApiExample(
@@ -291,7 +291,7 @@ class TopicReservationRequestViewSet(ModelViewSet):
             "`TopicViewSet`, no separate `creator_price` input exists here "
             "- it's always copied from the category at approval time."
         ),
-        tags=["Courses — Topic Reservations"],
+        tags=["Reviewer — Topic Reservations"],
         request=None,
         responses={
             200: OpenApiResponse(
@@ -374,7 +374,7 @@ class TopicReservationRequestViewSet(ModelViewSet):
             "topic is the reviewer's own judgment call; nothing on the "
             "backend checks this automatically."
         ),
-        tags=["Courses — Topic Reservations"],
+        tags=["Reviewer — Topic Reservations"],
         request=TopicReservationRejectSerializer,
         examples=[
             OpenApiExample(

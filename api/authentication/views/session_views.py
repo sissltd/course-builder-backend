@@ -37,7 +37,7 @@ class UserSessionListView(ListAPIView):
             "**Important:** `is_current` marks the session tied to the "
             "access token used for this request itself."
         ),
-        tags=["Auth — Sessions"],
+        tags=["Auth — Session"],
         responses={
             200: OpenApiResponse(
                 response=UserSessionSerializer(many=True),
@@ -79,7 +79,7 @@ class UserSessionRevokeView(APIView):
             "endpoint never confirms whether a given id exists on another "
             "account."
         ),
-        tags=["Auth — Sessions"],
+        tags=["Auth — Session"],
         request=None,
         responses={
             204: OpenApiResponse(description="Session revoked."),

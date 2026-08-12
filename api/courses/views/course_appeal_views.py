@@ -51,7 +51,7 @@ _APPEAL_EXAMPLE = {
             "**Prerequisites:** None beyond holding one of those roles. "
             "Results are paginated."
         ),
-        tags=["Support"],
+        tags=["Creator — Appeals"],
         responses={
             200: OpenApiResponse(
                 response=CourseAppealSerializer(many=True),
@@ -73,7 +73,7 @@ _APPEAL_EXAMPLE = {
             "**Important:** A creator requesting someone else's appeal gets "
             "404, not 403 - existence isn't leaked."
         ),
-        tags=["Support"],
+        tags=["Creator — Appeals"],
         responses={
             200: OpenApiResponse(
                 response=CourseAppealSerializer,
@@ -103,7 +103,7 @@ _APPEAL_EXAMPLE = {
             "**Important:** `email` is captured as typed on the form, not "
             "forced to the account's login email."
         ),
-        tags=["Support"],
+        tags=["Creator — Appeals"],
         request=CourseAppealCreateSerializer,
         examples=[
             OpenApiExample(
@@ -178,7 +178,7 @@ class CourseAppealViewSet(ModelViewSet):
             "**Important:** Per PRD wording, the decision is final - an "
             "already-decided appeal cannot be re-decided."
         ),
-        tags=["Support"],
+        tags=["Admin — Appeals"],
         request=CourseAppealDecisionSerializer,
         examples=[
             OpenApiExample(
@@ -248,7 +248,7 @@ class CourseAppealViewSet(ModelViewSet):
             "**Auth:** Admin or Super Admin.\n\n"
             "**Prerequisites:** The appeal must be `PENDING`."
         ),
-        tags=["Support"],
+        tags=["Admin — Appeals"],
         request=CourseAppealDecisionSerializer,
         examples=[
             OpenApiExample(

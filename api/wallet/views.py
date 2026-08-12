@@ -1,5 +1,10 @@
 from django_filters.rest_framework import DjangoFilterBackend
-from drf_spectacular.utils import OpenApiExample, OpenApiResponse, extend_schema
+from drf_spectacular.utils import (
+    OpenApiExample,
+    OpenApiResponse,
+    extend_schema,
+    extend_schema_view,
+)
 from rest_framework import filters as drf_filters
 from rest_framework import status
 from rest_framework.generics import (
@@ -48,6 +53,12 @@ _ADMIN_AUTH_LINE = (
 )
 
 
+@extend_schema_view(
+    get=extend_schema(
+        summary="Retrieve my wallet balance",
+        tags=["Creator — Wallet"],
+    ),
+)
 class WalletDetailView(RetrieveAPIView):
     """The current user's wallet balance, auto-provisioned on first access."""
 
@@ -58,6 +69,16 @@ class WalletDetailView(RetrieveAPIView):
         return wallet_service.get_or_create_wallet(user=self.request.user)
 
 
+@extend_schema_view(
+    get=extend_schema(
+        summary="List my payout accounts",
+        tags=["Creator — Wallet"],
+    ),
+    post=extend_schema(
+        summary="Add a payout account",
+        tags=["Creator — Wallet"],
+    ),
+)
 class PayoutAccountListCreateView(ListCreateAPIView):
     """List the current user's payout accounts, or add a new one
     (Settings -> Payment -> Add account)."""
@@ -75,6 +96,12 @@ class PayoutAccountListCreateView(ListCreateAPIView):
         return PayoutAccountSerializer
 
 
+@extend_schema_view(
+    delete=extend_schema(
+        summary="Remove a payout account",
+        tags=["Creator — Wallet"],
+    ),
+)
 class PayoutAccountDestroyView(DestroyAPIView):
     """Remove one of the current user's payout accounts."""
 
@@ -85,6 +112,12 @@ class PayoutAccountDestroyView(DestroyAPIView):
         return wallet_service.list_payout_accounts(user=self.request.user)
 
 
+@extend_schema_view(
+    post=extend_schema(
+        summary="Request a withdrawal",
+        tags=["Creator — Wallet"],
+    ),
+)
 class WithdrawalRequestCreateView(CreateAPIView):
     """Step 1 of withdrawal: request an amount against a payout account.
 
@@ -103,6 +136,10 @@ class WithdrawalConfirmView(APIView):
     permission_classes = [IsCourseCreatorRole]
     serializer_class = WithdrawalConfirmSerializer  # for schema generation only
 
+    @extend_schema(
+        summary="Confirm a withdrawal with OTP",
+        tags=["Creator — Wallet"],
+    )
     def post(self, request, withdrawal_request_id):
         serializer = WithdrawalConfirmSerializer(
             data=request.data,

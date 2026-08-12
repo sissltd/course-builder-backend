@@ -3,7 +3,12 @@ import io
 
 from django.http import StreamingHttpResponse
 from django_filters.rest_framework import DjangoFilterBackend
-from drf_spectacular.utils import OpenApiExample, OpenApiResponse, extend_schema
+from drf_spectacular.utils import (
+    OpenApiExample,
+    OpenApiResponse,
+    extend_schema,
+    extend_schema_view,
+)
 from rest_framework import filters as drf_filters
 from rest_framework.generics import ListAPIView
 from rest_framework.permissions import IsAuthenticated
@@ -18,6 +23,12 @@ from api.users.serializers.activity_log_serializer import UserActivityLogSeriali
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 
 
+@extend_schema_view(
+    get=extend_schema(
+        summary="List my activity log",
+        tags=["Creator — Activity Log"],
+    ),
+)
 class UserActivityLogListView(ListAPIView):
     """List the current authenticated user's own activity log entries.
 
@@ -146,6 +157,20 @@ class UserActivityLogExportView(APIView):
 
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(
+        summary="Export my activity log as CSV",
+        description=(
+            "Downloads the current user's own activity log as a CSV file "
+            "(the Data & Privacy screen's 'download activity log').\n\n"
+            "**Auth:** Any authenticated user.\n\n"
+            "**Prerequisites:** None.\n\n"
+            "**Important:** The export event itself is logged *after* the "
+            "entries are materialized, so it never appears inside the file "
+            "it produced. Supports the same `?category=`/`?action=` filters "
+            "as the list endpoint."
+        ),
+        tags=["Creator — Activity Log"],
+    )
     def get(self, request):
         base_queryset = UserActivityLog.objects.filter(
             user=request.user

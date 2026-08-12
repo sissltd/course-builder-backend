@@ -34,7 +34,7 @@ class NotificationPreferenceView(APIView):
             "**Auth:** Any authenticated user.\n\n"
             "**Prerequisites:** None."
         ),
-        tags=["Notifications"],
+        tags=["Creator — Notifications"],
         responses={
             200: OpenApiResponse(response=NotificationPreferenceSerializer),
             **STANDARD_ERROR_RESPONSES["auth"],
@@ -56,7 +56,7 @@ class NotificationPreferenceView(APIView):
             "**Auth:** Any authenticated user.\n\n"
             "**Prerequisites:** None."
         ),
-        tags=["Notifications"],
+        tags=["Creator — Notifications"],
         request=NotificationPreferenceUpdateSerializer,
         responses={
             200: OpenApiResponse(response=NotificationPreferenceSerializer),

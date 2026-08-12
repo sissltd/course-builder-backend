@@ -67,7 +67,7 @@ _PRICE_WARNING = (
             "offered when creating a course — filter with `?status=ACTIVE` for "
             "a picker. Results are paginated."
         ),
-        tags=["Admin — Categories"],
+        tags=["Creator — Categories"],
         responses={
             200: OpenApiResponse(
                 response=CategorySerializer(many=True),
@@ -88,7 +88,7 @@ _PRICE_WARNING = (
             "**Prerequisites:** None beyond being signed in.\n\n"
             "**Important:** None."
         ),
-        tags=["Admin — Categories"],
+        tags=["Creator — Categories"],
         responses={
             200: OpenApiResponse(
                 response=CategorySerializer,
