@@ -76,6 +76,7 @@ _COURSE_DETAIL_EXAMPLE = {
     "modules": [],
     "final_assessment": None,
     "duration_estimate_minutes": 120,
+    "version": "1.0",
     "updated_datetime": "2026-07-12T09:30:11.204Z",
 }
 

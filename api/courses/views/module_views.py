@@ -24,6 +24,9 @@ _MODULE_EXAMPLE = {
     "order": 1,
     "lessons": [],
     "assessment": None,
+    "locked_by": None,
+    "lock_expires_at": None,
+    "is_locked": False,
 }
 
 _COURSE_PK_PARAMETER = OpenApiParameter(
@@ -44,6 +47,28 @@ _DRAFT_ONLY_400 = OpenApiResponse(
                         "type": "validation_error",
                         "code": "invalid",
                         "message": "Modules can only be edited while the course is Draft.",
+                        "field_name": None,
+                    }
+                ]
+            },
+        ),
+    ],
+)
+
+_MODULE_LOCKED_423 = OpenApiResponse(
+    description=(
+        "The module is currently locked for editing by another user "
+        "(see `POST .../modules/{id}/lock/`)."
+    ),
+    examples=[
+        OpenApiExample(
+            name="Module locked",
+            value={
+                "errors": [
+                    {
+                        "type": "client_error",
+                        "code": "locked",
+                        "message": "This module is currently being edited by another user.",
                         "field_name": None,
                     }
                 ]
@@ -149,7 +174,9 @@ _DRAFT_ONLY_400 = OpenApiResponse(
             "Called from the module edit form.\n\n"
             "**Auth:** Course Creator/Writer with access to the course.\n\n"
             "**Prerequisites:** The parent course must be `DRAFT`.\n\n"
-            "**Important:** None."
+            "**Important:** Returns 423 if the module is currently locked "
+            "by another user - acquire the lock first via "
+            "`POST .../lock/`."
         ),
         tags=["Courses — Modules"],
         parameters=[_COURSE_PK_PARAMETER],
@@ -161,6 +188,7 @@ _DRAFT_ONLY_400 = OpenApiResponse(
                 examples=[OpenApiExample(name="Success", value=_MODULE_EXAMPLE)],
             ),
             400: _DRAFT_ONLY_400,
+            423: _MODULE_LOCKED_423,
             **STANDARD_ERROR_RESPONSES["auth"],
             **STANDARD_ERROR_RESPONSES["permission"],
             **STANDARD_ERROR_RESPONSES["not_found"],
@@ -176,7 +204,9 @@ _DRAFT_ONLY_400 = OpenApiResponse(
             "course builder.\n\n"
             "**Auth:** Course Creator/Writer with access to the course.\n\n"
             "**Prerequisites:** The parent course must be `DRAFT`.\n\n"
-            "**Important:** None."
+            "**Important:** Returns 423 if the module is currently locked "
+            "by another user - acquire the lock first via "
+            "`POST .../lock/`."
         ),
         tags=["Courses — Modules"],
         parameters=[_COURSE_PK_PARAMETER],
@@ -195,6 +225,7 @@ _DRAFT_ONLY_400 = OpenApiResponse(
                 examples=[OpenApiExample(name="Success", value=_MODULE_EXAMPLE)],
             ),
             400: _DRAFT_ONLY_400,
+            423: _MODULE_LOCKED_423,
             **STANDARD_ERROR_RESPONSES["auth"],
             **STANDARD_ERROR_RESPONSES["permission"],
             **STANDARD_ERROR_RESPONSES["not_found"],
