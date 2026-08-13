@@ -2,7 +2,9 @@ import json
 import logging
 import secrets
 import string
+from uuid import UUID
 
+import redis.asyncio as aioredis
 from django.conf import settings
 
 logger = logging.getLogger(__name__)
@@ -13,6 +15,11 @@ def get_redis_client():
     from django_redis import get_redis_connection
 
     return get_redis_connection("default")
+
+
+def get_async_redis_client():
+    redis_url = settings.CACHES["default"]["LOCATION"]
+    return aioredis.Redis.from_url(redis_url)
 
 
 # -- centralized Key naming schema (to help across the codebase) --
@@ -45,6 +52,26 @@ class RedisService:
     def get_redis_client():
         """Get the Redis client connection."""
         return get_redis_client()
+
+    @staticmethod
+    def get_async_redis_client():
+        """Get the asynchronous Redis client connection. Uses the bare-bones 
+        Python redis client, not django-redis, for async support."""
+        return get_async_redis_client()
+
+    @staticmethod
+    async def publish_user_notification(user_id: UUID, message: str) -> None:
+        """
+        Publish a user notification to Redis channel.
+        """
+        try:
+            client = await RedisService.get_async_redis_client()
+            channel = f"user:notifications:{user_id}"
+            payload = json.dumps({"message": message})
+            await client.publish(channel, payload)
+            logger.info(f"Published notification to user {user_id} on channel {channel}")
+        except Exception as e:
+            logger.error(f"Error publishing notification for user {user_id}: {e}")
 
     # --- Generic Redis Operations ---
     @staticmethod

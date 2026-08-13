@@ -1,4 +1,9 @@
-from drf_spectacular.utils import OpenApiResponse, extend_schema, extend_schema_view
+from drf_spectacular.utils import (
+    OpenApiExample,
+    OpenApiResponse,
+    extend_schema,
+    extend_schema_view,
+)
 from rest_framework.generics import RetrieveUpdateAPIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -17,15 +22,112 @@ from api.users.serializers import (
 from api.users.services import queue_preference_service, reviewer_availability_service
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 
+_ME_EXAMPLE = {
+    "id": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+    "email": "jane.doe@example.com",
+    "first_name": "Jane",
+    "last_name": "Doe",
+    "country": "NG",
+    "state": "Lagos",
+    "address": "14 Admiralty Way, Lekki Phase 1",
+    "phone_number": "+2348012345678",
+    "timezone": "Africa/Lagos",
+    "avatar_url": "",
+    "terms_accepted_at": "2026-07-12T09:30:11.204Z",
+    "role": "COURSE_CREATOR",
+    "is_active": False,
+    "status": "PENDING",
+    "created_datetime": "2026-07-12T09:30:11.204Z",
+    "updated_datetime": "2026-07-12T09:30:11.204Z",
+    "has_completed_onboarding": False,
+    "category": {"id": "0bd326eb-e48e-44bc-b963-2c8945210c2d", "name": "Web Applications"},
+}
+
 
 @extend_schema_view(
     get=extend_schema(
-        summary="Retrieve the current user's profile",
-        tags=["Creator — Profile"],
+        summary="Retrieve my profile",
+        description=(
+            "Returns the signed-in user's current profile, including name, "
+            "contact, locale, and account metadata. The frontend uses this "
+            "endpoint to populate account settings and keep the profile "
+            "form in sync with server state.\n\n"
+            "Called when the profile screen opens and whenever the frontend "
+            "needs to refresh cached account details after an edit.\n\n"
+            "**Auth:** Any authenticated user.\n\n"
+            "**Prerequisites:** None.\n\n"
+            "**Important:** None."
+        ),
+        tags=["Auth — Profile"],
+        responses={
+            200: OpenApiResponse(
+                response=MeSerializer,
+                description="The current user profile.",
+                examples=[OpenApiExample(name="Success", value=_ME_EXAMPLE)],
+            ),
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
     ),
     patch=extend_schema(
-        summary="Update the current user's profile",
-        tags=["Creator — Profile"],
+        summary="Update my profile",
+        description=(
+            "Partially updates the signed-in user's profile. Only the fields "
+            "present in the request body are changed, so the frontend can "
+            "save one section of the form without resending the entire "
+            "resource.\n\n"
+            "Called from the profile edit screen after the user saves "
+            "personal details such as name, timezone, address, or category.\n\n"
+            "**Auth:** Any authenticated user.\n\n"
+            "**Prerequisites:** None.\n\n"
+            "**Important:** Email is intentionally not editable here. "
+            "`category` only accepts an active category id; invalid or "
+            "inactive ids are rejected by validation. The `category` set here "
+            "is used to update the CreatorProfile's category field."
+        ),
+        tags=["Auth — Profile"],
+        request=MeUpdateSerializer,
+        examples=[
+            OpenApiExample(
+                name="Sample Request",
+                request_only=True,
+                value={
+                    "first_name": "Janet",
+                    "last_name": "Adebayo",
+                    "timezone": "Africa/Lagos",
+                    "avatar_url": "https://cdn.example.com/avatars/janet.jpg",
+                    "phone_number": "+2348012345678",
+                    "country": "NG",
+                    "state": "Lagos",
+                    "address": "14 Admiralty Way, Lekki Phase 1",
+                    "category": "2e9c4a71-58b3-4d06-9f27-6a1e8c0b5d34",
+                },
+            ),
+        ],
+        responses={
+            200: OpenApiResponse(
+                response=MeSerializer,
+                description="The updated user profile.",
+                examples=[
+                    OpenApiExample(
+                        name="Success",
+                        value={
+                            **_ME_EXAMPLE,
+                            "first_name": "Janet",
+                            "last_name": "Adebayo",
+                            "timezone": "Africa/Lagos",
+                            "country": "NG",
+                            "state": "Lagos",
+                            "address": "14 Admiralty Way, Lekki Phase 1",
+                            "phone_number": "+2348012345678",
+                        },
+                    )
+                ],
+            ),
+            **STANDARD_ERROR_RESPONSES["validation"],
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
     ),
 )
 class MeView(RetrieveUpdateAPIView):

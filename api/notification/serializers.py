@@ -56,3 +56,16 @@ class NotificationPreferenceUpdateSerializer(serializers.Serializer):
                 "At least one notification preference must be provided."
             )
         return attrs
+
+
+class NotificationReadSerializer(serializers.Serializer):
+    """Serializer for marking a notification as read."""
+
+    notification_id = serializers.UUIDField(
+        required=True,
+        help_text="UUID of the notification to update. Must belong to the authenticated user.",
+    )
+    read_status = serializers.BooleanField(
+        required=True,
+        help_text="Set to true to mark as read, or false to mark as unread.",
+    )
