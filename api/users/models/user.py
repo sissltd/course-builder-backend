@@ -64,6 +64,27 @@ class User(
         default="",
         help_text=_("ISO 3166-1 alpha-2 country code."),
     )
+    state = models.CharField(
+        verbose_name=_("State"),
+        max_length=50,
+        blank=True,
+        default="",
+        help_text=_("State, province or region."),
+    )
+    address = models.CharField(
+        verbose_name=_("Address"),
+        max_length=255,
+        blank=True,
+        default="",
+        help_text=_("Street address, or similar."),
+    )
+    phone_number = models.CharField(
+        verbose_name=_("Phone Number"),
+        max_length=20,
+        blank=True,
+        default="",
+        help_text=_("User's phone number."),
+    )
     sex = models.CharField(
         verbose_name=_("Sex"),
         max_length=20,
