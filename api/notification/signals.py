@@ -12,6 +12,11 @@ from .models import Notification
 
 @receiver(post_save, sender=Notification)
 def broadcast_notification(sender, instance, created, **kwargs):
+    """When a new notification is created, broadcast it to the user via Redis.
+
+    New notifications are sent to the user in real-time, allowing for immediate updates in the user interface.
+    To display a reasonable history of notifications, we fetch the 20 most recent notifications for the user--the most recent at the top--and send them as a payload.
+    """
     if not created:
         return
 

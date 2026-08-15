@@ -5,11 +5,12 @@ import requests
 from celery import shared_task
 from django.db import transaction
 
+from api.authentication.services.activity_service import log_activity
 from api.notification.models import Notification
 from api.payments.models.ledgeraccount_models import InternalAccount
 from api.payments.services import transaction_services
+from api.users.enums import UserActivityActionEnums, UserActivityCategoryEnums
 from core.models import TransferOutboxEvent
-from shared.audit.audit_service import AuditService
 from shared.services.paystack_service import PaystackService
 
 from .models import Wallet
@@ -52,14 +53,16 @@ def dispatch_paystack_transfer_task(self, outbox_id):
                 entry.paystack_transfer_code = response_data.get("transfer_code")
                 entry.save()
 
-                AuditService.log_event(
-                    "WITHDRAWAL_REQUEST_SUBMITTED",
-                    email=entry.user.email,
-                    metadata={
-                        "user_id": str(entry.user.id),
+                log_activity(
+                    user=entry.user,
+                    category=UserActivityCategoryEnums.WALLET,
+                    action=UserActivityActionEnums.WITHDRAWAL_REQUESTED,
+                    summary=f"User {entry.user.email} requested a withdrawal of {entry.amount} Naira.",
+                    actor_user=entry.user,
+                    details={
                         "amount": str(entry.amount),
                         "reference": entry.reference,
-                    },
+                    }
                 )
                 # TODO: Consider sending a notification to the user that their withdrawal request has been submitted successfully.
             else:
@@ -99,15 +102,17 @@ def handle_transfer_failure(entry, error_message):
         reference=entry.reference,
         description="Reversal of failed wallet withdrawal",
     )
-    AuditService.log_event(
-        "WITHDRAWAL_REQUEST_FAILED",
-        email=entry.user.email,
-        metadata={
-            "user_id": str(entry.user.id),
+    log_activity(
+        user=entry.user,
+        category=UserActivityCategoryEnums.WALLET,
+        action=UserActivityActionEnums.WITHDRAWAL_FAILED,
+        summary=f"User {entry.user.email} had a withdrawal of {entry.amount} Naira fail.",
+        actor_user=entry.user,
+        details={
             "amount": str(entry.amount),
             "reference": entry.reference,
-            "reason": error_message,
-        },
+            "error_message": error_message,
+        }
     )
 
     Notification.emit_email_notification(

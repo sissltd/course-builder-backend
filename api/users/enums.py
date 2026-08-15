@@ -93,6 +93,7 @@ class UserActivityCategoryEnums(models.TextChoices):
     KYC = "KYC", "KYC"
     WALLET = "WALLET", "Wallet"
     PRIVACY = "PRIVACY", "Privacy"
+    PAYMENTS = "PAYMENTS", "Payments"
 
 
 class UserActivityActionEnums(models.TextChoices):
@@ -151,6 +152,8 @@ class UserActivityActionEnums(models.TextChoices):
     KYC_REJECTED = "KYC_REJECTED", "KYC Rejected"
     WITHDRAWAL_REQUESTED = "WITHDRAWAL_REQUESTED", "Withdrawal Requested"
     WITHDRAWAL_CONFIRMED = "WITHDRAWAL_CONFIRMED", "Withdrawal Confirmed"
+    WITHDRAWAL_FAILED = "WITHDRAWAL_FAILED", "Withdrawal Failed"
+    WITHDRAWAL_COMPLETED = "WITHDRAWAL_COMPLETED", "Withdrawal Completed"
     APPEAL_SUBMITTED = "APPEAL_SUBMITTED", "Appeal Submitted"
     APPEAL_APPROVED = "APPEAL_APPROVED", "Appeal Approved"
     APPEAL_REJECTED = "APPEAL_REJECTED", "Appeal Rejected"
@@ -163,6 +166,9 @@ class UserActivityActionEnums(models.TextChoices):
         "MFA Recovery Codes Regenerated",
     )
     MFA_RESET_BY_ADMIN = "MFA_RESET_BY_ADMIN", "MFA Reset By Admin"
+    BANK_ACCOUNT_ADDED = "BANK_ACCOUNT_ADDED", "Bank Account Added"
+    BANK_ACCOUNT_DELETED = "BANK_ACCOUNT_DELETED", "Bank Account Deleted"
+    BANK_ACCOUNT_UPDATED = "BANK_ACCOUNT_UPDATED", "Bank Account Updated"
 
 
 class KYCDocumentType(models.TextChoices):

@@ -2,14 +2,15 @@ import logging
 from decimal import Decimal
 
 from django.conf import settings
+from django.contrib.contenttypes.models import ContentType
 from django.db import transaction
 from django.db.models import Q, QuerySet, Sum
 from django.utils import timezone
-from django.contrib.contenttypes.models import ContentType
 from rest_framework import exceptions
 
 from api.authentication.enums import TokenPurpose
 from api.authentication.services import token_service
+from api.authentication.services.activity_service import log_activity
 from api.courses.models import Course
 from api.notification.models import Notification
 from api.payments.models.bankaccount_models import BankAccount
@@ -20,6 +21,7 @@ from api.payments.services.transaction_services import (
     internal_transfer,
 )
 from api.platform.services import platform_settings_service
+from api.users.enums import UserActivityActionEnums, UserActivityCategoryEnums
 from api.users.models import User
 from api.users.permissions import (
     IsAdminOrSuperAdminRole,
@@ -40,7 +42,6 @@ from api.wallet.models import (
 )
 from api.wallet.tasks import dispatch_paystack_transfer_task
 from core.models import TransferOutboxEvent
-from shared.audit.audit_service import AuditService
 
 logger = logging.getLogger(__name__)
 
@@ -386,21 +387,23 @@ def confirm_withdrawal(*, user: User, withdrawal_request_id, code: str) -> Trans
                 ]
             )
         try:
-            AuditService.log_event(
-                "WITHDRAWAL_INITIATED",
-                email=user.email,
-                metadata={
+            log_activity(
+                user=user,
+                category=UserActivityCategoryEnums.WALLET,
+                action=UserActivityActionEnums.WITHDRAWAL_CONFIRMED,
+                summary=f"User {user.email} confirmed a withdrawal of {withdrawal_request.amount} Naira.",
+                actor_user=user,
+                details={
                     "user_id": str(user.id),
                     "amount": str(withdrawal_request.amount),
                     "reference": reference,
                     "payout_account_id": str(payout_account.id),
-                },
+                }
             )
+
         except Exception as audit_exc:
             # Log the audit error but do not interrupt the main flow of withdrawal confirmation
-            logger.error(
-                f"Error logging audit event for withdrawal initiation: {audit_exc}"
-            )
+            logger.error(f"Error logging audit event for withdrawal initiation: {audit_exc}")
 
     except Exception as exc:
         logger.error(f"Error initiating withdrawal for user {user.email}: {exc}")

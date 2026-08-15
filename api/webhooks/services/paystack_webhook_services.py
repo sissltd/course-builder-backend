@@ -4,11 +4,12 @@ import logging
 
 from django.db import transaction as django_transaction
 
+from api.authentication.services.activity_service import log_activity
 from api.notification.models import Notification
 from api.payments.models.ledgeraccount_models import InternalAccount
 from api.payments.services import transaction_services
+from api.users.enums import UserActivityActionEnums, UserActivityCategoryEnums
 from core.models import TransferOutboxEvent
-from shared.audit.audit_service import AuditService
 
 logger = logging.getLogger(__name__)
 
@@ -91,15 +92,15 @@ class WebhookServices:
                 description=f"Transfer success for reference {reference}",
             )
 
-            AuditService.log_event(
-                "WITHDRAWAL_REQUEST_SUCCESSFUL",
-                email=entry.user.email,
-                metadata={
-                    "user_id": str(entry.user.id),
-                    "amount": str(entry.amount),
-                    "reference": entry.reference,
-                },
+            log_activity(
+                user=entry.user,
+                category=UserActivityCategoryEnums.WALLET,
+                action=UserActivityActionEnums.WITHDRAWAL_COMPLETED,
+                summary=f"User {entry.user.email} successfully withdrew {entry.amount} Naira.",
+                actor_user=entry.user,
+                details={"user_id": str(entry.user.id), "amount": str(entry.amount), "reference": reference},
             )
+
             Notification.emit_email_notification(
                 receivers=[entry.user.email],
                 subject="Successful Withdrawal Notification",
@@ -128,16 +129,20 @@ class WebhookServices:
                 description=f"Reversal of failed transfer for reference {reference} by {entry.user.email}",
             )
             try:
-                AuditService.log_event(
-                    "WITHDRAWAL_REQUEST_FAILED",
-                    email=entry.user.email,
-                    metadata={
+                log_activity(
+                    user=entry.user,
+                    category=UserActivityCategoryEnums.WALLET,
+                    action=UserActivityActionEnums.WITHDRAWAL_FAILED,
+                    summary=f"User {entry.user.email}'s withdrawal of {entry.amount} Naira failed.",
+                    actor_user=entry.user,
+                    details={
                         "user_id": str(entry.user.id),
                         "amount": str(entry.amount),
-                        "reference": entry.reference,
+                        "reference": reference,
                         "reason": msg,
-                    },
+                    }
                 )
+
             except Exception as e:
                 logger.error(f"Failed to log audit event for failed transfer: {e!s}")
 
