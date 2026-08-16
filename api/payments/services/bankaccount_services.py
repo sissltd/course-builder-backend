@@ -6,6 +6,7 @@ from api.authentication.services.activity_service import log_activity
 from api.payments.models.bankaccount_models import BankAccount
 from api.users.enums import UserActivityActionEnums, UserActivityCategoryEnums, UserRole
 from shared.services.paystack_service import PaystackService
+from shared.utils.bank_account_check import check_account_name_matches_profile
 from shared.utils.encryption import encrypt_field
 
 logger = logging.getLogger(__name__)
@@ -13,14 +14,6 @@ logger = logging.getLogger(__name__)
 
 class AccountDetailsError(Exception):
     """Custom exception for account details errors."""
-
-
-def _check_account_name_matches_profile(user, account_name):
-    user_names = {user.first_name.lower(), user.last_name.lower()}
-    account_names = set(account_name.lower().split())
-
-    common_names = user_names.intersection(account_names)
-    return len(common_names) >= 2
 
 
 def get_bank_account_list(user):
@@ -44,7 +37,7 @@ def create_bank_account(user, validated_data, ip, ua):
     account_number = validated_data.get("account_number", "")
     bank_code = validated_data.get("bank_code", "")
 
-    if not _check_account_name_matches_profile(user, account_name):
+    if not check_account_name_matches_profile({user.first_name, user.last_name}, account_name):
         raise AccountDetailsError("Account name does not match user profile.")
 
     existing_accounts = BankAccount.objects.filter(user=user)

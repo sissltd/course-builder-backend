@@ -2,6 +2,7 @@ import json
 import logging
 import secrets
 import string
+import uuid
 from uuid import UUID
 
 import redis.asyncio as aioredis
@@ -365,3 +366,38 @@ class RedisService:
             logger.info("Banks list cached in Redis for 24 hours")
         except Exception as e:
             logger.error(f"Error caching banks: {e}")
+
+    @staticmethod
+    def acquire_lock(lock_name: str, expire_seconds: int = 60) -> str | None:
+        """
+        Acquire a distributed lock using Redis.
+        Returns a unique token if the lock is acquired, else None.
+        """
+        client = get_redis_client()
+
+        token = str(uuid.uuid4())
+        acquired = client.set(lock_name, token, nx=True, ex=expire_seconds)
+
+        if not acquired:
+            return None  # Failed to get the lock
+
+        return token
+
+    # ----Lua script for unlocking the lock key----
+    _UNLOCK_SCRIPT = """
+    if redis.call("get", KEYS[1]) == ARGV[1] then
+        return redis.call("del", KEYS[1])
+    else
+        return 0
+    end
+    """
+
+    @staticmethod
+    def release_lock(key, lock_value):
+        """
+        Release the lock if the lock value matches.
+        """
+
+        client = get_redis_client()
+        script = client.register_script(RedisService._UNLOCK_SCRIPT)
+        return script(keys=[key], args=[lock_value])
