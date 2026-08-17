@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from core.models import OutboxEvent, PaystackWebhookEvent, TransferOutboxEvent
+from core.models import OutboxEvent, TransferOutboxEvent, WebhookEvent
 from shared.constants.environ import DJANGO_ENV
 
 
@@ -20,8 +20,8 @@ class OutboxEventAdmin(admin.ModelAdmin):
         )
 
 
-@admin.register(PaystackWebhookEvent)
-class PaystackWebhookEventAdmin(admin.ModelAdmin):
+@admin.register(WebhookEvent)
+class WebhookEventAdmin(admin.ModelAdmin):
     list_display = ("id", "event_type", "status", "created_datetime")
     search_fields = ("event_type",)
     list_filter = ("status",)
@@ -43,10 +43,11 @@ class TransferOutboxEventAdmin(admin.ModelAdmin):
         "id",
         "user",
         "amount",
+        "reference",
+        "status",
         "recipient_code",
         "transfer_code",
         "transfer_processor",
-        "status",
         "created_datetime",
     )
     search_fields = ("user__email", "recipient_code")

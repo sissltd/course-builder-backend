@@ -6,7 +6,6 @@ from django.contrib.contenttypes.models import ContentType
 from django.db import transaction
 from django.db.models import Q, QuerySet, Sum
 from django.utils import timezone
-from api.users.services import kyc_service
 from rest_framework import exceptions
 
 from api.authentication.enums import TokenPurpose
@@ -29,6 +28,7 @@ from api.users.permissions import (
     IsCourseCreatorRole,
     require_role,
 )
+from api.users.services import kyc_service
 from api.wallet.enums import (
     TransactionStatus,
     TransactionType,

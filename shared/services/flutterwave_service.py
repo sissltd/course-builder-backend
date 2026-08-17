@@ -271,6 +271,7 @@ class FlutterwaveService:
                 "X-Idempotency-Key": reference,
                 "accept": "application/json",
                 "content-type": "application/json",
+                "X-Scenario-Key": "scenario:successful",
             }
         )
 

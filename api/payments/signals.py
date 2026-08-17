@@ -4,6 +4,8 @@ from django.db.models.signals import post_save
 from django.dispatch import receiver
 
 from api.payments.models.bankaccount_models import BankAccount
+from api.platform.enums import PaymentProcessors
+from api.platform.models import PlatformSettings
 from shared.services.flutterwave_service import FlutterwaveService
 from shared.services.paystack_service import PaystackService
 from shared.utils.encryption import decrypt_field
@@ -13,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 @receiver(post_save, sender=BankAccount)
 def generate_paystack_recipient_code(sender, instance, **kwargs):
-    if instance.paystack_recipient_code:
+    if instance.paystack_recipient_code or PlatformSettings.payment_processor != PaymentProcessors.PAYSTACK:
         return
     try:
         payload = {
@@ -33,7 +35,7 @@ def generate_paystack_recipient_code(sender, instance, **kwargs):
 
 @receiver(post_save, sender=BankAccount)
 def generate_flutterwave_recipient_code(sender, instance, **kwargs):
-    if instance.flutterwave_recipient_code:
+    if instance.flutterwave_recipient_code or PlatformSettings.payment_processor != PaymentProcessors.FLUTTERWAVE:
         return
     try:
         payload = {

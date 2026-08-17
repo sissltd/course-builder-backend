@@ -9,11 +9,15 @@ from django.test import TestCase, TransactionTestCase
 from rest_framework.exceptions import PermissionDenied, ValidationError
 
 from api.courses.tests.factories import make_user
+from api.payments.models.transaction_model import Transaction
+from api.platform.enums import PaymentProcessors
+from api.platform.models import PlatformSettings
 from api.users.enums import KYCStatus, UserRole
 from api.users.models import KYCVerification
 from api.wallet.enums import TransactionStatus, TransactionType, WithdrawalRequestStatus
 from api.wallet.models import Wallet
 from api.wallet.services import wallet_service
+from core.models import TransferOutboxEvent
 from shared.utils.encryption import decrypt_field
 
 
@@ -67,14 +71,20 @@ class GetWalletTotalsTests(TestCase):
     def setUp(self):
         self.creator = make_user(role=UserRole.COURSE_CREATOR)
 
-        self.paystack_recipient_patcher = patch(
-            "shared.services.paystack_service.PaystackService.create_transfer_recipient",
-            return_value=(True, {"recipient_code": "RCP_TEST_123"}),
+        self.flutterwave_recipient_patcher = patch(
+            "shared.services.flutterwave_service.FlutterwaveService.get_recipient_id", return_value="RCP_TEST_123"
         )
-        self.paystack_recipient_patcher.start()
+        self.transfer_task_patcher = patch("api.wallet.services.wallet_service.dispatch_transfer_task.delay")
+
+        self.processor_patcher = patch.object(PlatformSettings, "payment_processor", PaymentProcessors.FLUTTERWAVE)
+        self.flutterwave_recipient_patcher.start()
+        self.transfer_task_patcher.start()
+        self.processor_patcher.start()
 
     def tearDown(self):
-        self.paystack_recipient_patcher.stop()
+        self.flutterwave_recipient_patcher.stop()
+        self.transfer_task_patcher.stop()
+        self.processor_patcher.stop()
 
     def test_sums_completed_credits_and_pending_debits_separately(self):
         user = make_user()
@@ -294,14 +304,21 @@ class ConfirmWithdrawalTests(TestCase):
         )
         self.code = re.search(r"\b(\d{6})\b", mail.outbox[-1].body).group(1)
 
-        self.paystack_recipient_patcher = patch(
-            "shared.services.paystack_service.PaystackService.create_transfer_recipient",
-            return_value=(True, {"recipient_code": "RCP_TEST_123"}),
+        # setting processor to Flutterwave and mocking the dispatch_transfer_task.delay to avoid actual task execution during tests and mocking the get_recipient_id method to return a test recipient code. This ensures that the tests can run without relying on external services and can focus on the logic of confirming withdrawals and handling wallet balances.
+        self.flutterwave_recipient_patcher = patch(
+            "shared.services.flutterwave_service.FlutterwaveService.get_recipient_id",
+            return_value="RCP_TEST_123",
         )
-        self.paystack_recipient_patcher.start()
+        self.transfer_task_patcher = patch("api.wallet.services.wallet_service.dispatch_transfer_task.delay")
+        self.processor_patcher = patch.object(PlatformSettings, "payment_processor", PaymentProcessors.FLUTTERWAVE)
+        self.flutterwave_recipient_patcher.start()
+        self.transfer_task_patcher.start()
+        self.processor_patcher.start()
 
     def tearDown(self):
-        self.paystack_recipient_patcher.stop()
+        self.flutterwave_recipient_patcher.stop()
+        self.transfer_task_patcher.stop()
+        self.processor_patcher.stop()
 
     def test_wrong_code_rejected_and_balance_untouched(self):
         with self.assertRaises(Exception):
@@ -345,3 +362,87 @@ class ConfirmWithdrawalTests(TestCase):
                 withdrawal_request_id=self.withdrawal_request.id,
                 code=self.code,
             )
+
+    def test_payout_account_with_existing_recipient_code(self):
+        """When the payout account has the appropriate recipient code for the
+        configured processor, the wrapped function should return it and not
+        call any of the update or get_recipient_id methods.
+        """
+
+        self.payout_account.flutterwave_recipient_code = "RCP_EXISTING_123"
+        self.payout_account.save(update_fields=["flutterwave_recipient_code"])
+
+        with (
+            patch(
+                "api.wallet.services.wallet_service._transfer_processor_and_recipient_code",
+                wraps=wallet_service._transfer_processor_and_recipient_code,
+            ) as spy,
+            patch("api.wallet.services.wallet_service._update_account_recipient_code") as update_recipient_code_mock,
+            patch("shared.services.flutterwave_service.FlutterwaveService.get_recipient_id") as get_recipient_id_mock,
+        ):
+            wallet_service.confirm_withdrawal(
+                user=self.user,
+                withdrawal_request_id=self.withdrawal_request.id,
+                code=self.code,
+            )
+
+        spy.assert_called_once_with(self.payout_account)
+        # an existing recipient code means neither of these should be hit
+        update_recipient_code_mock.assert_not_called()
+        get_recipient_id_mock.assert_not_called()
+
+        # confirm the wrapped (real) function itself returns a plain 2-tuple
+        result = wallet_service._transfer_processor_and_recipient_code(self.payout_account)
+        self.assertIsInstance(result, tuple)
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result, (PaymentProcessors.FLUTTERWAVE, "RCP_EXISTING_123"))
+
+    def test_payout_account_creates_recipient_code_when_missing(self):
+        """When the payout account has no recipient code for the configured processor, the wrapped function should call
+        the appropriate service to create one and update the payout account with it
+        """
+
+        self.assertFalse(self.payout_account.flutterwave_recipient_code)
+
+        with (
+            patch(
+                "api.wallet.services.wallet_service._update_account_recipient_code",
+                wraps=wallet_service._update_account_recipient_code,
+            ) as update_recipient_code_mock,
+            patch(
+                "shared.services.flutterwave_service.FlutterwaveService.get_recipient_id",
+                return_value="RCP_NEW_123",
+            ) as fltw_get_recipient_id_mock,
+            patch(
+                "shared.services.paystack_service.PaystackService.create_transfer_recipient"
+            ) as pstck_recipient_code_mock,
+        ):
+            wallet_service.confirm_withdrawal(
+                user=self.user,
+                withdrawal_request_id=self.withdrawal_request.id,
+                code=self.code,
+            )
+
+        update_recipient_code_mock.assert_called_once()  # payout acct is updated bcos it previously had no recipient code
+
+        # The processor is Flutterwave, so the get_recipient_id method should be called to create a new recipient code,
+        # while the Paystack method should not be called.
+        fltw_get_recipient_id_mock.assert_called_once()
+        pstck_recipient_code_mock.assert_not_called()
+
+    def test_confirm_withdrawal(self):
+        wallet_service.confirm_withdrawal(
+            user=self.user,
+            withdrawal_request_id=self.withdrawal_request.id,
+            code=self.code,
+        )
+        self.withdrawal_request.refresh_from_db()
+        self.assertEqual(self.withdrawal_request.status, WithdrawalRequestStatus.CONFIRMED)
+        self.assertEqual(self.withdrawal_request.transaction.status, TransactionStatus.COMPLETED)
+        self.assertEqual(Transaction.objects.count(), 3)  # 1 for test setup and two for the withdrawal operation
+        self.assertEqual(Transaction.objects.filter(type=TransactionType.DEBIT).count(), 1)
+        self.assertEqual(
+            Transaction.objects.filter(type=TransactionType.CREDIT).count(), 2
+        )  # One for the test setup and one for the withdrawal operation
+        self.assertTrue([txn.amount == self.withdrawal_request.amount for txn in Transaction.objects.all()])
+        self.assertTrue(TransferOutboxEvent.objects.filter(transfer_request=self.withdrawal_request).exists())

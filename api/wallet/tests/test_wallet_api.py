@@ -7,6 +7,8 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 
 from api.courses.tests.factories import make_user
+from api.platform.enums import PaymentProcessors
+from api.platform.models import PlatformSettings
 from api.users.enums import KYCStatus, UserRole
 from api.users.models import KYCVerification
 from api.wallet.services import wallet_service
@@ -27,6 +29,21 @@ class WalletApiTests(APITestCase):
     def setUp(self):
         self.creator = make_user(role=UserRole.COURSE_CREATOR)
         self.admin = make_user(role=UserRole.ADMIN)
+
+        self.flutterwave_recipient_patcher = patch(
+            "shared.services.flutterwave_service.FlutterwaveService.get_recipient_id", return_value="RCP_TEST_123"
+        )
+        self.transfer_task_patcher = patch("api.wallet.services.wallet_service.dispatch_transfer_task.delay")
+
+        self.processor_patcher = patch.object(PlatformSettings, "payment_processor", PaymentProcessors.FLUTTERWAVE)
+        self.flutterwave_recipient_patcher.start()
+        self.transfer_task_patcher.start()
+        self.processor_patcher.start()
+
+    def tearDown(self):
+        self.flutterwave_recipient_patcher.stop()
+        self.transfer_task_patcher.stop()
+        self.processor_patcher.stop()
 
     def test_creator_can_retrieve_auto_provisioned_wallet(self):
         self.client.force_authenticate(self.creator)
@@ -62,9 +79,9 @@ class WithdrawalApiTests(APITestCase):
         _approve_kyc(self.creator)
         wallet_service.credit_wallet(user=self.creator, amount=Decimal("100.00"))
 
-        self.paystack_recipient_patcher = patch(
-            "shared.services.paystack_service.PaystackService.create_transfer_recipient",
-            return_value=(True, {"recipient_code": "RCP_TEST_123"}),
+        self.flutterwave_recipient_patcher = patch(
+            "shared.services.flutterwave_service.FlutterwaveService.get_recipient_id",
+            return_value="RCP_TEST_123",
         )
         self.decrypt_patcher = patch(
             "api.wallet.serializers.decrypt_field",
@@ -72,7 +89,7 @@ class WithdrawalApiTests(APITestCase):
         )
         self.transfer_task_patcher = patch("api.wallet.services.wallet_service.dispatch_transfer_task.delay")
 
-        self.paystack_recipient_patcher.start()
+        self.flutterwave_recipient_patcher.start()
         self.decrypt_patcher.start()
         self.transfer_task_patcher.start()
 
@@ -88,7 +105,7 @@ class WithdrawalApiTests(APITestCase):
 
     def tearDown(self):
         self.transfer_task_patcher.stop()
-        self.paystack_recipient_patcher.stop()
+        self.flutterwave_recipient_patcher.stop()
         self.decrypt_patcher.stop()
 
     def test_withdrawal_above_threshold_succeeds_and_confirm_completes_it(self):

@@ -32,9 +32,7 @@ class OutboxEvent(
         ordering = ["created_datetime"]
 
 
-class PaystackWebhookEvent(
-    UUIDPrimaryKeyModelMixin, SoftDeleteModelMixin, DateHistoryModelMixin, models.Model
-):
+class WebhookEvent(UUIDPrimaryKeyModelMixin, SoftDeleteModelMixin, DateHistoryModelMixin, models.Model):
     STATUS_CHOICES: ClassVar = [
         ("PENDING", "Pending"),
         ("PROCESSING", "Processing"),
@@ -49,12 +47,15 @@ class PaystackWebhookEvent(
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="PENDING")
     error_message = models.TextField(null=True, blank=True)
     amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    provider = models.CharField(
+        max_length=200, choices=PaymentProcessors.choices, default=PaymentProcessors.FLUTTERWAVE
+    )
 
     def __str__(self):
         return f"{self.event_type} - {self.event_id} ({self.status})"
 
     class Meta:
-        db_table = "paystack_webhook_events"
+        db_table = "webhook_events"
         ordering = ["created_datetime"]
 
 
@@ -69,6 +70,7 @@ class TransferOutboxEvent(
             "Sent to Processor",
         )  # Paystack/Flutterwave accepted it, now awaiting webhook
         FAILED = "FAILED", "Failed Locally"
+        PROCESSED = "PROCESSED", "Processed"
 
     reference = models.CharField(
         max_length=255, unique=True

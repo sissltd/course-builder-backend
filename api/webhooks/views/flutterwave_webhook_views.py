@@ -1,6 +1,7 @@
 import json
 from decimal import Decimal
 
+from decouple import config
 from django.db import transaction
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
@@ -11,24 +12,25 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from api.platform.enums import PaymentProcessors
-from api.webhooks.services.paystack_webhook_services import PaystackWebhookServices
+from api.webhooks.services.flutterwave_webhook_services import FlutterwaveWebhookServices
 from api.webhooks.tasks import process_webhook_task
 from core.models import WebhookEvent
 from shared.constants.environ import DJANGO_ENV
-from shared.constants.paystack import PAYSTACK_SECRET_KEY
 from shared.response.success import custom_success_response
 
 
 @method_decorator(csrf_exempt, name="dispatch")
-class PaystackWebhookView(APIView):
+class FlutterwaveWebhookView(APIView):
     permission_classes = [AllowAny]
+
+    FLUTTERWAVE_SECRET_HASH = config("FLUTTERWAVE_SECRET_HASH")
 
     @extend_schema(exclude=True)
     def post(self, request, *args, **kwargs):
         payload = request.body
 
         # 1. Verify the Paystack Signature
-        signature = request.headers.get("x-paystack-signature")
+        signature = request.headers.get("flutterwave-signature")
 
         if not signature and DJANGO_ENV == "production":
             return custom_success_response(
@@ -37,10 +39,10 @@ class PaystackWebhookView(APIView):
                 status=status.HTTP_200_OK,
             )
 
-        is_valid = PaystackWebhookServices.verify_paystack_webhook(
+        is_valid = FlutterwaveWebhookServices.verify_request_signature(
             payload=payload,
             signature=signature,
-            secret_key=PAYSTACK_SECRET_KEY,
+            secret_key=self.FLUTTERWAVE_SECRET_HASH,
         )
 
         if not is_valid:
@@ -51,16 +53,16 @@ class PaystackWebhookView(APIView):
 
         # 2. Parse the payload
         try:
-            data = json.loads(payload)
-            event_type = data.get("event")
-            event_id = data.get("data", {}).get("reference") or str(data.get("id"))
+            payload_dict = json.loads(payload)
+            event_type = payload_dict.get("type")
+            event_id = payload_dict.get("data", {}).get("reference") or str(payload_dict.get("id"))
         except (ValueError, KeyError):
             return Response(
                 {"error": "Malformed payload"}, status=status.HTTP_400_BAD_REQUEST
             )
 
         # 3. Save to Outbox Table and Trigger Celery Atomically
-        amount = data.get("data", {}).get("amount")
+        amount = payload_dict.get("data", {}).get("amount")
         if amount is not None:
             try:
                 amount = Decimal(amount) / 100  # Convert kobo to naira
@@ -73,10 +75,10 @@ class PaystackWebhookView(APIView):
                     event_id=event_id,
                     defaults={
                         "event_type": event_type,
-                        "payload": data,
+                        "payload": payload_dict,
                         "status": "PENDING",
                         "amount": amount,
-                        "provider": PaymentProcessors.PAYSTACK,
+                        "provider": PaymentProcessors.FLUTTERWAVE,
                     },
                 )
 
