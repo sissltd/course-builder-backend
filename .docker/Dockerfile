@@ -40,4 +40,4 @@ EXPOSE 8000
 
 ENTRYPOINT ["/bin/sh", "/app/.docker/entrypoint.sh"]
 
-CMD ["gosu", "appuser", "gunicorn", "config.wsgi:application", "--config", "gunicorn.conf.py"]
+CMD ["gosu", "appuser", "daphne", "-b", "0.0.0.0", "-p", "8000", "config.asgi:application"]

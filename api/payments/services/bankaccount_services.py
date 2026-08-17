@@ -2,9 +2,9 @@ import logging
 
 from django.utils import timezone
 
+from api.authentication.services.activity_service import log_activity
 from api.payments.models.bankaccount_models import BankAccount
-from api.users.enums import UserRole
-from shared.audit.audit_service import AuditService
+from api.users.enums import UserActivityActionEnums, UserActivityCategoryEnums, UserRole
 from shared.services.paystack_service import PaystackService
 from shared.utils.encryption import encrypt_field
 
@@ -77,18 +77,26 @@ def create_bank_account(user, validated_data, ip, ua):
         user=user,
         **validated_data,
     )
-
     try:
-        AuditService.log_event(
-            "BANK_ACCOUNT_ADDED",
-            email=user.email,
-            ip=ip,
+        log_activity(
+            user=user,
+            category=UserActivityCategoryEnums.PAYMENTS,
+            action=UserActivityActionEnums.BANK_ACCOUNT_ADDED,
+            summary=f"Bank account {account.account_number} added for {user.email}.",
+            actor_user=user,
+            details={
+                "account_id": str(account.id),
+                "account_name": account.account_name,
+                "bank_name": account.bank_name,
+                "bank_code": account.bank_code,
+                "is_default": account.is_default,
+            },
             user_agent=ua,
-            metadata={"account_id": account.id},
+            ip_address=ip,
         )
     except Exception as e:
         # Log the error but do not raise it, as the account creation has already succeeded
-        logger.warning(f"Error while logging audit event: {e!s}")
+        logger.warning(f"Error while logging user activity: {e!s}")
 
     return account
 
@@ -108,12 +116,21 @@ def delete_bank_account(user, account_id, ip, ua):
     account.save()
 
     try:
-        AuditService.log_event(
-            "BANK_ACCOUNT_DELETED",
-            email=user.email,
-            ip=ip,
+        log_activity(
+            user=user,
+            category=UserActivityCategoryEnums.PAYMENTS,
+            action=UserActivityActionEnums.BANK_ACCOUNT_DELETED,
+            summary=f"Bank account {account.account_number} deleted for {user.email}.",
+            actor_user=user,
+            details={
+                "account_id": str(account.id),
+                "account_name": account.account_name,
+                "bank_name": account.bank_name,
+                "bank_code": account.bank_code,
+                "is_default": account.is_default,
+            },
             user_agent=ua,
-            metadata={"account_id": account.id},
+            ip_address=ip,
         )
     except Exception as e:
         # Log the error but do not raise it, as the account deletion has already succeeded
@@ -130,12 +147,21 @@ def set_default_bank_account(user, account_id, ip, ua):
     account.is_default = True
     account.save()
     try:
-        AuditService.log_event(
-            "BANK_ACCOUNT_SET_DEFAULT",
-            email=user.email,
-            ip=ip,
+        log_activity(
+            user=user,
+            category=UserActivityCategoryEnums.PAYMENTS,
+            action=UserActivityActionEnums.BANK_ACCOUNT_UPDATED,
+            summary=f"Bank account {account.account_number} set as default for {user.email}.",
+            actor_user=user,
+            details={
+                "account_id": str(account.id),
+                "account_name": account.account_name,
+                "bank_name": account.bank_name,
+                "bank_code": account.bank_code,
+                "is_default": account.is_default,
+            },
             user_agent=ua,
-            metadata={"account_id": account.id},
+            ip_address=ip,
         )
     except Exception as e:
         # Log the error but do not raise it, as the account update has already succeeded
@@ -152,12 +178,21 @@ def suspend_bank_account(user, account_id, ip, ua):
     account.is_suspended = True
     account.save()
     try:
-        AuditService.log_event(
-            "BANK_ACCOUNT_SUSPENDED",
-            email=user.email,
-            ip=ip,
+        log_activity(
+            user=user,
+            category=UserActivityCategoryEnums.PAYMENTS,
+            action=UserActivityActionEnums.BANK_ACCOUNT_UPDATED,
+            summary=f"Bank account {account.account_number} suspended for {user.email}.",
+            actor_user=user,
+            details={
+                "account_id": str(account.id),
+                "account_name": account.account_name,
+                "bank_name": account.bank_name,
+                "bank_code": account.bank_code,
+                "is_suspended": account.is_suspended,
+            },
             user_agent=ua,
-            metadata={"account_id": account.id},
+            ip_address=ip,
         )
     except Exception as e:
         # Log the error but do not raise it, as the account suspension has already succeeded
