@@ -1,5 +1,6 @@
 from rest_framework import serializers
 
+from api.platform.enums import PaymentProcessors
 from api.platform.models import PlatformSettings
 
 
@@ -31,6 +32,7 @@ class PlatformSettingsSerializer(serializers.ModelSerializer):
             "sla_red_threshold_hours",
             "mfa_enrollment_grace_period_days",
             "updated_datetime",
+            "payment_processor",
         ]
         read_only_fields = fields
 
@@ -135,6 +137,11 @@ class PlatformSettingsUpdateSerializer(serializers.Serializer):
     sla_red_threshold_hours = serializers.IntegerField(required=False, min_value=1)
     mfa_enrollment_grace_period_days = serializers.IntegerField(
         required=False, min_value=0
+    )
+    payment_processor = serializers.ChoiceField(
+        required=False,
+        choices=PaymentProcessors.choices,
+        help_text="Which payment processor to use for creator payouts.",
     )
 
     def validate(self, attrs):

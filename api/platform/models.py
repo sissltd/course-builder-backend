@@ -3,6 +3,7 @@ from decimal import Decimal
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
+from api.platform.enums import PaymentProcessors
 from core.mixins import DateHistoryModelMixin, UUIDPrimaryKeyModelMixin
 
 
@@ -102,6 +103,13 @@ class PlatformSettings(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
             "The clock starts once, at role assignment - not reset by "
             "re-saving this setting."
         ),
+    )
+    payment_processor = models.CharField(
+        verbose_name=_("Payment Processor"),
+        max_length=20,
+        choices=PaymentProcessors.choices,
+        default=PaymentProcessors.FLUTTERWAVE,
+        help_text=_("Which payment processor to use for creator payouts."),
     )
 
     class Meta:

@@ -7,6 +7,8 @@ from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
 from django.db import models
 
+from api.platform.enums import PaymentProcessors
+
 from .mixins import (
     DateHistoryModelMixin,
     SoftDeleteModelMixin,
@@ -74,11 +76,12 @@ class TransferOutboxEvent(
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     amount = models.DecimalField(max_digits=12, decimal_places=2)
     recipient_code = models.CharField(max_length=100)
+    transfer_code = models.CharField(max_length=100, null=True, blank=True)
+    transfer_processor = models.CharField(max_length=20, choices=PaymentProcessors.choices, null=True, blank=True)
     status = models.CharField(
         max_length=20, choices=Status.choices, default=Status.PENDING
     )
     reason = models.CharField(max_length=255, null=True, blank=True)
-    paystack_transfer_code = models.CharField(max_length=100, null=True, blank=True)
     error_log = models.TextField(null=True, blank=True)
     wallet_type = models.ForeignKey(
         ContentType,
