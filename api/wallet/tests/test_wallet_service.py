@@ -14,6 +14,7 @@ from api.users.models import KYCVerification
 from api.wallet.enums import TransactionStatus, TransactionType, WithdrawalRequestStatus
 from api.wallet.models import Wallet
 from api.wallet.services import wallet_service
+from shared.utils.encryption import decrypt_field
 
 
 def _approve_kyc(user):
@@ -85,6 +86,7 @@ class GetWalletTotalsTests(TestCase):
             bank_name="Access Bank",
             account_number="1234567890",
             account_name="Test User",
+            bank_code="058"
         )
         withdrawal_request = wallet_service.request_withdrawal(
             user=user, amount=Decimal("60.00"), payout_account_id=payout_account.id
@@ -157,6 +159,7 @@ class PayoutAccountTests(TestCase):
             bank_name="Access Bank",
             account_number="1234567890",
             account_name="Test User",
+            bank_code="058"
         )
 
         self.assertTrue(account.is_default)
@@ -169,6 +172,7 @@ class PayoutAccountTests(TestCase):
             bank_name="Access Bank",
             account_number="1234567890",
             account_name="Test User",
+            bank_code="058"
         )
 
         second = wallet_service.create_payout_account(
@@ -178,6 +182,7 @@ class PayoutAccountTests(TestCase):
             account_number="0987654321",
             account_name="Test User",
             is_default=True,
+            bank_code="058"
         )
 
         first.refresh_from_db()
@@ -194,6 +199,7 @@ class PayoutAccountTests(TestCase):
                 bank_name="Access Bank",
                 account_number="1234567890",
                 account_name="Test User",
+                bank_code="058"
             )
 
 
@@ -207,6 +213,7 @@ class RequestWithdrawalTests(TestCase):
             bank_name="Access Bank",
             account_number="1234567890",
             account_name="Test User",
+            bank_code="058"
         )
 
     def test_raises_when_kyc_not_verified(self):
@@ -278,6 +285,7 @@ class ConfirmWithdrawalTests(TestCase):
             bank_name="Access Bank",
             account_number="1234567890",
             account_name="Test User",
+            bank_code="058"
         )
         self.withdrawal_request = wallet_service.request_withdrawal(
             user=self.user,
@@ -314,7 +322,7 @@ class ConfirmWithdrawalTests(TestCase):
 
         self.assertEqual(txn.type, TransactionType.DEBIT)
         self.assertEqual(txn.status, TransactionStatus.COMPLETED)
-        self.assertEqual(txn.recipient_account_number, "1234567890")
+        self.assertEqual(decrypt_field(txn.recipient_account_number), "1234567890")
         wallet = wallet_service.get_or_create_wallet(user=self.user)
         self.assertEqual(wallet.balance, Decimal("40.00"))
 

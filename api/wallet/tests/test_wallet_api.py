@@ -10,6 +10,7 @@ from api.courses.tests.factories import make_user
 from api.users.enums import KYCStatus, UserRole
 from api.users.models import KYCVerification
 from api.wallet.services import wallet_service
+from shared.utils.encryption import decrypt_field
 
 
 def _approve_kyc(user):
@@ -69,9 +70,7 @@ class WithdrawalApiTests(APITestCase):
             "api.wallet.serializers.decrypt_field",
             side_effect=lambda value: value,
         )
-        self.transfer_task_patcher = patch(
-            "api.wallet.services.wallet_service.dispatch_paystack_transfer_task.delay"
-        )
+        self.transfer_task_patcher = patch("api.wallet.services.wallet_service.dispatch_transfer_task.delay")
 
         self.paystack_recipient_patcher.start()
         self.decrypt_patcher.start()
@@ -83,6 +82,7 @@ class WithdrawalApiTests(APITestCase):
             bank_name="Access Bank",
             account_number="1234567890",
             account_name="Test User",
+            bank_code="058",
         )
         self.client.force_authenticate(self.creator)
 
@@ -129,6 +129,7 @@ class WithdrawalApiTests(APITestCase):
             bank_name="Access Bank",
             account_number="1234567890",
             account_name="Other User",
+            bank_code="058",
         )
         self.client.force_authenticate(other_creator)
 
@@ -197,6 +198,7 @@ class AdminWalletApiTests(APITestCase):
             bank_name="Access Bank",
             account_number="1234567890",
             account_name="Test User",
+            bank_code="058",
         )
         wallet_service.request_withdrawal(
             user=self.creator,
@@ -210,7 +212,7 @@ class AdminWalletApiTests(APITestCase):
         rows = response.data["data"]["results"]
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["status"], "PENDING_CONFIRMATION")
-        self.assertEqual(rows[0]["payout_account"]["account_number"], "1234567890")
+        self.assertEqual(decrypt_field(rows[0]["payout_account"]["account_number"]), "1234567890")
         self.assertEqual(rows[0]["user"]["email"], self.creator.email)
 
     def test_admin_wallet_list_is_read_only(self):

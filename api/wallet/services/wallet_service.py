@@ -6,6 +6,7 @@ from django.contrib.contenttypes.models import ContentType
 from django.db import transaction
 from django.db.models import Q, QuerySet, Sum
 from django.utils import timezone
+from api.users.services import kyc_service
 from rest_framework import exceptions
 
 from api.authentication.enums import TokenPurpose
@@ -17,9 +18,9 @@ from api.payments.models.bankaccount_models import BankAccount
 from api.payments.models.ledgeraccount_models import InternalAccount
 from api.payments.models.transaction_model import Transaction, generate_reference
 from api.payments.services.transaction_services import (
-    get_paystack_recipient_code,
     internal_transfer,
 )
+from api.platform.enums import PaymentProcessors
 from api.platform.services import platform_settings_service
 from api.users.enums import UserActivityActionEnums, UserActivityCategoryEnums
 from api.users.models import User
@@ -28,7 +29,6 @@ from api.users.permissions import (
     IsCourseCreatorRole,
     require_role,
 )
-from api.users.services import kyc_service
 from api.wallet.enums import (
     TransactionStatus,
     TransactionType,
@@ -40,12 +40,80 @@ from api.wallet.models import (
     WithdrawalRequest,
     _generate_reference,
 )
-from api.wallet.tasks import dispatch_paystack_transfer_task
+from api.wallet.tasks import dispatch_transfer_task
 from core.models import TransferOutboxEvent
+from shared.services.flutterwave_service import FlutterwaveService
+from shared.services.paystack_service import PaystackService
+from shared.utils.encryption import encrypt_field
 
 logger = logging.getLogger(__name__)
 
 WITHDRAWAL_OTP_SUBJECT = "Confirm your withdrawal"
+
+class RecipientCreationError(Exception):
+    """Raised when there is an error creating a transfer recipient."""
+
+
+def _update_account_recipient_code(account: BankAccount, recipient_code: str, provider: PaymentProcessors):
+    """Update the recipient code for a bank account based on the payment processor.
+    A failure is logged, but not allowed disrupt the follow of operation
+    """
+    try:
+        if provider == PaymentProcessors.PAYSTACK:
+            account.paystack_recipient_code = recipient_code
+        elif provider == PaymentProcessors.FLUTTERWAVE:
+            account.flutterwave_recipient_code = recipient_code
+        else:
+            logger.warning(f"Unsupported payment processor: {provider}")
+        account.save(update_fields=["paystack_recipient_code", "flutterwave_recipient_code", "updated_datetime"])
+    except Exception as e:
+        # Log the error but do not interrupt the main flow of withdrawal confirmation
+        logger.error(f"Error updating account recipient code for account {account.id}: {e}")
+
+
+def _transfer_processor_and_recipient_code(account: BankAccount) -> tuple[str, str]:
+    """Attempts to get the payment processor to user for a an outgoing transfer and the recipient code.
+    The processor is obtained from the PlatformSettings singleton, updatable by the admin
+
+    We first check the recipient payout/bank account record, based on the payment process.
+    If the record has the desired recipient code, we return it; otherwise we attempt to
+    generate the code and update the record accordingly.
+
+    We do return a NoneType; if we fail to get the recipient code, we raise an exception.
+    This makes it easier for the caller to interprete the result
+    """
+    payment_processor = platform_settings_service.get_settings().payment_processor
+    if payment_processor == PaymentProcessors.PAYSTACK:
+        recipient_code = account.paystack_recipient_code
+        if not recipient_code:
+            successful, resp = PaystackService.create_transfer_recipient(
+                account_number=account.account_number,
+                bank_code=account.bank_code,
+                name=account.account_name,
+            )
+            if successful and resp.get("recipient_code"):
+                recipient_code = resp["recipient_code"]
+                _update_account_recipient_code(account, recipient_code, payment_processor)
+            else:
+                logger.error(f"Failed to create Paystack transfer recipient for account {account.id}: {resp}")
+                raise RecipientCreationError(
+                    f"Failed to create Paystack transfer recipient: {resp.get('message', 'Unknown error')}"
+                )
+    elif payment_processor == PaymentProcessors.FLUTTERWAVE:
+        recipient_code = account.flutterwave_recipient_code
+        if not recipient_code:
+            recipient_code = FlutterwaveService().get_recipient_id(
+                account_number=account.account_number,
+                bank_code=account.bank_code,
+                account_name=account.account_name,
+            )
+            if not recipient_code:
+                logger.error(f"Failed to create Flutterwave transfer recipient for account {account.id}")
+                raise RecipientCreationError("Failed to create Flutterwave transfer recipient.")
+            _update_account_recipient_code(account, recipient_code, payment_processor)
+    else:
+        raise ValueError(f"Unsupported payment processor: {payment_processor}")
+    return payment_processor, recipient_code
 
 
 def get_or_create_wallet(*, user: User) -> Wallet:
@@ -175,6 +243,7 @@ def create_payout_account(
     bank_name: str,
     account_number: str,
     account_name: str,
+    bank_code: str,
     is_default: bool = False,
 ) -> BankAccount:
     """Add a payout account for `user`.
@@ -198,9 +267,10 @@ def create_payout_account(
             user=user,
             account_type=account_type,
             bank_name=bank_name,
-            account_number=account_number,
+            account_number=encrypt_field(account_number),
             account_name=account_name,
             is_default=is_default,
+            bank_code=bank_code,
         )
 
 
@@ -315,7 +385,6 @@ def confirm_withdrawal(*, user: User, withdrawal_request_id, code: str) -> Trans
         payout_account = withdrawal_request.payout_account
         recipient_code = payout_account.paystack_recipient_code
         account_number = payout_account.account_number
-        bank_code = payout_account.bank_code
         bank_name = payout_account.bank_name
         account_name = payout_account.account_name
         reference = generate_reference()
@@ -325,10 +394,11 @@ def confirm_withdrawal(*, user: User, withdrawal_request_id, code: str) -> Trans
         )
         raise
 
-    if not recipient_code:
-        recipient_code = get_paystack_recipient_code(
-            account_number, bank_code, account_name
-        )
+    try:
+        processor, recipient_code = _transfer_processor_and_recipient_code(payout_account)
+    except RecipientCreationError as e:
+        logger.error(f"Error creating transfer recipient for user {user.email}: {e}")
+        raise exceptions.ValidationError(str(e))
     try:
         with transaction.atomic():
             # move the amount from the user's wallet into the suspense(transit) account before initiating the transfer to ensure funds are reserved and to prevent double spending in case of retries
@@ -359,13 +429,13 @@ def confirm_withdrawal(*, user: User, withdrawal_request_id, code: str) -> Trans
                 wallet=debit_wallet,
                 reason="Wallet Withdrawal",
                 transfer_request=withdrawal_request,
+                transfer_processor=processor,
             )
 
             try:
                 transaction.on_commit(
-                    lambda: dispatch_paystack_transfer_task.delay(outbox_entry.id)
+                    lambda: dispatch_transfer_task.delay(outbox_entry.id, provider=processor)  # type: ignore
                 )
-                # type: ignore
             except Exception as task_exc:
                 logger.error(
                     f"Error dispatching Paystack transfer task for withdrawal {withdrawal_request.id}: {task_exc}"

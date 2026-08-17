@@ -66,8 +66,8 @@ class TransferOutboxEvent(
         PROCESSING = "PROCESSING", "API Call In Progress"
         SUBMITTED = (
             "SUBMITTED",
-            "Sent to Paystack",
-        )  # Paystack accepted it, now awaiting webhook
+            "Sent to Processor",
+        )  # Paystack/Flutterwave accepted it, now awaiting webhook
         FAILED = "FAILED", "Failed Locally"
 
     reference = models.CharField(

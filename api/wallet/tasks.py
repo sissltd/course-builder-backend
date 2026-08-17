@@ -9,8 +9,10 @@ from api.authentication.services.activity_service import log_activity
 from api.notification.models import Notification
 from api.payments.models.ledgeraccount_models import InternalAccount
 from api.payments.services import transaction_services
+from api.platform.enums import PaymentProcessors
 from api.users.enums import UserActivityActionEnums, UserActivityCategoryEnums
 from core.models import TransferOutboxEvent
+from shared.services.flutterwave_service import FlutterwaveService
 from shared.services.paystack_service import PaystackService
 
 from .models import Wallet
@@ -18,8 +20,18 @@ from .models import Wallet
 logger = logging.getLogger(__name__)
 
 
+def _get_transfer_service(provider: PaymentProcessors):
+    """Determine which transfer service to use based on the value of PlatformSettings.payment_processor."""
+    if provider == PaymentProcessors.PAYSTACK:
+        return PaystackService()
+    elif provider == PaymentProcessors.FLUTTERWAVE:
+        return FlutterwaveService()
+    else:
+        raise ValueError(f"Unsupported transfer provider: {provider}")
+
+
 @shared_task(bind=True, max_retries=3)
-def dispatch_paystack_transfer_task(self, outbox_id):
+def dispatch_transfer_task(self, outbox_id, provider: PaymentProcessors = PaymentProcessors.FLUTTERWAVE):
     try:
         with transaction.atomic():
             # Lock outbox entry so multiple workers don't execute it concurrently
@@ -34,7 +46,7 @@ def dispatch_paystack_transfer_task(self, outbox_id):
             entry.save()
 
         try:
-            successful, response_data = PaystackService.initiate_transfer(
+            successful, response_data = _get_transfer_service(provider).initiate_transfer(
                 amount_naira=entry.amount,
                 recipient_code=entry.recipient_code,
                 reason=entry.reason,
@@ -50,7 +62,11 @@ def dispatch_paystack_transfer_task(self, outbox_id):
             if successful:
                 # Paystack queued it successfully
                 entry.status = "SUBMITTED"
-                entry.paystack_transfer_code = response_data.get("transfer_code")
+                entry.transfer_code = (
+                    response_data.get("transfer_code")
+                    if provider == PaymentProcessors.PAYSTACK
+                    else response_data.get("id")
+                )
                 entry.save()
 
                 log_activity(

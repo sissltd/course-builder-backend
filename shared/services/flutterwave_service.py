@@ -1,6 +1,7 @@
 
 import logging
 import time
+from decimal import Decimal
 
 import requests
 from decouple import config
@@ -253,3 +254,52 @@ class FlutterwaveService:
                 raise FlutterwaveRecipientError("Resolved recipient name does not match the provided account name.")
 
         return id_
+
+    def _get_x_trace_id(self, reference):
+        # Generate a unique X-Trace-Id for each request
+        return f"{reference}-{int(time.time() * 1000)}"
+
+    def initiate_transfer(
+        self, amount_naira: Decimal, recipient_code: str, reference: str, currency="NGN", reason=None
+    ):
+
+        url = f"{self.BASE_URL}/transfers"
+        headers = self._headers()
+        headers.update(
+            {
+                "X-Trace-Id": self._get_x_trace_id(reference),
+                "X-Idempotency-Key": reference,
+                "accept": "application/json",
+                "content-type": "application/json",
+            }
+        )
+
+        try:
+            amount_kobo = int(Decimal(str(amount_naira)) * 100)  # Convert from Naira to Kobo
+        except (ValueError, TypeError):
+            logger.error(f"Invalid amount for Paystack transfer: {amount_naira}")
+            return False, {"message": f"Invalid amount for Paystack transfer: {amount_naira}"}
+
+        payload = {
+            "action": "instant",
+            "meta": {"reason": reason},
+            "payment_instruction": {
+                "source_currency": "NGN",
+                "amount": {"applies_to": "source_currency", "value": amount_kobo},
+                "recipient_id": recipient_code,
+            },
+            "reference": reference,
+            "narration": reason,
+        }
+
+        try:
+            response = requests.post(url, json=payload, headers=headers, timeout=10)
+            response_data = response.json()
+            if response.status_code in (200, 201) and response_data.get("status") == "success":
+                return True, response_data.get("data", {})
+
+            logger.error(f"Flutterwave initiate transfer failed: {response_data.get('message')}")
+            return False, {"message": f"Flutterwave initiate transfer failed: {response_data.get('message')}"}
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error initiating Flutterwave transfer: {e}")
+            return False, {"message": f"Error initiating Flutterwave transfer: {e}"}
