@@ -7,6 +7,9 @@ from api.users.models import KYCVerification, User
 class KYCVerificationSerializer(serializers.ModelSerializer):
     """Read-only representation of a KYC submission (the submitter's own view)."""
 
+    first_name = serializers.CharField(source="user.first_name", read_only=True)
+    last_name = serializers.CharField(source="user.last_name", read_only=True)
+
     class Meta:
         model = KYCVerification
         fields = [
@@ -17,6 +20,8 @@ class KYCVerificationSerializer(serializers.ModelSerializer):
             "rejection_reason",
             "created_datetime",
             "reviewed_at",
+            "first_name",
+            "last_name",
         ]
         read_only_fields = fields
 
@@ -28,6 +33,8 @@ class KYCVerificationSubmitSerializer(serializers.Serializer):
     issue, one of the four supported document types, and the raw ID number.
     """
 
+    first_name = serializers.CharField(max_length=64)
+    last_name = serializers.CharField(max_length=64)
     country_of_issue = serializers.CharField(max_length=2)
     document_type = serializers.ChoiceField(choices=KYCDocumentType.choices)
     id_number = serializers.CharField(max_length=64)
