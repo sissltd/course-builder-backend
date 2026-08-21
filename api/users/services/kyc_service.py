@@ -33,7 +33,13 @@ def is_verified(*, user: User) -> bool:
 
 
 def submit_verification(
-    *, user: User, country_of_issue: str, document_type: str, id_number: str
+    *,
+    user: User,
+    country_of_issue: str,
+    document_type: str,
+    id_number: str,
+    first_name: str,
+    last_name: str,
 ) -> KYCVerification:
     """Create a new PENDING KYC submission for `user`, and alert Admins/Super
     Admins that a request is waiting for them.
@@ -53,6 +59,9 @@ def submit_verification(
         document_type=document_type,
         id_number=id_number,
     )
+    verification.user.first_name = first_name or verification.user.first_name
+    verification.user.last_name = last_name or verification.user.last_name
+    verification.user.save(update_fields=["first_name", "last_name", "updated_datetime"])
     _notify_admins_of_new_submission(verification)
     return verification
 
