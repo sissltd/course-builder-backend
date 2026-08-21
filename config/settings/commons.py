@@ -142,6 +142,9 @@ if "test" in sys.argv:
             "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
         }
     }
+    # Run Celery tasks synchronously in tests so mail.outbox assertions
+    # and on_commit callbacks behave identically to the old sync path.
+    CELERY_TASK_ALWAYS_EAGER = True
 else:
     CACHES = {
         "default": {

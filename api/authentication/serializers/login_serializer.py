@@ -10,6 +10,7 @@ from api.authentication.services import (
     mfa_service,
 )
 from api.notification.models import Notification
+from shared.tasks import send_templated_email_task
 from api.users.enums import UserActivityActionEnums, AccountStatus
 from api.users.models import User, UserActivityLog
 from api.users.permissions import IsAdminOrSuperAdminRole
@@ -166,8 +167,8 @@ class LoginSerializer(TokenObtainPairSerializer):
             request=request,
         )
 
-        Notification.emit_email_notification(
-            receivers=[user],
+        send_templated_email_task.delay(
+            receivers=[user.email],
             subject="Your account was temporarily locked",
             template_name="emails/account_locked",
             context={

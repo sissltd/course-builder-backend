@@ -116,6 +116,40 @@ def dispatch_email(
     )
 
 
+@shared_task(bind=True, max_retries=3, default_retry_delay=30)
+def send_templated_email_task(
+    self,
+    *,
+    receivers: list[str],
+    subject: str,
+    template_name: str,
+    context: dict | None = None,
+    from_email: str | None = None,
+) -> dict:
+    """Render a Django email template and send it asynchronously.
+
+    Accepts the same logical shape as Notification.emit_email_notification
+    but takes plain email-address strings (not User instances) so it can be
+    serialised by Celery.
+    """
+    try:
+        # Local imports avoid circular dependency with api.notification.*
+        from api.notification.services.email_service import send_templated_email
+
+        send_templated_email(
+            receivers=receivers,
+            subject=subject,
+            template_name=template_name,
+            context=context or {},
+            from_email=from_email,
+        )
+        logger.info(f"Templated email sent: {subject} -> {receivers}")
+        return {"status": "sent", "subject": subject}
+    except Exception as exc:
+        logger.error(f"Failed to send templated email {subject}: {exc}")
+        raise self.retry(exc=exc)
+
+
 # >>>>>>>>>>>>General Shared Tasks<<<<<<<<<<<<<<<<<<<<<
 # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<
 
