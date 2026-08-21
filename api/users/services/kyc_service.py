@@ -61,9 +61,7 @@ def submit_verification(
     )
     verification.user.first_name = first_name or verification.user.first_name
     verification.user.last_name = last_name or verification.user.last_name
-    verification.user.save(
-        update_fields=["first_name", "last_name", "updated_datetime"]
-    )
+    verification.user.save(update_fields=["first_name", "last_name", "updated_datetime"])
     _notify_admins_of_new_submission(verification)
     return verification
 
