@@ -17,6 +17,7 @@ from api.authentication.services import activity_service, session_service, token
 from api.authentication.utils.base_auth import TsesAuthenticationInterface
 from api.authentication.utils.links import build_verification_link
 from api.notification.models import Notification
+from shared.tasks import send_templated_email_task
 from api.users.enums import (
     AccountStatus,
     UserActivityActionEnums,
@@ -312,8 +313,8 @@ class AuthenticationService(TsesAuthenticationInterface):
         link = build_verification_link(
             path="/verify-email", email=user.email, token=raw_token
         )
-        Notification.emit_email_notification(
-            receivers=[user],
+        send_templated_email_task.delay(
+            receivers=[user.email],
             subject=EMAIL_VERIFICATION_SUBJECT,
             template_name="emails/email_verification",
             context={
@@ -328,8 +329,8 @@ class AuthenticationService(TsesAuthenticationInterface):
         link = build_verification_link(
             path="/reset-password", email=user.email, token=raw_token
         )
-        Notification.emit_email_notification(
-            receivers=[user],
+        send_templated_email_task.delay(
+            receivers=[user.email],
             subject=PASSWORD_RESET_SUBJECT,
             template_name="emails/password_reset",
             context={
@@ -341,8 +342,8 @@ class AuthenticationService(TsesAuthenticationInterface):
 
     @staticmethod
     def _send_password_reset_confirmation_email(*, user: User) -> None:
-        Notification.emit_email_notification(
-            receivers=[user],
+        send_templated_email_task.delay(
+            receivers=[user.email],
             subject=PASSWORD_RESET_CONFIRMATION_SUBJECT,
             template_name="emails/password_reset_confirmation",
             context={"first_name": user.first_name},
