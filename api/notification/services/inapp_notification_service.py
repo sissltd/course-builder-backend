@@ -45,7 +45,9 @@ async def event_stream(user):
 
     # 1. Send the initial last 20 notifications immediately when they connect
     # This prevents the user from looking at a blank screen until a NEW notification arrives
-    initial_notifications = await sync_to_async(_load_initial_in_app_notifications)(user)
+    initial_notifications = await sync_to_async(_load_initial_in_app_notifications)(
+        user
+    )
     initial_payload = Notification._serialize_for_json(initial_notifications)
     yield f"data: {json.dumps(initial_payload)}\n\n"
 
@@ -53,14 +55,14 @@ async def event_stream(user):
     redis_client = RedisService.get_async_redis_client()
     pubsub = redis_client.pubsub()
     channel_name = f"user:notifications:{user.id}"
-    
+
     await pubsub.subscribe(channel_name)
 
     try:
         # 3. Stay in a loop listening for incoming data from the Redis channel
         async for message in pubsub.listen():
-            if message['type'] == 'message':
-                data_string = message['data'].decode('utf-8')
+            if message["type"] == "message":
+                data_string = message["data"].decode("utf-8")
                 yield f"data: {data_string}\n\n"
     finally:
         # 4. Clean up the connection if the user closes their tab or browser
@@ -69,10 +71,10 @@ async def event_stream(user):
 
 
 def get_user_notifications(user, is_read=None):
-    """Fetches notifications for a user in a stable, cursor-friendly order. 
+    """Fetches notifications for a user in a stable, cursor-friendly order.
     Allows filtering by read/unread status."""
 
-    reqs =  (
+    reqs = (
         Notification.objects.filter(receiver=user, type=NotificationType.IN_APP)
         .order_by("-created_datetime", "-id")
         .values(
@@ -91,7 +93,7 @@ def get_user_notifications(user, is_read=None):
 
 
 def toggle_notification_read_status(notification_id: UUID, user: User, status: bool):
-    """Marks a specific notification as read/unread for a user. 
+    """Marks a specific notification as read/unread for a user.
     Allowed to work with all types of notifications, for reusability.
     Idempotent: calling it multiple times with the same status has no effect.
     """

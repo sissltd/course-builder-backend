@@ -5,6 +5,13 @@ from api.categories.models import Category
 from api.courses.models import Course, ReviewAction, Topic
 from api.courses.serializers.assessment_serializer import AssessmentSerializer
 from api.courses.serializers.module_serializer import ModuleSerializer
+from api.courses.serializers.review_quality_serializer import (
+    MediaAssetSerializer,
+    QualityCheckRunSerializer,
+    QualityFindingSerializer,
+    ReviewAssignmentSerializer,
+    ReviewCommentSerializer,
+)
 from api.courses.services import course_service
 
 
@@ -41,6 +48,11 @@ class CourseListSerializer(serializers.ModelSerializer):
 
     category = CategoryMiniSerializer(read_only=True)
     topic = TopicMiniSerializer(read_only=True)
+    review_stage = serializers.SerializerMethodField()
+    assigned_reviewer = serializers.SerializerMethodField()
+    quality = serializers.SerializerMethodField()
+    issue_count = serializers.SerializerMethodField()
+    waiting_seconds = serializers.SerializerMethodField()
 
     class Meta:
         model = Course
@@ -49,12 +61,74 @@ class CourseListSerializer(serializers.ModelSerializer):
             "title",
             "category",
             "topic",
+            "source",
             "status",
+            "review_stage",
+            "assigned_reviewer",
+            "quality",
+            "issue_count",
+            "waiting_seconds",
             "creator_price_snapshot",
             "submitted_at",
             "created_datetime",
+            "updated_datetime",
         ]
         read_only_fields = fields
+
+    def get_review_stage(self, obj):
+        return "QA" if obj.status == "QA_VERIFICATION" else "CONTENT"
+
+    def get_assigned_reviewer(self, obj):
+        stage = self.get_review_stage(obj)
+        assignment = next(
+            (item for item in obj.review_assignments.all() if item.stage == stage), None
+        )
+        if not assignment or not assignment.reviewer_id:
+            return None
+        return {"id": assignment.reviewer_id, "email": assignment.reviewer.email}
+
+    def get_quality(self, obj):
+        run = next(iter(obj.quality_check_runs.all()), None)
+        if not run:
+            return {
+                "status": "NOT_RUN",
+                "plagiarism_status": "NOT_RUN",
+                "duplicate_status": "NOT_RUN",
+            }
+        return {
+            "overall_score": run.overall_score,
+            "risk_level": run.risk_level,
+            "status": run.status,
+            "plagiarism_status": run.plagiarism_status,
+            "plagiarism_score": run.plagiarism_score,
+            "duplicate_status": run.duplicate_status,
+            "duplicate_score": run.duplicate_score,
+        }
+
+    def get_issue_count(self, obj):
+        return sum(
+            1
+            for item in obj.quality_findings.all()
+            if item.resolved_at is None and item.severity in {"WARNING", "ERROR"}
+        )
+
+    def get_waiting_seconds(self, obj):
+        from django.utils import timezone
+
+        stage = self.get_review_stage(obj)
+        assignment = next(
+            (item for item in obj.review_assignments.all() if item.stage == stage), None
+        )
+        started_at = (
+            assignment.claimed_at
+            if assignment and assignment.claimed_at
+            else obj.submitted_at
+        )
+        return (
+            max(0, int((timezone.now() - started_at).total_seconds()))
+            if started_at
+            else 0
+        )
 
 
 class CourseDetailSerializer(serializers.ModelSerializer):
@@ -64,6 +138,12 @@ class CourseDetailSerializer(serializers.ModelSerializer):
     topic = TopicMiniSerializer(read_only=True)
     modules = ModuleSerializer(many=True, read_only=True)
     final_assessment = serializers.SerializerMethodField()
+    media_assets = MediaAssetSerializer(many=True, read_only=True)
+    quality_check_runs = QualityCheckRunSerializer(many=True, read_only=True)
+    quality_findings = QualityFindingSerializer(many=True, read_only=True)
+    review_assignments = ReviewAssignmentSerializer(many=True, read_only=True)
+    review_comments = ReviewCommentSerializer(many=True, read_only=True)
+    qa_video_samples = serializers.SerializerMethodField()
 
     class Meta:
         model = Course
@@ -73,6 +153,7 @@ class CourseDetailSerializer(serializers.ModelSerializer):
             "description",
             "category",
             "topic",
+            "source",
             "difficulty_level",
             "learning_objectives",
             "tags",
@@ -88,6 +169,12 @@ class CourseDetailSerializer(serializers.ModelSerializer):
             "rejected_at",
             "modules",
             "final_assessment",
+            "media_assets",
+            "quality_check_runs",
+            "quality_findings",
+            "review_assignments",
+            "review_comments",
+            "qa_video_samples",
             "duration_estimate_minutes",
             "version",
             "created_datetime",
@@ -99,6 +186,25 @@ class CourseDetailSerializer(serializers.ModelSerializer):
     def get_final_assessment(self, obj):
         assessment = getattr(obj, "final_assessment", None)
         return AssessmentSerializer(assessment).data if assessment else None
+
+    def get_qa_video_samples(self, obj):
+        """Expose intro, middle, and conclusion video evidence for QA playback."""
+
+        videos = sorted(
+            (asset for asset in obj.media_assets.all() if asset.kind == "VIDEO"),
+            key=lambda asset: (
+                asset.lesson.module.order if asset.lesson_id else -1,
+                asset.lesson.order if asset.lesson_id else -1,
+            ),
+        )
+        if not videos:
+            return []
+        indexes = sorted({0, len(videos) // 2, len(videos) - 1})
+        labels = {0: "INTRO", len(videos) // 2: "MIDDLE", len(videos) - 1: "CONCLUSION"}
+        return [
+            {"sample": labels[index], "asset": MediaAssetSerializer(videos[index]).data}
+            for index in indexes
+        ]
 
 
 class CourseCreateSerializer(serializers.ModelSerializer):
@@ -239,7 +345,15 @@ class ReviewActionSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = ReviewAction
-        fields = ["id", "course", "reviewer", "action", "feedback", "created_datetime"]
+        fields = [
+            "id",
+            "course",
+            "reviewer",
+            "action",
+            "stage",
+            "feedback",
+            "created_datetime",
+        ]
         read_only_fields = fields
 
     def get_reviewer(self, obj):

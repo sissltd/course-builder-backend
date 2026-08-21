@@ -9,6 +9,11 @@ from api.courses.models import (
     Lesson,
     Module,
     ReviewAction,
+    MediaAsset,
+    QualityCheckRun,
+    QualityFinding,
+    ReviewAssignment,
+    ReviewComment,
     Topic,
     TopicReservationRequest,
 )
@@ -47,8 +52,59 @@ class AssessmentAdmin(admin.ModelAdmin):
 
 @admin.register(ReviewAction)
 class ReviewActionAdmin(admin.ModelAdmin):
-    list_display = ("id", "course", "reviewer", "action", "created_datetime")
-    list_filter = ("action",)
+    list_display = ("id", "course", "reviewer", "stage", "action", "created_datetime")
+    list_filter = ("stage", "action")
+
+
+@admin.register(ReviewAssignment)
+class ReviewAssignmentAdmin(admin.ModelAdmin):
+    list_display = ("course", "stage", "reviewer", "claimed_at", "completed_at")
+    list_filter = ("stage",)
+
+
+@admin.register(QualityCheckRun)
+class QualityCheckRunAdmin(admin.ModelAdmin):
+    list_display = (
+        "course",
+        "provider",
+        "overall_score",
+        "risk_level",
+        "status",
+        "created_datetime",
+    )
+    list_filter = ("risk_level", "status", "plagiarism_status", "duplicate_status")
+
+
+@admin.register(QualityFinding)
+class QualityFindingAdmin(admin.ModelAdmin):
+    list_display = ("course", "code", "severity", "resolved_at", "created_datetime")
+    list_filter = ("severity",)
+
+
+@admin.register(ReviewComment)
+class ReviewCommentAdmin(admin.ModelAdmin):
+    list_display = (
+        "course",
+        "stage",
+        "reviewer",
+        "severity",
+        "reason_code",
+        "created_datetime",
+    )
+    list_filter = ("stage", "severity")
+
+
+@admin.register(MediaAsset)
+class MediaAssetAdmin(admin.ModelAdmin):
+    list_display = (
+        "course",
+        "lesson",
+        "kind",
+        "resolution",
+        "verified_by",
+        "verified_at",
+    )
+    list_filter = ("kind",)
 
 
 @admin.register(CategoryRequest)

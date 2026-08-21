@@ -1,5 +1,6 @@
 from rest_framework import status
 from rest_framework.test import APITestCase
+from django.utils import timezone
 
 from api.collaborators.enums import CollaboratorRole
 from api.collaborators.models import CourseCollaborator
@@ -107,6 +108,43 @@ class CollaboratorApiTests(APITestCase):
 
         response = self.client.get(f"/api/v1/collaborators/?course_id={self.course.id}")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_list_response_uses_collaborators_screen_field_names(self):
+        collaborator = make_collaborator(course=self.course, user=self.invitee)
+        self.client.force_authenticate(self.creator)
+
+        response = self.client.get(f"/api/v1/collaborators/?course_id={self.course.id}")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        row = response.data["data"]["results"][0]
+        self.assertEqual(row["id"], str(collaborator.id))
+        self.assertEqual(
+            row["name"], f"{self.invitee.first_name} {self.invitee.last_name}"
+        )
+        self.assertEqual(row["email"], self.invitee.email)
+        self.assertIn("date_added", row)
+        self.assertEqual(row["role"], "COLLABORATOR")
+        self.assertEqual(row["role_label"], "Collaborator")
+        self.assertNotIn("user", row)
+        self.assertNotIn("created_datetime", row)
+
+    def test_list_filters_match_collaborators_screen_controls(self):
+        matching = make_collaborator(course=self.course, user=self.invitee)
+        admin_user = make_user(first_name="Ada", last_name="Admin")
+        make_collaborator(
+            course=self.course, user=admin_user, role=CollaboratorRole.ADMIN
+        )
+        self.client.force_authenticate(self.creator)
+
+        response = self.client.get(
+            f"/api/v1/collaborators/?course_id={self.course.id}"
+            f"&search={self.invitee.email}&role=COLLABORATOR"
+            f"&date_from={timezone.now().date()}&date_to={timezone.now().date()}"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["data"]["paginator"]["count"], 1)
+        self.assertEqual(response.data["data"]["results"][0]["id"], str(matching.id))
 
     def test_list_requires_course_id(self):
         self.client.force_authenticate(self.creator)

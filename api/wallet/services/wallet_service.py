@@ -398,12 +398,14 @@ def confirm_withdrawal(*, user: User, withdrawal_request_id, code: str) -> Trans
                     "amount": str(withdrawal_request.amount),
                     "reference": reference,
                     "payout_account_id": str(payout_account.id),
-                }
+                },
             )
 
         except Exception as audit_exc:
             # Log the audit error but do not interrupt the main flow of withdrawal confirmation
-            logger.error(f"Error logging audit event for withdrawal initiation: {audit_exc}")
+            logger.error(
+                f"Error logging audit event for withdrawal initiation: {audit_exc}"
+            )
 
     except Exception as exc:
         logger.error(f"Error initiating withdrawal for user {user.email}: {exc}")

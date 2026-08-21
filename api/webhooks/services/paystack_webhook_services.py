@@ -98,7 +98,11 @@ class WebhookServices:
                 action=UserActivityActionEnums.WITHDRAWAL_COMPLETED,
                 summary=f"User {entry.user.email} successfully withdrew {entry.amount} Naira.",
                 actor_user=entry.user,
-                details={"user_id": str(entry.user.id), "amount": str(entry.amount), "reference": reference},
+                details={
+                    "user_id": str(entry.user.id),
+                    "amount": str(entry.amount),
+                    "reference": reference,
+                },
             )
 
             Notification.emit_email_notification(
@@ -140,7 +144,7 @@ class WebhookServices:
                         "amount": str(entry.amount),
                         "reference": reference,
                         "reason": msg,
-                    }
+                    },
                 )
 
             except Exception as e:

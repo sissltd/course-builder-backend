@@ -203,7 +203,9 @@ class NotificationPreferenceApiTests(APITestCase):
 
 class NotificationStreamApiTests(APITransactionTestCase):
     def test_requires_authentication(self):
-        response = self.client.get("/api/v1/users/me/notifications/streamed-notifications/")
+        response = self.client.get(
+            "/api/v1/users/me/notifications/streamed-notifications/"
+        )
 
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
@@ -211,7 +213,9 @@ class NotificationStreamApiTests(APITransactionTestCase):
         user = make_user()
         self.client.force_authenticate(user)
 
-        response = self.client.get("/api/v1/users/me/notifications/streamed-notifications/")
+        response = self.client.get(
+            "/api/v1/users/me/notifications/streamed-notifications/"
+        )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertTrue(response["Content-Type"].startswith("text/event-stream"))
@@ -219,7 +223,9 @@ class NotificationStreamApiTests(APITransactionTestCase):
         self.assertEqual(response["X-Accel-Buffering"], "no")
         asyncio.run(response.streaming_content.aclose())
 
-    def test_initial_event_uses_persisted_notifications_with_scope_limit_and_order(self):
+    def test_initial_event_uses_persisted_notifications_with_scope_limit_and_order(
+        self,
+    ):
         user = make_user()
         other_user = make_user()
         self.client.force_authenticate(user)
@@ -249,12 +255,16 @@ class NotificationStreamApiTests(APITransactionTestCase):
             content_type="TEXT",
         )
 
-        response = self.client.get("/api/v1/users/me/notifications/streamed-notifications/")
+        response = self.client.get(
+            "/api/v1/users/me/notifications/streamed-notifications/"
+        )
 
         async def _read_first_chunk(streaming_content):
             return await anext(streaming_content)
 
-        first_chunk = asyncio.run(_read_first_chunk(response.streaming_content)).decode("utf-8")
+        first_chunk = asyncio.run(_read_first_chunk(response.streaming_content)).decode(
+            "utf-8"
+        )
         asyncio.run(response.streaming_content.aclose())
 
         self.assertTrue(first_chunk.startswith("data: "))
@@ -319,12 +329,18 @@ class NotificationListApiTests(APITestCase):
         )
 
         all_response = self.client.get("/api/v1/users/me/notifications/", {"size": 10})
-        read_response = self.client.get("/api/v1/users/me/notifications/", {"is_read": "true", "size": 10})
+        read_response = self.client.get(
+            "/api/v1/users/me/notifications/", {"is_read": "true", "size": 10}
+        )
         self.assertEqual(read_response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(read_response.data["data"]["results"]), 2)
-        self.assertTrue(all(item["is_read"] for item in read_response.data["data"]["results"]))
+        self.assertTrue(
+            all(item["is_read"] for item in read_response.data["data"]["results"])
+        )
 
-        unread_response = self.client.get("/api/v1/users/me/notifications/", {"is_read": "false", "size": 10})
+        unread_response = self.client.get(
+            "/api/v1/users/me/notifications/", {"is_read": "false", "size": 10}
+        )
         self.assertEqual(unread_response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(unread_response.data["data"]["results"]), 1)
         self.assertEqual(len(read_response.data["data"]["results"]), 2)
@@ -373,7 +389,10 @@ class NotificationReadToggleApiTests(APITestCase):
     def test_requires_authentication(self):
         response = self.client.post(
             "/api/v1/users/me/notifications/toggle-read/",
-            {"notification_id": "6cb7adf1-5543-4f36-9cd3-c698f6577391", "read_status": True},
+            {
+                "notification_id": "6cb7adf1-5543-4f36-9cd3-c698f6577391",
+                "read_status": True,
+            },
             format="json",
         )
 
