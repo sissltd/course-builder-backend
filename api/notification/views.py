@@ -99,13 +99,17 @@ class NotificationPreferenceView(APIView):
         )
         return Response(NotificationPreferenceSerializer(preference).data)
 
+
 class NotificationStreamView(APIView):
     """SSE stream of the current user's notifications, for use in a web client."""
+
     permission_classes: ClassVar = [IsAuthenticated]
 
     @extend_schema(**NOTIFICATION_STREAM_DOCS)
     def get(self, request, *args, **kwargs):
-        response = StreamingHttpResponse(event_stream(request.user), content_type="text/event-stream")
+        response = StreamingHttpResponse(
+            event_stream(request.user), content_type="text/event-stream"
+        )
         response["Cache-Control"] = "no-cache"
         response["X-Accel-Buffering"] = "no"
         return response
@@ -113,6 +117,7 @@ class NotificationStreamView(APIView):
 
 class NotificationListView(APIView):
     """Cursor-paginated list of the current user's notifications, optionally filtered by read/unread status."""
+
     permission_classes: ClassVar = [IsAuthenticated]
     pagination_class = CursorAPIPagination
 

@@ -55,7 +55,7 @@ class RedisService:
 
     @staticmethod
     def get_async_redis_client():
-        """Get the asynchronous Redis client connection. Uses the bare-bones 
+        """Get the asynchronous Redis client connection. Uses the bare-bones
         Python redis client, not django-redis, for async support."""
         return get_async_redis_client()
 
@@ -69,7 +69,9 @@ class RedisService:
             channel = f"user:notifications:{user_id}"
             payload = json.dumps({"message": message})
             await client.publish(channel, payload)
-            logger.info(f"Published notification to user {user_id} on channel {channel}")
+            logger.info(
+                f"Published notification to user {user_id} on channel {channel}"
+            )
         except Exception as e:
             logger.error(f"Error publishing notification for user {user_id}: {e}")
 

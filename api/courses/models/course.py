@@ -1,7 +1,7 @@
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
-from api.courses.enums import CourseStatus, DifficultyLevel
+from api.courses.enums import CourseSource, CourseStatus, DifficultyLevel
 from core.mixins import (
     DateHistoryModelMixin,
     UserHistoryModelMixin,
@@ -23,7 +23,16 @@ class Course(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMi
         verbose_name=_("Creator"),
         on_delete=models.CASCADE,
         related_name="courses",
-        help_text=_("Course Creator who owns this course."),
+        null=True,
+        blank=True,
+        help_text=_("Course Creator who owns this course; blank for AI courses."),
+    )
+    source = models.CharField(
+        verbose_name=_("Source"),
+        max_length=10,
+        choices=CourseSource.choices,
+        default=CourseSource.CREATOR,
+        help_text=_("Whether this course was submitted by a creator or AI pipeline."),
     )
     category = models.ForeignKey(
         "categories.Category",
@@ -58,7 +67,7 @@ class Course(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMi
     )
     status = models.CharField(
         verbose_name=_("Status"),
-        max_length=12,
+        max_length=15,
         choices=CourseStatus.choices,
         default=CourseStatus.DRAFT,
         help_text=_("Current lifecycle status of the course."),

@@ -39,6 +39,7 @@ class CourseReviewQueueFilter(django_filters.FilterSet):
         fields = {
             "status": ["exact"],
             "category": ["exact"],
+            "source": ["exact"],
         }
 
     def filter_track(self, queryset, name, value):

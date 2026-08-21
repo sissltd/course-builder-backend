@@ -1,7 +1,7 @@
 # Course Builder Swagger Documentation Standard
 
 **Audience:** every backend engineer adding or editing an endpoint.
-**Goal:** a frontend developer opens `/api/schema/swagger/`, finds any endpoint, and knows **what to send, what they'll get back, who can call it, and what every error means** — without ever asking a backend engineer.
+**Goal:** a frontend developer opens `/api/v1/docs/`, finds any endpoint, and knows **what to send, what they'll get back, who can call it, and what every error means** — without ever asking a backend engineer.
 
 This is the **non-negotiable contract** for endpoint documentation.
 
@@ -76,7 +76,9 @@ description=(
 | `Public`    | No auth required — anyone can call (e.g. health checks) |
 | `Auth`      | Auth lifecycle — login, OTP, password reset, onboarding |
 | `Admin`     | Requires admin/staff role                               |
-| `Writer`    | Called by course creators                                 |
+| `Creator`   | Called by course creators or their collaborators         |
+| `Reviewer`  | Called by content or QA reviewers                         |
+| `Writer`    | Legacy label; use `Creator` for new endpoint tags       |
 | `System`    | Webhooks, internal callbacks                            |
 
 ### Approved tag examples (a growing list)

@@ -62,7 +62,7 @@ def dispatch_paystack_transfer_task(self, outbox_id):
                     details={
                         "amount": str(entry.amount),
                         "reference": entry.reference,
-                    }
+                    },
                 )
                 # TODO: Consider sending a notification to the user that their withdrawal request has been submitted successfully.
             else:
@@ -112,7 +112,7 @@ def handle_transfer_failure(entry, error_message):
             "amount": str(entry.amount),
             "reference": entry.reference,
             "error_message": error_message,
-        }
+        },
     )
 
     Notification.emit_email_notification(

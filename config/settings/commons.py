@@ -11,6 +11,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
+import sys
 from pathlib import Path
 
 from decouple import Csv, config
@@ -127,9 +128,24 @@ AUTH_USER_MODEL = "users.User"
 # worker processes/containers, unlike the per-process default LocMemCache.
 # Reuses the same Redis instance as Celery, on a different DB index so the
 # two never collide.
-CACHES = {
-    "default": {
-        "BACKEND": "django_redis.cache.RedisCache",
-        "LOCATION": config("REDIS_URL", default="redis://redis:6379/1"),
+#
+# During tests we deliberately use LocMemCache instead of Redis.  With
+# --parallel Django spawns several subprocesses that each run a subset of
+# tests; if they all share a single Redis database, one process calling
+# cache.clear() in setUp nukes the throttle counters of every other
+# process, causing spurious failures in ThrottleApiTests and related
+# classes.  LocMemCache is per-process by default, so each subprocess
+# gets an isolated cache and cache.clear() cannot leak across them.
+if "test" in sys.argv:
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        }
     }
-}
+else:
+    CACHES = {
+        "default": {
+            "BACKEND": "django_redis.cache.RedisCache",
+            "LOCATION": config("REDIS_URL", default="redis://redis:6379/1"),
+        }
+    }
