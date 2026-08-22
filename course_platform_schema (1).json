@@ -1,0 +1,417 @@
+{
+  "schema_name": "course_platform",
+  "database": "postgresql",
+  "notes": "Assumes a pre-existing auth_user / users_user table (Django's default or a custom user model). Adjust FK target if needed. Actual course publish (superadmin review/approval) is a separate system handled later.",
+  "tables": [
+    {
+      "name": "category",
+      "description": "Top-level course category lookup.",
+      "columns": [
+        { "name": "id", "type": "SERIAL", "primary_key": true },
+        { "name": "name", "type": "VARCHAR(150)", "nullable": false, "unique": true },
+        { "name": "slug", "type": "VARCHAR(160)", "nullable": false, "unique": true },
+        { "name": "is_active", "type": "BOOLEAN", "nullable": false, "default": true },
+        { "name": "created_at", "type": "TIMESTAMPTZ", "nullable": false, "default": "now()" }
+      ]
+    },
+    {
+      "name": "topic",
+      "description": "Sub-topic within a category.",
+      "columns": [
+        { "name": "id", "type": "SERIAL", "primary_key": true },
+        { "name": "category_id", "type": "INTEGER", "nullable": false, "references": { "table": "category", "column": "id", "on_delete": "CASCADE" } },
+        { "name": "name", "type": "VARCHAR(150)", "nullable": false },
+        { "name": "slug", "type": "VARCHAR(160)", "nullable": false },
+        { "name": "is_active", "type": "BOOLEAN", "nullable": false, "default": true },
+        { "name": "created_at", "type": "TIMESTAMPTZ", "nullable": false, "default": "now()" }
+      ],
+      "unique_constraints": [["category_id", "slug"]]
+    },
+    {
+      "name": "category_request",
+      "description": "User-submitted request when a needed category/topic isn't listed (the \"Request new\" modal).",
+      "columns": [
+        { "name": "id", "type": "SERIAL", "primary_key": true },
+        { "name": "requested_by_id", "type": "INTEGER", "nullable": false, "references": { "table": "auth_user", "column": "id", "on_delete": "CASCADE" } },
+        { "name": "requested_name", "type": "VARCHAR(200)", "nullable": false },
+        { "name": "note", "type": "TEXT" },
+        { "name": "status", "type": "VARCHAR(20)", "nullable": false, "default": "pending", "check_in": ["pending", "approved", "rejected"] },
+        { "name": "created_at", "type": "TIMESTAMPTZ", "nullable": false, "default": "now()" },
+        { "name": "resolved_at", "type": "TIMESTAMPTZ" }
+      ]
+    },
+    {
+      "name": "course_version",
+      "description": "Lookup for the \"Versioning\" wizard step (e.g. v1.0, v1.1).",
+      "columns": [
+        { "name": "id", "type": "SERIAL", "primary_key": true },
+        { "name": "label", "type": "VARCHAR(20)", "nullable": false, "unique": true, "example": "v1.0" },
+        { "name": "is_active", "type": "BOOLEAN", "nullable": false, "default": true },
+        { "name": "created_at", "type": "TIMESTAMPTZ", "nullable": false, "default": "now()" }
+      ]
+    },
+    {
+      "name": "course",
+      "description": "Core course record, built up across the Create Course wizard steps.",
+      "columns": [
+        { "name": "id", "type": "UUID", "primary_key": true, "default": "uuid_generate_v4()" },
+        { "name": "owner_id", "type": "INTEGER", "nullable": false, "references": { "table": "auth_user", "column": "id", "on_delete": "CASCADE" } },
+        { "name": "category_id", "type": "INTEGER", "references": { "table": "category", "column": "id", "on_delete": "SET NULL" }, "wizard_step": "Select course category" },
+        { "name": "topic_id", "type": "INTEGER", "references": { "table": "topic", "column": "id", "on_delete": "SET NULL" }, "wizard_step": "Select course topic" },
+        { "name": "title", "type": "VARCHAR(255)", "wizard_step": "Enter a title for your course" },
+        { "name": "description", "type": "TEXT", "wizard_step": "Enter a title for your course" },
+        { "name": "difficulty_level", "type": "VARCHAR(20)", "check_in": ["beginner", "intermediate", "advanced"], "wizard_step": "Course information" },
+        { "name": "overview", "type": "TEXT", "wizard_step": "Course information" },
+        { "name": "version_id", "type": "INTEGER", "references": { "table": "course_version", "column": "id", "on_delete": "SET NULL" }, "wizard_step": "Versioning" },
+        { "name": "legal_agreed", "type": "BOOLEAN", "nullable": false, "default": false },
+        { "name": "legal_agreed_at", "type": "TIMESTAMPTZ" },
+        { "name": "quality_checked", "type": "BOOLEAN", "nullable": false, "default": false },
+        { "name": "quality_checked_at", "type": "TIMESTAMPTZ" },
+        {
+          "name": "status",
+          "type": "VARCHAR(20)",
+          "nullable": false,
+          "default": "draft",
+          "check_in": ["draft", "in_review", "needs_revision", "rejected", "approved", "published", "archived"],
+          "note": "Reflects creator dashboard Overview cards + Status column. Final publish is a separate superadmin flow."
+        },
+        { "name": "quality_score", "type": "SMALLINT", "check": "quality_score BETWEEN 0 AND 100", "note": "Shown as % bar in the course table" },
+        { "name": "source_type", "type": "VARCHAR(20)", "nullable": false, "default": "creator_uploaded", "check_in": ["creator_uploaded", "ai_generated"], "note": "\"Type\" badge in Course details panel" },
+        { "name": "published_at", "type": "TIMESTAMPTZ" },
+        { "name": "created_at", "type": "TIMESTAMPTZ", "nullable": false, "default": "now()" },
+        { "name": "updated_at", "type": "TIMESTAMPTZ", "nullable": false, "default": "now()", "trigger": "set_updated_at" }
+      ],
+      "indexes": [
+        { "name": "idx_course_owner", "columns": ["owner_id"] },
+        { "name": "idx_course_status", "columns": ["status"] },
+        { "name": "idx_course_category", "columns": ["category_id"] }
+      ]
+    },
+    {
+      "name": "course_thumbnail",
+      "description": "\"Thumbnail\" wizard step, via the reusable Add Media modal (upload or external source).",
+      "columns": [
+        { "name": "id", "type": "UUID", "primary_key": true, "default": "uuid_generate_v4()" },
+        { "name": "course_id", "type": "UUID", "nullable": false, "references": { "table": "course", "column": "id", "on_delete": "CASCADE" } },
+        { "name": "media_type", "type": "VARCHAR(10)", "nullable": false, "default": "image", "check_in": ["image", "video"] },
+        { "name": "source", "type": "VARCHAR(20)", "nullable": false, "default": "upload", "check_in": ["upload", "google_drive", "youtube", "dropbox", "link"] },
+        { "name": "file", "type": "VARCHAR(500)", "note": "populated when source = 'upload'" },
+        { "name": "external_url", "type": "VARCHAR(1000)", "note": "populated when source != 'upload'" },
+        { "name": "width", "type": "INTEGER" },
+        { "name": "height", "type": "INTEGER" },
+        { "name": "is_active", "type": "BOOLEAN", "nullable": false, "default": true, "note": "lets old thumbnails be kept/replaced" },
+        { "name": "created_at", "type": "TIMESTAMPTZ", "nullable": false, "default": "now()" }
+      ],
+      "check_constraints": [
+        {
+          "name": "chk_thumbnail_source_value",
+          "expression": "(source = 'upload' AND file IS NOT NULL) OR (source != 'upload' AND external_url IS NOT NULL)"
+        }
+      ],
+      "indexes": [
+        { "name": "idx_thumbnail_course", "columns": ["course_id"] },
+        { "name": "idx_one_active_thumbnail_per_course", "columns": ["course_id"], "unique": true, "where": "is_active = TRUE", "note": "only one active thumbnail per course" }
+      ]
+    },
+    {
+      "name": "tag",
+      "description": "Reusable course tag.",
+      "columns": [
+        { "name": "id", "type": "SERIAL", "primary_key": true },
+        { "name": "name", "type": "VARCHAR(80)", "nullable": false, "unique": true },
+        { "name": "slug", "type": "VARCHAR(90)", "nullable": false, "unique": true }
+      ]
+    },
+    {
+      "name": "course_tag",
+      "description": "Many-to-many join between course and tag.",
+      "columns": [
+        { "name": "course_id", "type": "UUID", "nullable": false, "references": { "table": "course", "column": "id", "on_delete": "CASCADE" } },
+        { "name": "tag_id", "type": "INTEGER", "nullable": false, "references": { "table": "tag", "column": "id", "on_delete": "CASCADE" } }
+      ],
+      "primary_key": ["course_id", "tag_id"]
+    },
+    {
+      "name": "course_learning_objective",
+      "description": "Repeatable learning-objective list at the course level.",
+      "columns": [
+        { "name": "id", "type": "SERIAL", "primary_key": true },
+        { "name": "course_id", "type": "UUID", "nullable": false, "references": { "table": "course", "column": "id", "on_delete": "CASCADE" } },
+        { "name": "text", "type": "VARCHAR(500)", "nullable": false },
+        { "name": "order_index", "type": "INTEGER", "nullable": false, "default": 0 }
+      ],
+      "indexes": [{ "name": "idx_course_objective_course", "columns": ["course_id"] }]
+    },
+    {
+      "name": "course_collaborator",
+      "description": "Per-course \"Invite collaborators\" action from the lesson editor top bar (the \"Add People\" step).",
+      "columns": [
+        { "name": "id", "type": "SERIAL", "primary_key": true },
+        { "name": "course_id", "type": "UUID", "nullable": false, "references": { "table": "course", "column": "id", "on_delete": "CASCADE" } },
+        { "name": "user_id", "type": "INTEGER", "references": { "table": "auth_user", "column": "id", "on_delete": "SET NULL" } },
+        { "name": "invited_email", "type": "VARCHAR(255)", "note": "used when the invited person has no account yet" },
+        { "name": "role", "type": "VARCHAR(20)", "nullable": false, "default": "editor", "check_in": ["owner", "editor", "reviewer", "viewer"] },
+        { "name": "status", "type": "VARCHAR(20)", "nullable": false, "default": "pending", "check_in": ["pending", "accepted", "declined", "revoked"] },
+        { "name": "invited_by_id", "type": "INTEGER", "nullable": false, "references": { "table": "auth_user", "column": "id", "on_delete": "CASCADE" } },
+        { "name": "invited_at", "type": "TIMESTAMPTZ", "nullable": false, "default": "now()" },
+        { "name": "responded_at", "type": "TIMESTAMPTZ" }
+      ],
+      "unique_constraints": [["course_id", "user_id"]],
+      "indexes": [{ "name": "idx_collaborator_course", "columns": ["course_id"] }]
+    },
+    {
+      "name": "workspace_collaborator",
+      "description": "Account-level \"Collaborators\" sidebar page — the creator's overall team roster, not scoped to a single course. Distinct from course_collaborator.",
+      "columns": [
+        { "name": "id", "type": "SERIAL", "primary_key": true },
+        { "name": "owner_id", "type": "INTEGER", "nullable": false, "references": { "table": "auth_user", "column": "id", "on_delete": "CASCADE" }, "note": "the workspace/creator account" },
+        { "name": "user_id", "type": "INTEGER", "references": { "table": "auth_user", "column": "id", "on_delete": "SET NULL" }, "note": "null until invite is accepted" },
+        { "name": "invited_email", "type": "VARCHAR(255)", "nullable": false },
+        { "name": "role", "type": "VARCHAR(20)", "nullable": false, "default": "collaborator", "check_in": ["admin", "author", "collaborator"] },
+        { "name": "sex", "type": "VARCHAR(10)", "check_in": ["male", "female", "other"] },
+        { "name": "country_of_origin", "type": "VARCHAR(100)" },
+        { "name": "status", "type": "VARCHAR(20)", "nullable": false, "default": "pending", "check_in": ["pending", "active", "removed"] },
+        { "name": "date_added", "type": "TIMESTAMPTZ", "nullable": false, "default": "now()" },
+        { "name": "removed_at", "type": "TIMESTAMPTZ" }
+      ],
+      "unique_constraints": [["owner_id", "invited_email"]],
+      "indexes": [
+        { "name": "idx_workspace_collaborator_owner", "columns": ["owner_id"] },
+        { "name": "idx_workspace_collaborator_role", "columns": ["role"] }
+      ]
+    },
+    {
+      "name": "module",
+      "description": "Course module. Title set at \"Course Outline\" step; description/lock/lessons filled in later at \"Course Modules\" step.",
+      "columns": [
+        { "name": "id", "type": "UUID", "primary_key": true, "default": "uuid_generate_v4()" },
+        { "name": "course_id", "type": "UUID", "nullable": false, "references": { "table": "course", "column": "id", "on_delete": "CASCADE" } },
+        { "name": "title", "type": "VARCHAR(255)", "nullable": false, "wizard_step": "Course Outline" },
+        { "name": "description", "type": "TEXT", "wizard_step": "Course Modules" },
+        { "name": "is_locked", "type": "BOOLEAN", "nullable": false, "default": false, "note": "\"Lock module\": prevents collaborators editing it" },
+        { "name": "order_index", "type": "INTEGER", "nullable": false, "default": 0 },
+        { "name": "created_at", "type": "TIMESTAMPTZ", "nullable": false, "default": "now()" },
+        { "name": "updated_at", "type": "TIMESTAMPTZ", "nullable": false, "default": "now()", "trigger": "set_updated_at" }
+      ],
+      "indexes": [
+        { "name": "idx_module_course", "columns": ["course_id"] },
+        { "name": "idx_module_course_order", "columns": ["course_id", "order_index"], "unique": true }
+      ]
+    },
+    {
+      "name": "module_learning_objective",
+      "description": "Repeatable learning-objective list at the module level.",
+      "columns": [
+        { "name": "id", "type": "SERIAL", "primary_key": true },
+        { "name": "module_id", "type": "UUID", "nullable": false, "references": { "table": "module", "column": "id", "on_delete": "CASCADE" } },
+        { "name": "text", "type": "VARCHAR(500)", "nullable": false },
+        { "name": "order_index", "type": "INTEGER", "nullable": false, "default": 0 }
+      ],
+      "indexes": [{ "name": "idx_module_objective_module", "columns": ["module_id"] }]
+    },
+    {
+      "name": "lesson",
+      "description": "Lesson within a module. content_type matches the 3 \"Add lesson\" buttons: Video, Quiz, Text.",
+      "columns": [
+        { "name": "id", "type": "UUID", "primary_key": true, "default": "uuid_generate_v4()" },
+        { "name": "module_id", "type": "UUID", "nullable": false, "references": { "table": "module", "column": "id", "on_delete": "CASCADE" } },
+        { "name": "title", "type": "VARCHAR(255)", "nullable": false },
+        { "name": "content_type", "type": "VARCHAR(20)", "nullable": false, "default": "text", "check_in": ["video", "quiz", "text"] },
+        { "name": "video_file", "type": "VARCHAR(500)", "note": "uploaded video/image file, from Add Media block" },
+        { "name": "embedded_link", "type": "VARCHAR(1000)", "note": "pasted embed link (Vimeo, YouTube, Wistia, Typeform, etc.)" },
+        { "name": "video_script_file", "type": "VARCHAR(500)", "note": "uploaded subtitle/transcript file (.srt)" },
+        { "name": "estimated_duration_minutes", "type": "INTEGER", "note": "shown as e.g. \"1 hours 25 minutes\"" },
+        { "name": "order_index", "type": "INTEGER", "nullable": false, "default": 0 },
+        { "name": "is_published", "type": "BOOLEAN", "nullable": false, "default": false },
+        { "name": "created_at", "type": "TIMESTAMPTZ", "nullable": false, "default": "now()" },
+        { "name": "updated_at", "type": "TIMESTAMPTZ", "nullable": false, "default": "now()", "trigger": "set_updated_at" }
+      ],
+      "indexes": [
+        { "name": "idx_lesson_module", "columns": ["module_id"] },
+        { "name": "idx_lesson_module_order", "columns": ["module_id", "order_index"], "unique": true }
+      ]
+    },
+    {
+      "name": "lesson_objective",
+      "description": "Repeatable \"Lessons Objectives\" list (numbered e.g. 1.1, 1.2...).",
+      "columns": [
+        { "name": "id", "type": "SERIAL", "primary_key": true },
+        { "name": "lesson_id", "type": "UUID", "nullable": false, "references": { "table": "lesson", "column": "id", "on_delete": "CASCADE" } },
+        { "name": "text", "type": "VARCHAR(500)", "nullable": false },
+        { "name": "order_index", "type": "INTEGER", "nullable": false, "default": 0 }
+      ],
+      "indexes": [{ "name": "idx_lesson_objective_lesson", "columns": ["lesson_id"] }]
+    },
+    {
+      "name": "lesson_requirement",
+      "description": "\"Lessons Requirement\" rich-text content for the lesson.",
+      "columns": [
+        { "name": "id", "type": "SERIAL", "primary_key": true },
+        { "name": "lesson_id", "type": "UUID", "nullable": false, "references": { "table": "lesson", "column": "id", "on_delete": "CASCADE" } },
+        { "name": "text", "type": "VARCHAR(500)", "nullable": false },
+        { "name": "order_index", "type": "INTEGER", "nullable": false, "default": 0 }
+      ],
+      "indexes": [{ "name": "idx_lesson_requirement_lesson", "columns": ["lesson_id"] }]
+    },
+    {
+      "name": "lesson_image",
+      "description": "Images added to a lesson body via the \"Add image\" modal.",
+      "columns": [
+        { "name": "id", "type": "SERIAL", "primary_key": true },
+        { "name": "lesson_id", "type": "UUID", "nullable": false, "references": { "table": "lesson", "column": "id", "on_delete": "CASCADE" } },
+        { "name": "image", "type": "VARCHAR(500)", "nullable": false },
+        { "name": "caption", "type": "VARCHAR(255)" },
+        { "name": "source_type", "type": "VARCHAR(20)", "nullable": false, "default": "upload", "check_in": ["upload", "google_drive", "youtube", "dropbox", "link"] },
+        { "name": "order_index", "type": "INTEGER", "nullable": false, "default": 0 }
+      ],
+      "indexes": [{ "name": "idx_lesson_image_lesson", "columns": ["lesson_id"] }]
+    },
+    {
+      "name": "quiz",
+      "description": "One quiz per lesson, created via the Quiz Builder modal.",
+      "columns": [
+        { "name": "id", "type": "UUID", "primary_key": true, "default": "uuid_generate_v4()" },
+        { "name": "lesson_id", "type": "UUID", "nullable": false, "references": { "table": "lesson", "column": "id", "on_delete": "CASCADE" } },
+        { "name": "title", "type": "VARCHAR(255)" },
+        { "name": "pass_mark", "type": "INTEGER", "note": "% or points threshold to pass" },
+        { "name": "created_at", "type": "TIMESTAMPTZ", "nullable": false, "default": "now()" },
+        { "name": "updated_at", "type": "TIMESTAMPTZ", "nullable": false, "default": "now()", "trigger": "set_updated_at" }
+      ],
+      "unique_constraints": [["lesson_id"]]
+    },
+    {
+      "name": "question",
+      "description": "A quiz question — multiple_choice or essay.",
+      "columns": [
+        { "name": "id", "type": "UUID", "primary_key": true, "default": "uuid_generate_v4()" },
+        { "name": "quiz_id", "type": "UUID", "nullable": false, "references": { "table": "quiz", "column": "id", "on_delete": "CASCADE" } },
+        { "name": "order_index", "type": "INTEGER", "nullable": false, "default": 0 },
+        { "name": "question_text", "type": "TEXT", "nullable": false },
+        { "name": "question_type", "type": "VARCHAR(20)", "nullable": false, "default": "multiple_choice", "check_in": ["multiple_choice", "essay"] },
+        { "name": "point", "type": "INTEGER", "nullable": false, "default": 0 },
+        { "name": "explanation", "type": "TEXT", "note": "used directly for essay-type questions" },
+        { "name": "created_at", "type": "TIMESTAMPTZ", "nullable": false, "default": "now()" }
+      ],
+      "indexes": [
+        { "name": "idx_question_quiz", "columns": ["quiz_id"] },
+        { "name": "idx_question_quiz_order", "columns": ["quiz_id", "order_index"], "unique": true }
+      ]
+    },
+    {
+      "name": "question_option",
+      "description": "An answer option for a multiple_choice question (also maps to display letter A/B/C/D via order_index).",
+      "columns": [
+        { "name": "id", "type": "UUID", "primary_key": true, "default": "uuid_generate_v4()" },
+        { "name": "question_id", "type": "UUID", "nullable": false, "references": { "table": "question", "column": "id", "on_delete": "CASCADE" } },
+        { "name": "order_index", "type": "INTEGER", "nullable": false, "default": 0 },
+        { "name": "text", "type": "VARCHAR(500)", "nullable": false },
+        { "name": "explanation", "type": "TEXT" },
+        { "name": "is_correct", "type": "BOOLEAN", "nullable": false, "default": false }
+      ],
+      "indexes": [
+        { "name": "idx_option_question", "columns": ["question_id"] },
+        { "name": "idx_option_question_order", "columns": ["question_id", "order_index"], "unique": true },
+        { "name": "idx_one_correct_option_per_question", "columns": ["question_id"], "unique": true, "where": "is_correct = TRUE", "note": "enforces exactly one correct option per question" }
+      ]
+    },
+    {
+      "name": "lesson_content_block",
+      "description": "Block-based lesson body editor (the \"General\" panel: Heading 1/2, Paragraph, Number, Bullet, Blockquote, Divider, Image, Video, Embed, Quiz). Produces the rendered body seen in Preview.",
+      "columns": [
+        { "name": "id", "type": "UUID", "primary_key": true, "default": "uuid_generate_v4()" },
+        { "name": "lesson_id", "type": "UUID", "nullable": false, "references": { "table": "lesson", "column": "id", "on_delete": "CASCADE" } },
+        { "name": "order_index", "type": "INTEGER", "nullable": false, "default": 0 },
+        {
+          "name": "block_type",
+          "type": "VARCHAR(20)",
+          "nullable": false,
+          "check_in": ["heading_1", "heading_2", "paragraph", "numbered_list", "bulleted_list", "blockquote", "divider", "image", "video", "embed", "quiz"]
+        },
+        { "name": "text_content", "type": "TEXT", "note": "for heading/paragraph/list/blockquote blocks" },
+        { "name": "media_url", "type": "VARCHAR(500)", "note": "for image/video/embed blocks" },
+        { "name": "quiz_id", "type": "UUID", "references": { "table": "quiz", "column": "id", "on_delete": "SET NULL" }, "note": "for a 'quiz' block referencing this lesson's quiz" },
+        { "name": "created_at", "type": "TIMESTAMPTZ", "nullable": false, "default": "now()" }
+      ],
+      "indexes": [
+        { "name": "idx_content_block_lesson", "columns": ["lesson_id"] },
+        { "name": "idx_content_block_lesson_order", "columns": ["lesson_id", "order_index"], "unique": true }
+      ]
+    },
+    {
+      "name": "quality_check_criterion",
+      "description": "Admin-configurable template of quality-check items, grouped by wizard section. Admins can add/remove/reorder without schema changes.",
+      "columns": [
+        { "name": "id", "type": "SERIAL", "primary_key": true },
+        { "name": "section", "type": "VARCHAR(100)", "nullable": false, "example": "Course information | Course Outline | Version | Course Modules | Thumbnail" },
+        { "name": "label", "type": "VARCHAR(255)", "nullable": false, "example": "Course title | Learning objectives" },
+        { "name": "order_index", "type": "INTEGER", "nullable": false, "default": 0 },
+        { "name": "is_active", "type": "BOOLEAN", "nullable": false, "default": true, "note": "lets admin retire a criterion without deleting history" },
+        { "name": "created_at", "type": "TIMESTAMPTZ", "nullable": false, "default": "now()" }
+      ],
+      "indexes": [{ "name": "idx_quality_criterion_section", "columns": ["section"] }]
+    },
+    {
+      "name": "course_quality_check",
+      "description": "Per-course result for each quality_check_criterion, refreshed as the creator edits.",
+      "columns": [
+        { "name": "id", "type": "SERIAL", "primary_key": true },
+        { "name": "course_id", "type": "UUID", "nullable": false, "references": { "table": "course", "column": "id", "on_delete": "CASCADE" } },
+        { "name": "criterion_id", "type": "INTEGER", "nullable": false, "references": { "table": "quality_check_criterion", "column": "id", "on_delete": "CASCADE" } },
+        { "name": "is_checked", "type": "BOOLEAN", "nullable": false, "default": false },
+        { "name": "warning_note", "type": "VARCHAR(500)", "example": "Your description does not meet the minimum requirement" },
+        { "name": "checked_at", "type": "TIMESTAMPTZ" }
+      ],
+      "unique_constraints": [["course_id", "criterion_id"]],
+      "indexes": [{ "name": "idx_course_quality_check_course", "columns": ["course_id"] }]
+    },
+    {
+      "name": "course_review",
+      "description": "One row per admin review round on a submitted course.",
+      "columns": [
+        { "name": "id", "type": "SERIAL", "primary_key": true },
+        { "name": "course_id", "type": "UUID", "nullable": false, "references": { "table": "course", "column": "id", "on_delete": "CASCADE" } },
+        { "name": "reviewer_id", "type": "INTEGER", "references": { "table": "auth_user", "column": "id", "on_delete": "SET NULL" } },
+        { "name": "decision", "type": "VARCHAR(20)", "nullable": false, "check_in": ["approved", "rejected", "needs_revision"] },
+        { "name": "overall_note", "type": "TEXT" },
+        { "name": "created_at", "type": "TIMESTAMPTZ", "nullable": false, "default": "now()" }
+      ],
+      "indexes": [{ "name": "idx_course_review_course", "columns": ["course_id"] }]
+    },
+    {
+      "name": "course_review_flag",
+      "description": "A specific flagged issue within a review round, optionally scoped to one lesson or module (e.g. \"P1 Lesson 2 - Script Length\").",
+      "columns": [
+        { "name": "id", "type": "SERIAL", "primary_key": true },
+        { "name": "review_id", "type": "INTEGER", "nullable": false, "references": { "table": "course_review", "column": "id", "on_delete": "CASCADE" } },
+        { "name": "lesson_id", "type": "UUID", "references": { "table": "lesson", "column": "id", "on_delete": "SET NULL" } },
+        { "name": "module_id", "type": "UUID", "references": { "table": "module", "column": "id", "on_delete": "SET NULL" } },
+        { "name": "flag_type", "type": "VARCHAR(50)", "nullable": false, "example": "script_length | missing_media | quiz_incomplete" },
+        { "name": "title", "type": "VARCHAR(255)", "nullable": false, "example": "P1 Lesson 2 - Script Length" },
+        { "name": "system_message", "type": "VARCHAR(500)", "example": "306/500 words below minimum" },
+        { "name": "reviewer_note", "type": "TEXT", "example": "Extend the lesson script to resolve this issue" },
+        { "name": "is_resolved", "type": "BOOLEAN", "nullable": false, "default": false },
+        { "name": "resolved_at", "type": "TIMESTAMPTZ" },
+        { "name": "created_at", "type": "TIMESTAMPTZ", "nullable": false, "default": "now()" }
+      ],
+      "indexes": [
+        { "name": "idx_review_flag_review", "columns": ["review_id"] },
+        { "name": "idx_review_flag_lesson", "columns": ["lesson_id"] }
+      ]
+    }
+  ],
+  "triggers": [
+    {
+      "name": "set_updated_at",
+      "type": "function",
+      "language": "plpgsql",
+      "purpose": "Sets NEW.updated_at = now() on any UPDATE.",
+      "applied_to": [
+        { "table": "course", "trigger_name": "trg_course_updated_at" },
+        { "table": "module", "trigger_name": "trg_module_updated_at" },
+        { "table": "lesson", "trigger_name": "trg_lesson_updated_at" },
+        { "table": "quiz", "trigger_name": "trg_quiz_updated_at" }
+      ]
+    }
+  ],
+  "extensions": ["uuid-ossp"]
+}

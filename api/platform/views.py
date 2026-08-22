@@ -5,10 +5,17 @@ from rest_framework.views import APIView
 
 from api.platform.serializers import (
     AdminOverviewSerializer,
+    CreatorOverviewSerializer,
     PlatformSettingsSerializer,
     PlatformSettingsUpdateSerializer,
+    ReviewerOverviewSerializer,
 )
-from api.platform.services import admin_overview_service, platform_settings_service
+from api.platform.services import (
+    admin_overview_service,
+    creator_overview_service,
+    platform_settings_service,
+    reviewer_overview_service,
+)
 from api.users.permissions import IsAdminOrSuperAdminRole, IsMFAVerifiedForSession
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 
@@ -223,3 +230,114 @@ class AdminOverviewView(APIView):
     def get(self, request):
         overview = admin_overview_service.get_overview(actor=request.user)
         return Response(AdminOverviewSerializer(overview).data)
+
+
+class CreatorOverviewView(APIView):
+    """Aggregate counts and totals for the creator home screen."""
+
+    permission_classes = [IsAuthenticated]
+    serializer_class = CreatorOverviewSerializer  # for schema generation only
+
+    @extend_schema(
+        summary="Retrieve the creator dashboard overview",
+        description=(
+            "Returns the counts a Course Creator's home screen leads with: "
+            "their own courses by lifecycle status, their wallet balance "
+            "with lifetime-earned and pending-payout figures, and how many "
+            "collaboration invites are waiting on them.\n\n"
+            "Called when the course-builder home screen loads.\n\n"
+            "**Auth:** Course Creator or Writer (role enforced in the service "
+            "layer, so admins calling on behalf of a creator get a clean 403).\n\n"
+            "**Prerequisites:** None beyond being signed in with a creator "
+            "role.\n\n"
+            "**Important:** Counts only - each figure has a dedicated "
+            "endpoint behind it (`/courses/`, `/wallet/`, `/course-invites/"
+            "incoming/`) and this deliberately does not duplicate those "
+            "payloads. Every status key is always present, including zeroes, "
+            "so tiles do not appear and disappear with the data."
+        ),
+        tags=["Creator — Overview"],
+        responses={
+            200: OpenApiResponse(
+                response=CreatorOverviewSerializer,
+                description="The creator's own counts and wallet totals.",
+                examples=[
+                    OpenApiExample(
+                        name="Success",
+                        value={
+                            "courses": {
+                                "DRAFT": 3,
+                                "SUBMITTED": 1,
+                                "IN_REVIEW": 0,
+                                "NEEDS_REVISION": 0,
+                                "APPROVED": 2,
+                                "PUBLISHED": 5,
+                                "ARCHIVED": 0,
+                                "REJECTED": 0,
+                            },
+                            "wallet": {
+                                "balance": "240.00",
+                                "currency": "USD",
+                                "total_earned": "480.00",
+                                "pending_balance": "120.00",
+                            },
+                            "pending_invites": 2,
+                        },
+                    )
+                ],
+            ),
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
+    def get(self, request):
+        overview = creator_overview_service.get_overview(actor=request.user)
+        return Response(CreatorOverviewSerializer(overview).data)
+
+
+class ReviewerOverviewView(APIView):
+    """Aggregate counts for the reviewer home screen."""
+
+    permission_classes = [IsAuthenticated]
+    serializer_class = ReviewerOverviewSerializer  # for schema generation only
+
+    @extend_schema(
+        summary="Retrieve the reviewer dashboard overview",
+        description=(
+            "Returns the counts a Creator Reviewer's home screen leads "
+            "with: how many courses are sitting in each reviewable state "
+            "(Submitted / In Review), plus the reviewer's own lifetime and "
+            "today's decision counts.\n\n"
+            "Called when the reviewer dashboard loads.\n\n"
+            "**Auth:** Creator Reviewer or Verifier (role enforced in the "
+            "service layer).\n\n"
+            "**Prerequisites:** None beyond being signed in with a reviewer "
+            "role.\n\n"
+            "**Important:** Counts only - the queue itself is at "
+            "`/review-queue/`. Both queue keys are always present, including "
+            "zeroes."
+        ),
+        tags=["Reviewer — Overview"],
+        responses={
+            200: OpenApiResponse(
+                response=ReviewerOverviewSerializer,
+                description="Queue depth and the reviewer's own decision counts.",
+                examples=[
+                    OpenApiExample(
+                        name="Success",
+                        value={
+                            "queue": {"SUBMITTED": 4, "IN_REVIEW": 2},
+                            "my_decisions": {"approved": 31, "today": 3},
+                        },
+                    )
+                ],
+            ),
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
+    def get(self, request):
+        overview = reviewer_overview_service.get_overview(actor=request.user)
+        return Response(ReviewerOverviewSerializer(overview).data)

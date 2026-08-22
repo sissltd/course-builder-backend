@@ -195,3 +195,80 @@ class AdminOverviewSerializer(serializers.Serializer):
     wallet_totals = AdminOverviewWalletTotalsSerializer(
         help_text="Platform-wide wallet money figures."
     )
+
+
+class CreatorOverviewWalletSerializer(serializers.Serializer):
+    """The signed-in creator's own wallet figures on their overview."""
+
+    balance = serializers.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        help_text="Current wallet balance.",
+    )
+    currency = serializers.CharField(
+        help_text="ISO 4217 currency code of the wallet.",
+    )
+    total_earned = serializers.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        help_text="Lifetime total credited to this wallet via approved courses.",
+    )
+    pending_balance = serializers.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        help_text=(
+            "Sum of pending withdrawal debits - already deducted from the "
+            "balance, not yet settled."
+        ),
+    )
+
+
+class CreatorOverviewSerializer(serializers.Serializer):
+    """Counts and totals backing a creator's home screen.
+
+    Mirrors AdminOverviewSerializer's conventions: counts only (each figure
+    has its own endpoint behind it), every CourseStatus key always present
+    including zeroes, computed live per request.
+    """
+
+    courses = serializers.DictField(
+        child=serializers.IntegerField(),
+        help_text="Counts of the creator's own courses keyed by CourseStatus.",
+    )
+    wallet = CreatorOverviewWalletSerializer(
+        help_text="The creator's wallet balance and lifetime/pending money figures."
+    )
+    pending_invites = serializers.IntegerField(
+        help_text=(
+            "Collaboration invites addressed to this account's email that "
+            "are still pending and unexpired."
+        )
+    )
+
+
+class ReviewerMyDecisionsSerializer(serializers.Serializer):
+    """A reviewer's own decision counts."""
+
+    approved = serializers.IntegerField(
+        help_text="Lifetime count of courses this reviewer has approved.",
+    )
+    today = serializers.IntegerField(
+        help_text="Decisions this reviewer has recorded since local midnight.",
+    )
+
+
+class ReviewerOverviewSerializer(serializers.Serializer):
+    """Counts backing a reviewer's home screen.
+
+    `queue` is keyed by the two reviewable CourseStatus values and always
+    contains both, so tiles are stable. `my_decisions` summarizes the
+    reviewer's own ReviewAction history.
+    """
+
+    queue = serializers.DictField(
+        child=serializers.IntegerField(),
+        help_text="Courses awaiting review keyed by CourseStatus (SUBMITTED, IN_REVIEW).",
+    )
+    my_decisions = ReviewerMyDecisionsSerializer(
+        help_text="The reviewer's own approve/reject history summary."
+    )

@@ -1,29 +1,13 @@
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
-from api.categories.models import Category
-from api.courses.models import Course, ReviewAction, Topic
+from api.catalog.serializers.category_serializer import CategoryMiniSerializer
+from api.catalog.serializers.topic_serializer import TopicMiniSerializer
+from api.courses.models import Course
 from api.courses.serializers.assessment_serializer import AssessmentSerializer
 from api.courses.serializers.module_serializer import ModuleSerializer
 from api.courses.services import course_service
-
-
-class CategoryMiniSerializer(serializers.ModelSerializer):
-    """Lightweight Category representation for nesting inside Course payloads."""
-
-    class Meta:
-        model = Category
-        fields = ["id", "name"]
-        read_only_fields = fields
-
-
-class TopicMiniSerializer(serializers.ModelSerializer):
-    """Lightweight Topic representation for nesting inside Course payloads."""
-
-    class Meta:
-        model = Topic
-        fields = ["id", "name"]
-        read_only_fields = fields
+from api.reviews.serializers import ReviewActionSerializer  # noqa: F401 (re-export)
 
 
 def _validate_string_list(value, field_name):
@@ -50,6 +34,8 @@ class CourseListSerializer(serializers.ModelSerializer):
             "category",
             "topic",
             "status",
+            "source_type",
+            "quality_score",
             "creator_price_snapshot",
             "submitted_at",
             "created_datetime",
@@ -74,6 +60,8 @@ class CourseDetailSerializer(serializers.ModelSerializer):
             "category",
             "topic",
             "difficulty_level",
+            "source_type",
+            "quality_score",
             "learning_objectives",
             "tags",
             "planned_duration_seconds",
@@ -232,22 +220,6 @@ class CourseUpdateSerializer(serializers.ModelSerializer):
         return CourseDetailSerializer(instance, context=self.context).data
 
 
-class ReviewActionSerializer(serializers.ModelSerializer):
-    """Read-only representation of a ReviewAction (audit record)."""
-
-    reviewer = serializers.SerializerMethodField()
-
-    class Meta:
-        model = ReviewAction
-        fields = ["id", "course", "reviewer", "action", "feedback", "created_datetime"]
-        read_only_fields = fields
-
-    def get_reviewer(self, obj):
-        if not obj.reviewer_id:
-            return None
-        return {"id": obj.reviewer_id, "email": obj.reviewer.email}
-
-
 class ReviewApproveSerializer(serializers.Serializer):
     """Request body for the review-queue approve action."""
 
@@ -258,10 +230,15 @@ class ReviewRejectSerializer(serializers.Serializer):
     """Request body for the review-queue reject action.
 
     Requires a non-empty feedback["summary"] (US-202: reviewers must leave
-    detailed feedback the creator can act on).
+    detailed feedback the creator can act on). `flags` is optional: a list
+    of structured issue dicts persisted as ReviewFlag rows (flag_type,
+    title, system_message, reviewer_note, optional lesson_id/module_id) -
+    the itemized issues the creator dashboard renders alongside the
+    free-form feedback.
     """
 
     feedback = serializers.JSONField(required=True)
+    flags = serializers.JSONField(required=False, default=list)
 
     def validate_feedback(self, value):
         if not isinstance(value, dict) or not value.get("summary"):
@@ -282,4 +259,16 @@ class ReviewRejectSerializer(serializers.Serializer):
                     f"feedback.items[{index}] must include 'module_id' and 'comment'."
                 )
 
+        return value
+
+    def validate_flags(self, value):
+        if not isinstance(value, list):
+            raise serializers.ValidationError("flags must be a list if provided.")
+        for index, flag in enumerate(value):
+            if not isinstance(flag, dict) or not flag.get("flag_type") or not flag.get(
+                "title"
+            ):
+                raise serializers.ValidationError(
+                    f"flags[{index}] must include 'flag_type' and 'title'."
+                )
         return value

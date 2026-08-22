@@ -4,7 +4,7 @@ from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
-from api.categories.enums import CategoryStatus
+from api.catalog.enums import CategoryStatus
 from api.users.models import User
 
 
@@ -94,7 +94,7 @@ class MeUpdateSerializer(serializers.ModelSerializer):
         """
         category_id = self.validated_data.pop("category", None)
         if category_id is not None:
-            from api.categories.models import Category
+            from api.catalog.models import Category
 
             try:
                 category = Category.objects.get(id=category_id, status=CategoryStatus.ACTIVE)

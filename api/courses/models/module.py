@@ -34,6 +34,25 @@ class Module(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMi
         verbose_name=_("Order"),
         help_text=_("Display order of this module within the course."),
     )
+    description = models.TextField(
+        verbose_name=_("Description"),
+        blank=True,
+        default="",
+        help_text=_(
+            "Module summary, filled in at the 'Course Modules' step after "
+            "the outline is set."
+        ),
+    )
+    learning_objectives = models.JSONField(
+        verbose_name=_("Learning Objectives"),
+        default=list,
+        blank=True,
+        help_text=_(
+            "Module-level learning objective strings - what the learner "
+            "gains from this module as a whole, distinct from the "
+            "per-lesson objectives."
+        ),
+    )
     locked_by = models.ForeignKey(
         "users.User",
         verbose_name=_("Locked By"),

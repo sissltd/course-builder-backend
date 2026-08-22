@@ -11,7 +11,6 @@ from rest_framework.viewsets import ModelViewSet
 
 from api.collaborators.models import CourseCollaborator
 from api.collaborators.serializers import (
-    CollaboratorInviteSerializer,
     CollaboratorRoleUpdateSerializer,
     CollaboratorSerializer,
 )
@@ -40,7 +39,7 @@ _COLLABORATOR_EXAMPLE = {
 _AUTH_LINE = (
     "**Auth:** Course Creator or Writer. Read access (list/retrieve) is "
     "open to anyone with view access to the course - the creator or any "
-    "existing collaborator. Write access (invite/change-role/remove) is "
+    "existing collaborator. Write access (change-role/remove) is "
     "further restricted to the course's own creator or an Admin-role "
     "collaborator, checked against the resolved course rather than a "
     "platform-wide role."
@@ -174,18 +173,23 @@ _MANAGE_ACCESS_403 = OpenApiResponse(
     ),
 )
 class CourseCollaboratorViewSet(ModelViewSet):
-    """Flat CRUD resource for course collaborators (course scoped via
-    `course_id` on list/create, and via the collaborator object itself on
+    """Flat resource for course collaborators (course scoped via
+    `course_id` on list, and via the collaborator object itself on
     retrieve/update/destroy).
+
+    New collaborators are created exclusively by accepting an invite (see
+    CollaboratorInviteViewSet), so this viewset has no create action -
+    only list/retrieve/PATCH role-assignment/DELETE.
 
     Anyone with view access to the course (creator or any collaborator) can
     list/retrieve; only the creator or an Admin-role collaborator can
-    invite/remove/change-role (checked in _require_manage_access rather than
+    change-role/remove (checked in _require_manage_access rather than
     a declarative permission class, since manage-access depends on the
     resolved course, not just the requesting user's platform-wide role).
     """
 
     permission_classes = [IsCourseCreatorRole]
+    http_method_names = ["get", "patch", "delete", "head", "options"]
 
     def get_queryset(self):
         if getattr(self, "swagger_fake_view", False):
@@ -205,19 +209,9 @@ class CourseCollaboratorViewSet(ModelViewSet):
         return queryset
 
     def get_serializer_class(self):
-        if self.action == "create":
-            return CollaboratorInviteSerializer
         if self.action in {"update", "partial_update"}:
             return CollaboratorRoleUpdateSerializer
         return CollaboratorSerializer
-
-    def _get_course(self, course_id) -> Course:
-        try:
-            return collaborator_service.get_courses_accessible_to(
-                self.request.user
-            ).get(pk=course_id)
-        except Course.DoesNotExist as exc:
-            raise exceptions.NotFound("Course not found.") from exc
 
     def _require_manage_access(self, course: Course) -> None:
         if not collaborator_service.has_manage_access(
@@ -226,123 +220,6 @@ class CourseCollaboratorViewSet(ModelViewSet):
             raise exceptions.PermissionDenied(
                 "Only the course creator or an Admin collaborator can manage collaborators."
             )
-
-    @extend_schema(
-        summary="Invite a collaborator to a course",
-        description=(
-            "Grants an existing user access to a course by email, and "
-            "notifies them in-app. There is no pending/token invite flow - "
-            "the invitee must already have an account.\n\n"
-            "Called from the 'Invite collaborator' action in the manage "
-            "collaborators panel.\n\n"
-            f"{_AUTH_LINE}\n\n"
-            "**Prerequisites:** The caller must be the course's creator or "
-            "an Admin-role collaborator on it; the invitee must already "
-            "have an account and not already be a collaborator or the "
-            "course's own creator.\n\n"
-            "**Important:** `role` defaults to `COLLABORATOR` if omitted - "
-            "pass `ADMIN` to grant the invitee manage access too. "
-            "`assigned_modules` is optional and only meaningful for a plain "
-            "`COLLABORATOR` - it restricts which modules they can see and "
-            "edit; an `ADMIN`-role collaborator always has full-course "
-            "access regardless of this list."
-        ),
-        tags=["Creator — Collaborators"],
-        request=CollaboratorInviteSerializer,
-        examples=[
-            OpenApiExample(
-                name="Sample Request",
-                request_only=True,
-                value={
-                    "course_id": "3f9a2e11-6b7c-4d2a-9e5f-1c8d4a7b2f30",
-                    "email": "jane.doe@example.com",
-                    "role": "COLLABORATOR",
-                    "assigned_modules": ["b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e"],
-                },
-            ),
-        ],
-        responses={
-            201: OpenApiResponse(
-                response=CollaboratorSerializer,
-                description="Collaborator added.",
-                examples=[OpenApiExample(name="Success", value=_COLLABORATOR_EXAMPLE)],
-            ),
-            400: OpenApiResponse(
-                description=(
-                    "No account exists for that email, the email belongs to "
-                    "the course's own creator, or they're already a "
-                    "collaborator."
-                ),
-                examples=[
-                    OpenApiExample(
-                        name="No account for email",
-                        value={
-                            "errors": [
-                                {
-                                    "type": "validation_error",
-                                    "code": "invalid",
-                                    "message": (
-                                        "No account exists for this email. "
-                                        "Ask them to sign up first."
-                                    ),
-                                    "field_name": None,
-                                }
-                            ]
-                        },
-                    ),
-                    OpenApiExample(
-                        name="Already the creator",
-                        value={
-                            "errors": [
-                                {
-                                    "type": "validation_error",
-                                    "code": "invalid",
-                                    "message": (
-                                        "The course creator is already the "
-                                        "Author and can't be invited as a "
-                                        "collaborator."
-                                    ),
-                                    "field_name": None,
-                                }
-                            ]
-                        },
-                    ),
-                    OpenApiExample(
-                        name="Already a collaborator",
-                        value={
-                            "errors": [
-                                {
-                                    "type": "validation_error",
-                                    "code": "invalid",
-                                    "message": (
-                                        "This user is already a collaborator "
-                                        "on this course."
-                                    ),
-                                    "field_name": None,
-                                }
-                            ]
-                        },
-                    ),
-                ],
-            ),
-            403: _MANAGE_ACCESS_403,
-            **STANDARD_ERROR_RESPONSES["auth"],
-            **STANDARD_ERROR_RESPONSES["not_found"],
-            **STANDARD_ERROR_RESPONSES["server"],
-        },
-    )
-    def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        validated_data = dict(serializer.validated_data)
-        course = self._get_course(validated_data.pop("course_id"))
-        self._require_manage_access(course)
-        collaborator = collaborator_service.invite_collaborator(
-            course=course, inviter=request.user, **validated_data
-        )
-        return Response(
-            CollaboratorSerializer(collaborator).data, status=status.HTTP_201_CREATED
-        )
 
     @extend_schema(
         summary="Change a collaborator's role or module assignment",

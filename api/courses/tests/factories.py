@@ -11,17 +11,15 @@ from itertools import count
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 
-from api.categories.enums import CategoryStatus, TrackPreference
+from api.catalog.enums import CategoryStatus, TrackPreference
+from api.catalog.models import Category, Topic, TopicReservationRequest
 from api.courses.enums import AssessmentLevel
-from api.categories.models import Category
 from api.courses.models import (
     Assessment,
     Course,
     CourseAppeal,
     Lesson,
     Module,
-    Topic,
-    TopicReservationRequest,
 )
 from api.users.enums import UserRole
 

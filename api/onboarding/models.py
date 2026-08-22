@@ -28,7 +28,7 @@ class CreatorProfile(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
         help_text=_("User this onboarding profile belongs to."),
     )
     primary_expertise_category = models.ForeignKey(
-        "categories.Category",
+        "catalog.Category",
         verbose_name=_("Primary Expertise Category"),
         on_delete=models.SET_NULL,
         null=True,

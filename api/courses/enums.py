@@ -13,8 +13,10 @@ class CourseStatus(models.TextChoices):
     DRAFT = "DRAFT", "Draft"
     SUBMITTED = "SUBMITTED", "Submitted"
     IN_REVIEW = "IN_REVIEW", "In Review"
+    NEEDS_REVISION = "NEEDS_REVISION", "Needs Revision"
     APPROVED = "APPROVED", "Approved"
     PUBLISHED = "PUBLISHED", "Published"
+    ARCHIVED = "ARCHIVED", "Archived"
     REJECTED = "REJECTED", "Rejected"
 
 
@@ -33,21 +35,6 @@ class QuestionType(models.TextChoices):
     ESSAY = "ESSAY", "Essay Question"
 
 
-class ReviewActionType(models.TextChoices):
-    """The decision recorded by a reviewer on a ReviewAction."""
-
-    APPROVE = "APPROVE", "Approve"
-    REJECT = "REJECT", "Reject"
-
-
-class CategoryRequestStatus(models.TextChoices):
-    """Lifecycle status of a creator's request for a new Category."""
-
-    PENDING = "PENDING", "Pending"
-    APPROVED = "APPROVED", "Approved"
-    REJECTED = "REJECTED", "Rejected"
-
-
 class DifficultyLevel(models.TextChoices):
     """Course difficulty level, self-reported by the creator."""
 
@@ -56,12 +43,35 @@ class DifficultyLevel(models.TextChoices):
     ADVANCED = "ADVANCED", "Advanced"
 
 
-class ReservationStatus(models.TextChoices):
-    """Lifecycle status of a creator's request to reserve a Topic (PRD BR-007)."""
+class CourseSourceType(models.TextChoices):
+    """Where a course's content originated - the "Type" badge shown on
+    course details. DEVELOPER_API is the future MIE ingestion path
+    (external developers submitting courses via the Studio API); it's
+    reserved now so later MIE rows can FK onto existing courses."""
 
-    PENDING = "PENDING", "Pending"
-    APPROVED = "APPROVED", "Approved"
-    REJECTED = "REJECTED", "Rejected"
+    CREATOR_UPLOADED = "CREATOR_UPLOADED", "Creator Uploaded"
+    AI_GENERATED = "AI_GENERATED", "AI Generated"
+    DEVELOPER_API = "DEVELOPER_API", "Developer API"
+
+
+class LessonContentType(models.TextChoices):
+    """A lesson's primary media format - matches the three "Add lesson"
+    buttons (Video, Quiz, Text) in the builder."""
+
+    VIDEO = "VIDEO", "Video"
+    QUIZ = "QUIZ", "Quiz"
+    TEXT = "TEXT", "Text"
+
+
+class MediaSource(models.TextChoices):
+    """Where a piece of media (thumbnail, lesson image) came from - the
+    options offered by the "Add Media" modal."""
+
+    UPLOAD = "UPLOAD", "Upload"
+    GOOGLE_DRIVE = "GOOGLE_DRIVE", "Google Drive"
+    YOUTUBE = "YOUTUBE", "YouTube"
+    DROPBOX = "DROPBOX", "Dropbox"
+    LINK = "LINK", "Link"
 
 
 class AppealStatus(models.TextChoices):

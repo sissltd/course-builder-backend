@@ -1,23 +1,25 @@
 from .assessment import Assessment
-from .category_request import CategoryRequest
 from .course import Course
 from .course_appeal import CourseAppeal
+from .course_thumbnail import CourseThumbnail
 from .course_version import CourseVersion
 from .lesson import Lesson
+from .lesson_content_block import LessonContentBlock
+from .lesson_image import LessonImage
+from .lesson_requirement import LessonRequirement
 from .module import Module
-from .review_action import ReviewAction
-from .topic import Topic
-from .topic_reservation_request import TopicReservationRequest
+from .published_course_snapshot import PublishedCourseSnapshot
 
 __all__ = [
     "Assessment",
-    "CategoryRequest",
     "Course",
     "CourseAppeal",
+    "CourseThumbnail",
     "CourseVersion",
     "Lesson",
+    "LessonContentBlock",
+    "LessonImage",
+    "LessonRequirement",
     "Module",
-    "ReviewAction",
-    "Topic",
-    "TopicReservationRequest",
+    "PublishedCourseSnapshot",
 ]

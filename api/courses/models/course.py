@@ -1,7 +1,12 @@
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
-from api.courses.enums import CourseStatus, DifficultyLevel
+from api.courses.enums import (
+    CourseSourceType,
+    CourseStatus,
+    DifficultyLevel,
+)
 from core.mixins import (
     DateHistoryModelMixin,
     UserHistoryModelMixin,
@@ -26,14 +31,14 @@ class Course(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMi
         help_text=_("Course Creator who owns this course."),
     )
     category = models.ForeignKey(
-        "categories.Category",
+        "catalog.Category",
         verbose_name=_("Category"),
         on_delete=models.PROTECT,
         related_name="courses",
         help_text=_("Category this course belongs to."),
     )
     topic = models.ForeignKey(
-        "courses.Topic",
+        "catalog.Topic",
         verbose_name=_("Topic"),
         on_delete=models.PROTECT,
         null=True,
@@ -58,7 +63,7 @@ class Course(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMi
     )
     status = models.CharField(
         verbose_name=_("Status"),
-        max_length=12,
+        max_length=16,
         choices=CourseStatus.choices,
         default=CourseStatus.DRAFT,
         help_text=_("Current lifecycle status of the course."),
@@ -97,6 +102,26 @@ class Course(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMi
         default="",
         help_text=_("Self-reported difficulty level for this course."),
     )
+    source_type = models.CharField(
+        verbose_name=_("Source Type"),
+        max_length=20,
+        choices=CourseSourceType.choices,
+        default=CourseSourceType.CREATOR_UPLOADED,
+        help_text=_(
+            "Where this course's content originated - the Type badge shown "
+            "on course details."
+        ),
+    )
+    quality_score = models.PositiveSmallIntegerField(
+        verbose_name=_("Quality Score"),
+        null=True,
+        blank=True,
+        help_text=_(
+            "Overall quality score 0-100, rendered as the % bar in the "
+            "course table. Null until the course has been quality-checked."
+        ),
+        validators=[MinValueValidator(0), MaxValueValidator(100)],
+    )
     learning_objectives = models.JSONField(
         verbose_name=_("Learning Objectives"),
         default=list,
@@ -125,13 +150,17 @@ class Course(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMi
             "in sync by course_service.recalculate_duration_estimate."
         ),
     )
-    version = models.CharField(
+    version = models.ForeignKey(
+        "courses.CourseVersion",
         verbose_name=_("Version"),
-        max_length=10,
-        default="1.0",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="courses",
         help_text=_(
-            "Course version number (SCCS PRD Section 15). A CourseVersion "
-            "snapshot is recorded at this value when the course is published."
+            "Canonical CourseVersion label this course publishes under (SCCS "
+            "PRD Section 15). Set at publish time; a PublishedCourseSnapshot "
+            "records the course tree at that label."
         ),
     )
     terms_accepted_at = models.DateTimeField(
