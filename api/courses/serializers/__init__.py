@@ -10,7 +10,6 @@ from .course_appeal_serializer import (
     CourseAppealSerializer,
 )
 from .course_serializer import (
-    CategoryMiniSerializer,
     CourseCreateSerializer,
     CourseDetailSerializer,
     CourseListSerializer,
@@ -18,14 +17,13 @@ from .course_serializer import (
     ReviewActionSerializer,
     ReviewApproveSerializer,
     ReviewRejectSerializer,
-    TopicMiniSerializer,
 )
 from .lesson_serializer import (
     LessonMiniSerializer,
     LessonSerializer,
     LessonWriteSerializer,
 )
-from .review_quality_serializer import (
+from api.reviews.serializers import (
     MediaAssetSerializer,
     QAApprovalSerializer,
     QARejectSerializer,
@@ -37,17 +35,10 @@ from .module_serializer import (
     ModuleSerializer,
     ModuleWriteSerializer,
 )
-from .topic_reservation_serializer import (
-    TopicReservationRejectSerializer,
-    TopicReservationRequestCreateSerializer,
-    TopicReservationRequestSerializer,
-)
-from .topic_serializer import TopicSerializer, TopicWriteSerializer
 
 __all__ = [
     "AssessmentSerializer",
     "AssessmentWriteSerializer",
-    "CategoryMiniSerializer",
     "CourseAppealCreateSerializer",
     "CourseAppealDecisionSerializer",
     "CourseAppealSerializer",
@@ -71,10 +62,4 @@ __all__ = [
     "ReviewActionSerializer",
     "ReviewApproveSerializer",
     "ReviewRejectSerializer",
-    "TopicMiniSerializer",
-    "TopicReservationRejectSerializer",
-    "TopicReservationRequestCreateSerializer",
-    "TopicReservationRequestSerializer",
-    "TopicSerializer",
-    "TopicWriteSerializer",
 ]

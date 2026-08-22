@@ -348,7 +348,7 @@ SPECTACULAR_SETTINGS = {
         "persistAuthorization": True,
     },
     "ENUM_NAME_OVERRIDES": {
-        "CategoryStatusEnum": "api.categories.enums.CategoryStatus",
+        "CategoryStatusEnum": "api.catalog.enums.CategoryStatus",
         "CourseStatusEnum": "api.courses.enums.CourseStatus",
         "TransactionStatusEnum": "api.wallet.enums.TransactionStatus",
         "CollaboratorRoleEnum": "api.collaborators.enums.CollaboratorRole",
@@ -356,7 +356,7 @@ SPECTACULAR_SETTINGS = {
         # (PENDING/APPROVED/REJECTED) so drf-spectacular treats them as one
         # component; give that shared component a single explicit name.
         # KYCStatus has the same three values and folds into it too.
-        "RequestStatusEnum": "api.courses.enums.CategoryRequestStatus",
+        "RequestStatusEnum": "api.catalog.enums.CategoryRequestStatus",
         # Surfaced by the admin serializers, which are the first to expose
         # these choice sets in a response body. Without explicit names they
         # collide with the other "status"/"type"/"role" fields above and

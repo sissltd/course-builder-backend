@@ -18,6 +18,12 @@ Usage:
                            pushes with -u, then opens a pull request against
                            staging with `pullrequest.md` as the description.
 
+                           Shorthand (same as feexeet): flags and positionals
+                           may be mixed in any order —
+                             gc.py -b feat/x "message" --auto
+                             gc.py -b --no-wait feat/x "message"
+                           With two positionals the prompts are skipped.
+
                            By default it then WAITS HERE for GitHub's checks,
                            notifies you when they settle, and asks whether to
                            merge. On yes it merges, switches to staging and
@@ -587,16 +593,20 @@ def flow_new_branch(
     auto: bool = False,
     open_pr: bool = True,
     with_tests: bool = False,
+    branch: str | None = None,
+    message: str | None = None,
 ) -> None:
     header("🌿  course-builder · new branch workflow")
 
-    branch = prompt("Branch name (e.g. feat/admin-operations):")
-    if not branch:
-        fatal("branch name is required.")
+    if branch is None:
+        branch = prompt("Branch name (e.g. feat/admin-operations):")
+        if not branch:
+            fatal("branch name is required.")
 
-    message = prompt("Commit message:")
-    if not message:
-        fatal("commit message is required.")
+    if message is None:
+        message = prompt("Commit message:")
+        if not message:
+            fatal("commit message is required.")
 
     prefix = branch.split("/", 1)[0] if "/" in branch else ""
     final_msg = f"{prefix}: {message}" if prefix else message
@@ -783,16 +793,30 @@ def main() -> None:
     flag, *rest = args
     try:
         if flag == "-b":
-            known = {"--no-wait", "--skip-ci", "--auto", "--no-pr", "--with-tests"}
-            unknown = [a for a in rest if a not in known]
-            if unknown:
-                fatal(f"unknown args after -b: {unknown}. {USAGE}")
+            # Support both interactive and shorthand:
+            #   gc.py -b --auto feat/branch "message"
+            #   gc.py -b feat/branch "message" --auto
+            # Separate flags from positional args.
+            known_flags = {"--no-wait", "--skip-ci", "--auto", "--no-pr", "--with-tests"}
+            flags = [a for a in rest if a in known_flags]
+            positionals = [a for a in rest if a not in known_flags]
 
-            auto = "--auto" in rest
-            open_pr = "--no-pr" not in rest
-            wait_for_merge = "--no-wait" not in rest
-            skip_ci = "--skip-ci" in rest
-            with_tests = "--with-tests" in rest
+            if positionals:
+                # Shorthand mode: first two positionals are branch and message
+                if len(positionals) < 2:
+                    fatal(f"shorthand requires branch and message: {USAGE}")
+                branch = positionals[0]
+                message = positionals[1]
+            else:
+                # Interactive mode (original behavior)
+                branch = None
+                message = None
+
+            auto = "--auto" in flags
+            open_pr = "--no-pr" not in flags
+            wait_for_merge = "--no-wait" not in flags
+            skip_ci = "--skip-ci" in flags
+            with_tests = "--with-tests" in flags
 
             # Contradictory combinations, rejected up front rather than silently
             # letting one flag win — you would only find out at the end.
@@ -812,6 +836,8 @@ def main() -> None:
                 auto=auto,
                 open_pr=open_pr,
                 with_tests=with_tests,
+                branch=branch,
+                message=message,
             )
         elif flag == "-staging":
             known = {"--skip-ci", "--with-tests"}

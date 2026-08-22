@@ -3,7 +3,7 @@ from rest_framework.test import APITestCase
 
 from api.collaborators.tests.factories import make_collaborator
 from api.courses.enums import CourseStatus
-from api.courses.models import Course
+from api.courses.models import Course, CourseVersion
 from api.courses.services import course_service
 from api.courses.tests.factories import (
     build_compliant_course,
@@ -21,6 +21,9 @@ class CourseApiTests(APITestCase):
         self.other_creator = make_user(role=UserRole.COURSE_CREATOR)
         self.admin = make_user(role=UserRole.ADMIN)
         self.category = make_category()
+        # Publishing needs an active CourseVersion; get_or_create keeps the
+        # test independent of whether the seed migration has run.
+        CourseVersion.objects.get_or_create(label="1.0")
 
     def test_creator_can_create_draft_course(self):
         self.client.force_authenticate(self.creator)

@@ -6,7 +6,6 @@ from api.collaborators.enums import CollaboratorRole
 from api.collaborators.models import CourseCollaborator
 from api.collaborators.tests.factories import make_collaborator
 from api.courses.tests.factories import make_draft_course, make_user
-from api.notification.models import Notification
 from api.users.enums import UserRole
 
 
@@ -15,91 +14,6 @@ class CollaboratorApiTests(APITestCase):
         self.creator = make_user(role=UserRole.COURSE_CREATOR)
         self.course = make_draft_course(creator=self.creator)
         self.invitee = make_user(role=UserRole.COURSE_CREATOR)
-
-    def test_creator_can_invite_existing_user(self):
-        self.client.force_authenticate(self.creator)
-
-        response = self.client.post(
-            "/api/v1/collaborators/",
-            {
-                "course_id": self.course.id,
-                "email": self.invitee.email,
-                "role": "COLLABORATOR",
-            },
-            format="json",
-        )
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertTrue(
-            CourseCollaborator.objects.filter(
-                course=self.course, user=self.invitee
-            ).exists()
-        )
-        self.assertTrue(
-            Notification.objects.filter(
-                receiver=self.invitee, title="Added as a collaborator"
-            ).exists()
-        )
-
-    def test_invite_nonexistent_email_rejected(self):
-        self.client.force_authenticate(self.creator)
-
-        response = self.client.post(
-            "/api/v1/collaborators/",
-            {"course_id": self.course.id, "email": "nobody@example.com"},
-            format="json",
-        )
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-
-    def test_invite_own_creator_rejected(self):
-        self.client.force_authenticate(self.creator)
-
-        response = self.client.post(
-            "/api/v1/collaborators/",
-            {"course_id": self.course.id, "email": self.creator.email},
-            format="json",
-        )
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-
-    def test_invite_same_user_twice_rejected(self):
-        make_collaborator(course=self.course, user=self.invitee)
-        self.client.force_authenticate(self.creator)
-
-        response = self.client.post(
-            "/api/v1/collaborators/",
-            {"course_id": self.course.id, "email": self.invitee.email},
-            format="json",
-        )
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-
-    def test_plain_collaborator_cannot_invite(self):
-        collaborator_user = make_user()
-        make_collaborator(
-            course=self.course,
-            user=collaborator_user,
-            role=CollaboratorRole.COLLABORATOR,
-        )
-        self.client.force_authenticate(collaborator_user)
-
-        response = self.client.post(
-            "/api/v1/collaborators/",
-            {"course_id": self.course.id, "email": self.invitee.email},
-            format="json",
-        )
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-
-    def test_admin_collaborator_can_invite(self):
-        admin_user = make_user()
-        make_collaborator(
-            course=self.course, user=admin_user, role=CollaboratorRole.ADMIN
-        )
-        self.client.force_authenticate(admin_user)
-
-        response = self.client.post(
-            "/api/v1/collaborators/",
-            {"course_id": self.course.id, "email": self.invitee.email},
-            format="json",
-        )
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
     def test_list_visible_to_collaborator(self):
         collaborator_user = make_user()

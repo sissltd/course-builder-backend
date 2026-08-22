@@ -1,17 +1,8 @@
 import django_filters
 
-from api.categories.enums import TrackPreference
-from api.courses.models import Course, Topic
+from api.catalog.enums import TrackPreference
+from api.courses.models import Course
 from api.users.enums import QueueTrackFilter
-
-
-class TopicFilter(django_filters.FilterSet):
-    class Meta:
-        model = Topic
-        fields = {
-            "category": ["exact"],
-            "status": ["exact"],
-        }
 
 
 #: Same mapping as course_service.QUEUE_TRACK_FILTER_TO_CATEGORY_TRACK_PREFERENCE
@@ -39,7 +30,7 @@ class CourseReviewQueueFilter(django_filters.FilterSet):
         fields = {
             "status": ["exact"],
             "category": ["exact"],
-            "source": ["exact"],
+            "source_type": ["exact"],
         }
 
     def filter_track(self, queryset, name, value):

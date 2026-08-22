@@ -202,6 +202,14 @@ class NotificationPreferenceApiTests(APITestCase):
 
 
 class NotificationStreamApiTests(APITransactionTestCase):
+    # TransactionTestCase flushes every table on teardown, wiping
+    # migration-seeded rows for every app tested afterwards - restore them.
+    def _fixture_teardown(self):
+        from core.testing import reseed_reference_data
+
+        super()._fixture_teardown()
+        reseed_reference_data()
+
     def test_requires_authentication(self):
         response = self.client.get(
             "/api/v1/users/me/notifications/streamed-notifications/"

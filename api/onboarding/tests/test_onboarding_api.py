@@ -1,7 +1,7 @@
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from api.categories.enums import CategoryStatus
+from api.catalog.enums import CategoryStatus
 from api.courses.tests.factories import make_category
 from api.onboarding.enums import ExpertiseArea
 from api.onboarding.tests.factories import make_user

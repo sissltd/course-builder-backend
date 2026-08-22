@@ -107,6 +107,15 @@ class ConcurrentCreditWalletTests(TransactionTestCase):
     threads/connections so select_for_update()'s row locking is actually
     exercised, proving concurrent credits cannot produce a lost update."""
 
+    # See the note on NotificationStreamApiTests: without this, the flush
+    # TransactionTestCase performs would strip migration-seeded data for
+    # every app tested after wallet.
+    def _fixture_teardown(self):
+        from core.testing import reseed_reference_data
+
+        super()._fixture_teardown()
+        reseed_reference_data()
+
     def test_concurrent_credits_do_not_lose_updates(self):
         user = make_user()
         wallet_service.get_or_create_wallet(

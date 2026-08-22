@@ -8,7 +8,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('contenttypes', '0002_remove_content_type_name'),
-        ('courses', '0009_course_duration_estimate_minutes_course_version_and_more'),
+        ('courses', '0001_initial'),
         ('wallet', '0002_transaction_fee_transaction_recipient_account_name_and_more'),
     ]
 

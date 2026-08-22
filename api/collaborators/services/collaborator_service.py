@@ -1,11 +1,9 @@
-from django.db import IntegrityError
 from django.db.models import Q, QuerySet
 from rest_framework import exceptions
 
 from api.collaborators.enums import CollaboratorRole
 from api.collaborators.models import CourseCollaborator
 from api.courses.models import Course, Module
-from api.notification.models import Notification
 from api.users.models import User
 
 
@@ -67,57 +65,6 @@ def can_access_module(*, user: User, module: Module) -> bool:
         .filter(pk=module.pk)
         .exists()
     )
-
-
-def invite_collaborator(
-    *,
-    course: Course,
-    inviter: User,
-    email: str,
-    role: str,
-    assigned_modules: list[Module] | None = None,
-) -> CourseCollaborator:
-    """Grant an existing User access to `course`. Raises ValidationError if no
-    account exists for `email` (no pending/token flow - see plan), the email
-    belongs to the course's own creator, they're already a collaborator, or
-    `assigned_modules` includes a module that doesn't belong to `course`."""
-
-    try:
-        user = User.objects.get(email__iexact=email)
-    except User.DoesNotExist as exc:
-        raise exceptions.ValidationError(
-            "No account exists for this email. Ask them to sign up first."
-        ) from exc
-
-    if user.id == course.creator_id:
-        raise exceptions.ValidationError(
-            "The course creator is already the Author and can't be invited as a collaborator."
-        )
-    if assigned_modules and any(m.course_id != course.id for m in assigned_modules):
-        raise exceptions.ValidationError(
-            "assigned_modules must all belong to the course being invited onto."
-        )
-
-    try:
-        collaborator = CourseCollaborator.objects.create(
-            course=course, user=user, role=role, invited_by=inviter
-        )
-    except IntegrityError as exc:
-        raise exceptions.ValidationError(
-            "This user is already a collaborator on this course."
-        ) from exc
-
-    if assigned_modules:
-        collaborator.assigned_modules.set(assigned_modules)
-
-    Notification.emit_in_app_notification(
-        receivers=[user],
-        title="Added as a collaborator",
-        content=f"You've been added as a collaborator on '{course.title}'.",
-        metadata={"course_id": course.id},
-    )
-
-    return collaborator
 
 
 def remove_collaborator(*, collaborator: CourseCollaborator) -> None:

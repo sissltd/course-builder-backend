@@ -13,14 +13,14 @@ from rest_framework.viewsets import ModelViewSet, ReadOnlyModelViewSet
 from api.collaborators.services import collaborator_service
 from api.courses.enums import CourseStatus
 from api.courses.filters import CourseReviewQueueFilter
-from api.courses.models import Course, MediaAsset, ReviewComment
+from api.courses.models import Course
+from api.reviews.models import MediaAsset, ReviewComment
 from api.courses.permissions import IsCourseOwner
 from api.courses.serializers import (
     CourseCreateSerializer,
     CourseDetailSerializer,
     CourseListSerializer,
     CourseUpdateSerializer,
-    ReviewActionSerializer,
     ReviewApproveSerializer,
     ReviewRejectSerializer,
     QAApprovalSerializer,
@@ -29,7 +29,9 @@ from api.courses.serializers import (
     ReviewCommentSerializer,
     MediaAssetSerializer,
 )
-from api.courses.services import course_service, review_service
+from api.courses.services import course_service
+from api.reviews.serializers import ReviewActionSerializer
+from api.reviews.services import review_service
 from api.users.permissions import (
     IsAdminRole,
     IsCourseCreatorRole,
@@ -84,7 +86,7 @@ _COURSE_DETAIL_EXAMPLE = {
     "modules": [],
     "final_assessment": None,
     "duration_estimate_minutes": 120,
-    "version": "1.0",
+    "version": "2f9a1e4b-7c8d-4a6e-9f0c-2d3e4f5a6b7c",
     "updated_datetime": "2026-07-12T09:30:11.204Z",
 }
 
@@ -1092,6 +1094,7 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
             course=self.get_object(),
             reviewer=request.user,
             feedback=serializer.validated_data["feedback"],
+            flags=serializer.validated_data.get("flags") or [],
         )
         return Response(ReviewActionSerializer(review_action).data)
 

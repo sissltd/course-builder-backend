@@ -5,9 +5,9 @@ from django.test import TestCase
 from django.utils import timezone
 from rest_framework.exceptions import PermissionDenied, ValidationError
 
-from api.categories.enums import CategoryStatus
+from api.catalog.enums import CategoryStatus
 from api.courses.enums import CourseStatus
-from api.courses.models import CourseVersion, Lesson, Module
+from api.courses.models import CourseVersion, Lesson, Module, PublishedCourseSnapshot
 from api.courses.services import course_service
 from api.courses.tests.factories import (
     build_compliant_course,
@@ -301,6 +301,9 @@ class ClaimForReviewTests(TestCase):
 
 
 class PublishCourseTests(TestCase):
+    def setUp(self):
+        self.version = CourseVersion.objects.get_or_create(label="1.0")[0]
+
     def test_raises_when_not_approved(self):
         course = build_compliant_course()
         admin = make_user(role=UserRole.ADMIN)
@@ -326,7 +329,7 @@ class PublishCourseTests(TestCase):
         with self.assertRaises(PermissionDenied):
             course_service.publish_course(course=course, actor=course.creator)
 
-    def test_creates_a_single_v1_0_course_version_snapshot(self):
+    def test_creates_a_single_v1_0_published_snapshot(self):
         course = build_compliant_course()
         course.status = CourseStatus.APPROVED
         course.save()
@@ -334,12 +337,14 @@ class PublishCourseTests(TestCase):
 
         course_service.publish_course(course=course, actor=admin)
 
-        versions = CourseVersion.objects.filter(course=course)
-        self.assertEqual(versions.count(), 1)
-        version = versions.first()
-        self.assertEqual(version.version_number, "1.0")
-        self.assertEqual(version.snapshot["title"], course.title)
-        self.assertEqual(len(version.snapshot["modules"]), course.modules.count())
+        snapshots = PublishedCourseSnapshot.objects.filter(course=course)
+        self.assertEqual(snapshots.count(), 1)
+        snapshot = snapshots.first()
+        self.assertEqual(snapshot.version.label, "1.0")
+        self.assertEqual(snapshot.snapshot["title"], course.title)
+        self.assertEqual(len(snapshot.snapshot["modules"]), course.modules.count())
+        course.refresh_from_db()
+        self.assertEqual(course.version_id, self.version.id)
 
 
 class RecalculateDurationEstimateTests(TestCase):
@@ -404,7 +409,7 @@ class GetReviewQueueSortingTests(TestCase):
         self.assertEqual(results, [red, amber, normal])
 
     def test_track_filter_restricts_to_matching_category(self):
-        from api.categories.enums import TrackPreference
+        from api.catalog.enums import TrackPreference
 
         creator_category = make_category(
             track_preference=TrackPreference.CREATOR_PREFERRED

@@ -199,7 +199,7 @@ class QueueSortOrder(models.TextChoices):
 class QueueTrackFilter(models.TextChoices):
     """A reviewer's preferred default track filter for the review queue.
 
-    Maps onto api.categories.enums.TrackPreference's CREATOR_PREFERRED /
+    Maps onto api.catalog.enums.TrackPreference's CREATOR_PREFERRED /
     AI_PREFERRED values; ALL applies no filter.
     """
 

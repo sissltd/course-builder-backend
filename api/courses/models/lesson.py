@@ -1,6 +1,7 @@
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
+from api.courses.enums import LessonContentType
 from core.mixins import (
     DateHistoryModelMixin,
     UserHistoryModelMixin,
@@ -27,6 +28,16 @@ class Lesson(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMi
         verbose_name=_("Order"),
         help_text=_("Display order of this lesson within the module."),
     )
+    content_type = models.CharField(
+        verbose_name=_("Content Type"),
+        max_length=10,
+        choices=LessonContentType.choices,
+        default=LessonContentType.TEXT,
+        help_text=_(
+            "The lesson's primary media format - matches the three "
+            "'Add lesson' buttons (Video, Quiz, Text) in the builder."
+        ),
+    )
     script = models.TextField(
         verbose_name=_("Script"),
         blank=True,
@@ -41,6 +52,24 @@ class Lesson(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMi
         default="",
         help_text=_(
             "Optional lesson video link, same pattern as Course.preview_video_url."
+        ),
+    )
+    embedded_link = models.URLField(
+        verbose_name=_("Embedded Link"),
+        blank=True,
+        default="",
+        help_text=_(
+            "Pasted embed link for external players (Vimeo, YouTube, "
+            "Wistia, Typeform, etc.) from the 'Add Media' block."
+        ),
+    )
+    video_script_file = models.CharField(
+        verbose_name=_("Video Script File"),
+        blank=True,
+        default="",
+        max_length=500,
+        help_text=_(
+            "Uploaded subtitle/transcript file path (.srt) for the lesson video."
         ),
     )
     learning_objectives = models.JSONField(

@@ -30,6 +30,8 @@ class ModuleSerializer(serializers.ModelSerializer):
             "id",
             "title",
             "order",
+            "description",
+            "learning_objectives",
             "lessons",
             "assessment",
             "locked_by",
@@ -53,5 +55,14 @@ class ModuleWriteSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Module
-        fields = ["id", "title", "order"]
+        fields = ["id", "title", "order", "description", "learning_objectives"]
         read_only_fields = ["id"]
+
+    def validate_learning_objectives(self, value):
+        if not isinstance(value, list) or not all(
+            isinstance(item, str) and item.strip() for item in value
+        ):
+            raise serializers.ValidationError(
+                "learning_objectives must be a list of non-empty strings."
+            )
+        return value
