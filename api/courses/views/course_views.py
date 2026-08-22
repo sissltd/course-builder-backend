@@ -14,6 +14,7 @@ from api.collaborators.services import collaborator_service
 from api.courses.enums import CourseStatus
 from api.courses.filters import CourseReviewQueueFilter
 from api.courses.models import Course
+from api.reviews.models import MediaAsset, ReviewComment
 from api.courses.permissions import IsCourseOwner
 from api.courses.serializers import (
     CourseCreateSerializer,
@@ -22,6 +23,11 @@ from api.courses.serializers import (
     CourseUpdateSerializer,
     ReviewApproveSerializer,
     ReviewRejectSerializer,
+    QAApprovalSerializer,
+    QARejectSerializer,
+    ReviewCommentCreateSerializer,
+    ReviewCommentSerializer,
+    MediaAssetSerializer,
 )
 from api.courses.services import course_service
 from api.reviews.serializers import ReviewActionSerializer
@@ -30,6 +36,7 @@ from api.users.permissions import (
     IsAdminRole,
     IsCourseCreatorRole,
     IsCreatorReviewerRole,
+    IsQaReviewerRole,
 )
 from api.users.services import queue_preference_service
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
@@ -55,10 +62,12 @@ _COURSE_LIST_EXAMPLE = {
         "name": "Software Engineering",
     },
     "topic": None,
+    "source": "CREATOR",
     "status": "DRAFT",
     "creator_price_snapshot": None,
     "submitted_at": None,
     "created_datetime": "2026-07-12T09:30:11.204Z",
+    "updated_datetime": "2026-07-12T09:30:11.204Z",
 }
 
 _COURSE_DETAIL_EXAMPLE = {
@@ -89,6 +98,7 @@ _REVIEW_ACTION_EXAMPLE = {
         "email": "reviewer@example.com",
     },
     "action": "APPROVE",
+    "stage": "CONTENT",
     "feedback": {},
     "created_datetime": "2026-07-15T14:02:33.001Z",
 }
@@ -559,17 +569,127 @@ class CourseViewSet(ModelViewSet):
             CourseDetailSerializer(course, context=self.get_serializer_context()).data
         )
 
+    @extend_schema(
+        methods=["get"],
+        summary="List course media assets",
+        description=(
+            "Returns the media inventory and technical evidence registered for a "
+            "course. Creators use it to confirm what QA will evaluate.\n\n"
+            "Called while preparing a course for QA verification.\n\n"
+            "**Auth:** Course Creator (own course only) or Admin.\n\n"
+            "**Prerequisites:** The course must exist and be accessible to the caller.\n\n"
+            "**Important:** Course-level preview videos and thumbnails do not have a "
+            "`lesson`; lesson media does."
+        ),
+        tags=["Creator — Courses"],
+        responses={
+            200: OpenApiResponse(
+                response=MediaAssetSerializer(many=True),
+                description="Registered media assets.",
+                examples=[
+                    OpenApiExample(
+                        name="Success",
+                        value=[
+                            {
+                                "id": "a2f1040c-6b9e-4b70-8a3d-9d590eff6d4b",
+                                "lesson": "a6f7a05c-8942-40eb-9f6f-bcf988763e6d",
+                                "kind": "VIDEO",
+                                "url": "https://media.example.com/python-intro.mp4",
+                                "mime_type": "video/mp4",
+                                "duration_seconds": 300,
+                                "resolution": "1920x1080",
+                                "subtitle_url": "https://media.example.com/python-intro.vtt",
+                            }
+                        ],
+                    )
+                ],
+            ),
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
+            **STANDARD_ERROR_RESPONSES["not_found"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
+    @extend_schema(
+        methods=["post"],
+        summary="Register a course media asset",
+        description=(
+            "Registers media metadata that the QA reviewer uses to verify a course's "
+            "video, audio, caption, and accessibility requirements. It does not upload "
+            "the file itself.\n\n"
+            "Called after a media file has been uploaded and its accessible URL is known.\n\n"
+            "**Auth:** Course Creator (own course only) or Admin.\n\n"
+            "**Prerequisites:** The course must exist; any supplied `lesson` must belong "
+            "to that course.\n\n"
+            "**Important:** Register a `VIDEO` for each lesson and the required "
+            "course-level preview/thumbnail assets before QA approval."
+        ),
+        tags=["Creator — Courses"],
+        request=MediaAssetSerializer,
+        examples=[
+            OpenApiExample(
+                name="Lesson video",
+                request_only=True,
+                value={
+                    "lesson": "a6f7a05c-8942-40eb-9f6f-bcf988763e6d",
+                    "kind": "VIDEO",
+                    "url": "https://media.example.com/python-intro.mp4",
+                    "mime_type": "video/mp4",
+                    "duration_seconds": 300,
+                    "resolution": "1920x1080",
+                    "subtitle_url": "https://media.example.com/python-intro.vtt",
+                    "caption_accuracy_percent": "99.00",
+                    "audio_lufs": "-16.00",
+                    "audio_video_drift_ms": 50,
+                    "accessibility": {"captions": True},
+                },
+            )
+        ],
+        responses={
+            201: OpenApiResponse(
+                response=MediaAssetSerializer,
+                description="Media asset registered.",
+                examples=[
+                    OpenApiExample(
+                        name="Success",
+                        value={
+                            "id": "a2f1040c-6b9e-4b70-8a3d-9d590eff6d4b",
+                            "kind": "VIDEO",
+                            "url": "https://media.example.com/python-intro.mp4",
+                        },
+                    )
+                ],
+            ),
+            **STANDARD_ERROR_RESPONSES["validation"],
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
+            **STANDARD_ERROR_RESPONSES["not_found"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
+    @action(detail=True, methods=["get", "post"], url_path="media-assets")
+    def media_assets(self, request, pk=None):
+        """Read or register the metadata that the QA stage verifies."""
+        course = self.get_object()
+        if request.method == "GET":
+            return Response(
+                MediaAssetSerializer(course.media_assets.all(), many=True).data
+            )
+        serializer = MediaAssetSerializer(data=request.data, context={"course": course})
+        serializer.is_valid(raise_exception=True)
+        asset = MediaAsset.objects.create(course=course, **serializer.validated_data)
+        return Response(MediaAssetSerializer(asset).data, status=201)
+
 
 @extend_schema_view(
     list=extend_schema(
         summary="List the reviewer queue",
         description=(
-            "Returns courses a Creator Reviewer/Verifier or Admin needs to "
-            "see: Submitted and In Review (the actual queue), plus Approved "
+            "Returns courses awaiting content review or QA verification, plus Approved "
             "and Published for context, oldest-submitted-first. This is the "
             "table behind the review queue screen.\n\n"
             "Called when the review queue screen loads.\n\n"
-            "**Auth:** Creator Reviewer, Verifier, or Admin.\n\n"
+            "**Auth:** Creator Reviewer, QA Reviewer, Verifier, or Admin.\n\n"
             "**Prerequisites:** None beyond holding one of those roles.\n\n"
             "**Important:** Narrow with `?status=SUBMITTED` (or any "
             "`CourseStatus` value) to show only one stage. Results are "
@@ -616,7 +736,7 @@ class CourseViewSet(ModelViewSet):
     ),
 )
 class CourseReviewViewSet(ReadOnlyModelViewSet):
-    """Reviewer queue for Creator Track courses (SCCS PRD Section 11).
+    """Two-stage course reviewer queue (SCCS PRD Sections 6 and 11).
 
     Kept separate from CourseViewSet rather than branching one viewset's
     queryset by role, so a creator's own-courses queryset and a reviewer's
@@ -629,7 +749,7 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
     than a misleading 404.
     """
 
-    permission_classes = [IsCreatorReviewerRole | IsAdminRole]
+    permission_classes = [IsCreatorReviewerRole | IsQaReviewerRole | IsAdminRole]
     filterset_class = CourseReviewQueueFilter
     filter_backends = [DjangoFilterBackend, drf_filters.OrderingFilter]
     ordering_fields = ["submitted_at"]
@@ -664,6 +784,7 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
                 status_in=[
                     CourseStatus.SUBMITTED,
                     CourseStatus.IN_REVIEW,
+                    CourseStatus.QA_VERIFICATION,
                     CourseStatus.APPROVED,
                     CourseStatus.PUBLISHED,
                 ],
@@ -671,16 +792,37 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
                 track_filter=track_filter,
                 sla_user=self.request.user,
             )
-        return Course.objects.select_related("category", "creator")
+        return Course.objects.select_related("category", "creator").prefetch_related(
+            "modules__lessons__assessment",
+            "modules__assessment",
+            "final_assessment",
+            "media_assets__verified_by",
+            "media_assets__lesson__module",
+            "quality_check_runs__findings",
+            "quality_findings",
+            "review_assignments__reviewer",
+            "review_comments__reviewer",
+        )
 
     def get_serializer_class(self):
         if self.action == "list":
             return CourseListSerializer
-        if self.action == "approve":
+        if self.action in {"approve", "content_approve"}:
             return ReviewApproveSerializer
-        if self.action == "reject":
+        if self.action in {"reject", "content_reject"}:
             return ReviewRejectSerializer
+        if self.action == "qa_approve":
+            return QAApprovalSerializer
+        if self.action == "qa_reject":
+            return QARejectSerializer
+        if self.action == "comments":
+            return ReviewCommentCreateSerializer
         return CourseDetailSerializer
+
+    def get_permissions(self):
+        if self.action in {"qa_claim", "qa_approve", "qa_reject"}:
+            return [(IsQaReviewerRole | IsAdminRole)()]
+        return [permission() for permission in self.permission_classes]
 
     @extend_schema(
         summary="Claim a course for review",
@@ -751,18 +893,16 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
     @extend_schema(
         summary="Approve a course under review",
         description=(
-            "Approves a Submitted/In Review course: records a ReviewAction, "
-            "moves the course to Approved, credits the creator's wallet with "
-            "the price snapshotted at submission, and notifies the "
-            "creator - all atomically.\n\n"
+            "Approves a Submitted/In Review course's content and moves it to "
+            "mandatory QA verification. Creator payment occurs only after QA "
+            "approval.\n\n"
             "Called from the 'Approve' action on the review screen.\n\n"
             "**Auth:** Creator Reviewer, Verifier, or Admin.\n\n"
             "**Prerequisites:** The course must be `SUBMITTED` or "
             "`IN_REVIEW`; the reviewer must not be marked Unavailable.\n\n"
-            "**Important:** This is what pays the creator - the wallet "
-            "credit uses `creator_price_snapshot`, frozen at submit time, "
-            "never the category/topic's current price. `feedback` is "
-            "optional here (unlike reject, where a summary is required)."
+            "**Important:** This does not publish or pay; it moves the course to "
+            "the QA queue. `feedback` is optional here (unlike reject, where a "
+            "summary is required)."
         ),
         tags=["Reviewer — Review Queue"],
         request=ReviewApproveSerializer,
@@ -809,12 +949,50 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
     def approve(self, request, pk=None):
         serializer = ReviewApproveSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        review_action = review_service.approve_course(
+        review_action = review_service.approve_content(
             course=self.get_object(),
             reviewer=request.user,
             feedback=serializer.validated_data["feedback"],
         )
         return Response(ReviewActionSerializer(review_action).data)
+
+    @extend_schema(
+        summary="Approve course content",
+        description=(
+            "Approves the course's written content and advances it to QA verification. "
+            "This explicit route has the same behaviour as the standard approve action.\n\n"
+            "Called when a content reviewer completes their review.\n\n"
+            "**Auth:** Creator Reviewer, Verifier, or Admin.\n\n"
+            "**Prerequisites:** The course must be `SUBMITTED` or `IN_REVIEW`.\n\n"
+            "**Important:** This action does not approve payment or publication; it only "
+            "moves the course to QA."
+        ),
+        tags=["Reviewer — Review Queue"],
+        request=ReviewApproveSerializer,
+        examples=[
+            OpenApiExample(
+                name="Sample Request",
+                request_only=True,
+                value={"feedback": {"summary": "Content is complete."}},
+            )
+        ],
+        responses={
+            200: OpenApiResponse(
+                response=ReviewActionSerializer,
+                description="Content approval recorded.",
+                examples=[OpenApiExample(name="Success", value=_REVIEW_ACTION_EXAMPLE)],
+            ),
+            **STANDARD_ERROR_RESPONSES["validation"],
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
+            **STANDARD_ERROR_RESPONSES["not_found"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
+    @action(detail=True, methods=["post"], url_path="content-approve")
+    def content_approve(self, request, pk=None):
+        """Explicit alias for approve; approval advances the course to QA."""
+        return self.approve(request, pk)
 
     @extend_schema(
         summary="Reject a course under review",
@@ -919,3 +1097,293 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
             flags=serializer.validated_data.get("flags") or [],
         )
         return Response(ReviewActionSerializer(review_action).data)
+
+    @extend_schema(
+        summary="Reject course content",
+        description=(
+            "Rejects the course at the content-review gate and returns it to Draft for "
+            "the creator to revise. This explicit route has the same behaviour as the "
+            "standard reject action.\n\n"
+            "Called when a content reviewer finds blocking issues.\n\n"
+            "**Auth:** Creator Reviewer, Verifier, or Admin.\n\n"
+            "**Prerequisites:** The course must be `SUBMITTED` or `IN_REVIEW`, and "
+            "`feedback.summary` must be non-empty.\n\n"
+            "**Important:** The rejection feedback is shown to the creator; make it "
+            "specific and actionable."
+        ),
+        tags=["Reviewer — Review Queue"],
+        request=ReviewRejectSerializer,
+        examples=[
+            OpenApiExample(
+                name="Sample Request",
+                request_only=True,
+                value={
+                    "feedback": {"summary": "Add learning objectives to module two."}
+                },
+            )
+        ],
+        responses={
+            200: OpenApiResponse(
+                response=ReviewActionSerializer,
+                description="Content rejection recorded.",
+                examples=[
+                    OpenApiExample(
+                        name="Success",
+                        value={**_REVIEW_ACTION_EXAMPLE, "action": "REJECT"},
+                    )
+                ],
+            ),
+            **STANDARD_ERROR_RESPONSES["validation"],
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
+            **STANDARD_ERROR_RESPONSES["not_found"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
+    @action(detail=True, methods=["post"], url_path="content-reject")
+    def content_reject(self, request, pk=None):
+        return self.reject(request, pk)
+
+    @extend_schema(
+        summary="Claim a course for QA",
+        description=(
+            "Claims a course in QA verification for the authenticated QA reviewer. "
+            "The assignment identifies who is accountable for the final quality gate.\n\n"
+            "Called when a QA reviewer begins checking a course that passed content review.\n\n"
+            "**Auth:** QA Reviewer or Admin.\n\n"
+            "**Prerequisites:** The course must be in `QA_VERIFICATION` and the caller "
+            "must be available.\n\n"
+            "**Important:** A course already claimed by another QA reviewer cannot be "
+            "claimed again."
+        ),
+        tags=["Reviewer — Review Queue"],
+        request=None,
+        responses={
+            200: OpenApiResponse(
+                response=CourseDetailSerializer,
+                description="Course claimed for QA.",
+                examples=[
+                    OpenApiExample(
+                        name="Success",
+                        value={**_COURSE_DETAIL_EXAMPLE, "status": "QA_VERIFICATION"},
+                    )
+                ],
+            ),
+            **STANDARD_ERROR_RESPONSES["validation"],
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
+            **STANDARD_ERROR_RESPONSES["not_found"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
+    @action(detail=True, methods=["post"], url_path="qa-claim")
+    def qa_claim(self, request, pk=None):
+        course = review_service.claim_qa_verification(
+            course=self.get_object(), reviewer=request.user
+        )
+        return Response(
+            CourseDetailSerializer(course, context=self.get_serializer_context()).data
+        )
+
+    @extend_schema(
+        summary="Approve a course in QA",
+        description=(
+            "Completes the QA quality gate, approves the course, and credits the creator "
+            "when the course originated from a creator.\n\n"
+            "Called after the QA reviewer has verified all required media and quality checks.\n\n"
+            "**Auth:** QA Reviewer or Admin.\n\n"
+            "**Prerequisites:** The course must be `QA_VERIFICATION`, the caller must be "
+            "available, and required media checks must pass.\n\n"
+            "**Important:** This action creates the final approval and can credit the "
+            "creator wallet; do not retry after a successful response."
+        ),
+        tags=["Reviewer — Review Queue"],
+        request=QAApprovalSerializer,
+        examples=[
+            OpenApiExample(
+                name="Sample Request",
+                request_only=True,
+                value={
+                    "feedback": {
+                        "summary": "Captions, audio, and preview assets verified."
+                    }
+                },
+            )
+        ],
+        responses={
+            200: OpenApiResponse(
+                response=ReviewActionSerializer,
+                description="QA approval recorded.",
+                examples=[
+                    OpenApiExample(
+                        name="Success", value={**_REVIEW_ACTION_EXAMPLE, "stage": "QA"}
+                    )
+                ],
+            ),
+            **STANDARD_ERROR_RESPONSES["validation"],
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
+            **STANDARD_ERROR_RESPONSES["not_found"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
+    @action(detail=True, methods=["post"], url_path="qa-approve")
+    def qa_approve(self, request, pk=None):
+        serializer = QAApprovalSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        action = review_service.approve_qa(
+            course=self.get_object(),
+            reviewer=request.user,
+            feedback=serializer.validated_data["feedback"],
+        )
+        return Response(ReviewActionSerializer(action).data)
+
+    @extend_schema(
+        summary="Reject a course in QA",
+        description=(
+            "Rejects a course at the QA quality gate and returns it to Draft so the "
+            "creator can correct media or accessibility issues.\n\n"
+            "Called when required QA checks or media evidence fail.\n\n"
+            "**Auth:** QA Reviewer or Admin.\n\n"
+            "**Prerequisites:** The course must be `QA_VERIFICATION` and "
+            "`feedback.summary` must be non-empty.\n\n"
+            "**Important:** The feedback is delivered to the creator and should identify "
+            "the precise media or accessibility correction required."
+        ),
+        tags=["Reviewer — Review Queue"],
+        request=QARejectSerializer,
+        examples=[
+            OpenApiExample(
+                name="Sample Request",
+                request_only=True,
+                value={
+                    "feedback": {
+                        "summary": "Add captions to lesson three and re-upload the preview video."
+                    }
+                },
+            )
+        ],
+        responses={
+            200: OpenApiResponse(
+                response=ReviewActionSerializer,
+                description="QA rejection recorded.",
+                examples=[
+                    OpenApiExample(
+                        name="Success",
+                        value={
+                            **_REVIEW_ACTION_EXAMPLE,
+                            "action": "REJECT",
+                            "stage": "QA",
+                        },
+                    )
+                ],
+            ),
+            **STANDARD_ERROR_RESPONSES["validation"],
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
+            **STANDARD_ERROR_RESPONSES["not_found"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
+    @action(detail=True, methods=["post"], url_path="qa-reject")
+    def qa_reject(self, request, pk=None):
+        serializer = QARejectSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        action = review_service.reject_qa(
+            course=self.get_object(),
+            reviewer=request.user,
+            feedback=serializer.validated_data["feedback"],
+        )
+        return Response(ReviewActionSerializer(action).data)
+
+    @extend_schema(
+        methods=["get"],
+        summary="List course review comments",
+        description=(
+            "Returns comments recorded by content and QA reviewers for a course. These "
+            "comments explain the issues the creator must address.\n\n"
+            "Called when a reviewer or creator opens the course review history.\n\n"
+            "**Auth:** Creator Reviewer, QA Reviewer, or Admin.\n\n"
+            "**Prerequisites:** The course must exist.\n\n"
+            "**Important:** Comments are returned across both review stages; inspect the "
+            "`stage` field to distinguish them."
+        ),
+        tags=["Reviewer — Review Queue"],
+        responses={
+            200: OpenApiResponse(
+                response=ReviewCommentSerializer(many=True),
+                description="Review comments.",
+                examples=[OpenApiExample(name="Success", value=[])],
+            ),
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
+            **STANDARD_ERROR_RESPONSES["not_found"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
+    @extend_schema(
+        methods=["post"],
+        summary="Add a course review comment",
+        description=(
+            "Adds a reviewer comment to a course, optionally attached to one module or "
+            "lesson. The comment becomes part of the review record returned to the client.\n\n"
+            "Called while documenting a content or QA finding.\n\n"
+            "**Auth:** Creator Reviewer, QA Reviewer, or Admin.\n\n"
+            "**Prerequisites:** The course must exist; supplied module and lesson IDs must "
+            "belong to it.\n\n"
+            "**Important:** Comments are not automatically resolved when a course changes "
+            "status; submit only actionable review notes."
+        ),
+        tags=["Reviewer — Review Queue"],
+        request=ReviewCommentCreateSerializer,
+        examples=[
+            OpenApiExample(
+                name="Sample Request",
+                request_only=True,
+                value={
+                    "stage": "QA",
+                    "lesson": "a6f7a05c-8942-40eb-9f6f-bcf988763e6d",
+                    "severity": "ERROR",
+                    "reason_code": "MISSING_CAPTIONS",
+                    "comment": "Upload accurate English captions for this lesson.",
+                },
+            )
+        ],
+        responses={
+            201: OpenApiResponse(
+                response=ReviewCommentSerializer,
+                description="Review comment created.",
+                examples=[
+                    OpenApiExample(
+                        name="Success",
+                        value={
+                            "id": "cb1a0a11-65cc-444a-9f44-a9a2f0a6507f",
+                            "stage": "QA",
+                            "severity": "ERROR",
+                            "reason_code": "MISSING_CAPTIONS",
+                            "comment": "Upload accurate English captions for this lesson.",
+                        },
+                    )
+                ],
+            ),
+            **STANDARD_ERROR_RESPONSES["validation"],
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
+            **STANDARD_ERROR_RESPONSES["not_found"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
+    @action(detail=True, methods=["get", "post"])
+    def comments(self, request, pk=None):
+        course = self.get_object()
+        if request.method == "GET":
+            comments = course.review_comments.select_related("reviewer").all()
+            return Response(ReviewCommentSerializer(comments, many=True).data)
+        serializer = ReviewCommentCreateSerializer(
+            data=request.data, context={"course": course}
+        )
+        serializer.is_valid(raise_exception=True)
+        comment = ReviewComment.objects.create(
+            course=course, reviewer=request.user, **serializer.validated_data
+        )
+        return Response(ReviewCommentSerializer(comment).data, status=201)

@@ -1,31 +1,48 @@
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from api.collaborators.enums import CollaboratorRole
 from api.collaborators.models import CollaboratorInvite, CourseCollaborator
 from api.courses.models import Module
 from api.courses.serializers.module_serializer import ModuleMiniSerializer
-from api.users.models import User
-
-
-class CollaboratorUserMiniSerializer(serializers.ModelSerializer):
-    """Lightweight User representation for a collaborator row/detail panel."""
-
-    class Meta:
-        model = User
-        fields = ["id", "first_name", "last_name", "email", "country", "sex"]
-        read_only_fields = fields
 
 
 class CollaboratorSerializer(serializers.ModelSerializer):
-    """Read-only representation of a CourseCollaborator."""
+    """Collaborator fields named for the Collaborators screen.
 
-    user = CollaboratorUserMiniSerializer(read_only=True)
+    The screen renders a single row from ``name``, ``email``, ``date_added``
+    and ``role``.  ``country_of_origin`` is used in its detail drawer.
+    """
+
+    name = serializers.SerializerMethodField()
+    email = serializers.EmailField(source="user.email", read_only=True)
+    country_of_origin = serializers.CharField(source="user.country", read_only=True)
+    date_added = serializers.DateTimeField(source="created_datetime", read_only=True)
+    role_label = serializers.CharField(source="get_role_display", read_only=True)
     assigned_modules = ModuleMiniSerializer(many=True, read_only=True)
 
     class Meta:
         model = CourseCollaborator
-        fields = ["id", "user", "role", "assigned_modules", "created_datetime"]
+        fields = [
+            "id",
+            "name",
+            "email",
+            "country_of_origin",
+            "date_added",
+            "role",
+            "role_label",
+            "assigned_modules",
+        ]
         read_only_fields = fields
+
+    @extend_schema_field(serializers.CharField())
+    def get_name(self, obj) -> str:
+        return (
+            " ".join(
+                part for part in (obj.user.first_name, obj.user.last_name) if part
+            ).strip()
+            or obj.user.email
+        )
 
 
 class CollaboratorInviteCreateSerializer(serializers.Serializer):
@@ -53,7 +70,7 @@ class CollaboratorInviteSerializer(serializers.ModelSerializer):
     """
 
     assigned_modules = ModuleMiniSerializer(many=True, read_only=True)
-    invitee = CollaboratorUserMiniSerializer(read_only=True, source="invitee_user")
+    invitee = serializers.SerializerMethodField()
     is_expired = serializers.SerializerMethodField()
 
     class Meta:
@@ -77,6 +94,20 @@ class CollaboratorInviteSerializer(serializers.ModelSerializer):
         from api.collaborators.services import invite_service
 
         return invite_service.invite_is_expired(obj)
+
+    @extend_schema_field(serializers.DictField(allow_null=True))
+    def get_invitee(self, obj) -> dict | None:
+        """Resolve the invite's email to an account when one exists, flat
+        style matching CollaboratorSerializer's screen fields."""
+
+        user = obj.invitee_user
+        if user is None:
+            return None
+        name = (
+            " ".join(part for part in (user.first_name, user.last_name) if part).strip()
+            or user.email
+        )
+        return {"id": user.id, "name": name, "email": user.email}
 
 
 class CollaboratorRoleUpdateSerializer(serializers.Serializer):

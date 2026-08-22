@@ -14,6 +14,7 @@ class CourseStatus(models.TextChoices):
     SUBMITTED = "SUBMITTED", "Submitted"
     IN_REVIEW = "IN_REVIEW", "In Review"
     NEEDS_REVISION = "NEEDS_REVISION", "Needs Revision"
+    QA_VERIFICATION = "QA_VERIFICATION", "QA Verification"
     APPROVED = "APPROVED", "Approved"
     PUBLISHED = "PUBLISHED", "Published"
     ARCHIVED = "ARCHIVED", "Archived"

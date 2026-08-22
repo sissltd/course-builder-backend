@@ -52,7 +52,11 @@ class MeSerializer(serializers.ModelSerializer):
         The category is obtained from the CreatorProfile model. We keep the CreatorProfile as the only source of truth for category, to avoid confusion.
         """
         representation = super().to_representation(instance)
-        if hasattr(instance, "creator_profile") and instance.creator_profile is not None and instance.creator_profile.primary_expertise_category is not None:
+        if (
+            hasattr(instance, "creator_profile")
+            and instance.creator_profile is not None
+            and instance.creator_profile.primary_expertise_category is not None
+        ):
             representation["category"] = {
                 "id": instance.creator_profile.primary_expertise_category.id,
                 "name": instance.creator_profile.primary_expertise_category.name,
@@ -97,8 +101,13 @@ class MeUpdateSerializer(serializers.ModelSerializer):
             from api.catalog.models import Category
 
             try:
-                category = Category.objects.get(id=category_id, status=CategoryStatus.ACTIVE)
-                if hasattr(self.instance, "creator_profile") and self.instance.creator_profile is not None:
+                category = Category.objects.get(
+                    id=category_id, status=CategoryStatus.ACTIVE
+                )
+                if (
+                    hasattr(self.instance, "creator_profile")
+                    and self.instance.creator_profile is not None
+                ):
                     self.instance.creator_profile.primary_expertise_category = category
                     self.instance.creator_profile.save()
             except Category.DoesNotExist:

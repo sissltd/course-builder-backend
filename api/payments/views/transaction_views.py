@@ -21,7 +21,11 @@ class TransactionListView(ListAPIView):
     permission_classes: ClassVar = [IsCourseCreatorRole]
     serializer_class = TransactionSerializer
     filterset_class = TransactionFilter
-    filter_backends: ClassVar = [DjangoFilterBackend, drf_filters.OrderingFilter, SearchFilter]
+    filter_backends: ClassVar = [
+        DjangoFilterBackend,
+        drf_filters.OrderingFilter,
+        SearchFilter,
+    ]
     ordering_fields: ClassVar = ["created_datetime", "amount"]
     search_fields: ClassVar = ["reference"]
 

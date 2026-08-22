@@ -40,7 +40,10 @@ _ME_EXAMPLE = {
     "created_datetime": "2026-07-12T09:30:11.204Z",
     "updated_datetime": "2026-07-12T09:30:11.204Z",
     "has_completed_onboarding": False,
-    "category": {"id": "0bd326eb-e48e-44bc-b963-2c8945210c2d", "name": "Web Applications"},
+    "category": {
+        "id": "0bd326eb-e48e-44bc-b963-2c8945210c2d",
+        "name": "Web Applications",
+    },
 }
 
 

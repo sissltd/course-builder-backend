@@ -10,6 +10,7 @@ from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 
 from api.collaborators.models import CourseCollaborator
+from api.collaborators.filters import CollaboratorFilter
 from api.collaborators.serializers import (
     CollaboratorRoleUpdateSerializer,
     CollaboratorSerializer,
@@ -21,19 +22,19 @@ from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 
 _COLLABORATOR_EXAMPLE = {
     "id": "b8c9d0e1-f2a3-4b4c-5d6e-7f8a9b0c1d2e",
-    "user": {
-        "id": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
-        "first_name": "Jane",
-        "last_name": "Doe",
-        "email": "jane.doe@example.com",
-        "country": "NG",
-        "sex": "FEMALE",
-    },
+    "name": "Jane Doe",
+    "email": "jane.doe@example.com",
+    "country_of_origin": "NG",
+    "date_added": "2026-07-20T11:00:00.000Z",
     "role": "COLLABORATOR",
+    "role_label": "Collaborator",
     "assigned_modules": [
-        {"id": "b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e", "title": "Getting Started", "order": 1}
+        {
+            "id": "b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e",
+            "title": "Getting Started",
+            "order": 1,
+        }
     ],
-    "created_datetime": "2026-07-20T11:00:00.000Z",
 }
 
 _AUTH_LINE = (
@@ -73,7 +74,9 @@ _MANAGE_ACCESS_403 = OpenApiResponse(
         summary="List a course's collaborators",
         description=(
             "Returns everyone with collaborator access to a course, "
-            "identified by `course_id`. Backs the 'Manage collaborators' "
+            "identified by `course_id`. Each row uses the Collaborators "
+            "screen field names: `name`, `email`, `date_added`, and `role`. "
+            "Backs the 'Manage collaborators' "
             "panel on the course builder.\n\n"
             "Called when opening a course's collaborators panel.\n\n"
             f"{_AUTH_LINE}\n\n"
@@ -92,6 +95,31 @@ _MANAGE_ACCESS_403 = OpenApiResponse(
                 location=OpenApiParameter.QUERY,
                 required=True,
                 description="UUID of the course to list collaborators for.",
+            ),
+            OpenApiParameter(
+                name="search",
+                type=str,
+                location=OpenApiParameter.QUERY,
+                description="The Search collaborator field; matches name or email.",
+            ),
+            OpenApiParameter(
+                name="role",
+                type=str,
+                location=OpenApiParameter.QUERY,
+                enum=["COLLABORATOR", "ADMIN"],
+                description="The Role filter.",
+            ),
+            OpenApiParameter(
+                name="date_from",
+                type=str,
+                location=OpenApiParameter.QUERY,
+                description="Inclusive From value for the Date range (YYYY-MM-DD).",
+            ),
+            OpenApiParameter(
+                name="date_to",
+                type=str,
+                location=OpenApiParameter.QUERY,
+                description="Inclusive To value for the Date range (YYYY-MM-DD).",
             ),
         ],
         responses={
@@ -190,6 +218,7 @@ class CourseCollaboratorViewSet(ModelViewSet):
 
     permission_classes = [IsCourseCreatorRole]
     http_method_names = ["get", "patch", "delete", "head", "options"]
+    filterset_class = CollaboratorFilter
 
     def get_queryset(self):
         if getattr(self, "swagger_fake_view", False):
@@ -251,11 +280,7 @@ class CourseCollaboratorViewSet(ModelViewSet):
             OpenApiExample(
                 name="Change module assignment",
                 request_only=True,
-                value={
-                    "assigned_modules": [
-                        "b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e"
-                    ]
-                },
+                value={"assigned_modules": ["b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e"]},
             ),
         ],
         responses={

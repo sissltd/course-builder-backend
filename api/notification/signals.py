@@ -24,8 +24,13 @@ def broadcast_notification(sender, instance, created, **kwargs):
     recent_notifications = (
         Notification.objects.filter(receiver=user, type=NotificationType.IN_APP)
         .values(
-            "id", "title", "content", "content_type",
-            "is_read", "created_datetime", "metadata"
+            "id",
+            "title",
+            "content",
+            "content_type",
+            "is_read",
+            "created_datetime",
+            "metadata",
         )
         .order_by("-created_datetime", "-id")[:20]
     )

@@ -1,7 +1,7 @@
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
-from api.reviews.enums import ReviewActionType
+from api.reviews.enums import ReviewActionType, ReviewStage
 from core.mixins import DateHistoryModelMixin, UUIDPrimaryKeyModelMixin
 
 
@@ -33,6 +33,13 @@ class ReviewAction(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
         max_length=10,
         choices=ReviewActionType.choices,
         help_text=_("The decision made by the reviewer."),
+    )
+    stage = models.CharField(
+        verbose_name=_("Review Stage"),
+        max_length=10,
+        choices=ReviewStage.choices,
+        default=ReviewStage.CONTENT,
+        help_text=_("Quality gate at which this decision was made."),
     )
     feedback = models.JSONField(
         verbose_name=_("Feedback"),

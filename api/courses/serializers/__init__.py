@@ -23,6 +23,13 @@ from .lesson_serializer import (
     LessonSerializer,
     LessonWriteSerializer,
 )
+from api.reviews.serializers import (
+    MediaAssetSerializer,
+    QAApprovalSerializer,
+    QARejectSerializer,
+    ReviewCommentCreateSerializer,
+    ReviewCommentSerializer,
+)
 from .module_serializer import (
     ModuleMiniSerializer,
     ModuleSerializer,
@@ -42,6 +49,11 @@ __all__ = [
     "LessonMiniSerializer",
     "LessonSerializer",
     "LessonWriteSerializer",
+    "MediaAssetSerializer",
+    "QAApprovalSerializer",
+    "QARejectSerializer",
+    "ReviewCommentCreateSerializer",
+    "ReviewCommentSerializer",
     "ModuleMiniSerializer",
     "ModuleSerializer",
     "ModuleWriteSerializer",

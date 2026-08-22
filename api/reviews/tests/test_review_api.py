@@ -21,6 +21,7 @@ class ReviewQueueApiTests(APITestCase):
     def setUp(self):
         self.creator = make_user(role=UserRole.COURSE_CREATOR)
         self.reviewer = make_user(role=UserRole.CREATOR_REVIEWER)
+        self.qa_reviewer = make_user(role=UserRole.QA_REVIEWER)
         self.admin = make_user(role=UserRole.ADMIN)
         self.category = make_category(creator_price=Decimal("120.00"))
         CourseVersion.objects.get_or_create(label="1.0")
@@ -146,7 +147,7 @@ class ReviewQueueApiTests(APITestCase):
         course.refresh_from_db()
         self.assertEqual(course.status, CourseStatus.IN_REVIEW)
 
-    def test_approve_happy_path_credits_wallet_and_notifies(self):
+    def test_content_approval_moves_course_to_qa_without_wallet_credit(self):
         course = self._submitted_course()
         self.client.force_authenticate(self.reviewer)
 
@@ -156,13 +157,85 @@ class ReviewQueueApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
         course.refresh_from_db()
-        self.assertEqual(course.status, CourseStatus.APPROVED)
+        self.assertEqual(course.status, CourseStatus.QA_VERIFICATION)
         self.assertTrue(
             ReviewAction.objects.filter(course=course, action="APPROVE").exists()
         )
 
         wallet = wallet_service.get_or_create_wallet(user=self.creator)
-        self.assertEqual(wallet.balance, Decimal("120.00"))
+        self.assertEqual(wallet.balance, Decimal("0.00"))
+
+    def test_qa_approval_credits_wallet_after_required_media_is_registered(self):
+        course = self._submitted_course()
+        self.client.force_authenticate(self.reviewer)
+        self.client.post(
+            f"/api/v1/review-queue/{course.id}/approve/", {}, format="json"
+        )
+
+        self.client.force_authenticate(self.creator)
+        for module in course.modules.all():
+            for lesson in module.lessons.all():
+                response = self.client.post(
+                    f"/api/v1/courses/{course.id}/media-assets/",
+                    {
+                        "lesson": str(lesson.id),
+                        "kind": "VIDEO",
+                        "url": f"https://example.com/{lesson.id}.mp4",
+                        "mime_type": "video/mp4",
+                        "duration_seconds": 300,
+                        "resolution": "1280x720",
+                        "subtitle_url": f"https://example.com/{lesson.id}.srt",
+                        "caption_accuracy_percent": "99.00",
+                        "audio_lufs": "-16.00",
+                        "audio_video_drift_ms": 50,
+                        "accessibility": {"captions": True},
+                    },
+                    format="json",
+                )
+                self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        for kind, url in (
+            ("PREVIEW_VIDEO", "https://example.com/preview.mp4"),
+            ("THUMBNAIL", "https://example.com/thumb.jpg"),
+        ):
+            response = self.client.post(
+                f"/api/v1/courses/{course.id}/media-assets/",
+                {
+                    "kind": kind,
+                    "url": url,
+                    "mime_type": "video/mp4"
+                    if kind == "PREVIEW_VIDEO"
+                    else "image/jpeg",
+                    "duration_seconds": 60 if kind == "PREVIEW_VIDEO" else None,
+                    "resolution": "1280x720",
+                    "subtitle_url": "https://example.com/preview.srt"
+                    if kind == "PREVIEW_VIDEO"
+                    else "",
+                    "caption_accuracy_percent": "99.00"
+                    if kind == "PREVIEW_VIDEO"
+                    else None,
+                    "audio_lufs": "-16.00" if kind == "PREVIEW_VIDEO" else None,
+                    "audio_video_drift_ms": 50 if kind == "PREVIEW_VIDEO" else None,
+                    "accessibility": {"alt_text": "Course thumbnail"},
+                },
+                format="json",
+            )
+            self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        self.client.force_authenticate(self.qa_reviewer)
+        self.assertEqual(
+            self.client.post(f"/api/v1/review-queue/{course.id}/qa-claim/").status_code,
+            status.HTTP_200_OK,
+        )
+        response = self.client.post(
+            f"/api/v1/review-queue/{course.id}/qa-approve/", {}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        course.refresh_from_db()
+        self.assertEqual(course.status, CourseStatus.APPROVED)
+        self.assertEqual(
+            wallet_service.get_or_create_wallet(user=self.creator).balance,
+            Decimal("120.00"),
+        )
 
     def test_double_approve_returns_400(self):
         course = self._submitted_course()

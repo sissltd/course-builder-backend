@@ -23,7 +23,12 @@ from api.courses.models import (
     CourseVersion,
     PublishedCourseSnapshot,
 )
-from api.reviews.services import quality_check_service
+from api.reviews.enums import ReviewStage
+from api.reviews.models import ReviewAssignment
+from api.reviews.services import (
+    quality_check_service,
+    quality_review_service,
+)
 from api.notification.models import Notification
 from api.notification.services import sla_threshold_service
 from api.platform.services import platform_settings_service
@@ -229,6 +234,9 @@ def submit_course(*, course: Course, actor: User) -> Course:
                 "updated_datetime",
             ]
         )
+        # Persist a reviewer-visible baseline score when the course enters the
+        # queue. More specialised scanners can append their own runs later.
+        quality_review_service.run_baseline_checks(course=course)
         Notification.emit_in_app_notification(
             receivers=[course.creator],
             title="Course submitted",
@@ -270,6 +278,12 @@ def claim_for_review(*, course: Course, reviewer: User) -> Course:
 
     course.status = CourseStatus.IN_REVIEW
     course.save(update_fields=["status", "updated_datetime"])
+    assignment, _ = ReviewAssignment.objects.get_or_create(
+        course=course, stage=ReviewStage.CONTENT
+    )
+    assignment.reviewer = reviewer
+    assignment.claimed_at = assignment.claimed_at or timezone.now()
+    assignment.save(update_fields=["reviewer", "claimed_at", "updated_datetime"])
     activity_service.log_activity(
         user=reviewer,
         category=UserActivityCategoryEnums.COURSE,
@@ -406,8 +420,14 @@ def get_review_queue(
     """
 
     statuses = status_in or [CourseStatus.SUBMITTED, CourseStatus.IN_REVIEW]
-    queryset = Course.objects.filter(status__in=statuses).select_related(
-        "category", "creator"
+    queryset = (
+        Course.objects.filter(status__in=statuses)
+        .select_related("category", "creator")
+        .prefetch_related(
+            "review_assignments__reviewer",
+            "quality_check_runs",
+            "quality_findings",
+        )
     )
 
     category_track_preference = QUEUE_TRACK_FILTER_TO_CATEGORY_TRACK_PREFERENCE.get(

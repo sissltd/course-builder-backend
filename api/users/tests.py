@@ -11,6 +11,8 @@ from rest_framework import status
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.test import APITestCase
 
+from api.notification.models import Notification
+from api.notification.services import notification_preference_service
 from api.users.enums import (
     AccountStatus,
     KYCStatus,
@@ -18,8 +20,6 @@ from api.users.enums import (
     UserActivityActionEnums,
     UserRole,
 )
-from api.notification.models import Notification
-from api.notification.services import notification_preference_service
 from api.users.models import KYCVerification, ReviewerAvailability, UserActivityLog
 from api.users.services import (
     kyc_service,
@@ -421,6 +421,8 @@ class KYCServiceTests(TestCase):
             country_of_issue="NG",
             document_type="NATIONAL_ID",
             id_number="12345",
+            first_name="John",
+            last_name="Doe",
         )
         KYCVerification.objects.filter(user=user).update(status=KYCStatus.APPROVED)
 
@@ -433,6 +435,8 @@ class KYCServiceTests(TestCase):
             country_of_issue="NG",
             document_type="NATIONAL_ID",
             id_number="12345",
+            first_name="John",
+            last_name="Doe",
         )
 
         with self.assertRaises(ValidationError):
@@ -441,6 +445,8 @@ class KYCServiceTests(TestCase):
                 country_of_issue="NG",
                 document_type="VOTERS_ID",
                 id_number="67890",
+                first_name="John",
+                last_name="Doe",
             )
 
     def test_can_resubmit_after_rejection(self):
@@ -450,6 +456,8 @@ class KYCServiceTests(TestCase):
             country_of_issue="NG",
             document_type="NATIONAL_ID",
             id_number="12345",
+            first_name="John",
+            last_name="Doe",
         )
         KYCVerification.objects.filter(user=user).update(status=KYCStatus.REJECTED)
 
@@ -458,6 +466,8 @@ class KYCServiceTests(TestCase):
             country_of_issue="NG",
             document_type="VOTERS_ID",
             id_number="67890",
+            first_name="John",
+            last_name="Doe",
         )
 
         self.assertEqual(resubmission.status, KYCStatus.PENDING)
@@ -475,6 +485,8 @@ class KYCServiceTests(TestCase):
             country_of_issue="NG",
             document_type="NATIONAL_ID",
             id_number="12345",
+            first_name="John",
+            last_name="Doe",
         )
         wrong_role_reviewer = _make_user(role=UserRole.COURSE_CREATOR)
 
@@ -490,6 +502,8 @@ class KYCServiceTests(TestCase):
             country_of_issue="NG",
             document_type="NATIONAL_ID",
             id_number="12345",
+            first_name="John",
+            last_name="Doe",
         )
         wrong_role_reviewer = _make_user(role=UserRole.CREATOR_REVIEWER)
 
@@ -513,6 +527,8 @@ class KYCServiceTests(TestCase):
             country_of_issue="NG",
             document_type="NATIONAL_ID",
             id_number="12345",
+            first_name="John",
+            last_name="Doe",
         )
 
         self.assertTrue(
@@ -550,6 +566,8 @@ class KYCApiTests(APITestCase):
                 "country_of_issue": "NG",
                 "document_type": "NATIONAL_ID",
                 "id_number": "12345",
+                "first_name": "John",
+                "last_name": "Doe",
             },
             format="json",
         )
@@ -570,6 +588,8 @@ class KYCApiTests(APITestCase):
                 "country_of_issue": "NG",
                 "document_type": "NATIONAL_ID",
                 "id_number": "12345",
+                "first_name": "John",
+                "last_name": "Doe",
             },
             format="json",
         )
@@ -580,10 +600,34 @@ class KYCApiTests(APITestCase):
                 "country_of_issue": "NG",
                 "document_type": "VOTERS_ID",
                 "id_number": "67890",
+                "first_name": "John",
+                "last_name": "Doe",
             },
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_submit_updates_user_name(self):
+        user = _make_user()
+        self.client.force_authenticate(user)
+
+        self.assertEqual(user.first_name, "Test")
+        self.assertEqual(user.last_name, "User")
+        response = self.client.post(
+            "/api/v1/users/me/kyc/",
+            {
+                "country_of_issue": "NG",
+                "document_type": "NATIONAL_ID",
+                "id_number": "12345",
+                "first_name": "John",
+                "last_name": "Doe",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        user.refresh_from_db()
+        self.assertEqual(user.first_name, "John")
+        self.assertEqual(user.last_name, "Doe")
 
 
 class UserAdminServiceTests(TestCase):
