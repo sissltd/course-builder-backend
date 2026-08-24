@@ -25,6 +25,7 @@ CUSTOM_APPS = [
     "api.wallet",
     "api.payments",
     "api.quizzes",
+    "api.mie",
     "shared.audit",
     "shared.uploads",
     "api.platform",

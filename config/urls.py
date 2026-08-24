@@ -51,6 +51,7 @@ urlpatterns = [
     path("api/v1/", include("api.courses.urls")),
     path("api/v1/", include("api.reviews.urls")),
     path("api/v1/", include("api.quizzes.urls")),
+    path("api/v1/", include("api.mie.urls")),
     path("api/v1/", include("api.collaborators.urls")),
     path("api/v1/", include("api.onboarding.urls")),
     path("api/v1/", include("api.wallet.urls")),

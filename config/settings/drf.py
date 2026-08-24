@@ -29,6 +29,8 @@ REST_FRAMEWORK = {
         # Tighter than the rest because this is a public account-creation route.
         "superadmin_bootstrap": "5/hour",
         "resend_verification": "3/hour",
+        # MIE Endpoint 1 - per-developer idea ingestion.
+        "mie_ingest": "30/min",
     },
 }
 
@@ -250,6 +252,40 @@ SPECTACULAR_SETTINGS = {
             ),
         },
         {
+            "name": "MIE Developer — Submissions",
+            "description": (
+                "Endpoints the external developer calls with their API key "
+                "(X-MIE-Api-Key): submitting course ideas and reading their "
+                "own submission queue."
+            ),
+        },
+        {
+            "name": "MIE Developer — Account",
+            "description": (
+                "The authenticated developer's account snapshot (/me) and "
+                "their generated integration documentation (/documentation), "
+                "including webhook samples and HMAC verification."
+            ),
+        },
+        {
+            "name": "Admin — MIE Submissions",
+            "description": (
+                "Superadmin queue over every developer's submissions: full "
+                "filters (developer, status, date, search), reversible "
+                "approve/reject decisions with immediate webhooks, "
+                "recommendation signals (demand score, estimated earnings), "
+                "payout-bypass toggles, and the rejection-reason taxonomy."
+            ),
+        },
+        {
+            "name": "Admin — MIE Developers",
+            "description": (
+                "Lifecycle management for external MIE developers: register "
+                "(email + webhook URL, starts pending), approve (issues the "
+                "API key shown exactly once), reject, and suspend."
+            ),
+        },
+        {
             "name": "Admin — Users",
             "description": "Listing, filtering, and managing user accounts.",
         },
@@ -365,5 +401,12 @@ SPECTACULAR_SETTINGS = {
         "WithdrawalRequestStatusEnum": "api.wallet.enums.WithdrawalRequestStatus",
         "TransactionTypeEnum": "api.wallet.enums.TransactionType",
         "UserRoleEnum": "api.users.enums.UserRole",
+        # MIE enums are exposed through admin and developer serializers;
+        # pin their component names so runs stay deterministic.
+        "DeveloperAccountStatusEnum": "api.mie.enums.DeveloperAccountStatus",
+        "MiePlanTypeEnum": "api.mie.enums.MiePlanType",
+        "SubmissionStatusEnum": "api.mie.enums.SubmissionStatus",
+        "WebhookEventTypeEnum": "api.mie.enums.WebhookEventType",
+        "WebhookDeliveryStatusEnum": "api.mie.enums.WebhookDeliveryStatus",
     },
 }
