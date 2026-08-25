@@ -90,7 +90,11 @@ class MieDeveloperAdminViewSet(viewsets.ReadOnlyModelViewSet):
             "Approve a PENDING, REJECTED or SUSPENDED account. When "
             "credentials are freshly issued the response carries the full "
             "API key exactly once; when null, existing credentials remain "
-            "valid. The raw key is never retrievable again afterwards."
+            "valid. The raw key is never retrievable again afterwards.\n\n"
+            "Approval is also the documentation delivery moment: from this "
+            "point the developer's integration documentation is live at "
+            "GET /api/v1/mie/v1/documentation/ and stays reachable via "
+            "/me at any time."
         ),
         request=None,
         responses={status.HTTP_200_OK: DeveloperApprovalResponseSerializer},

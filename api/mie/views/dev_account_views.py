@@ -55,8 +55,10 @@ class MieDocumentationView(APIView):
             "are on and its payout semantics, every available endpoint "
             "with request/response examples, the SCB-xxxxxxxx-S reference "
             "suffix table, how authentication headers work, and a sample "
-            "webhook body plus HMAC verification recipe for each event "
-            "type."
+            "signed webhook body per event type.\n\n"
+            "Surfaced to the developer alongside their API key at approval "
+            "and permanently re-accessible here at any time - losing the "
+            "onboarding email never means losing the documentation."
         ),
         responses={
             status.HTTP_200_OK: OpenApiResponse(
