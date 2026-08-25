@@ -466,6 +466,48 @@ CHECKS_POLL_INTERVAL_S = 5
 # real failure, and only distinguishable by the message — see watch_checks.
 NO_CHECKS_MARKER = "no checks reported"
 
+# gh's own API client can die mid-watch on transient network errors (seen in
+# the wild: "Post https://api.github.com/graphql: net/http: TLS handshake
+# timeout") while the checks themselves are healthy. When that happens the
+# watcher is re-queried, snapshot-style, until the checks actually settle.
+TRANSPORT_ERROR_MARKERS = (
+    "tls handshake",
+    "connection refused",
+    "connection reset",
+    "connection timed out",
+    "client.timeout",
+    "context deadline exceeded",
+    "unexpected eof",
+    "i/o timeout",
+)
+SETTLE_RETRIES = 6
+SETTLE_DELAY_S = 20
+
+
+def _looks_like_transport_error(output: str) -> bool:
+    """True when gh died talking to GitHub rather than reporting check state."""
+
+    lowered = output.lower()
+    return any(marker in lowered for marker in TRANSPORT_ERROR_MARKERS)
+
+
+def _settled_status(pr: str) -> str | None:
+    """One snapshot of the check table: "passed"/"failed"/"none", or None
+    when GitHub could not be reached or checks are still pending — the
+    caller keeps polling in those cases."""
+
+    code, out, err = run_capture(["gh", "pr", "checks", pr])
+    blob = f"{out}\n{err}".lower()
+    if _looks_like_transport_error(blob):
+        return None
+    if NO_CHECKS_MARKER in blob:
+        return "none"
+    if code == 0:
+        return "passed"
+    if code == 8:
+        return None
+    return "failed"
+
 
 def wait_for_checks_to_appear(pr: str) -> bool:
     """Poll until at least one check registers, or the timeout expires."""
@@ -498,6 +540,12 @@ def watch_checks(pr: str) -> str:
     "none" is deliberately not folded into either. Reporting it as a failure is
     alarming and wrong (nothing broke); reporting it as a pass would merge a PR
     whose CI never ran.
+
+    On top of that, the watcher process itself can die mid-stream on a
+    transient network error (TLS handshake timeouts against
+    api.github.com happen) while the actual checks are fine and still
+    running. That is gh's problem, not CI's — so before believing any
+    failure, re-query the settled state directly a few times.
     """
     header("👀  watching GitHub CI")
 
@@ -510,10 +558,23 @@ def watch_checks(pr: str) -> str:
         return "passed"
     if NO_CHECKS_MARKER in out.lower():
         return "none"
-    if code == 8:
-        return "none"
 
-    failure("GitHub CI did not pass.")
+    if _looks_like_transport_error(out) or code == 8:
+        for attempt in range(1, SETTLE_RETRIES + 1):
+            print(
+                f"  {C.DIM}watcher dropped mid-stream (network blip?); "
+                f"re-querying settled state ({attempt}/{SETTLE_RETRIES})…{C.RESET}"
+            )
+            time.sleep(SETTLE_DELAY_S)
+            settled = _settled_status(pr)
+            if settled is not None:
+                if settled == "passed":
+                    success("all checks passed.")
+                return settled
+        failure("GitHub kept dropping the connection; could not confirm final state.")
+    else:
+        failure("GitHub CI did not pass.")
+
     _, detail, _ = run_capture(["gh", "pr", "checks", pr])
     if detail.strip():
         for line in detail.strip().splitlines():

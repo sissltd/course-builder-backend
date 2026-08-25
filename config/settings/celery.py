@@ -11,3 +11,14 @@ CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
 CELERY_TIMEZONE = "UTC"
+
+# One beat entry per recurring job. The MIE webhook sweep is deliberately a
+# single minute-cadence task (not a message per event): each pass drains
+# everything due in one indexed query + batched writes, so a missed run is
+# absorbed by the next one and nothing accumulates in the broker.
+CELERY_BEAT_SCHEDULE = {
+    "mie-dispatch-webhooks": {
+        "task": "api.mie.tasks.dispatch_due_webhooks_task",
+        "schedule": 60.0,
+    },
+}
