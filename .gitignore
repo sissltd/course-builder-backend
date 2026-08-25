@@ -39,5 +39,6 @@ pullrequest.md
 .vscode
 PRD.md
 .DS_Store
+dump.rdb
 
 pyproject.toml
