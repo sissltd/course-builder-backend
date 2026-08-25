@@ -55,12 +55,12 @@ class MieDeveloperAdminViewSet(viewsets.ReadOnlyModelViewSet):
         return super().retrieve(request, *args, **kwargs)
 
     @extend_schema(
-        summary="Register a developer",
+        summary="Register a developer (manual onboarding)",
         description=(
-            "Create a PENDING developer account from an email and webhook "
-            "URL. The account cannot authenticate anything until approved. "
-            "Superadmins are notified of nothing else here - approval is a "
-            "separate explicit action."
+            "Superadmin-side account creation for manual onboarding. The "
+            "normal path is the developer self-registering via "
+            "POST /api/v1/mie/v1/register/ - both land in PENDING and "
+            "need this surface's approve action to become active."
         ),
         request=DeveloperRegisterSerializer,
         responses={
@@ -90,7 +90,11 @@ class MieDeveloperAdminViewSet(viewsets.ReadOnlyModelViewSet):
             "Approve a PENDING, REJECTED or SUSPENDED account. When "
             "credentials are freshly issued the response carries the full "
             "API key exactly once; when null, existing credentials remain "
-            "valid. The raw key is never retrievable again afterwards."
+            "valid. The raw key is never retrievable again afterwards.\n\n"
+            "Approval is also the documentation delivery moment: from this "
+            "point the developer's integration documentation is live at "
+            "GET /api/v1/mie/v1/documentation/ and stays reachable via "
+            "/me at any time."
         ),
         request=None,
         responses={status.HTTP_200_OK: DeveloperApprovalResponseSerializer},

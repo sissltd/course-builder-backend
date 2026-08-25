@@ -52,10 +52,12 @@ class CategoryReadAccessTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
     def test_authenticated_user_can_list_categories(self):
-        make_category(name="Web Dev", track_preference=TrackPreference.OPEN)
+        make_category(name="Web Dev", track_preference=TrackPreference.AI_PREFERRED)
         self.client.force_authenticate(self.creator)
 
-        response = self.client.get(LIST_URL)
+        # Scoped via a track the seed migration never uses, so exactly the
+        # fixture row matches regardless of seeded categories.
+        response = self.client.get(LIST_URL, {"track_preference": "AI_PREFERRED"})
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data["data"]["results"]), 1)
@@ -95,7 +97,11 @@ class CategoryReadAccessTests(APITestCase):
         response = self.client.get(LIST_URL, {"status": "ACTIVE"})
 
         results = response.data["data"]["results"]
-        self.assertEqual([row["name"] for row in results], ["Open"])
+        names = [row["name"] for row in results]
+        # The picker must surface the active fixture and never the inactive
+        # one - seeded (all-active) categories may legitimately appear too.
+        self.assertIn("Open", names)
+        self.assertNotIn("Closed", names)
 
 
 class CategoryWriteAccessTests(APITestCase):

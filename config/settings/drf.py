@@ -31,6 +31,8 @@ REST_FRAMEWORK = {
         "resend_verification": "3/hour",
         # MIE Endpoint 1 - per-developer idea ingestion.
         "mie_ingest": "30/min",
+        # MIE open self-registration - tight, it creates rows pre-auth.
+        "mie_register": "5/hour",
     },
 }
 
@@ -252,40 +254,6 @@ SPECTACULAR_SETTINGS = {
             ),
         },
         {
-            "name": "MIE Developer — Submissions",
-            "description": (
-                "Endpoints the external developer calls with their API key "
-                "(X-MIE-Api-Key): submitting course ideas and reading their "
-                "own submission queue."
-            ),
-        },
-        {
-            "name": "MIE Developer — Account",
-            "description": (
-                "The authenticated developer's account snapshot (/me) and "
-                "their generated integration documentation (/documentation), "
-                "including webhook samples and HMAC verification."
-            ),
-        },
-        {
-            "name": "Admin — MIE Submissions",
-            "description": (
-                "Superadmin queue over every developer's submissions: full "
-                "filters (developer, status, date, search), reversible "
-                "approve/reject decisions with immediate webhooks, "
-                "recommendation signals (demand score, estimated earnings), "
-                "payout-bypass toggles, and the rejection-reason taxonomy."
-            ),
-        },
-        {
-            "name": "Admin — MIE Developers",
-            "description": (
-                "Lifecycle management for external MIE developers: register "
-                "(email + webhook URL, starts pending), approve (issues the "
-                "API key shown exactly once), reject, and suspend."
-            ),
-        },
-        {
             "name": "Admin — Users",
             "description": "Listing, filtering, and managing user accounts.",
         },
@@ -365,6 +333,55 @@ SPECTACULAR_SETTINGS = {
             "description": (
                 "The platform-wide audit log (OTP events, administrative "
                 "actions), filterable by email, event, and date range."
+            ),
+        },
+        # ── MIE (external-developer pipeline) ──────────────────────
+        # Tags are ordered as the integration is actually used, step by
+        # step: the developer self-registers, the superadmin approves,
+        # the developer submits and tracks ideas, and the superadmin
+        # works the queue.
+        {
+            "name": "MIE Developer — Onboarding",
+            "description": (
+                "STEP 1 — The developer registers themselves (email + "
+                "webhook URL, open endpoint). The account starts PENDING "
+                "and can authenticate nothing until approved."
+            ),
+        },
+        {
+            "name": "Admin — MIE Developers",
+            "description": (
+                "STEP 2 — Superadmin reviews the pending developer: "
+                "approve (issues the API key shown exactly once), reject, "
+                "or suspend; plus the developer directory."
+            ),
+        },
+        {
+            "name": "MIE Developer — Submissions",
+            "description": (
+                "STEP 3 — The developer integrates. Submit course ideas "
+                "(Endpoint 1) with the issued API key (X-MIE-Api-Key) and "
+                "track every idea's state in their own queue."
+            ),
+        },
+        {
+            "name": "MIE Developer — Account",
+            "description": (
+                "STEP 4 — The developer's reference material: account "
+                "snapshot (/me) and generated integration documentation "
+                "(/documentation) with webhook samples and HMAC "
+                "verification."
+            ),
+        },
+        {
+            "name": "Admin — MIE Submissions",
+            "description": (
+                "STEP 5 — Superadmin works the pipeline: the cross-"
+                "developer queue (filters: developer, status, date, "
+                "search), reversible approve/reject with immediate "
+                "webhooks, recommendation signals (demand score, "
+                "estimated earnings), payout-bypass toggles, and the "
+                "rejection-reason taxonomy."
             ),
         },
     ],
