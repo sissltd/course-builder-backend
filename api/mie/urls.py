@@ -5,6 +5,7 @@ from api.mie.views import (
     MieDeveloperAdminViewSet,
     MieDeveloperMeView,
     MieDocumentationView,
+    MieDeveloperRegistrationView,
     MieSubmissionAdminViewSet,
     MieSubmissionIngestView,
     MieSubmissionQueueView,
@@ -25,6 +26,7 @@ router.register(
 )
 
 urlpatterns = router.urls + [
+    path("mie/v1/register/", MieDeveloperRegistrationView.as_view(), name="mie-developer-register"),
     path("mie/v1/submissions/", MieSubmissionIngestView.as_view(), name="mie-submission-ingest"),
     path("mie/v1/submissions/queue/", MieSubmissionQueueView.as_view(), name="mie-submission-queue"),
     path("mie/v1/me/", MieDeveloperMeView.as_view(), name="mie-developer-me"),

@@ -66,6 +66,12 @@ def _endpoint_docs() -> list[dict]:
     return [
         {
             "method": "POST",
+            "path": "/api/v1/mie/v1/register/",
+            "auth": "public (rate-limited)",
+            "summary": "Self-service registration - how this account was created.",
+        },
+        {
+            "method": "POST",
             "path": "/api/v1/mie/v1/submissions/",
             "auth": "API key or platform session",
             "summary": "Submit a course idea (Endpoint 1).",

@@ -1,5 +1,11 @@
 from django.shortcuts import get_object_or_404
-from drf_spectacular.utils import OpenApiResponse, extend_schema
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import (
+    OpenApiExample,
+    OpenApiParameter,
+    OpenApiResponse,
+    extend_schema,
+)
 from rest_framework import exceptions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -15,6 +21,45 @@ from api.mie.serializers.admin_submission_serializer import (
 )
 from api.mie.services import submission_admin_service
 from api.users.permissions import IsSuperAdminRole
+
+
+ADMIN_QUEUE_PARAMETERS = [
+    OpenApiParameter(
+        name="developer",
+        type=OpenApiTypes.UUID,
+        required=False,
+        description="Filter to one developer account id.",
+    ),
+    OpenApiParameter(
+        name="email",
+        type=str,
+        required=False,
+        description="Filter to one developer account by exact email.",
+    ),
+    OpenApiParameter(
+        name="status",
+        type=str,
+        required=False,
+        description="One pipeline state (PENDING_REVIEW, DUPLICATE_IN_QUEUE, "
+        "DUPLICATE_EXISTING, PREVIOUSLY_REJECTED, APPROVED, REJECTED).",
+    ),
+    OpenApiParameter(
+        name="payout_bypass", type=bool, required=False,
+        description="Filter to bypassed (true) or paying (false) ideas.",
+    ),
+    OpenApiParameter(
+        name="created_after", type=str, required=False,
+        description="ISO-8601 lower bound on arrival time.",
+    ),
+    OpenApiParameter(
+        name="created_before", type=str, required=False,
+        description="ISO-8601 upper bound on arrival time.",
+    ),
+    OpenApiParameter(
+        name="search", type=str, required=False,
+        description="Case-insensitive substring match on title or developer email.",
+    ),
+]
 
 
 @extend_schema(tags=["Admin — MIE Submissions"])
@@ -48,6 +93,7 @@ class MieSubmissionAdminViewSet(viewsets.ReadOnlyModelViewSet):
             "(exact developer email), ?created_after=/?created_before= "
             "(ISO-8601), ?search= (title or developer email substring)."
         ),
+        parameters=ADMIN_QUEUE_PARAMETERS,
         responses={status.HTTP_200_OK: AdminSubmissionSerializer(many=True)},
     )
     def list(self, request, *args, **kwargs):
@@ -80,6 +126,16 @@ class MieSubmissionAdminViewSet(viewsets.ReadOnlyModelViewSet):
                 description="Unknown rejection_reason label."
             ),
         },
+        examples=[
+            OpenApiExample(
+                "Approved idea",
+                value={
+                    "detail": "Submission SCB-0d1c7b2e-A approved.",
+                    "submission": {"id": "0d1c7b2e-6f5a-4a3f-9a2b-1f4e8c9d0a11", "status": "APPROVED"},
+                },
+                response_only=True,
+            )
+        ],
     )
     @action(detail=True, methods=["post"])
     def approve(self, request, id=None):
@@ -96,6 +152,16 @@ class MieSubmissionAdminViewSet(viewsets.ReadOnlyModelViewSet):
         ),
         request=SubmissionDecisionSerializer,
         responses={status.HTTP_200_OK: SubmissionDecisionResponseSerializer},
+        examples=[
+            OpenApiExample(
+                "Reject with reason",
+                value={
+                    "rejection_reason": "Duplicate of existing catalog",
+                    "rejection_note": "Covered by the live Rust course.",
+                },
+                request_only=True,
+            )
+        ],
     )
     @action(detail=True, methods=["post"])
     def reject(self, request, id=None):
@@ -141,6 +207,13 @@ class MieSubmissionAdminViewSet(viewsets.ReadOnlyModelViewSet):
         ),
         request=DemandSignalsSerializer,
         responses={status.HTTP_200_OK: AdminSubmissionSerializer},
+        examples=[
+            OpenApiExample(
+                "Market-research signals",
+                value={"demand_score": 87, "estimated_monthly_earnings": "4200.00"},
+                request_only=True,
+            )
+        ],
     )
     @action(detail=True, methods=["post"])
     def signals(self, request, id=None):
@@ -171,6 +244,13 @@ class MieSubmissionAdminViewSet(viewsets.ReadOnlyModelViewSet):
                 description="Payout bypass already in the requested state."
             ),
         },
+        examples=[
+            OpenApiExample(
+                "Mark no-payout",
+                value={"payout_bypass": True},
+                request_only=True,
+            )
+        ],
     )
     @action(detail=True, methods=["post"])
     def payout_bypass(self, request, id=None):

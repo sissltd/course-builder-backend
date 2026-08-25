@@ -55,12 +55,12 @@ class MieDeveloperAdminViewSet(viewsets.ReadOnlyModelViewSet):
         return super().retrieve(request, *args, **kwargs)
 
     @extend_schema(
-        summary="Register a developer",
+        summary="Register a developer (manual onboarding)",
         description=(
-            "Create a PENDING developer account from an email and webhook "
-            "URL. The account cannot authenticate anything until approved. "
-            "Superadmins are notified of nothing else here - approval is a "
-            "separate explicit action."
+            "Superadmin-side account creation for manual onboarding. The "
+            "normal path is the developer self-registering via "
+            "POST /api/v1/mie/v1/register/ - both land in PENDING and "
+            "need this surface's approve action to become active."
         ),
         request=DeveloperRegisterSerializer,
         responses={
