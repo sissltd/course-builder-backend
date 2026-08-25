@@ -157,3 +157,44 @@ jobs:
           tags: course-builder-backend:ci-${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  # ────────────────────────────────────────────────────────────
+  # Staging CD — folded into CI (not workflow_run) because the VPS deploy
+  # must work while `main` is still the default branch and reserved for
+  # prod. These two jobs only ever run on a PUSH to staging (never on
+  # PRs), and only after every gate above has passed — `needs` makes a
+  # red CI mean no image and no deploy ping.
+  # Staging CD — folded into CI (not workflow_run) because the VPS deploy
+  # must work while `main` is still the default branch and reserved for
+  # prod. Dokploy builds the image itself from the repo (compose `build:`),
+  # so there is no registry step: green CI just fires the deploy webhook
+  # and the VPS pulls + rebuilds the staging branch.
+  trigger-staging-redeploy:
+    name: Trigger Dokploy redeploy (staging)
+    needs: [lint, security, test, docker-build]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/staging'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Dokploy deploy webhook
+        env:
+          WEBHOOK_URL: ${{ secrets.DOKPLOY_STAGING_DEPLOY_WEBHOOK }}
+        run: |
+          if [ -z "$WEBHOOK_URL" ]; then
+            echo "::error::DOKPLOY_STAGING_DEPLOY_WEBHOOK secret is not set."
+            exit 1
+          fi
+          for attempt in 1 2 3; do
+            code=$(curl -s -o /tmp/dokploy_resp.txt -w "%{http_code}" \
+              -X POST --max-time 30 "$WEBHOOK_URL") || code=000
+            echo "attempt ${attempt}: HTTP ${code}"
+            case "$code" in
+              2*)
+                echo "Dokploy redeploy triggered — staging will rebuild from the merged commit."
+                exit 0
+                ;;
+            esac
+            sleep 10
+          done
+          echo "::error::Dokploy webhook never accepted the trigger."
+          cat /tmp/dokploy_resp.txt 2>/dev/null || true
+          exit 1
