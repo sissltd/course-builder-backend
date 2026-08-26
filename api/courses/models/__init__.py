@@ -1,5 +1,6 @@
 from .assessment import Assessment
 from .course import Course
+from .course_distribution import CourseDistribution
 from .course_appeal import CourseAppeal
 from .course_thumbnail import CourseThumbnail
 from .course_version import CourseVersion
@@ -13,6 +14,7 @@ from .published_course_snapshot import PublishedCourseSnapshot
 __all__ = [
     "Assessment",
     "Course",
+    "CourseDistribution",
     "CourseAppeal",
     "CourseThumbnail",
     "CourseVersion",

@@ -2,8 +2,8 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 
 from api.collaborators.tests.factories import make_collaborator
-from api.courses.enums import CourseStatus
-from api.courses.models import Course, CourseVersion
+from api.courses.enums import CourseStatus, DistributionStatus
+from api.courses.models import Course, CourseDistribution, CourseVersion
 from api.courses.services import course_service
 from api.courses.tests.factories import (
     build_compliant_course,
@@ -261,7 +261,19 @@ class CourseApiTests(APITestCase):
         course.save()
         self.client.force_authenticate(self.creator)
 
-        response = self.client.post(f"/api/v1/courses/{course.id}/publish/")
+        response = self.client.post(
+            f"/api/v1/courses/{course.id}/publish/",
+            {
+                "distribution_channels": [
+                    {
+                        "channel": "SOLUDESK",
+                        "learner_price": "149.00",
+                        "model": "ONE_TIME",
+                    }
+                ]
+            },
+            format="json",
+        )
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_admin_can_publish_approved_course(self):
@@ -270,7 +282,19 @@ class CourseApiTests(APITestCase):
         course.save()
         self.client.force_authenticate(self.admin)
 
-        response = self.client.post(f"/api/v1/courses/{course.id}/publish/")
+        response = self.client.post(
+            f"/api/v1/courses/{course.id}/publish/",
+            {
+                "distribution_channels": [
+                    {
+                        "channel": "SOLUDESK",
+                        "learner_price": "149.00",
+                        "model": "ONE_TIME",
+                    }
+                ]
+            },
+            format="json",
+        )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         course.refresh_from_db()
         self.assertEqual(course.status, CourseStatus.PUBLISHED)
@@ -283,6 +307,64 @@ class CourseApiTests(APITestCase):
 
         response = self.client.post(f"/api/v1/courses/{course.id}/publish/")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_admin_saves_design_pricing_fields_and_publishes_channels(self):
+        course = build_compliant_course(creator=self.creator, category=self.category)
+        course.status = CourseStatus.APPROVED
+        course.creator_price_snapshot = "150.00"
+        course.save()
+        self.client.force_authenticate(self.admin)
+        payload = {
+            "distribution_channels": [
+                {
+                    "channel": "SOLUDESK",
+                    "approval_rate": "Published within 60 seconds",
+                    "learner_price": "149.00",
+                    "mie_suggestion": "140.00",
+                    "model": "ONE_TIME",
+                    "platform_revenue_per_enrollment": "149.00",
+                    "mie_explanation": "Suggested from competitor analysis.",
+                    "comparable_courses": [
+                        {
+                            "course_title": "Modern computing language",
+                            "difficulty_level": "BEGINNER",
+                            "learner_price": "150.00",
+                        }
+                    ],
+                },
+                {
+                    "channel": "UDEMY",
+                    "approval_rate": "Published within 10 - 15 minutes",
+                    "learner_price": "190.00",
+                    "model": "ONE_TIME",
+                    "course_fee_percent": "32.00",
+                },
+            ]
+        }
+
+        save_response = self.client.put(
+            f"/api/v1/courses/{course.id}/review-prices/", payload, format="json"
+        )
+        self.assertEqual(save_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(save_response.data[0]["creator_payout_fixed"], "150.00")
+        self.assertEqual(save_response.data[0]["mie_suggestion"], "140.00")
+        self.assertEqual(save_response.data[0]["model"], "ONE_TIME")
+        self.assertNotIn("mie_suggested_price", save_response.data[0])
+        self.assertNotIn("pricing_model", save_response.data[0])
+
+        response = self.client.post(
+            f"/api/v1/courses/{course.id}/publish/", payload, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["distribution_channels"]), 2)
+        self.assertEqual(
+            CourseDistribution.objects.get(course=course, channel="SOLUDESK").status,
+            DistributionStatus.PUBLISHED,
+        )
+        self.assertEqual(
+            CourseDistribution.objects.get(course=course, channel="UDEMY").status,
+            DistributionStatus.QUEUED,
+        )
 
 
 class AdminCourseCrudTests(APITestCase):

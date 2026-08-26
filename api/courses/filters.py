@@ -1,4 +1,5 @@
 import django_filters
+from django.db.models import Q
 
 from api.catalog.enums import TrackPreference
 from api.courses.models import Course
@@ -24,6 +25,12 @@ class CourseReviewQueueFilter(django_filters.FilterSet):
         method="filter_track",
         label="Track",
     )
+    difficulty_level = django_filters.CharFilter(field_name="difficulty_level")
+    reviewer = django_filters.UUIDFilter(
+        field_name="review_assignments__reviewer_id", distinct=True
+    )
+    date_from = django_filters.DateFilter(method="filter_date_from")
+    date_to = django_filters.DateFilter(method="filter_date_to")
 
     class Meta:
         model = Course
@@ -32,6 +39,16 @@ class CourseReviewQueueFilter(django_filters.FilterSet):
             "category": ["exact"],
             "source_type": ["exact"],
         }
+
+    def filter_date_from(self, queryset, name, value):
+        return queryset.filter(
+            Q(submitted_at__date__gte=value) | Q(approved_at__date__gte=value)
+        ).distinct()
+
+    def filter_date_to(self, queryset, name, value):
+        return queryset.filter(
+            Q(submitted_at__date__lte=value) | Q(approved_at__date__lte=value)
+        ).distinct()
 
     def filter_track(self, queryset, name, value):
         category_track_preference = _TRACK_FILTER_TO_CATEGORY_TRACK_PREFERENCE.get(
