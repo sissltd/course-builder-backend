@@ -170,6 +170,7 @@ class UserActivityLogExportView(APIView):
             "as the list endpoint."
         ),
         tags=["Creator — Activity Log"],
+        request=None,
     )
     def get(self, request):
         base_queryset = UserActivityLog.objects.filter(

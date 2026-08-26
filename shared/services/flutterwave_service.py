@@ -30,8 +30,8 @@ class FlutterwaveAuth:
     """
     
     
-    FLUTTERWAVE_CLIENT_ID = config("FLUTTERWAVE_CLIENT_ID")
-    FLUTTERWAVE_CLIENT_SECRET = config("FLUTTERWAVE_CLIENT_SECRET")
+    FLUTTERWAVE_CLIENT_ID = config("FLUTTERWAVE_CLIENT_ID", default="")
+    FLUTTERWAVE_CLIENT_SECRET = config("FLUTTERWAVE_CLIENT_SECRET", default="")
 
     TOKEN_KEY = "flutterwave:oauth:access_token"
     LOCK_KEY = "flutterwave:oauth:token_lock"
@@ -128,7 +128,7 @@ class FlutterwaveAuth:
 
 class FlutterwaveService:
 
-    BASE_URL =  config("FLUTTERWAVE_BASE_URL")
+    BASE_URL =  config("FLUTTERWAVE_BASE_URL", default="")
 
     def _headers(self):
         token = FlutterwaveAuth.get_access_token()

@@ -52,6 +52,8 @@ class UserSessionListView(ListAPIView):
         return super().get(request, *args, **kwargs)
 
     def get_queryset(self):
+        if getattr(self, "swagger_fake_view", False):
+            return UserSession.objects.none()
         return session_service.list_active_sessions(user=self.request.user)
 
 

@@ -47,7 +47,7 @@ logger = logging.getLogger(__name__)
 
 
 @extend_schema_view(
-    get=extend_schema(**BANK_ACCOUNT_LIST_DOCS),
+    get=extend_schema(**BANK_ACCOUNT_LIST_DOCS, operation_id="payout_accounts_list"),
     post=extend_schema(**BANK_ACCOUNT_CREATE_DOCS),
 )
 class BankAccountListCreateView(APIView):
@@ -139,7 +139,7 @@ class BankAccountDetailView(APIView):
         )
 
 
-@extend_schema(**BANK_ACCOUNT_SET_DEFAULT_DOCS)
+@extend_schema(**BANK_ACCOUNT_SET_DEFAULT_DOCS, request=None)
 class BankAccountSetDefaultView(APIView):
     permission_classes: ClassVar = [IsAuthenticated]
 
@@ -160,7 +160,7 @@ class BankAccountSetDefaultView(APIView):
         )
 
 
-@extend_schema(**BANK_ACCOUNT_SUSPEND_DOCS)
+@extend_schema(**BANK_ACCOUNT_SUSPEND_DOCS, request=None)
 class BankAccountSuspendView(APIView):
     permission_classes: ClassVar = [IsAdminRole]
 
