@@ -336,16 +336,15 @@ SPECTACULAR_SETTINGS = {
             ),
         },
         # ── MIE (external-developer pipeline) ──────────────────────
-        # Tags are ordered as the integration is actually used, step by
-        # step: the developer self-registers, the superadmin approves,
-        # the developer submits and tracks ideas, and the superadmin
-        # works the queue.
+        # Tags ordered as the integration is actually used: register,
+        # approve, submit, admin queue. "Developer" is the external MIE
+        # API consumer audience (non-platform users).
         {
-            "name": "MIE Developer — Onboarding",
+            "name": "Public — MIE Registration",
             "description": (
-                "STEP 1 — The developer registers themselves (email + "
-                "webhook URL, open endpoint). The account starts PENDING "
-                "and can authenticate nothing until approved."
+                "STEP 1 — Developer self-registers (email + webhook URL, "
+                "no auth required). The account starts PENDING and can "
+                "authenticate nothing until a superadmin approves it."
             ),
         },
         {
@@ -357,15 +356,15 @@ SPECTACULAR_SETTINGS = {
             ),
         },
         {
-            "name": "MIE Developer — Submissions",
+            "name": "Developer — MIE Submissions",
             "description": (
-                "STEP 3 — The developer integrates. Submit course ideas "
-                "(Endpoint 1) with the issued API key (X-MIE-Api-Key) and "
-                "track every idea's state in their own queue."
+                "STEP 3 — The developer integrates: submit course ideas "
+                "(Endpoint 1) with the issued API key (X-MIE-Api-Key) "
+                "and track every idea's state in their own queue."
             ),
         },
         {
-            "name": "MIE Developer — Account",
+            "name": "Developer — MIE Account",
             "description": (
                 "STEP 4 — The developer's reference material: account "
                 "snapshot (/me) and generated integration documentation "
@@ -380,8 +379,15 @@ SPECTACULAR_SETTINGS = {
                 "developer queue (filters: developer, status, date, "
                 "search), reversible approve/reject with immediate "
                 "webhooks, recommendation signals (demand score, "
-                "estimated earnings), payout-bypass toggles, and the "
-                "rejection-reason taxonomy."
+                "estimated earnings), and payout-bypass toggles."
+            ),
+        },
+        {
+            "name": "Admin — MIE Rejection Reasons",
+            "description": (
+                "The rejection-reason taxonomy backing dedup check #1: "
+                "create, edit, and soft-deactivate labels that admins "
+                "attach when rejecting submissions."
             ),
         },
     ],

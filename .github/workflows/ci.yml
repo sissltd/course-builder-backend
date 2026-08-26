@@ -178,6 +178,7 @@ jobs:
       - name: Ping Dokploy deploy webhook
         env:
           WEBHOOK_URL: ${{ secrets.DOKPLOY_STAGING_DEPLOY_WEBHOOK }}
+          REPO_FULL_NAME: ${{ github.repository }}
         run: |
           if [ -z "$WEBHOOK_URL" ]; then
             echo "::error::DOKPLOY_STAGING_DEPLOY_WEBHOOK secret is not set."
@@ -185,7 +186,11 @@ jobs:
           fi
           for attempt in 1 2 3; do
             code=$(curl -s -o /tmp/dokploy_resp.txt -w "%{http_code}" \
-              -X POST --max-time 30 "$WEBHOOK_URL") || code=000
+              -X POST --max-time 30 \
+              -H "Content-Type: application/json" \
+              -H "X-GitHub-Event: push" \
+              -d "{\"ref\":\"refs/heads/staging\",\"repository\":{\"full_name\":\"${REPO_FULL_NAME}\"}}" \
+              "$WEBHOOK_URL") || code=000
             echo "attempt ${attempt}: HTTP ${code}"
             case "$code" in
               2*)
