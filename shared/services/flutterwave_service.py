@@ -5,13 +5,13 @@ from decimal import Decimal
 
 import requests
 from decouple import config
-from django_redis import get_redis_connection
 
+# from django_redis import get_redis_connection
 from shared.constants.environ import DJANGO_ENV
 from shared.redis.redis_service import RedisService
 from shared.utils.bank_account_check import check_account_name_matches_profile
 
-redis = get_redis_connection("default")
+# redis = get_redis_connection("default")
 
 logger = logging.getLogger(__name__)
 
