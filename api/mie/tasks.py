@@ -20,4 +20,6 @@ def dispatch_due_webhooks_task():
     report = dispatch_due_events()
     if report.delivered or report.retried or report.failed:
         logger.info("mie webhook dispatch: %s", report)
+    else:
+        logger.debug("mie webhook sweep: nothing due")
     return str(report)
