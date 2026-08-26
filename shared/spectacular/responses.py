@@ -49,7 +49,7 @@ from rest_framework import serializers
 # shape returned by shared/response/error.py.
 
 ErrorEnvelopeSerializer = inline_serializer(
-    name="ErrorEnvelope",
+    name="SharedErrorEnvelope",
     fields={
         "errors": serializers.ListField(
             child=serializers.DictField(),
@@ -59,7 +59,7 @@ ErrorEnvelopeSerializer = inline_serializer(
 
 
 SuccessEnvelopeSerializer = inline_serializer(
-    name="SuccessEnvelope",
+    name="SharedSuccessEnvelope",
     fields={
         "success": serializers.BooleanField(default=True),
         "status": serializers.IntegerField(),
