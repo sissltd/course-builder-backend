@@ -23,7 +23,7 @@ from shared.response.success import custom_success_response
 class FlutterwaveWebhookView(APIView):
     permission_classes = [AllowAny]
 
-    FLUTTERWAVE_SECRET_HASH = config("FLUTTERWAVE_SECRET_HASH")
+    FLUTTERWAVE_SECRET_HASH = config("FLUTTERWAVE_SECRET_HASH", default="")
 
     @extend_schema(exclude=True)
     def post(self, request, *args, **kwargs):
