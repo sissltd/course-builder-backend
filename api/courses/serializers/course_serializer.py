@@ -3,7 +3,7 @@ from rest_framework import serializers
 
 from api.catalog.serializers.category_serializer import CategoryMiniSerializer
 from api.catalog.serializers.topic_serializer import TopicMiniSerializer
-from api.courses.models import Course
+from api.courses.models import Course, CourseDistribution
 from api.courses.serializers.assessment_serializer import AssessmentSerializer
 from api.courses.serializers.module_serializer import ModuleSerializer
 from api.reviews.serializers import (
@@ -37,42 +37,76 @@ class CourseListSerializer(serializers.ModelSerializer):
     quality = serializers.SerializerMethodField()
     issue_count = serializers.SerializerMethodField()
     waiting_seconds = serializers.SerializerMethodField()
+    creator = serializers.SerializerMethodField()
+    course_id = serializers.UUIDField(source="id", read_only=True)
+    course_title = serializers.CharField(source="title", read_only=True)
+    reviewed_by = serializers.SerializerMethodField()
+    display_status = serializers.SerializerMethodField()
+    date_submitted = serializers.DateTimeField(source="submitted_at", read_only=True)
+    date_approved = serializers.DateTimeField(source="approved_at", read_only=True)
 
     class Meta:
         model = Course
         fields = [
             "id",
             "title",
+            "course_id",
+            "course_title",
+            "creator",
             "category",
             "topic",
             "status",
+            "display_status",
             "source_type",
             "quality_score",
             "review_stage",
             "assigned_reviewer",
+            "reviewed_by",
+            "difficulty_level",
             "quality",
             "issue_count",
             "waiting_seconds",
             "creator_price_snapshot",
             "submitted_at",
+            "date_submitted",
+            "date_approved",
             "created_datetime",
             "updated_datetime",
         ]
         read_only_fields = fields
 
-    def get_review_stage(self, obj):
+    def get_creator(self, obj) -> dict:
+        return {
+            "id": obj.creator_id,
+            "first_name": obj.creator.first_name,
+            "last_name": obj.creator.last_name,
+            "email": obj.creator.email,
+        }
+
+    def get_reviewed_by(self, obj) -> dict | None:
+        return self.get_assigned_reviewer(obj)
+
+    def get_display_status(self, obj) -> str:
+        return "PENDING" if obj.status == "SUBMITTED" else obj.status
+
+    def get_review_stage(self, obj) -> str:
         return "QA" if obj.status == "QA_VERIFICATION" else "CONTENT"
 
-    def get_assigned_reviewer(self, obj):
+    def get_assigned_reviewer(self, obj) -> dict | None:
         stage = self.get_review_stage(obj)
         assignment = next(
             (item for item in obj.review_assignments.all() if item.stage == stage), None
         )
         if not assignment or not assignment.reviewer_id:
             return None
-        return {"id": assignment.reviewer_id, "email": assignment.reviewer.email}
+        return {
+            "id": assignment.reviewer_id,
+            "first_name": assignment.reviewer.first_name,
+            "last_name": assignment.reviewer.last_name,
+            "email": assignment.reviewer.email,
+        }
 
-    def get_quality(self, obj):
+    def get_quality(self, obj) -> dict:
         run = next(iter(obj.quality_check_runs.all()), None)
         if not run:
             return {
@@ -90,14 +124,14 @@ class CourseListSerializer(serializers.ModelSerializer):
             "duplicate_score": run.duplicate_score,
         }
 
-    def get_issue_count(self, obj):
+    def get_issue_count(self, obj) -> int:
         return sum(
             1
             for item in obj.quality_findings.all()
             if item.resolved_at is None and item.severity in {"WARNING", "ERROR"}
         )
 
-    def get_waiting_seconds(self, obj):
+    def get_waiting_seconds(self, obj) -> int:
         from django.utils import timezone
 
         stage = self.get_review_stage(obj)
@@ -116,6 +150,187 @@ class CourseListSerializer(serializers.ModelSerializer):
         )
 
 
+class ComparableCourseSerializer(serializers.Serializer):
+    """One row under Related Courses / Comparable Courses in the design."""
+
+    course_title = serializers.CharField(help_text="Comparable course title.")
+    difficulty_level = serializers.ChoiceField(
+        choices=["BEGINNER", "INTERMEDIATE", "ADVANCED"],
+        help_text="Comparable course difficulty level.",
+    )
+    learner_price = serializers.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        min_value=0,
+        help_text="Comparable course learner price.",
+    )
+
+
+class CourseDistributionSerializer(serializers.ModelSerializer):
+    """Read shape using the labels from the Figma Review Prices cards."""
+
+    creator_payout_fixed = serializers.DecimalField(
+        source="course.creator_price_snapshot",
+        max_digits=12,
+        decimal_places=2,
+        allow_null=True,
+        read_only=True,
+        help_text="Fixed creator payout captured when the course was submitted.",
+    )
+    learner_fee = serializers.DecimalField(
+        source="learner_price",
+        max_digits=12,
+        decimal_places=2,
+        read_only=True,
+        help_text="Learner fee shown in the Course Fees summary.",
+    )
+    mie_suggestion = serializers.DecimalField(
+        source="mie_suggested_price",
+        max_digits=12,
+        decimal_places=2,
+        allow_null=True,
+        read_only=True,
+        help_text="MIE-suggested learner price shown below the price input.",
+    )
+    model = serializers.CharField(
+        source="pricing_model",
+        read_only=True,
+        help_text="Selected commercial model: ONE_TIME, SUBSCRIPTION, PROMOTIONAL, or B2B_ONLY.",
+    )
+    course_fee_percent = serializers.DecimalField(
+        source="marketplace_fee_percent",
+        max_digits=5,
+        decimal_places=2,
+        allow_null=True,
+        read_only=True,
+        help_text="Coursera/Udemy course fee as a percentage of net revenue.",
+    )
+    promotional_pricing = serializers.DecimalField(
+        source="promotional_price",
+        max_digits=12,
+        decimal_places=2,
+        allow_null=True,
+        read_only=True,
+        help_text="Promotional pricing displayed for the marketplace channel.",
+    )
+    mie_explanation = serializers.CharField(
+        source="mie_rationale",
+        read_only=True,
+        help_text="MIE explanation displayed in the blue recommendation panel.",
+    )
+    comparable_courses = ComparableCourseSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = CourseDistribution
+        fields = [
+            "id",
+            "channel",
+            "approval_rate",
+            "learner_price",
+            "mie_suggestion",
+            "model",
+            "learner_fee",
+            "creator_payout_fixed",
+            "course_fee_percent",
+            "promotional_pricing",
+            "platform_revenue_per_enrollment",
+            "mie_explanation",
+            "comparable_courses",
+            "status",
+            "external_course_id",
+            "failure_reason",
+            "published_at",
+        ]
+        read_only_fields = [
+            "id",
+            "creator_payout_fixed",
+            "status",
+            "external_course_id",
+            "failure_reason",
+            "published_at",
+        ]
+
+
+class CourseDistributionInputSerializer(serializers.ModelSerializer):
+    """Editable fields in a SoluDesk, Coursera, or Udemy pricing tab."""
+
+    mie_suggestion = serializers.DecimalField(
+        source="mie_suggested_price",
+        max_digits=12,
+        decimal_places=2,
+        min_value=0,
+        required=False,
+        allow_null=True,
+        help_text="MIE-suggested price displayed beneath Learner price.",
+    )
+    model = serializers.ChoiceField(
+        source="pricing_model",
+        choices=["ONE_TIME", "SUBSCRIPTION", "PROMOTIONAL", "B2B_ONLY"],
+        default="ONE_TIME",
+        help_text="Pricing option selected in the design.",
+    )
+    course_fee_percent = serializers.DecimalField(
+        source="marketplace_fee_percent",
+        max_digits=5,
+        decimal_places=2,
+        min_value=0,
+        max_value=100,
+        required=False,
+        allow_null=True,
+        help_text="Coursera/Udemy course fee percentage.",
+    )
+    promotional_pricing = serializers.DecimalField(
+        source="promotional_price",
+        max_digits=12,
+        decimal_places=2,
+        min_value=0,
+        required=False,
+        allow_null=True,
+        help_text="Promotional pricing for Coursera or Udemy.",
+    )
+    mie_explanation = serializers.CharField(
+        source="mie_rationale",
+        required=False,
+        allow_blank=True,
+        help_text="Text displayed in the MIE recommendation panel.",
+    )
+    comparable_courses = ComparableCourseSerializer(many=True, required=False)
+
+    def validate_comparable_courses(self, value):
+        """Store JSON-safe values while retaining decimal validation."""
+
+        return ComparableCourseSerializer(value, many=True).data
+
+    class Meta:
+        model = CourseDistribution
+        fields = [
+            "channel",
+            "approval_rate",
+            "learner_price",
+            "mie_suggestion",
+            "model",
+            "course_fee_percent",
+            "promotional_pricing",
+            "platform_revenue_per_enrollment",
+            "mie_explanation",
+            "comparable_courses",
+        ]
+
+
+class ReviewAndPublishSerializer(serializers.Serializer):
+    distribution_channels = CourseDistributionInputSerializer(many=True)
+
+    def validate_distribution_channels(self, value):
+        channels = [item["channel"] for item in value]
+        if len(channels) != len(set(channels)):
+            raise serializers.ValidationError("Each channel may appear only once.")
+        if not channels:
+            raise serializers.ValidationError(
+                "Select at least one distribution channel."
+            )
+        return value
+
+
 class CourseDetailSerializer(serializers.ModelSerializer):
     """Full Course representation, including nested modules/lessons/assessments."""
 
@@ -129,6 +344,7 @@ class CourseDetailSerializer(serializers.ModelSerializer):
     review_assignments = ReviewAssignmentSerializer(many=True, read_only=True)
     review_comments = ReviewCommentSerializer(many=True, read_only=True)
     qa_video_samples = serializers.SerializerMethodField()
+    distribution_channels = CourseDistributionSerializer(many=True, read_only=True)
 
     class Meta:
         model = Course
@@ -161,6 +377,7 @@ class CourseDetailSerializer(serializers.ModelSerializer):
             "review_assignments",
             "review_comments",
             "qa_video_samples",
+            "distribution_channels",
             "duration_estimate_minutes",
             "version",
             "created_datetime",
@@ -173,7 +390,7 @@ class CourseDetailSerializer(serializers.ModelSerializer):
         assessment = getattr(obj, "final_assessment", None)
         return AssessmentSerializer(assessment).data if assessment else None
 
-    def get_qa_video_samples(self, obj):
+    def get_qa_video_samples(self, obj) -> list:
         """Expose intro, middle, and conclusion video evidence for QA playback."""
 
         videos = sorted(
@@ -369,8 +586,10 @@ class ReviewRejectSerializer(serializers.Serializer):
         if not isinstance(value, list):
             raise serializers.ValidationError("flags must be a list if provided.")
         for index, flag in enumerate(value):
-            if not isinstance(flag, dict) or not flag.get("flag_type") or not flag.get(
-                "title"
+            if (
+                not isinstance(flag, dict)
+                or not flag.get("flag_type")
+                or not flag.get("title")
             ):
                 raise serializers.ValidationError(
                     f"flags[{index}] must include 'flag_type' and 'title'."

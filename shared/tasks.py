@@ -125,6 +125,7 @@ def send_templated_email_task(
     template_name: str,
     context: dict | None = None,
     from_email: str | None = None,
+    email_type: str = "TRANSACTIONAL",
 ) -> dict:
     """Render a Django email template and send it asynchronously.
 
@@ -136,17 +137,61 @@ def send_templated_email_task(
         # Local imports avoid circular dependency with api.notification.*
         from api.notification.services.email_service import send_templated_email
 
-        send_templated_email(
+        sent_count = send_templated_email(
             receivers=receivers,
             subject=subject,
             template_name=template_name,
             context=context or {},
             from_email=from_email,
         )
-        logger.info(f"Templated email sent: {subject} -> {receivers}")
-        return {"status": "sent", "subject": subject}
+        if sent_count < 1:
+            raise RuntimeError("Email provider accepted zero messages.")
+        from django.conf import settings
+
+        provider = getattr(settings, "EMAIL_PROVIDER", "gmail")
+        logger.info(
+            "auth_email_sent email_type=%s provider=%s recipients=%s subject=%s "
+            "sent_count=%s task_id=%s",
+            email_type,
+            provider,
+            receivers,
+            subject,
+            sent_count,
+            self.request.id,
+        )
+        return {
+            "status": "sent",
+            "email_type": email_type,
+            "provider": provider,
+            "recipients": receivers,
+            "subject": subject,
+            "sent_count": sent_count,
+            "task_id": self.request.id,
+        }
     except Exception as exc:
-        logger.error(f"Failed to send templated email {subject}: {exc}")
+        if self.request.retries >= self.max_retries:
+            logger.exception(
+                "auth_email_failed email_type=%s recipients=%s subject=%s "
+                "attempts=%s task_id=%s error=%s",
+                email_type,
+                receivers,
+                subject,
+                self.request.retries + 1,
+                self.request.id,
+                exc,
+            )
+            raise
+        logger.exception(
+            "auth_email_retrying email_type=%s recipients=%s subject=%s "
+            "attempt=%s max_retries=%s task_id=%s error=%s",
+            email_type,
+            receivers,
+            subject,
+            self.request.retries + 1,
+            self.max_retries,
+            self.request.id,
+            exc,
+        )
         raise self.retry(exc=exc)
 
 
@@ -174,11 +219,36 @@ def send_email_task(
             text_content=text_content,
             html_content=html_content,
         )
-        logger.info(f"Email sent successfully to {recipient} with subject: {subject}")
+        logger.info(
+            "email_sent provider=%s recipient=%s subject=%s task_id=%s",
+            result.get("provider"),
+            recipient,
+            subject,
+            self.request.id,
+        )
         return result
 
     except Exception as e:
-        logger.error(f"Failed to send email to {recipient}. Error: {e}")
+        if self.request.retries >= self.max_retries:
+            logger.exception(
+                "email_failed recipient=%s subject=%s attempts=%s task_id=%s error=%s",
+                recipient,
+                subject,
+                self.request.retries + 1,
+                self.request.id,
+                e,
+            )
+            raise
+        logger.exception(
+            "email_retrying recipient=%s subject=%s attempt=%s max_retries=%s "
+            "task_id=%s error=%s",
+            recipient,
+            subject,
+            self.request.retries + 1,
+            self.max_retries,
+            self.request.id,
+            e,
+        )
         raise self.retry(exc=e)
 
 

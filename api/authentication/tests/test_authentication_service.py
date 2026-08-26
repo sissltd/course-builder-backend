@@ -1,6 +1,7 @@
 from django.conf import settings
 from django.core import mail
 from django.test import TestCase
+from unittest.mock import patch
 from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -56,6 +57,25 @@ class SignupTests(TestCase):
         self.assertIn("new2@example.com", mail.outbox[0].to)
         self.assertIn(f"{settings.FRONTEND_URL}/verify-email", mail.outbox[0].body)
         self.assertIn("token=", mail.outbox[0].body)
+
+    def test_successful_celery_send_is_logged(self):
+        with self.assertLogs("shared.tasks", level="INFO") as logs:
+            with self.captureOnCommitCallbacks(execute=True):
+                service.signup(
+                    email="logged@example.com",
+                    password="StrongPass123!",
+                    first_name="Log",
+                    last_name="Test",
+                    country="NG",
+                )
+
+        self.assertTrue(
+            any(
+                "auth_email_sent email_type=SIGNUP_VERIFICATION" in message
+                and "logged@example.com" in message
+                for message in logs.output
+            )
+        )
 
     def test_raises_on_duplicate_email(self):
         make_user(email="dupe@example.com")
@@ -211,3 +231,14 @@ class ForgotPasswordTests(TestCase):
     def test_silent_and_no_email_for_nonexistent_user(self):
         service.forgot_password(email="ghost@example.com")
         self.assertEqual(len(mail.outbox), 0)
+
+    @patch(
+        "api.authentication.services.authentication_service.send_templated_email_task.delay"
+    )
+    def test_existing_user_queues_password_reset_through_celery(self, delay):
+        user = make_user()
+
+        service.forgot_password(email=user.email)
+
+        delay.assert_called_once()
+        self.assertEqual(delay.call_args.kwargs["email_type"], "PASSWORD_RESET_REQUEST")

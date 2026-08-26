@@ -3,6 +3,7 @@ from django.contrib import admin
 from api.courses.models import (
     Assessment,
     Course,
+    CourseDistribution,
     CourseAppeal,
     CourseThumbnail,
     CourseVersion,
@@ -20,6 +21,13 @@ class CourseAdmin(admin.ModelAdmin):
     list_display = ("id", "title", "creator", "category", "status", "created_datetime")
     list_filter = ("status", "category")
     search_fields = ("title", "creator__email")
+
+
+@admin.register(CourseDistribution)
+class CourseDistributionAdmin(admin.ModelAdmin):
+    list_display = ("course", "channel", "learner_price", "pricing_model", "status")
+    list_filter = ("channel", "pricing_model", "status")
+    search_fields = ("course__title", "external_course_id")
 
 
 @admin.register(CourseVersion)

@@ -55,6 +55,32 @@ class CourseSourceType(models.TextChoices):
     DEVELOPER_API = "DEVELOPER_API", "Developer API"
 
 
+class DistributionChannel(models.TextChoices):
+    """Destinations shown in the Admin Review and Publish design."""
+
+    SOLUDESK = "SOLUDESK", "SoluDesk"
+    UDEMY = "UDEMY", "Udemy"
+    COURSERA = "COURSERA", "Coursera"
+
+
+class PricingModel(models.TextChoices):
+    """Commercial model selected independently for each distribution channel."""
+
+    ONE_TIME = "ONE_TIME", "One-time"
+    SUBSCRIPTION = "SUBSCRIPTION", "Subscription"
+    PROMOTIONAL = "PROMOTIONAL", "Promotional"
+    B2B_ONLY = "B2B_ONLY", "B2B only"
+
+
+class DistributionStatus(models.TextChoices):
+    """Local state of a course's publication to one destination."""
+
+    DRAFT = "DRAFT", "Draft"
+    QUEUED = "QUEUED", "Queued"
+    PUBLISHED = "PUBLISHED", "Published"
+    FAILED = "FAILED", "Failed"
+
+
 class LessonContentType(models.TextChoices):
     """A lesson's primary media format - matches the three "Add lesson"
     buttons (Video, Quiz, Text) in the builder."""

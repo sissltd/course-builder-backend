@@ -21,6 +21,8 @@ from api.courses.serializers import (
     CourseDetailSerializer,
     CourseListSerializer,
     CourseUpdateSerializer,
+    CourseDistributionSerializer,
+    ReviewAndPublishSerializer,
     ReviewApproveSerializer,
     ReviewRejectSerializer,
     QAApprovalSerializer,
@@ -88,6 +90,72 @@ _COURSE_DETAIL_EXAMPLE = {
     "duration_estimate_minutes": 120,
     "version": "2f9a1e4b-7c8d-4a6e-9f0c-2d3e4f5a6b7c",
     "updated_datetime": "2026-07-12T09:30:11.204Z",
+}
+
+_REVIEW_PRICES_REQUEST_EXAMPLE = {
+    "distribution_channels": [
+        {
+            "channel": "SOLUDESK",
+            "approval_rate": "Published within 60 seconds",
+            "learner_price": "149.00",
+            "mie_suggestion": "140.00",
+            "model": "ONE_TIME",
+            "platform_revenue_per_enrollment": "149.00",
+            "mie_explanation": (
+                "$149 is the MIE-suggested price based on competitor analysis "
+                "across Udemy and Coursera."
+            ),
+            "comparable_courses": [
+                {
+                    "course_title": "Modern computing language",
+                    "difficulty_level": "BEGINNER",
+                    "learner_price": "150.00",
+                }
+            ],
+        },
+        {
+            "channel": "COURSERA",
+            "approval_rate": "Published within 10 - 15 minutes",
+            "learner_price": "160.00",
+            "mie_suggestion": "100.00",
+            "model": "ONE_TIME",
+            "course_fee_percent": "32.00",
+            "promotional_pricing": "150.00",
+            "platform_revenue_per_enrollment": "149.00",
+            "comparable_courses": [],
+        },
+        {
+            "channel": "UDEMY",
+            "approval_rate": "Published within 10 - 15 minutes",
+            "learner_price": "190.00",
+            "mie_suggestion": "100.00",
+            "model": "ONE_TIME",
+            "course_fee_percent": "32.00",
+            "promotional_pricing": "150.00",
+            "platform_revenue_per_enrollment": "149.00",
+            "comparable_courses": [],
+        },
+    ]
+}
+
+_REVIEW_PRICE_RESPONSE_EXAMPLE = {
+    "id": "04a546a5-16f2-4e54-afd5-547f4dfab301",
+    "channel": "SOLUDESK",
+    "approval_rate": "Published within 60 seconds",
+    "learner_price": "149.00",
+    "mie_suggestion": "140.00",
+    "model": "ONE_TIME",
+    "learner_fee": "149.00",
+    "creator_payout_fixed": "150.00",
+    "course_fee_percent": None,
+    "promotional_pricing": None,
+    "platform_revenue_per_enrollment": "149.00",
+    "mie_explanation": "$149 is the MIE-suggested price based on competitor analysis.",
+    "comparable_courses": [],
+    "status": "DRAFT",
+    "external_course_id": "",
+    "failure_reason": "",
+    "published_at": None,
 }
 
 _REVIEW_ACTION_EXAMPLE = {
@@ -377,7 +445,7 @@ class CourseViewSet(ModelViewSet):
         if getattr(self, "swagger_fake_view", False):
             return Course.objects.none()
 
-        if self.action == "publish":
+        if self.action in {"publish", "review_prices"}:
             # Admin-only (enforced by get_permissions) and not owner-scoped:
             # an Admin publishing a course is never its creator.
             return Course.objects.select_related("category", "topic")
@@ -410,7 +478,7 @@ class CourseViewSet(ModelViewSet):
             return [OWNER_OR_ADMIN()]
         if self.action == "submit":
             return [SUBMIT_PERMISSION()]
-        if self.action == "publish":
+        if self.action in {"publish", "review_prices"}:
             return [IsAdminRole()]
         if self.action == "create":
             return [IsCourseCreatorRole()]
@@ -508,20 +576,123 @@ class CourseViewSet(ModelViewSet):
         )
 
     @extend_schema(
-        summary="Publish an approved course",
+        methods=["get"],
+        summary="Review course prices",
         description=(
-            "Transitions an Approved course to Published, making it live. "
-            "There is no external LMS push yet - this only flips the "
-            "course's own status.\n\n"
-            "Called from the 'Publish' action on the admin course detail "
-            "view, after review has already approved the course.\n\n"
-            "**Auth:** Admin only.\n\n"
-            "**Prerequisites:** The course must be `APPROVED`.\n\n"
-            "**Important:** Publishing is not reversible through this API - "
-            "there is no unpublish action."
+            "Returns the saved pricing cards displayed in the Figma Review modal. "
+            "Each row is one tab: `SOLUDESK`, `COURSERA`, or `UDEMY`.\n\n"
+            "Called when an Admin opens Review and publish from the Approved "
+            "Courses table.\n\n"
+            "**Auth:** Admin, Approver, or Super Admin.\n\n"
+            "**Prerequisites:** The course must exist. Pricing rows are empty until "
+            "they are saved with PUT.\n\n"
+            "**Important:** `creator_payout_fixed` comes from the creator price "
+            "snapshot and cannot be changed here. Marketplace publication status is "
+            "reported per channel."
         ),
         tags=["Admin — Courses"],
-        request=None,
+        responses={
+            200: OpenApiResponse(
+                response=CourseDistributionSerializer(many=True),
+                description="Pricing tabs for the course.",
+                examples=[
+                    OpenApiExample(
+                        name="SoluDesk pricing tab",
+                        value=[_REVIEW_PRICE_RESPONSE_EXAMPLE],
+                    )
+                ],
+            ),
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
+            **STANDARD_ERROR_RESPONSES["not_found"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
+    @extend_schema(
+        methods=["put"],
+        summary="Save course prices",
+        description=(
+            "Saves the exact fields entered or displayed in the SoluDesk, Coursera, "
+            "and Udemy tabs before publishing. Existing rows for supplied channels "
+            "are updated; omitted channels are left unchanged.\n\n"
+            "Called when the Admin selects Continue after reviewing the channel "
+            "prices.\n\n"
+            "**Auth:** Admin, Approver, or Super Admin.\n\n"
+            "**Prerequisites:** The course must be `APPROVED`. At least one channel "
+            "is required, and each channel may occur only once.\n\n"
+            "**Important:** Money fields are decimal strings. `model` accepts "
+            "`ONE_TIME`, `SUBSCRIPTION`, `PROMOTIONAL`, or `B2B_ONLY`. "
+            "`course_fee_percent` and `promotional_pricing` apply primarily to "
+            "Coursera and Udemy."
+        ),
+        tags=["Admin — Courses"],
+        request=ReviewAndPublishSerializer,
+        examples=[
+            OpenApiExample(
+                name="Three Figma pricing tabs",
+                request_only=True,
+                value=_REVIEW_PRICES_REQUEST_EXAMPLE,
+            )
+        ],
+        responses={
+            200: OpenApiResponse(
+                response=CourseDistributionSerializer(many=True),
+                description="Saved channel pricing.",
+                examples=[
+                    OpenApiExample(
+                        name="Saved SoluDesk pricing",
+                        value=[_REVIEW_PRICE_RESPONSE_EXAMPLE],
+                    )
+                ],
+            ),
+            **STANDARD_ERROR_RESPONSES["validation"],
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
+            **STANDARD_ERROR_RESPONSES["not_found"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
+    @action(detail=True, methods=["get", "put"], url_path="review-prices")
+    def review_prices(self, request, pk=None):
+        course = self.get_object()
+        if request.method == "GET":
+            rows = course.distribution_channels.all()
+        else:
+            serializer = ReviewAndPublishSerializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            rows = course_service.save_distribution_channels(
+                course=course,
+                channels=serializer.validated_data["distribution_channels"],
+            )
+        return Response(CourseDistributionSerializer(rows, many=True).data)
+
+    @extend_schema(
+        summary="Publish an approved course",
+        description=(
+            "Confirms the Review and publish overview and transitions an Approved "
+            "course to Published. Pricing may be supplied in this request or saved "
+            "first through `PUT /courses/{id}/review-prices/`. SoluDesk is marked "
+            "Published locally; Coursera and Udemy are marked Queued for their "
+            "future integration workers.\n\n"
+            "Called when the Admin presses Continue on the Review and publish "
+            "overview modal.\n\n"
+            "**Auth:** Admin, Approver, or Super Admin.\n\n"
+            "**Prerequisites:** The course must be `APPROVED`. Existing clients may "
+            "publish without pricing; the Figma workflow supplies or first saves at "
+            "least one distribution channel.\n\n"
+            "**Important:** This action is atomic and not reversible through this "
+            "API. It creates the immutable published snapshot. A Queued marketplace "
+            "row does not mean the external marketplace has accepted the course."
+        ),
+        tags=["Admin — Courses"],
+        request=ReviewAndPublishSerializer,
+        examples=[
+            OpenApiExample(
+                name="Review and publish all channels",
+                request_only=True,
+                value=_REVIEW_PRICES_REQUEST_EXAMPLE,
+            )
+        ],
         responses={
             200: OpenApiResponse(
                 response=CourseDetailSerializer,
@@ -529,7 +700,17 @@ class CourseViewSet(ModelViewSet):
                 examples=[
                     OpenApiExample(
                         name="Success",
-                        value={**_COURSE_DETAIL_EXAMPLE, "status": "PUBLISHED"},
+                        value={
+                            **_COURSE_DETAIL_EXAMPLE,
+                            "status": "PUBLISHED",
+                            "distribution_channels": [
+                                {
+                                    **_REVIEW_PRICE_RESPONSE_EXAMPLE,
+                                    "status": "PUBLISHED",
+                                    "published_at": "2026-08-26T08:30:00Z",
+                                }
+                            ],
+                        },
                     )
                 ],
             ),
@@ -562,8 +743,16 @@ class CourseViewSet(ModelViewSet):
     )
     @action(detail=True, methods=["post"])
     def publish(self, request, pk=None):
+        course = self.get_object()
+        distribution_channels = None
+        if request.data:
+            serializer = ReviewAndPublishSerializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            distribution_channels = serializer.validated_data["distribution_channels"]
         course = course_service.publish_course(
-            course=self.get_object(), actor=request.user
+            course=course,
+            actor=request.user,
+            distribution_channels=distribution_channels,
         )
         return Response(
             CourseDetailSerializer(course, context=self.get_serializer_context()).data
@@ -751,8 +940,19 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
 
     permission_classes = [IsCreatorReviewerRole | IsQaReviewerRole | IsAdminRole]
     filterset_class = CourseReviewQueueFilter
-    filter_backends = [DjangoFilterBackend, drf_filters.OrderingFilter]
-    ordering_fields = ["submitted_at"]
+    filter_backends = [
+        DjangoFilterBackend,
+        drf_filters.SearchFilter,
+        drf_filters.OrderingFilter,
+    ]
+    search_fields = [
+        "id",
+        "title",
+        "creator__first_name",
+        "creator__last_name",
+        "creator__email",
+    ]
+    ordering_fields = ["submitted_at", "approved_at", "published_at"]
     #: Deliberately no `ordering` class default: OrderingFilter re-applies
     #: `.order_by()` from this attribute whenever `?ordering=` is absent from
     #: the request, which would silently overwrite the reviewer's stored
@@ -762,6 +962,8 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
     #: stored preference.
 
     def get_queryset(self):
+        if getattr(self, "swagger_fake_view", False):
+            return Course.objects.none()
         if self.action == "list":
             # An explicit ?ordering=/?track= query param always wins over the
             # reviewer's stored preference for that one axis - each is
@@ -834,10 +1036,9 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
             "**Auth:** Creator Reviewer, Verifier, or Admin.\n\n"
             "**Prerequisites:** The course must be `SUBMITTED` or already "
             "`IN_REVIEW`; the reviewer must not be marked Unavailable.\n\n"
-            "**Important:** Idempotent when the course is already "
-            "`IN_REVIEW` - calling claim again succeeds as a no-op instead "
-            "of erroring, so two reviewers racing to claim don't fail each "
-            "other. A reviewer who has since gone Unavailable can still "
+            "**Important:** Idempotent for the reviewer who already holds the "
+            "assignment. A competing reviewer receives a validation error. "
+            "A reviewer who has since gone Unavailable can still "
             "re-claim a course they already hold; only a *new* claim is "
             "blocked."
         ),

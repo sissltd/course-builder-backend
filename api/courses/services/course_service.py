@@ -17,9 +17,10 @@ from rest_framework import exceptions
 from api.authentication.services import activity_service
 from api.catalog.enums import CategoryStatus, TrackPreference
 from api.catalog.models import Category, Topic
-from api.courses.enums import CourseStatus
+from api.courses.enums import CourseStatus, DistributionChannel, DistributionStatus
 from api.courses.models import (
     Course,
+    CourseDistribution,
     CourseVersion,
     PublishedCourseSnapshot,
 )
@@ -257,8 +258,8 @@ def submit_course(*, course: Course, actor: User) -> Course:
 def claim_for_review(*, course: Course, reviewer: User) -> Course:
     """Transition a Submitted course to In Review.
 
-    Idempotent: calling this on a course already In Review is a no-op (so two
-    reviewers hitting claim in close succession don't error on each other).
+    Idempotent for the assigned reviewer. A row lock makes simultaneous claims
+    exclusive; a different reviewer receives a validation error.
     Raises ValidationError for any other status. A reviewer marked
     Unavailable cannot make a *new* claim (checked after the idempotent
     short-circuit, so re-calling claim on a course they already hold still
@@ -268,22 +269,31 @@ def claim_for_review(*, course: Course, reviewer: User) -> Course:
     require_role(
         reviewer, IsCreatorReviewerRole.allowed_roles + IsAdminRole.allowed_roles
     )
-    if course.status == CourseStatus.IN_REVIEW:
-        return course
-    if course.status != CourseStatus.SUBMITTED:
-        raise exceptions.ValidationError(
-            f"Course cannot be claimed from status '{course.status}'."
-        )
-    reviewer_availability_service.require_reviewer_available(user=reviewer)
+    with transaction.atomic():
+        course = Course.objects.select_for_update().get(pk=course.pk)
+        assignment = ReviewAssignment.objects.filter(
+            course=course, stage=ReviewStage.CONTENT
+        ).first()
+        if course.status == CourseStatus.IN_REVIEW:
+            if assignment and assignment.reviewer_id == reviewer.id:
+                return course
+            raise exceptions.ValidationError(
+                "This course is already assigned to another reviewer."
+            )
+        if course.status != CourseStatus.SUBMITTED:
+            raise exceptions.ValidationError(
+                f"Course cannot be claimed from status '{course.status}'."
+            )
+        reviewer_availability_service.require_reviewer_available(user=reviewer)
 
-    course.status = CourseStatus.IN_REVIEW
-    course.save(update_fields=["status", "updated_datetime"])
-    assignment, _ = ReviewAssignment.objects.get_or_create(
-        course=course, stage=ReviewStage.CONTENT
-    )
-    assignment.reviewer = reviewer
-    assignment.claimed_at = assignment.claimed_at or timezone.now()
-    assignment.save(update_fields=["reviewer", "claimed_at", "updated_datetime"])
+        course.status = CourseStatus.IN_REVIEW
+        course.save(update_fields=["status", "updated_datetime"])
+        assignment, _ = ReviewAssignment.objects.get_or_create(
+            course=course, stage=ReviewStage.CONTENT
+        )
+        assignment.reviewer = reviewer
+        assignment.claimed_at = assignment.claimed_at or timezone.now()
+        assignment.save(update_fields=["reviewer", "claimed_at", "updated_datetime"])
     activity_service.log_activity(
         user=reviewer,
         category=UserActivityCategoryEnums.COURSE,
@@ -336,7 +346,35 @@ def _build_course_snapshot(course: Course) -> dict:
     }
 
 
-def publish_course(*, course: Course, actor: User) -> Course:
+def save_distribution_channels(
+    *, course: Course, channels: list[dict]
+) -> list[CourseDistribution]:
+    """Create or update the channel cards from the Review Prices design."""
+
+    if course.status != CourseStatus.APPROVED:
+        raise exceptions.ValidationError(
+            f"Course prices cannot be saved from status '{course.status}'."
+        )
+    saved = []
+    with transaction.atomic():
+        for channel_data in channels:
+            values = dict(channel_data)
+            channel = values.pop("channel")
+            distribution, _ = CourseDistribution.objects.update_or_create(
+                course=course,
+                channel=channel,
+                defaults=values,
+            )
+            saved.append(distribution)
+    return saved
+
+
+def publish_course(
+    *,
+    course: Course,
+    actor: User,
+    distribution_channels: list[dict] | None = None,
+) -> Course:
     """Transition an Approved course to Published (Admin-only, enforced by view
     permission), recording a PublishedCourseSnapshot under the canonical
     CourseVersion label (SCCS PRD Section 15). No external LMS push -
@@ -354,6 +392,13 @@ def publish_course(*, course: Course, actor: User) -> Course:
         )
 
     with transaction.atomic():
+        course = Course.objects.select_for_update().get(pk=course.pk)
+        if course.status != CourseStatus.APPROVED:
+            raise exceptions.ValidationError(
+                f"Course cannot be published from status '{course.status}'."
+            )
+        if distribution_channels is not None:
+            save_distribution_channels(course=course, channels=distribution_channels)
         version = _get_publish_version(course=course)
         if version is None:
             raise exceptions.ValidationError(
@@ -379,6 +424,19 @@ def publish_course(*, course: Course, actor: User) -> Course:
             snapshot=_build_course_snapshot(course),
             created_by=actor,
             updated_by=actor,
+        )
+        now = course.published_at
+        CourseDistribution.objects.filter(course=course).update(
+            status=DistributionStatus.QUEUED,
+            failure_reason="",
+            updated_datetime=now,
+        )
+        CourseDistribution.objects.filter(
+            course=course, channel=DistributionChannel.SOLUDESK
+        ).update(
+            status=DistributionStatus.PUBLISHED,
+            published_at=now,
+            updated_datetime=now,
         )
         activity_service.log_activity(
             user=actor,
