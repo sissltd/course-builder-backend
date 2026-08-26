@@ -1,3 +1,5 @@
+import logging
+
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
@@ -16,7 +18,6 @@ from api.authentication.models import UserSession
 from api.authentication.services import activity_service, session_service, token_service
 from api.authentication.utils.base_auth import TsesAuthenticationInterface
 from api.authentication.utils.links import build_verification_link
-from api.notification.models import Notification
 from shared.tasks import send_templated_email_task
 from api.users.enums import (
     AccountStatus,
@@ -26,11 +27,38 @@ from api.users.enums import (
 )
 
 User = get_user_model()
+logger = logging.getLogger(__name__)
 
 EMAIL_VERIFICATION_SUBJECT = "Verify your email"
 PASSWORD_RESET_SUBJECT = "Reset your password"
 PASSWORD_RESET_CONFIRMATION_SUBJECT = "Your password was changed"
 EMAIL_CHANGE_SUBJECT = "Confirm your new email address"
+
+
+def _queue_auth_email(
+    *,
+    receivers: list[str],
+    subject: str,
+    template_name: str,
+    context: dict,
+    email_type: str,
+) -> None:
+    """Queue an auth email and log broker acceptance without exposing secrets."""
+
+    result = send_templated_email_task.delay(
+        receivers=receivers,
+        subject=subject,
+        template_name=template_name,
+        context=context,
+        email_type=email_type,
+    )
+    logger.info(
+        "auth_email_queued email_type=%s recipients=%s subject=%s task_id=%s",
+        email_type,
+        receivers,
+        subject,
+        result.id,
+    )
 
 
 class AuthenticationService(TsesAuthenticationInterface):
@@ -186,6 +214,9 @@ class AuthenticationService(TsesAuthenticationInterface):
             action=UserActivityActionEnums.PASSWORD_CHANGED,
             summary="Password changed.",
         )
+        self._send_password_reset_confirmation_email(
+            user=user, email_type="PASSWORD_CHANGE_CONFIRMATION"
+        )
 
     def request_email_change(
         self, *, user: User, new_email: str, password: str
@@ -210,11 +241,12 @@ class AuthenticationService(TsesAuthenticationInterface):
         link = build_verification_link(
             path="/change-email", email=new_email, token=raw_token
         )
-        Notification.emit_email_notification(
+        _queue_auth_email(
             receivers=[new_email],
             subject=EMAIL_CHANGE_SUBJECT,
             template_name="emails/email_change_confirmation",
             context={"first_name": user.first_name, "confirmation_link": link},
+            email_type="EMAIL_CHANGE_CONFIRMATION",
         )
 
     def confirm_email_change(self, *, token: str) -> User:
@@ -313,7 +345,7 @@ class AuthenticationService(TsesAuthenticationInterface):
         link = build_verification_link(
             path="/verify-email", email=user.email, token=raw_token
         )
-        send_templated_email_task.delay(
+        _queue_auth_email(
             receivers=[user.email],
             subject=EMAIL_VERIFICATION_SUBJECT,
             template_name="emails/email_verification",
@@ -322,6 +354,7 @@ class AuthenticationService(TsesAuthenticationInterface):
                 "verification_link": link,
                 "expiry_minutes": settings.EMAIL_TOKEN_EXPIRY_MINUTES,
             },
+            email_type="SIGNUP_VERIFICATION",
         )
 
     @staticmethod
@@ -329,7 +362,7 @@ class AuthenticationService(TsesAuthenticationInterface):
         link = build_verification_link(
             path="/reset-password", email=user.email, token=raw_token
         )
-        send_templated_email_task.delay(
+        _queue_auth_email(
             receivers=[user.email],
             subject=PASSWORD_RESET_SUBJECT,
             template_name="emails/password_reset",
@@ -338,15 +371,19 @@ class AuthenticationService(TsesAuthenticationInterface):
                 "reset_link": link,
                 "expiry_minutes": settings.EMAIL_TOKEN_EXPIRY_MINUTES,
             },
+            email_type="PASSWORD_RESET_REQUEST",
         )
 
     @staticmethod
-    def _send_password_reset_confirmation_email(*, user: User) -> None:
-        send_templated_email_task.delay(
+    def _send_password_reset_confirmation_email(
+        *, user: User, email_type: str = "PASSWORD_RESET_CONFIRMATION"
+    ) -> None:
+        _queue_auth_email(
             receivers=[user.email],
             subject=PASSWORD_RESET_CONFIRMATION_SUBJECT,
             template_name="emails/password_reset_confirmation",
             context={"first_name": user.first_name},
+            email_type=email_type,
         )
 
 

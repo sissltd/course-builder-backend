@@ -6,7 +6,6 @@ from drf_spectacular.utils import (
     extend_schema_view,
 )
 from rest_framework import filters as drf_filters
-from rest_framework import exceptions
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet, ReadOnlyModelViewSet
@@ -678,8 +677,9 @@ class CourseViewSet(ModelViewSet):
             "Called when the Admin presses Continue on the Review and publish "
             "overview modal.\n\n"
             "**Auth:** Admin, Approver, or Super Admin.\n\n"
-            "**Prerequisites:** The course must be `APPROVED` and must have at least "
-            "one configured distribution channel.\n\n"
+            "**Prerequisites:** The course must be `APPROVED`. Existing clients may "
+            "publish without pricing; the Figma workflow supplies or first saves at "
+            "least one distribution channel.\n\n"
             "**Important:** This action is atomic and not reversible through this "
             "API. It creates the immutable published snapshot. A Queued marketplace "
             "row does not mean the external marketplace has accepted the course."
@@ -733,22 +733,6 @@ class CourseViewSet(ModelViewSet):
                             ]
                         },
                     ),
-                    OpenApiExample(
-                        name="Prices not configured",
-                        value={
-                            "errors": [
-                                {
-                                    "type": "validation_error",
-                                    "code": "invalid",
-                                    "message": (
-                                        "Configure at least one distribution channel "
-                                        "before publishing."
-                                    ),
-                                    "field_name": "distribution_channels",
-                                }
-                            ]
-                        },
-                    ),
                 ],
             ),
             **STANDARD_ERROR_RESPONSES["auth"],
@@ -765,14 +749,6 @@ class CourseViewSet(ModelViewSet):
             serializer = ReviewAndPublishSerializer(data=request.data)
             serializer.is_valid(raise_exception=True)
             distribution_channels = serializer.validated_data["distribution_channels"]
-        elif not course.distribution_channels.exists():
-            raise exceptions.ValidationError(
-                {
-                    "distribution_channels": (
-                        "Configure at least one distribution channel before publishing."
-                    )
-                }
-            )
         course = course_service.publish_course(
             course=course,
             actor=request.user,

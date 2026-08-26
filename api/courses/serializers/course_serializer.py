@@ -250,6 +250,7 @@ class CourseDistributionSerializer(serializers.ModelSerializer):
             "published_at",
         ]
 
+
 class CourseDistributionInputSerializer(serializers.ModelSerializer):
     """Editable fields in a SoluDesk, Coursera, or Udemy pricing tab."""
 
@@ -294,6 +295,11 @@ class CourseDistributionInputSerializer(serializers.ModelSerializer):
         help_text="Text displayed in the MIE recommendation panel.",
     )
     comparable_courses = ComparableCourseSerializer(many=True, required=False)
+
+    def validate_comparable_courses(self, value):
+        """Store JSON-safe values while retaining decimal validation."""
+
+        return ComparableCourseSerializer(value, many=True).data
 
     class Meta:
         model = CourseDistribution

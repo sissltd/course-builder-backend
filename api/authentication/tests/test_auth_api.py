@@ -964,6 +964,20 @@ class ChangePasswordApiTests(APITestCase):
             ).exists()
         )
 
+    def test_sends_password_changed_confirmation_email(self):
+        user = make_user(password="OldPass123!")
+        self.client.force_authenticate(user)
+
+        response = self.client.post(
+            "/api/v1/auth/change-password/",
+            {"current_password": "OldPass123!", "new_password": "BrandNewPass456!"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(mail.outbox[-1].subject, "Your password was changed")
+        self.assertIn(user.email, mail.outbox[-1].to)
+
 
 class ChangeEmailApiTests(APITestCase):
     def setUp(self):

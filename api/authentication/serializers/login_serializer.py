@@ -1,3 +1,4 @@
+import logging
 from datetime import timedelta
 
 from django.utils import timezone
@@ -20,6 +21,7 @@ LOCKOUT_DURATION_MINUTES = 15
 #: Second and later lockout within this window escalates to an Admin alert -
 #: one lockout is "forgot my password", several in a row looks like an attack.
 REPEATED_LOCKOUT_WINDOW_HOURS = 24
+logger = logging.getLogger(__name__)
 
 
 class LoginSerializer(TokenObtainPairSerializer):
@@ -167,7 +169,7 @@ class LoginSerializer(TokenObtainPairSerializer):
             request=request,
         )
 
-        send_templated_email_task.delay(
+        email_result = send_templated_email_task.delay(
             receivers=[user.email],
             subject="Your account was temporarily locked",
             template_name="emails/account_locked",
@@ -175,6 +177,14 @@ class LoginSerializer(TokenObtainPairSerializer):
                 "first_name": user.first_name,
                 "lock_minutes": LOCKOUT_DURATION_MINUTES,
             },
+            email_type="ACCOUNT_LOCKED",
+        )
+        logger.info(
+            "auth_email_queued email_type=ACCOUNT_LOCKED recipients=%s subject=%s "
+            "task_id=%s",
+            [user.email],
+            "Your account was temporarily locked",
+            email_result.id,
         )
 
         window_start = timezone.now() - timedelta(hours=REPEATED_LOCKOUT_WINDOW_HOURS)

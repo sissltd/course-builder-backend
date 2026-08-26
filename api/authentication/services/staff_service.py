@@ -1,3 +1,5 @@
+import logging
+
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
@@ -9,15 +11,16 @@ from api.authentication.enums import TokenPurpose
 from api.authentication.models import EmailVerificationToken
 from api.authentication.services import activity_service, token_service
 from api.authentication.utils.links import build_verification_link
-from api.notification.models import Notification
 from api.users.enums import (
     AccountStatus,
     STAFF_ROLES,
     UserActivityActionEnums,
     UserRole,
 )
+from shared.tasks import send_templated_email_task
 
 User = get_user_model()
+logger = logging.getLogger(__name__)
 
 STAFF_INVITATION_SUBJECT = "You've been invited to join the team"
 
@@ -377,8 +380,8 @@ class StaffService:
         link = build_verification_link(
             path="/accept-invitation", email=user.email, token=raw_token
         )
-        Notification.emit_email_notification(
-            receivers=[user],
+        result = send_templated_email_task.delay(
+            receivers=[user.email],
             subject=STAFF_INVITATION_SUBJECT,
             template_name="emails/staff_invitation",
             context={
@@ -388,4 +391,12 @@ class StaffService:
                 "invitation_link": link,
                 "expiry_minutes": settings.EMAIL_TOKEN_EXPIRY_MINUTES,
             },
+            email_type="STAFF_INVITATION",
+        )
+        logger.info(
+            "auth_email_queued email_type=STAFF_INVITATION recipients=%s "
+            "subject=%s task_id=%s",
+            [user.email],
+            STAFF_INVITATION_SUBJECT,
+            result.id,
         )
