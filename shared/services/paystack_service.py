@@ -1,5 +1,3 @@
-import hashlib
-import hmac
 import json
 import logging
 from decimal import Decimal
@@ -56,23 +54,6 @@ class PaystackService:
         result = response.json()
 
         return result.get("data", {})
-
-    @staticmethod
-    def verify_webhook_signature(request_body, signature_header):
-        secret_key = config("PAYSTACK_SECRET_KEY", default="")
-        if not secret_key:
-            logger.error("PAYSTACK_SECRET_KEY missing for webhook verification")
-            return False
-
-        if isinstance(request_body, str):
-            request_body = request_body.encode("utf-8")
-
-        hash_object = hmac.new(
-            secret_key.encode("utf-8"), msg=request_body, digestmod=hashlib.sha512
-        )  # type: ignore
-        expected_signature = hash_object.hexdigest()
-
-        return hmac.compare_digest(expected_signature, signature_header)
 
     @staticmethod
     def initialize_payment(

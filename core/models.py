@@ -7,6 +7,8 @@ from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
 from django.db import models
 
+from api.platform.enums import PaymentProcessors
+
 from .mixins import (
     DateHistoryModelMixin,
     SoftDeleteModelMixin,
@@ -30,9 +32,7 @@ class OutboxEvent(
         ordering = ["created_datetime"]
 
 
-class PaystackWebhookEvent(
-    UUIDPrimaryKeyModelMixin, SoftDeleteModelMixin, DateHistoryModelMixin, models.Model
-):
+class WebhookEvent(UUIDPrimaryKeyModelMixin, SoftDeleteModelMixin, DateHistoryModelMixin, models.Model):
     STATUS_CHOICES: ClassVar = [
         ("PENDING", "Pending"),
         ("PROCESSING", "Processing"),
@@ -47,12 +47,15 @@ class PaystackWebhookEvent(
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="PENDING")
     error_message = models.TextField(null=True, blank=True)
     amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    provider = models.CharField(
+        max_length=200, choices=PaymentProcessors.choices, default=PaymentProcessors.FLUTTERWAVE
+    )
 
     def __str__(self):
         return f"{self.event_type} - {self.event_id} ({self.status})"
 
     class Meta:
-        db_table = "paystack_webhook_events"
+        db_table = "webhook_events"
         ordering = ["created_datetime"]
 
 
@@ -64,9 +67,10 @@ class TransferOutboxEvent(
         PROCESSING = "PROCESSING", "API Call In Progress"
         SUBMITTED = (
             "SUBMITTED",
-            "Sent to Paystack",
-        )  # Paystack accepted it, now awaiting webhook
+            "Sent to Processor",
+        )  # Paystack/Flutterwave accepted it, now awaiting webhook
         FAILED = "FAILED", "Failed Locally"
+        PROCESSED = "PROCESSED", "Processed"
 
     reference = models.CharField(
         max_length=255, unique=True
@@ -74,11 +78,12 @@ class TransferOutboxEvent(
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     amount = models.DecimalField(max_digits=12, decimal_places=2)
     recipient_code = models.CharField(max_length=100)
+    transfer_code = models.CharField(max_length=100, null=True, blank=True)
+    transfer_processor = models.CharField(max_length=20, choices=PaymentProcessors.choices, null=True, blank=True)
     status = models.CharField(
         max_length=20, choices=Status.choices, default=Status.PENDING
     )
     reason = models.CharField(max_length=255, null=True, blank=True)
-    paystack_transfer_code = models.CharField(max_length=100, null=True, blank=True)
     error_log = models.TextField(null=True, blank=True)
     wallet_type = models.ForeignKey(
         ContentType,

@@ -1,6 +1,7 @@
 from django.contrib import admin
 
-from core.models import OutboxEvent, PaystackWebhookEvent, TransferOutboxEvent
+from core.models import OutboxEvent, TransferOutboxEvent, WebhookEvent
+from shared.constants.environ import DJANGO_ENV
 
 
 @admin.register(OutboxEvent)
@@ -8,12 +9,32 @@ class OutboxEventAdmin(admin.ModelAdmin):
     list_display = ("id", "event_type", "processed", "created_datetime")
     search_fields = ("event_type",)
 
+    def get_readonly_fields(self, request, obj=None):
+        # Combines any existing readonly_fields with all model fields. Editing is disabled in production, but allowed in development for testing purposes.
+        if DJANGO_ENV == "development":
+            return []
+        return (
+            list(self.readonly_fields)
+            + [field.name for field in self.model._meta.fields]
+            + [field.name for field in self.model._meta.many_to_many]
+        )
 
-@admin.register(PaystackWebhookEvent)
-class PaystackWebhookEventAdmin(admin.ModelAdmin):
+
+@admin.register(WebhookEvent)
+class WebhookEventAdmin(admin.ModelAdmin):
     list_display = ("id", "event_type", "status", "created_datetime")
     search_fields = ("event_type",)
     list_filter = ("status",)
+
+    def get_readonly_fields(self, request, obj=None):
+        # Combines any existing readonly_fields with all model fields. Editing is disabled in production, but allowed in development for testing purposes.
+        if DJANGO_ENV == "development":
+            return []
+        return (
+            list(self.readonly_fields)
+            + [field.name for field in self.model._meta.fields]
+            + [field.name for field in self.model._meta.many_to_many]
+        )
 
 
 @admin.register(TransferOutboxEvent)
@@ -22,9 +43,22 @@ class TransferOutboxEventAdmin(admin.ModelAdmin):
         "id",
         "user",
         "amount",
-        "recipient_code",
+        "reference",
         "status",
+        "recipient_code",
+        "transfer_code",
+        "transfer_processor",
         "created_datetime",
     )
     search_fields = ("user__email", "recipient_code")
-    list_filter = ("status",)
+    list_filter = ("status", "transfer_processor")
+
+    def get_readonly_fields(self, request, obj=None):
+        # Combines any existing readonly_fields with all model fields. Editing is disabled in production, but allowed in development for testing purposes.
+        if DJANGO_ENV == "development":
+            return []
+        return (
+            list(self.readonly_fields)
+            + [field.name for field in self.model._meta.fields]
+            + [field.name for field in self.model._meta.many_to_many]
+        )
