@@ -1,11 +1,11 @@
 from django.contrib import admin
 
-from core.models import OutboxEvent, TransferOutboxEvent, WebhookEvent
+from core.models import SISSLOutboxEvent, TransferOutboxEvent, WebhookEvent
 from shared.constants.environ import DJANGO_ENV
 
 
-@admin.register(OutboxEvent)
-class OutboxEventAdmin(admin.ModelAdmin):
+@admin.register(SISSLOutboxEvent)
+class SISSLOutboxEventAdmin(admin.ModelAdmin):
     list_display = ("id", "event_type", "processed", "created_datetime")
     search_fields = ("event_type",)
 

@@ -1,7 +1,17 @@
+from typing import ClassVar
+
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from api.users.enums import KYCDocumentType
 from api.users.models import KYCVerification, User
+
+
+class SISSLUserDataSerializer(serializers.Serializer):
+    first_name = serializers.CharField(allow_null=True, read_only=True)
+    last_name = serializers.CharField(allow_null=True, read_only=True)
+    date_of_birth = serializers.DateField(allow_null=True, read_only=True)
+    sex = serializers.CharField(allow_null=True, read_only=True)
 
 
 class KYCVerificationSerializer(serializers.ModelSerializer):
@@ -9,6 +19,7 @@ class KYCVerificationSerializer(serializers.ModelSerializer):
 
     first_name = serializers.CharField(source="user.first_name", read_only=True)
     last_name = serializers.CharField(source="user.last_name", read_only=True)
+    sissl_user_data = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = KYCVerification
@@ -22,8 +33,21 @@ class KYCVerificationSerializer(serializers.ModelSerializer):
             "reviewed_at",
             "first_name",
             "last_name",
+            "sissl_user_data",
+            "sissl_status",
+            "sissl_response_summary",
         ]
         read_only_fields = fields
+
+    @extend_schema_field(SISSLUserDataSerializer)
+    def get_sissl_user_data(self, obj):
+        """Return the user data returned from SISSL, if any."""
+        return {
+            "first_name": obj.user.sissl_first_name,
+            "last_name": obj.user.sissl_last_name,
+            "date_of_birth": obj.user.sissl_date_of_birth,
+            "sex": obj.user.sissl_gender,
+        }
 
 
 class KYCVerificationSubmitSerializer(serializers.Serializer):
@@ -57,10 +81,11 @@ class KYCVerificationAdminSerializer(serializers.ModelSerializer):
 
     user = UserMiniSerializer(read_only=True)
     reviewed_by = UserMiniSerializer(read_only=True)
+    sissl_user_data = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = KYCVerification
-        fields = [
+        fields: ClassVar = [
             "id",
             "user",
             "country_of_issue",
@@ -71,8 +96,22 @@ class KYCVerificationAdminSerializer(serializers.ModelSerializer):
             "reviewed_by",
             "reviewed_at",
             "created_datetime",
+            "sissl_user_data",
+            "sissl_user_data",
+            "sissl_status",
+            "sissl_response_summary",
         ]
         read_only_fields = fields
+
+    @extend_schema_field(SISSLUserDataSerializer)
+    def get_sissl_user_data(self, obj):
+        """Return the user data returned from SISSL, if any."""
+        return {
+            "first_name": obj.user.sissl_first_name,
+            "last_name": obj.user.sissl_last_name,
+            "date_of_birth": obj.user.sissl_date_of_birth,
+            "sex": obj.user.sissl_gender,
+        }
 
 
 class KYCReviewApproveSerializer(serializers.Serializer):

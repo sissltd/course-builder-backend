@@ -142,6 +142,27 @@ class User(
         ),
     )
 
+    # >>>>>>>>>>>> SISSL-verified identity (authoritative, from NIMC/NIBSS) <<<<<<<<<<
+    # Populated from the SISSL NIN/BVN response at verification time — distinct from
+    # the self-entered name/gender above. Drives the admin verification dashboard's
+    # Identity tab. `sissl_document_image` holds the PRIVATE Spaces object key for the
+    # government photo (served to admins via a presigned GET).
+    sissl_first_name = models.CharField(max_length=150, blank=True, default="")
+    sissl_last_name = models.CharField(max_length=150, blank=True, default="")
+    sissl_date_of_birth = models.CharField(
+        max_length=50,
+        blank=True,
+        default="",
+        help_text="Date of birth exactly as returned by SISSL (format varies by source).",
+    )
+    sissl_gender = models.CharField(max_length=20, blank=True, default="")
+    sissl_document_image = models.CharField(
+        max_length=500,
+        blank=True,
+        default="",
+        help_text="Private Spaces object key for the government ID photo; served via presigned GET.",
+    )
+
     objects = CustomUserManager()
 
     USERNAME_FIELD = "email"

@@ -1,3 +1,5 @@
+import uuid
+
 from django.db import transaction
 from django.utils import timezone
 from rest_framework import exceptions
@@ -11,6 +13,8 @@ from api.users.enums import (
 )
 from api.users.models import KYCVerification, User
 from api.users.permissions import IsAdminOrSuperAdminRole, require_role
+from api.users.tasks import call_sissl_kyc_verification
+from core.models import SISSLOutboxEvent
 
 REVIEWABLE_STATUSES = (KYCStatus.PENDING,)
 
@@ -53,17 +57,29 @@ def submit_verification(
     if latest is not None and latest.status == KYCStatus.PENDING:
         raise exceptions.ValidationError("A KYC submission is already pending review.")
 
-    verification = KYCVerification.objects.create(
-        user=user,
-        country_of_issue=country_of_issue,
-        document_type=document_type,
-        id_number=id_number,
-    )
-    verification.user.first_name = first_name or verification.user.first_name
-    verification.user.last_name = last_name or verification.user.last_name
-    verification.user.save(update_fields=["first_name", "last_name", "updated_datetime"])
-    _notify_admins_of_new_submission(verification)
-    return verification
+    # creating outbox events and enquing tasks within the same transaction to ensure we don't lose events if the transaction rolls back
+    with transaction.atomic():
+        verification = KYCVerification.objects.create(
+            user=user,
+            country_of_issue=country_of_issue,
+            document_type=document_type,
+            id_number=id_number,
+        )
+        verification.user.first_name = first_name or verification.user.first_name
+        verification.user.last_name = last_name or verification.user.last_name
+        verification.user.save(update_fields=["first_name", "last_name", "updated_datetime"])
+        _notify_admins_of_new_submission(verification)
+
+        outbox_event = SISSLOutboxEvent.objects.create(
+            event_type=document_type,
+            kyc_request=verification,
+            payload={
+                "id_number": id_number,
+            },
+        )
+
+        transaction.on_commit(lambda event_id=outbox_event.id: _enqueue_sissl_kyc_verification(event_id=event_id))
+        return verification
 
 
 def _notify_admins_of_new_submission(verification: KYCVerification) -> None:
@@ -86,6 +102,9 @@ def _notify_admins_of_new_submission(verification: KYCVerification) -> None:
             "user_id": verification.user_id,
         },
     )
+
+def _enqueue_sissl_kyc_verification(event_id: uuid.UUID) -> None:
+    call_sissl_kyc_verification.apply_async(event_id=event_id)  # type: ignore
 
 
 def approve_verification(

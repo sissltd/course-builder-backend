@@ -8,6 +8,7 @@ from django.contrib.contenttypes.models import ContentType
 from django.db import models
 
 from api.platform.enums import PaymentProcessors
+from api.users.enums import KYCDocumentType
 
 from .mixins import (
     DateHistoryModelMixin,
@@ -18,17 +19,28 @@ from .mixins import (
 User = get_user_model()
 
 
-class OutboxEvent(
-    UUIDPrimaryKeyModelMixin, SoftDeleteModelMixin, DateHistoryModelMixin, models.Model
-):
+class KYCLivenessType(models.TextChoices):
+    """Including Liveness verification."""
+
+    LIVENESS = "LIVENESS", "Liveness Verification"
+
+
+class SISSLOutboxEvent(UUIDPrimaryKeyModelMixin, SoftDeleteModelMixin, DateHistoryModelMixin, models.Model):
     """Stores outbox events waiting to be dispatched safely to an event bus."""
 
-    event_type = models.CharField(max_length=255)
+    event_type = models.CharField(max_length=255, choices=[*KYCDocumentType.choices, *KYCLivenessType.choices])
     payload = models.JSONField()
     processed = models.BooleanField(default=False)
+    kyc_request = models.OneToOneField(
+        "users.KYCVerification",
+        on_delete=models.CASCADE,
+        related_name="sissl_outbox_event",
+        null=True,
+        blank=True,
+    )
 
     class Meta:
-        db_table = "outbox_events"
+        db_table = "sissl_outbox_events"
         ordering = ["created_datetime"]
 
 

@@ -117,6 +117,9 @@ jobs:
       FLUTTERWAVE_ENCRYPTION_KEY: dummy-gR4Pr3IOmMMdYGSqNbupdRYXOIqNBUxrs=
       FLUTTERWAVE_BASE_URL: https://developersandbox-api.flutterwave.com
       FLUTTERWAVE_SECRET_HASH: dummy-fd5938f9974dc56069e65705248c5b9d19e83ec45a941c4f4f8
+      # SISSL
+      SISSL_BASE_URL: https://dummy_url.com
+      SISSL_API_TOKEN: dummy-sissl-api-token
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

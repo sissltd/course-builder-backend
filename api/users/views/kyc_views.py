@@ -44,7 +44,8 @@ class KYCVerificationView(APIView):
             "Returns the current user's most recent KYC submission, or "
             "`null` if none has been made yet.\n\n"
             "**Auth:** Any authenticated user.\n\n"
-            "**Prerequisites:** None."
+            "**Prerequisites:** None.\n\n"
+            "**Important:** The `sissl_user_data` field is a read-only representation of the user data returned from SISSL, if any. The field values may be `null` if no data has been returned yet."
         ),
         tags=["Creator — KYC"],
         responses={
