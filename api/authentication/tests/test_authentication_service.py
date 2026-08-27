@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 from django.conf import settings
 from django.core import mail
 from django.test import TestCase
@@ -57,18 +59,22 @@ class SignupTests(TestCase):
         self.assertIn(f"{settings.FRONTEND_URL}/verify-email", mail.outbox[0].body)
         self.assertIn("token=", mail.outbox[0].body)
 
-    def test_successful_send_is_logged(self):
+    @patch("api.notification.services.email_service.send_templated_email")
+    def test_successful_send_is_logged(self, mock_send):
+        mock_send.return_value = 1
         with self.assertLogs(
             "api.authentication.services.authentication_service", level="INFO"
         ) as logs:
-            service.signup(
-                email="logged@example.com",
-                password="StrongPass123!",
-                first_name="Log",
-                last_name="Test",
-                country="NG",
-            )
+            with self.captureOnCommitCallbacks(execute=True):
+                service.signup(
+                    email="logged@example.com",
+                    password="StrongPass123!",
+                    first_name="Log",
+                    last_name="Test",
+                    country="NG",
+                )
 
+        mock_send.assert_called_once()
         self.assertTrue(
             any(
                 "auth_email_sent email_type=SIGNUP_VERIFICATION" in message
