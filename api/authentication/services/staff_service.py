@@ -17,8 +17,6 @@ from api.users.enums import (
     UserActivityActionEnums,
     UserRole,
 )
-from shared.tasks import send_templated_email_task
-
 User = get_user_model()
 logger = logging.getLogger(__name__)
 
@@ -380,23 +378,32 @@ class StaffService:
         link = build_verification_link(
             path="/accept-invitation", email=user.email, token=raw_token
         )
-        result = send_templated_email_task.delay(
-            receivers=[user.email],
-            subject=STAFF_INVITATION_SUBJECT,
-            template_name="emails/staff_invitation",
-            context={
-                "first_name": user.first_name,
-                "invited_by_name": invited_by.get_full_name() or invited_by.email,
-                "role_label": UserRole(user.role).label,
-                "invitation_link": link,
-                "expiry_minutes": settings.EMAIL_TOKEN_EXPIRY_MINUTES,
-            },
-            email_type="STAFF_INVITATION",
-        )
-        logger.info(
-            "auth_email_queued email_type=STAFF_INVITATION recipients=%s "
-            "subject=%s task_id=%s",
-            [user.email],
-            STAFF_INVITATION_SUBJECT,
-            result.id,
-        )
+        from api.notification.services.email_service import send_templated_email
+
+        try:
+            sent_count = send_templated_email(
+                receivers=[user.email],
+                subject=STAFF_INVITATION_SUBJECT,
+                template_name="emails/staff_invitation",
+                context={
+                    "first_name": user.first_name,
+                    "invited_by_name": invited_by.get_full_name() or invited_by.email,
+                    "role_label": UserRole(user.role).label,
+                    "invitation_link": link,
+                    "expiry_minutes": settings.EMAIL_TOKEN_EXPIRY_MINUTES,
+                },
+            )
+            logger.info(
+                "auth_email_sent email_type=STAFF_INVITATION recipients=%s "
+                "subject=%s sent_count=%s",
+                [user.email],
+                STAFF_INVITATION_SUBJECT,
+                sent_count,
+            )
+        except Exception:
+            logger.exception(
+                "auth_email_failed email_type=STAFF_INVITATION recipients=%s "
+                "subject=%s",
+                [user.email],
+                STAFF_INVITATION_SUBJECT,
+            )

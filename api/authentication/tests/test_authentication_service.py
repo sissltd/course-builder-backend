@@ -1,7 +1,6 @@
 from django.conf import settings
 from django.core import mail
 from django.test import TestCase
-from unittest.mock import patch
 from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -232,13 +231,11 @@ class ForgotPasswordTests(TestCase):
         service.forgot_password(email="ghost@example.com")
         self.assertEqual(len(mail.outbox), 0)
 
-    @patch(
-        "api.authentication.services.authentication_service.send_templated_email_task.delay"
-    )
-    def test_existing_user_queues_password_reset_through_celery(self, delay):
+    def test_existing_user_sends_password_reset_email(self):
         user = make_user()
 
         service.forgot_password(email=user.email)
 
-        delay.assert_called_once()
-        self.assertEqual(delay.call_args.kwargs["email_type"], "PASSWORD_RESET_REQUEST")
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn("Reset your password", mail.outbox[0].subject)
+        self.assertIn("reset-password", mail.outbox[0].body)

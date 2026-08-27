@@ -18,7 +18,6 @@ from api.authentication.models import UserSession
 from api.authentication.services import activity_service, session_service, token_service
 from api.authentication.utils.base_auth import TsesAuthenticationInterface
 from api.authentication.utils.links import build_verification_link
-from shared.tasks import send_templated_email_task
 from api.users.enums import (
     AccountStatus,
     UserActivityActionEnums,
@@ -43,22 +42,36 @@ def _queue_auth_email(
     context: dict,
     email_type: str,
 ) -> None:
-    """Queue an auth email and log broker acceptance without exposing secrets."""
+    """Send an auth email synchronously.
 
-    result = send_templated_email_task.delay(
-        receivers=receivers,
-        subject=subject,
-        template_name=template_name,
-        context=context,
-        email_type=email_type,
-    )
-    logger.info(
-        "auth_email_queued email_type=%s recipients=%s subject=%s task_id=%s",
-        email_type,
-        receivers,
-        subject,
-        result.id,
-    )
+    Auth emails (verification, password reset, lockout) are critical and must
+    be delivered.  Celery async delivery has proven unreliable on Dokploy
+    because the web process and worker may hit different Redis instances, so
+    these emails are sent inline in the request cycle.
+    """
+    from api.notification.services.email_service import send_templated_email
+
+    try:
+        sent_count = send_templated_email(
+            receivers=receivers,
+            subject=subject,
+            template_name=template_name,
+            context=context,
+        )
+        logger.info(
+            "auth_email_sent email_type=%s recipients=%s subject=%s sent_count=%s",
+            email_type,
+            receivers,
+            subject,
+            sent_count,
+        )
+    except Exception:
+        logger.exception(
+            "auth_email_failed email_type=%s recipients=%s subject=%s",
+            email_type,
+            receivers,
+            subject,
+        )
 
 
 class AuthenticationService(TsesAuthenticationInterface):

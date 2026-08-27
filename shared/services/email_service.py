@@ -17,14 +17,21 @@ logger = logging.getLogger(__name__)
 class EmailService:
     @staticmethod
     def _send_email(subject, recipient, html_content):
-        from shared.tasks import send_email_task
+        from django.core.mail import EmailMultiAlternatives
 
         try:
-            send_email_task.delay(subject, str(recipient), str(html_content))
-            logger.info(f"Email queued for {recipient} with subject: {subject}")
+            msg = EmailMultiAlternatives(
+                subject=subject,
+                body="",
+                from_email=None,
+                to=[str(recipient)],
+            )
+            msg.attach_alternative(str(html_content), "text/html")
+            msg.send(fail_silently=False)
+            logger.info(f"Email sent to {recipient} with subject: {subject}")
             return True
         except Exception as e:
-            logger.error(f"Failed to queue email for {recipient}. Error: {e}")
+            logger.error(f"Failed to send email to {recipient}. Error: {e}")
             return None
 
     @staticmethod
