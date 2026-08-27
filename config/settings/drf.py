@@ -431,11 +431,15 @@ SPECTACULAR_SETTINGS = {
         "SubmissionStatusEnum": "api.mie.enums.SubmissionStatus",
         "WebhookEventTypeEnum": "api.mie.enums.WebhookEventType",
         "WebhookDeliveryStatusEnum": "api.mie.enums.WebhookDeliveryStatus",
+        # KYCStatus has identical PENDING/APPROVED/REJECTED choices and is
+        # already covered by RequestStatusEnum (CategoryRequestStatus) above.
+        # Do NOT add a second override for it — drf-spectacular flags
+        # duplicate names for the same choice set.
         # Additional status enums that appear on "status"-named fields across
         # multiple models and collide if left to drf-spectacular's auto-naming.
-        "KYCStatusEnum": "api.users.enums.KYCStatus",
         "DistributionStatusEnum": "api.courses.enums.DistributionStatus",
-        "AppealStatusEnum": "api.courses.enums.AppealStatus",
+        # AppealStatus has identical PENDING/APPROVED/REJECTED choices to
+        # CategoryRequestStatus — already covered by RequestStatusEnum above.
         "QualityCheckStatusEnum": "api.reviews.enums.QualityCheckStatus",
         "CollaboratorInviteStatusEnum": "api.collaborators.enums.CollaboratorInviteStatus",
         # difficulty_level — only Course.difficulty_level, but drf-spectacular
@@ -449,7 +453,7 @@ SPECTACULAR_SETTINGS = {
         # avoid drf-spectacular's auto-generated name.
         "ExpertiseAreaEnum": "api.onboarding.enums.ExpertiseArea",
         # plagiarism_status uses QualityCheckStatus but the field name is
-        # different; pin it so the component name matches the semantic meaning.
-        "PlagiarismStatusEnum": "api.reviews.enums.QualityCheckStatus",
+        # different; the same component is already named QualityCheckStatusEnum
+        # above so no second override is needed.
     },
 }

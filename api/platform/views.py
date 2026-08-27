@@ -341,3 +341,77 @@ class ReviewerOverviewView(APIView):
     def get(self, request):
         overview = reviewer_overview_service.get_overview(actor=request.user)
         return Response(ReviewerOverviewSerializer(overview).data)
+
+
+class TestEmailView(APIView):
+    """Send a test email to verify SMTP delivery is working.
+
+    Admin-only diagnostic endpoint.  Synchronous — waits for SMTP
+    confirmation before responding.
+    """
+
+    permission_classes = [IsAuthenticated, IsAdminOrSuperAdminRole]
+
+    @extend_schema(
+        summary="Send test email",
+        request=None,
+        description=(
+            "Send a test email to the authenticated user's address.\n\n"
+            "Useful for verifying Cloudflare SMTP credentials and email "
+            "template rendering on staging.\n\n"
+            "**Auth:** Super Admin.\n\n"
+            "**Prerequisites:** `EMAIL_HOST_USER` and `EMAIL_HOST_PASSWORD` "
+            "must be configured in the environment.\n\n"
+            "**Important:** Synchronous — the response is only returned after "
+            "the SMTP handshake completes or fails."
+        ),
+        tags=["Platform — Diagnostics"],
+        responses={
+            200: OpenApiResponse(
+                description="Email sent successfully.",
+                examples=[
+                    OpenApiExample(
+                        "Success",
+                        value={"status": "sent", "recipient": "admin@example.com"},
+                    )
+                ],
+            ),
+            502: OpenApiResponse(
+                description="SMTP delivery failed.",
+                examples=[
+                    OpenApiExample(
+                        "SMTP failure",
+                        value={
+                            "status": "failed",
+                            "error": "Connection refused",
+                        },
+                    )
+                ],
+            ),
+            **STANDARD_ERROR_RESPONSES["auth"],
+        },
+    )
+    def post(self, request):
+        from django.core.mail import EmailMultiAlternatives
+
+        recipient = request.user.email
+        subject = "Test email from SCB backend"
+        body = (
+            "This is a test email sent from the SCB backend API.\n\n"
+            "If you received this, Cloudflare SMTP is configured correctly."
+        )
+
+        try:
+            msg = EmailMultiAlternatives(
+                subject=subject,
+                body=body,
+                from_email=None,
+                to=[recipient],
+            )
+            msg.send(fail_silently=False)
+        except Exception as exc:
+            return Response(
+                {"status": "failed", "error": str(exc)}, status=502
+            )
+
+        return Response({"status": "sent", "recipient": recipient})

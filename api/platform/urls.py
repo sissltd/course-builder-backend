@@ -5,6 +5,7 @@ from api.platform.views import (
     CreatorOverviewView,
     PlatformSettingsView,
     ReviewerOverviewView,
+    TestEmailView,
 )
 
 urlpatterns = [
@@ -27,5 +28,10 @@ urlpatterns = [
         "reviewer/overview/",
         ReviewerOverviewView.as_view(),
         name="reviewer-overview",
+    ),
+    path(
+        "test-email/",
+        TestEmailView.as_view(),
+        name="test-email",
     ),
 ]
