@@ -59,11 +59,13 @@ def _send_via_resend(
     from decouple import config
     from django.conf import settings
 
+    from shared.constants.authentication import COMPANY_NAME
+
     resend.api_key = config("RESEND_API_KEY")
 
     response = resend.Emails.send(
         {
-            "from": f"Feexeet <{from_email or settings.DEFAULT_FROM_EMAIL}>",
+            "from": f"{COMPANY_NAME} <{from_email or settings.DEFAULT_FROM_EMAIL}>",
             "to": recipients,
             "subject": str(subject),
             "text": str(text_content),

@@ -17,17 +17,18 @@ logger = logging.getLogger(__name__)
 class EmailService:
     @staticmethod
     def _send_email(subject, recipient, html_content):
-        from django.core.mail import EmailMultiAlternatives
+        from shared.tasks import dispatch_email
 
         try:
-            msg = EmailMultiAlternatives(
+            dispatch_email(
                 subject=subject,
-                body="",
-                from_email=None,
-                to=[str(recipient)],
+                recipients=[str(recipient)],
+                # dispatch_email mirrors EMAIL_SERVICE.md: "gmail" (SMTP) and
+                # "resend" providers both need a plain-text body. Reuse the
+                # subject + html as the fallback, matching send_email_task.
+                text_content=f"{subject}\n\n{html_content}",
+                html_content=str(html_content),
             )
-            msg.attach_alternative(str(html_content), "text/html")
-            msg.send(fail_silently=False)
             logger.info(f"Email sent to {recipient} with subject: {subject}")
             return True
         except Exception as e:

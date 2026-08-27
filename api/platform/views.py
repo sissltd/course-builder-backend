@@ -9,6 +9,7 @@ from api.platform.serializers import (
     PlatformSettingsSerializer,
     PlatformSettingsUpdateSerializer,
     ReviewerOverviewSerializer,
+    TestEmailSerializer,
 )
 from api.platform.services import (
     admin_overview_service,
@@ -344,28 +345,45 @@ class ReviewerOverviewView(APIView):
 
 
 class TestEmailView(APIView):
-    """Send a test email to verify SMTP delivery is working.
+    """Send a test email to verify the configured provider is working.
 
-    Admin-only diagnostic endpoint.  Synchronous — waits for SMTP
-    confirmation before responding.
+    Admin-only diagnostic endpoint. Synchronous — waits for the provider
+    (Cloudflare SMTP or Resend, per `EMAIL_PROVIDER`) before responding.
     """
 
     permission_classes = [IsAuthenticated, IsAdminOrSuperAdminRole]
 
     @extend_schema(
         summary="Send test email",
-        request=None,
+        request=TestEmailSerializer,
         description=(
-            "Send a test email to the authenticated user's address.\n\n"
-            "Useful for verifying Cloudflare SMTP credentials and email "
-            "template rendering on staging.\n\n"
+            "Send a test email through the configured `EMAIL_PROVIDER` "
+            "(`smtp` → Cloudflare SMTP, `resend` → Resend REST API) and "
+            "confirm delivery end-to-end.\n\n"
+            "Used from staging to verify email credentials and rendering "
+            "without going through a real signup flow.\n\n"
             "**Auth:** Super Admin.\n\n"
             "**Prerequisites:** `EMAIL_HOST_USER` and `EMAIL_HOST_PASSWORD` "
-            "must be configured in the environment.\n\n"
-            "**Important:** Synchronous — the response is only returned after "
-            "the SMTP handshake completes or fails."
+            "must be configured when `EMAIL_PROVIDER=smtp`; `RESEND_API_KEY` "
+            "when `EMAIL_PROVIDER=resend`.\n\n"
+            "**Important:** The request body is optional — an empty body "
+            "sends to the authenticated user's own address. `email`, "
+            "`subject`, and `message` override the defaults when provided. "
+            "Synchronous, so the response is only returned after the "
+            "provider accepts or rejects the message."
         ),
         tags=["Platform — Diagnostics"],
+        examples=[
+            OpenApiExample(
+                name="Send to a specific address",
+                request_only=True,
+                value={
+                    "email": "qa@scbcoursebuilder.com",
+                    "subject": "Staging SMTP check",
+                    "message": "This is a test from the staging API.",
+                },
+            ),
+        ],
         responses={
             200: OpenApiResponse(
                 description="Email sent successfully.",
@@ -376,8 +394,17 @@ class TestEmailView(APIView):
                     )
                 ],
             ),
+            400: OpenApiResponse(
+                description="Invalid email address provided.",
+                examples=[
+                    OpenApiExample(
+                        "Invalid email",
+                        value={"status": "failed", "error": "Invalid email address."},
+                    )
+                ],
+            ),
             502: OpenApiResponse(
-                description="SMTP delivery failed.",
+                description="Provider delivery failed.",
                 examples=[
                     OpenApiExample(
                         "SMTP failure",
@@ -392,23 +419,28 @@ class TestEmailView(APIView):
         },
     )
     def post(self, request):
-        from django.core.mail import EmailMultiAlternatives
+        from django.utils.html import escape
 
-        recipient = request.user.email
-        subject = "Test email from SCB backend"
-        body = (
+        from shared.tasks import dispatch_email
+
+        serializer = TestEmailSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        recipient = data.get("email") or request.user.email
+        subject = data.get("subject") or "Test email from SCB backend"
+        message = data.get("message") or (
             "This is a test email sent from the SCB backend API.\n\n"
-            "If you received this, Cloudflare SMTP is configured correctly."
+            "If you received this, the configured email provider is working."
         )
 
         try:
-            msg = EmailMultiAlternatives(
+            dispatch_email(
                 subject=subject,
-                body=body,
-                from_email=None,
-                to=[recipient],
+                recipients=[recipient],
+                text_content=message,
+                html_content=f"<html><body><pre>{escape(message)}</pre></body></html>",
             )
-            msg.send(fail_silently=False)
         except Exception as exc:
             return Response(
                 {"status": "failed", "error": str(exc)}, status=502

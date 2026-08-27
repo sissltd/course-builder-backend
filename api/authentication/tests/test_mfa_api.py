@@ -1,6 +1,6 @@
 import pyotp
 from django.core.cache import cache
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
@@ -200,7 +200,9 @@ class MFAGracePeriodTests(TestCase):
         self.assertIsNone(user.mfa_grace_period_ends_at)
 
 
+@override_settings(MFA_ENFORCED=True)
 class LoginMFAFlowApiTests(APITestCase):
+    """Mandated-role MFA flow under enforced MFA (production behaviour)."""
     def setUp(self):
         cache.clear()
 
@@ -344,7 +346,9 @@ class MFAAdminResetApiTests(APITestCase):
         self.assertIsNone(mfa_service.get_device(user=target))
 
 
+@override_settings(MFA_ENFORCED=True)
 class IsMFAVerifiedForSessionApiTests(APITestCase):
+    """`IsMFAVerifiedForSession` claim enforcement under enforced MFA."""
     def _token(self, user, mfa_verified):
         token = AccessToken.for_user(user)
         token["mfa_verified"] = mfa_verified
@@ -390,3 +394,45 @@ class IsMFAVerifiedForSessionApiTests(APITestCase):
             },
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+
+class MFAEnforcementOffApiTests(APITestCase):
+    """Non-enforced MFA (dev/staging behaviour, the default in tests):
+
+    a mandated-role account (freshly bootstrapped super admin included)
+    logs in with just email + password, gets `mfa_verified=true` on the
+    token, and faces no challenge or enrollment flags.
+    """
+
+    def _login(self, email, password="testpass123"):
+        return self.client.post(
+            "/api/v1/auth/login/",
+            {"email": email, "password": password},
+            format="json",
+        )
+
+    def test_super_admin_logs_in_without_mfa_when_not_enforced(self):
+        user = make_user(role=UserRole.SUPER_ADMIN)
+
+        response = self._login(user.email)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("access", response.data)
+        self.assertNotIn("mfa_required", response.data)
+        self.assertNotIn("mfa_enrollment_required", response.data)
+        self.assertNotIn("mfa_enrollment_overdue", response.data)
+        access = AccessToken(response.data["access"])
+        self.assertTrue(access.get("mfa_verified"))
+
+    def test_admin_without_mfa_claim_allowed_when_not_enforced(self):
+        admin = make_user(role=UserRole.ADMIN)
+        token = AccessToken.for_user(admin)
+        token["mfa_verified"] = False
+        self.client.force_authenticate(admin, token=token)
+
+        response = self.client.patch(
+            "/api/v1/platform-settings/",
+            {"course_module_count_min": 6},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)

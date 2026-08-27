@@ -279,3 +279,35 @@ class ReviewerOverviewSerializer(serializers.Serializer):
     my_decisions = ReviewerMyDecisionsSerializer(
         help_text="The reviewer's own approve/reject history summary."
     )
+
+
+class TestEmailSerializer(serializers.Serializer):
+    """Optional overrides for the `POST /api/v1/test-email/` smoke test.
+
+    All fields are optional so the endpoint still works with an empty body,
+    and the recipient defaults to the authenticated user's own address.
+    """
+
+    email = serializers.EmailField(
+        required=False,
+        allow_blank=True,
+        help_text=(
+            "Recipient address for the test message. Defaults to the "
+            "authenticated user's email when omitted."
+        ),
+    )
+    subject = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=150,
+        help_text="Subject line for the test message. Defaults to a standard probe subject.",
+    )
+    message = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=2000,
+        help_text=(
+            "Plain-text body of the test message. Defaults to a standard "
+            "probe message when omitted."
+        ),
+    )

@@ -1,6 +1,7 @@
 import logging
 from datetime import timedelta
 
+from django.conf import settings
 from django.utils import timezone
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
@@ -110,32 +111,39 @@ class LoginSerializer(TokenObtainPairSerializer):
 
         request = self.context.get("request")
 
-        # MFA gate - only ADMIN/SUPER_ADMIN are ever required to have it.
-        # Everyone else's password check above is the entire login.
-        if user.role in mfa_service.MFA_MANDATED_ROLES:
-            if mfa_service.is_mfa_enabled(user=user):
-                # Do not mint tokens yet - hand back a challenge instead.
-                # POST /auth/mfa/verify/ completes the login on success.
-                challenge_token = mfa_service.create_challenge(user=user)
-                return {"mfa_required": True, "challenge_token": challenge_token}
-
-            data = authentication_service.finish_login(
-                user=user, request=request, mfa_verified=False
-            )
-            if mfa_service.is_within_grace_period(user=user):
-                data["mfa_enrollment_required"] = True
-                data["mfa_grace_period_ends_at"] = user.mfa_grace_period_ends_at
-            else:
-                # Grace period has lapsed - login itself still succeeds (no
-                # support-desk lockout spiral), but mfa_verified=False means
-                # IsMFAVerifiedForSession-gated actions stay blocked until
-                # they enroll.
-                data["mfa_enrollment_overdue"] = True
-            return data
-
-        return authentication_service.finish_login(
-            user=user, request=request, mfa_verified=True
+        # MFA gate - only ADMIN/SUPER_ADMIN are ever required to have it, and
+        # only on deployments that enforce MFA (production). Where
+        # MFA_ENFORCED is off (dev/staging), a mandated role's password check
+        # above is the entire login; `mfa_verified=true` is minted into the
+        # token so IsMFAVerifiedForSession-gated admin endpoints stay
+        # reachable without an enrollment step.
+        mfa_enforced = (
+            settings.MFA_ENFORCED and user.role in mfa_service.MFA_MANDATED_ROLES
         )
+        if not mfa_enforced:
+            return authentication_service.finish_login(
+                user=user, request=request, mfa_verified=True
+            )
+
+        if mfa_service.is_mfa_enabled(user=user):
+            # Do not mint tokens yet - hand back a challenge instead.
+            # POST /auth/mfa/verify/ completes the login on success.
+            challenge_token = mfa_service.create_challenge(user=user)
+            return {"mfa_required": True, "challenge_token": challenge_token}
+
+        data = authentication_service.finish_login(
+            user=user, request=request, mfa_verified=False
+        )
+        if mfa_service.is_within_grace_period(user=user):
+            data["mfa_enrollment_required"] = True
+            data["mfa_grace_period_ends_at"] = user.mfa_grace_period_ends_at
+        else:
+            # Grace period has lapsed - login itself still succeeds (no
+            # support-desk lockout spiral), but mfa_verified=False means
+            # IsMFAVerifiedForSession-gated actions stay blocked until
+            # they enroll.
+            data["mfa_enrollment_overdue"] = True
+        return data
 
     def _register_failed_attempt(self, user: User) -> None:
         """Increment failed_login_attempts and, at the threshold, lock the
