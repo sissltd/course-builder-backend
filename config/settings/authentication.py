@@ -23,3 +23,16 @@ SUPERADMIN_BOOTSTRAP_ENABLED = DJANGO_ENV.lower() in {
     "staging",
     "pre-production",
 }
+
+# Mandated-role MFA (ADMIN/SUPER_ADMIN) is enforced only outside
+# development/staging-like environments. In dev and staging a freshly
+# bootstrapped super admin must simply log in with email + password - the
+# login response carries `mfa_verified=true` so MFA-gated admin endpoints
+# stay reachable without any enrollment ceremony.
+MFA_ENFORCED = DJANGO_ENV.lower() not in {
+    "local",
+    "development",
+    "dev",
+    "staging",
+    "pre-production",
+}

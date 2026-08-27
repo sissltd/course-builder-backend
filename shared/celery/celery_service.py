@@ -1,10 +1,11 @@
 """Shared Celery task helpers.
 
 This module provides synchronous email and OTP delivery as well as
-Celery-based audit-log writing.  Email is sent inline (via Django's
-``EmailMultiAlternatives``) because on Dokploy the web process and the
-Celery worker may hit different Redis instances, making ``.delay()``
-delivery unreliable for critical messages.
+Celery-based audit-log writing. Email is sent inline (via
+``shared.tasks.dispatch_email``, which routes to the ``EMAIL_PROVIDER``
+configured in .env - SMTP by default, ``resend`` to switch) because on
+Dokploy the web process and the Celery worker may hit different Redis
+instances, making ``.delay()`` delivery unreliable for critical messages.
 
 Example:
     from shared.celery.celery_service import CeleryService
@@ -16,7 +17,6 @@ from __future__ import annotations
 import json
 import logging
 
-from django.core.mail import EmailMultiAlternatives
 from django.core.serializers.json import DjangoJSONEncoder
 
 from shared.tasks import write_audit_log
@@ -29,15 +29,15 @@ class CeleryService:
 
     @staticmethod
     def send_email(subject: str, recipient: str, html_content: str):
+        from shared.tasks import dispatch_email
+
         try:
-            msg = EmailMultiAlternatives(
+            dispatch_email(
                 subject=subject,
-                body="",
-                from_email=None,
-                to=[recipient],
+                recipients=[recipient],
+                text_content=f"{subject}\n\n{html_content}",
+                html_content=html_content,
             )
-            msg.attach_alternative(html_content, "text/html")
-            msg.send(fail_silently=False)
             logger.info("celery_service_email_sent recipient=%s subject=%s", recipient, subject)
             return True
         except Exception:
