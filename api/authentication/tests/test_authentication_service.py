@@ -57,16 +57,17 @@ class SignupTests(TestCase):
         self.assertIn(f"{settings.FRONTEND_URL}/verify-email", mail.outbox[0].body)
         self.assertIn("token=", mail.outbox[0].body)
 
-    def test_successful_celery_send_is_logged(self):
-        with self.assertLogs("shared.tasks", level="INFO") as logs:
-            with self.captureOnCommitCallbacks(execute=True):
-                service.signup(
-                    email="logged@example.com",
-                    password="StrongPass123!",
-                    first_name="Log",
-                    last_name="Test",
-                    country="NG",
-                )
+    def test_successful_send_is_logged(self):
+        with self.assertLogs(
+            "api.authentication.services.authentication_service", level="INFO"
+        ) as logs:
+            service.signup(
+                email="logged@example.com",
+                password="StrongPass123!",
+                first_name="Log",
+                last_name="Test",
+                country="NG",
+            )
 
         self.assertTrue(
             any(
