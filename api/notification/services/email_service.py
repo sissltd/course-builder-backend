@@ -20,7 +20,8 @@ def send_templated_email(
 ) -> int:
     """Render and send a multipart (HTML + plain text) templated email.
 
-    Routes via EMAIL_PROVIDER ("gmail" SMTP or "resend" REST API).
+    Routes via EMAIL_PROVIDER ("smtp"/"gmail" SMTP, "resend" REST API, or
+    "cloudflare" REST API).
     Falls back to Django's EmailMultiAlternatives for advanced features
     (attachments, cc, bcc, reply_to) which are not yet supported on the resend path.
     """
@@ -32,7 +33,7 @@ def send_templated_email(
     provider = getattr(settings, "EMAIL_PROVIDER", "gmail")
 
     # Use the unified dispatcher for the common case (no advanced features)
-    if provider == "resend" and not (
+    if provider in ("resend", "cloudflare") and not (
         attachments or cc_emails or bcc_emails or reply_to
     ):
         dispatch_email(

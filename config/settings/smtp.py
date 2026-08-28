@@ -9,6 +9,12 @@ DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL", default="")
 # cap per SMTP operation), so a hung provider cannot stall the whole request
 # past Cloudflare's 120s Proxy Read Timeout.
 EMAIL_TIMEOUT = config("EMAIL_TIMEOUT", cast=int, default=30)
+# Cloudflare Email Service REST API (EMAIL_PROVIDER=cloudflare). No SMTP egress
+# required — delivery happens over HTTPS to api.cloudflare.com. The API token
+# needs the Email Sending: Edit permission, and DEFAULT_FROM_EMAIL's domain must
+# be onboarded for Email Sending on the account that owns the token.
+CLOUDFLARE_API_TOKEN = config("CLOUDFLARE_API_TOKEN", default="")
+CLOUDFLARE_ACCOUNT_ID = config("CLOUDFLARE_ACCOUNT_ID", default="")
 
 if EMAIL_HOST_USER:
     EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
