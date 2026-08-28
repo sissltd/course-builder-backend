@@ -1,5 +1,6 @@
 import logging
 
+import httpx
 from celery import shared_task
 
 from shared.constants.environ import DJANGO_ENV
@@ -7,7 +8,7 @@ from shared.constants.environ import DJANGO_ENV
 logger = logging.getLogger(__name__)
 
 
-# >>>>>>>>>>>>CREATING EMAIL SEND LOGIC TASK FOR EMAIL PROVIDERS: GMAIL and RESEND<<<<<<<<<<<<<<<<<<<<<
+# >>>>>>>>>>>>EMAIL SEND LOGIC FOR EMAIL PROVIDERS: GMAIL, RESEND and CLOUDFLARE<<<<<<<<<<<<<<<<<<<<<
 # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<
 
 
@@ -75,6 +76,81 @@ def _send_via_resend(
     return {"status": "sent", "provider": "resend", "id": response.get("id")}
 
 
+def _cloudflare_error_message(response: httpx.Response) -> str:
+    """Extract Cloudflare's first reported error for a failed send response."""
+    try:
+        errors = response.json().get("errors") or []
+        if errors:
+            return f"{errors[0].get('code')}: {errors[0].get('message')}"
+    except ValueError:
+        pass
+    return response.text[:300]
+
+
+# send via Cloudflare Email Service REST API (HTTPS — no SMTP egress required)
+def _send_via_cloudflare(
+    subject: str,
+    recipients: list[str],
+    text_content: str,
+    html_content: str,
+    from_email: str | None = None,
+    cc_emails: list[str] | None = None,
+    bcc_emails: list[str] | None = None,
+    reply_to: str | list[str] | None = None,
+) -> dict:
+    """Send via Cloudflare Email Service's `POST .../email/sending/send` endpoint."""
+    from django.conf import settings
+
+    from shared.constants.authentication import COMPANY_NAME
+
+    payload = {
+        "from": {
+            "address": from_email or settings.DEFAULT_FROM_EMAIL,
+            "name": COMPANY_NAME,
+        },
+        "to": recipients,
+        "subject": str(subject),
+        "text": str(text_content),
+        "html": str(html_content),
+    }
+    if cc_emails:
+        payload["cc"] = cc_emails
+    if bcc_emails:
+        payload["bcc"] = bcc_emails
+    if reply_to:
+        payload["reply_to"] = reply_to[0] if isinstance(reply_to, list) else reply_to
+
+    url = (
+        "https://api.cloudflare.com/client/v4/accounts/"
+        f"{settings.CLOUDFLARE_ACCOUNT_ID}/email/sending/send"
+    )
+    try:
+        response = httpx.post(
+            url,
+            headers={
+                "Authorization": f"Bearer {settings.CLOUDFLARE_API_TOKEN}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+            timeout=httpx.Timeout(10.0, read=30.0),
+        )
+    except httpx.HTTPError as exc:
+        raise RuntimeError(f"Cloudflare send transport error: {exc}") from exc
+
+    if response.status_code != 200:
+        raise RuntimeError(
+            f"Cloudflare send failed (HTTP {response.status_code}): "
+            f"{_cloudflare_error_message(response)}"
+        )
+
+    result = response.json().get("result", {})
+    return {
+        "status": "sent",
+        "provider": "cloudflare",
+        "id": result.get("message_id"),
+    }
+
+
 def dispatch_email(
     subject: str,
     recipients: list[str],
@@ -88,7 +164,8 @@ def dispatch_email(
 ) -> dict:
     """
     Central dispatcher — routes to the configured email provider.
-    Provider is set via EMAIL_PROVIDER in .env — "gmail" (default) or "resend".
+    Provider is set via EMAIL_PROVIDER — "smtp"/"gmail" (Django SMTP),
+    "resend" (Resend REST API), or "cloudflare" (Cloudflare Email Service REST API).
 
     This is the single place to add new providers.
     """
@@ -103,6 +180,18 @@ def dispatch_email(
             text_content=text_content,
             html_content=html_content,
             from_email=from_email,
+        )
+
+    if provider == "cloudflare":
+        return _send_via_cloudflare(
+            subject=subject,
+            recipients=recipients,
+            text_content=text_content,
+            html_content=html_content,
+            from_email=from_email,
+            cc_emails=cc_emails,
+            bcc_emails=bcc_emails,
+            reply_to=reply_to,
         )
 
     return _send_via_gmail(

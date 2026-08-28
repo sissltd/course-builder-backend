@@ -348,7 +348,7 @@ class TestEmailView(APIView):
     """Send a test email to verify the configured provider is working.
 
     Admin-only diagnostic endpoint. Synchronous — waits for the provider
-    (Cloudflare SMTP or Resend, per `EMAIL_PROVIDER`) before responding.
+    (SMTP, Resend, or Cloudflare REST, per `EMAIL_PROVIDER`) before responding.
     """
 
     permission_classes = [IsAuthenticated, IsAdminOrSuperAdminRole]
@@ -358,14 +358,16 @@ class TestEmailView(APIView):
         request=TestEmailSerializer,
         description=(
             "Send a test email through the configured `EMAIL_PROVIDER` "
-            "(`smtp` → Cloudflare SMTP, `resend` → Resend REST API) and "
+            "(`smtp` → Cloudflare SMTP, `resend` → Resend REST API, "
+            "`cloudflare` → Cloudflare Email Service REST API) and "
             "confirm delivery end-to-end.\n\n"
             "Used from staging to verify email credentials and rendering "
             "without going through a real signup flow.\n\n"
             "**Auth:** Super Admin.\n\n"
             "**Prerequisites:** `EMAIL_HOST_USER` and `EMAIL_HOST_PASSWORD` "
             "must be configured when `EMAIL_PROVIDER=smtp`; `RESEND_API_KEY` "
-            "when `EMAIL_PROVIDER=resend`.\n\n"
+            "when `EMAIL_PROVIDER=resend`; `CLOUDFLARE_API_TOKEN` and "
+            "`CLOUDFLARE_ACCOUNT_ID` when `EMAIL_PROVIDER=cloudflare`.\n\n"
             "**Important:** The request body is optional — an empty body "
             "sends to the authenticated user's own address. `email`, "
             "`subject`, and `message` override the defaults when provided. "
@@ -442,8 +444,6 @@ class TestEmailView(APIView):
                 html_content=f"<html><body><pre>{escape(message)}</pre></body></html>",
             )
         except Exception as exc:
-            return Response(
-                {"status": "failed", "error": str(exc)}, status=502
-            )
+            return Response({"status": "failed", "error": str(exc)}, status=502)
 
         return Response({"status": "sent", "recipient": recipient})
