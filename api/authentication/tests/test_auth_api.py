@@ -14,8 +14,11 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from api.authentication.enums import TokenPurpose
 from api.authentication.models import EmailVerificationToken
 from api.authentication.tests.factories import make_user, make_verification_token
+from api.catalog.enums import CategoryStatus
+from api.catalog.models import Category
 from api.notification.models import Notification
-from api.users.enums import AccountStatus, UserRole
+from api.onboarding.models import CreatorProfile
+from api.users.enums import AccountStatus, UserActivityActionEnums, UserRole
 from api.users.models import UserActivityLog
 
 
@@ -1098,10 +1101,38 @@ class MeApiTests(APITestCase):
         response = self.client.get("/api/v1/users/me/")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["email"], user.email)
+        self.assertEqual(response.data["full_name"], user.get_full_name())
+        self.assertEqual(
+            response.data["member_since"],
+            user.created_datetime.isoformat().replace("+00:00", "Z"),
+        )
+        self.assertFalse(response.data["is_verified"])
+        self.assertEqual(response.data["badges"], [])
 
     def test_unauthenticated(self):
         response = self.client.get("/api/v1/users/me/")
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_non_creator_roles_are_forbidden(self):
+        roles = [
+            UserRole.STAFF_WRITER,
+            UserRole.CREATOR_REVIEWER,
+            UserRole.ADMIN,
+        ]
+        for index, role in enumerate(roles):
+            with self.subTest(role=role):
+                user = make_user(email=f"noncreator{index}@example.com", role=role)
+                self.client.force_authenticate(user)
+                response = self.client.get("/api/v1/users/me/")
+                self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_superuser_retains_permission_bypass(self):
+        user = make_user(role=UserRole.ADMIN, is_superuser=True, is_staff=True)
+        self.client.force_authenticate(user)
+
+        response = self.client.get("/api/v1/users/me/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
 
     def test_patch_updates_profile_fields(self):
         user = make_user()
@@ -1127,9 +1158,81 @@ class MeApiTests(APITestCase):
             {"email": "changed@example.com"},
             format="json",
         )
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["errors"][0]["field_name"], "email")
         user.refresh_from_db()
         self.assertEqual(user.email, "original@example.com")
+
+    def test_patch_assigns_category_and_creates_creator_profile(self):
+        user = make_user()
+        category = Category.objects.create(name="Web Applications", creator_price="100")
+        self.client.force_authenticate(user)
+
+        response = self.client.patch(
+            "/api/v1/users/me/", {"category": str(category.id)}, format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["category"]["id"], str(category.id))
+        self.assertEqual(response.data["category"]["name"], category.name)
+        self.assertEqual(
+            CreatorProfile.objects.get(user=user).primary_expertise_category,
+            category,
+        )
+
+    def test_patch_null_category_clears_existing_category(self):
+        user = make_user()
+        category = Category.objects.create(name="Data Science", creator_price="100")
+        CreatorProfile.objects.create(user=user, primary_expertise_category=category)
+        self.client.force_authenticate(user)
+
+        response = self.client.patch(
+            "/api/v1/users/me/", {"category": None}, format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsNone(response.data["category"])
+        self.assertIsNone(
+            CreatorProfile.objects.get(user=user).primary_expertise_category
+        )
+
+    def test_omitted_category_remains_unchanged(self):
+        user = make_user()
+        category = Category.objects.create(name="Product Design", creator_price="100")
+        CreatorProfile.objects.create(user=user, primary_expertise_category=category)
+        self.client.force_authenticate(user)
+
+        response = self.client.patch(
+            "/api/v1/users/me/", {"first_name": "Updated"}, format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["category"]["id"], str(category.id))
+
+    def test_inactive_category_is_rejected_without_partial_update(self):
+        user = make_user(first_name="Original")
+        category = Category.objects.create(
+            name="Inactive Category",
+            creator_price="100",
+            status=CategoryStatus.INACTIVE,
+        )
+        self.client.force_authenticate(user)
+
+        response = self.client.patch(
+            "/api/v1/users/me/",
+            {"first_name": "Changed", "category": str(category.id)},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        user.refresh_from_db()
+        self.assertEqual(user.first_name, "Original")
+        self.assertFalse(CreatorProfile.objects.filter(user=user).exists())
+        self.assertFalse(
+            UserActivityLog.objects.filter(
+                user=user, action=UserActivityActionEnums.PROFILE_UPDATED
+            ).exists()
+        )
 
     def test_patch_logs_configuration_activity(self):
         user = make_user()

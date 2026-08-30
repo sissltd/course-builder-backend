@@ -11,6 +11,7 @@ from rest_framework.views import APIView
 
 from api.authentication.services import activity_service
 from api.users.enums import UserActivityActionEnums, UserActivityCategoryEnums
+from api.users.permissions import IsPublicCourseCreatorRole
 from api.users.serializers import (
     MeSerializer,
     MeUpdateSerializer,
@@ -27,6 +28,7 @@ _ME_EXAMPLE = {
     "email": "jane.doe@example.com",
     "first_name": "Jane",
     "last_name": "Doe",
+    "full_name": "Jane Doe",
     "country": "NG",
     "state": "Lagos",
     "address": "14 Admiralty Way, Lekki Phase 1",
@@ -39,7 +41,10 @@ _ME_EXAMPLE = {
     "status": "PENDING",
     "created_datetime": "2026-07-12T09:30:11.204Z",
     "updated_datetime": "2026-07-12T09:30:11.204Z",
+    "member_since": "2026-07-12T09:30:11.204Z",
     "has_completed_onboarding": False,
+    "is_verified": False,
+    "badges": [],
     "category": {
         "id": "0bd326eb-e48e-44bc-b963-2c8945210c2d",
         "name": "Web Applications",
@@ -51,17 +56,20 @@ _ME_EXAMPLE = {
     get=extend_schema(
         summary="Retrieve my profile",
         description=(
-            "Returns the signed-in user's current profile, including name, "
-            "contact, locale, and account metadata. The frontend uses this "
+            "Returns the signed-in creator's Figma-ready profile, including "
+            "name, avatar, membership date, KYC verification state, badges, "
+            "contact details, address, expertise category, and account "
+            "metadata. The frontend uses this "
             "endpoint to populate account settings and keep the profile "
             "form in sync with server state.\n\n"
             "Called when the profile screen opens and whenever the frontend "
             "needs to refresh cached account details after an edit.\n\n"
-            "**Auth:** Any authenticated user.\n\n"
+            "**Auth:** Authenticated Course Creator.\n\n"
             "**Prerequisites:** None.\n\n"
-            "**Important:** None."
+            "**Important:** `is_verified` represents approved KYC status. "
+            "`badges` is an empty list until a badge-award domain is added."
         ),
-        tags=["Auth — Profile"],
+        tags=["Creator — Profile"],
         responses={
             200: OpenApiResponse(
                 response=MeSerializer,
@@ -69,6 +77,7 @@ _ME_EXAMPLE = {
                 examples=[OpenApiExample(name="Success", value=_ME_EXAMPLE)],
             ),
             **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
             **STANDARD_ERROR_RESPONSES["server"],
         },
     ),
@@ -81,14 +90,14 @@ _ME_EXAMPLE = {
             "resource.\n\n"
             "Called from the profile edit screen after the user saves "
             "personal details such as name, timezone, address, or category.\n\n"
-            "**Auth:** Any authenticated user.\n\n"
+            "**Auth:** Authenticated Course Creator.\n\n"
             "**Prerequisites:** None.\n\n"
             "**Important:** Email is intentionally not editable here. "
             "`category` only accepts an active category id; invalid or "
             "inactive ids are rejected by validation. The `category` set here "
             "is used to update the CreatorProfile's category field."
         ),
-        tags=["Auth — Profile"],
+        tags=["Creator — Profile"],
         request=MeUpdateSerializer,
         examples=[
             OpenApiExample(
@@ -129,6 +138,7 @@ _ME_EXAMPLE = {
             ),
             **STANDARD_ERROR_RESPONSES["validation"],
             **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
             **STANDARD_ERROR_RESPONSES["server"],
         },
     ),
@@ -139,7 +149,7 @@ class MeView(RetrieveUpdateAPIView):
     Email is deliberately not editable here - see MeUpdateSerializer.
     """
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsPublicCourseCreatorRole]
     http_method_names = ["get", "patch", "head", "options"]
 
     def get_object(self):
