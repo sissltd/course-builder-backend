@@ -1,4 +1,4 @@
-from drf_spectacular.utils import OpenApiExample, OpenApiResponse, extend_schema
+from drf_spectacular.utils import OpenApiExample, extend_schema
 from rest_framework import status
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
@@ -10,9 +10,10 @@ from api.mie.serializers.developer_admin_serializer import (
     DeveloperRegisterSerializer,
 )
 from api.mie.services import developer_service
+from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 
 
-@extend_schema(tags=["MIE Developer — Onboarding"])
+@extend_schema(tags=["Public — MIE Registration"])
 class MieDeveloperRegistrationView(APIView):
     """Self-service developer registration (step 1 of the journey).
 
@@ -29,26 +30,35 @@ class MieDeveloperRegistrationView(APIView):
     @extend_schema(
         summary="Register as a developer",
         description=(
-            "Open registration for external developers. Creates a PENDING "
-            "account from an email and webhook URL - it cannot "
-            "authenticate anything until a superadmin approves it, at "
-            "which point an API key is issued and shown exactly once. "
-            "Approval happens out-of-band; watch your webhook URL and "
-            "inbox."
+            "Create a new MIE developer account in PENDING status. The "
+            "account cannot authenticate or access any API resources until "
+            "a superadmin approves it out-of-band and issues an API key, "
+            "which is shown exactly once at approval time.\n\n"
+
+            "Call this endpoint when a developer first wants to join the "
+            "MIE platform. After submission, the developer should watch "
+            "their webhook URL and inbox for the approval notification.\n\n"
+
+            "**Auth:** Public — no credentials required.\n\n"
+
+            "**Prerequisites:** None.\n\n"
+
+            "**Important:** The email address must be unique across all "
+            "registrations. This endpoint is rate-limited per client IP; "
+            "exceeding the limit returns 429 with a Retry-After header. "
+            "Registration is idempotent for the same email — a duplicate "
+            "request returns the existing pending account."
         ),
         request=DeveloperRegisterSerializer,
         responses={
             status.HTTP_201_CREATED: DeveloperAccountAdminSerializer,
-            status.HTTP_400_BAD_REQUEST: OpenApiResponse(
-                description="Invalid payload or email already registered."
-            ),
-            status.HTTP_429_TOO_MANY_REQUESTS: OpenApiResponse(
-                description="Too many registration attempts; retry later."
-            ),
+            **STANDARD_ERROR_RESPONSES["validation"],
+            **STANDARD_ERROR_RESPONSES["rate_limited"],
+            **STANDARD_ERROR_RESPONSES["server"],
         },
         examples=[
             OpenApiExample(
-                "Registration",
+                "Registration request",
                 value={
                     "email": "dev@studio.io",
                     "webhook_url": "https://hooks.studio.io/mie",

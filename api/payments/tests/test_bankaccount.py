@@ -13,6 +13,7 @@ from api.courses.tests.factories import make_user
 from api.payments.models.bankaccount_models import BankAccount
 from api.payments.services.bankaccount_services import AccountDetailsError
 from api.users.enums import UserRole
+from shared.utils.encryption import encrypt_field
 
 LIST_URL = "/api/v1/payout-accounts/"
 VERIFY_URL = "/api/v1/payout-accounts/verify/"
@@ -44,7 +45,7 @@ def make_bank_account(*, user, account_number="0123456789", **kwargs):
         "user": user,
         "bank_name": "Access Bank",
         "account_name": "Test User",
-        "account_number": account_number,
+        "account_number": encrypt_field(account_number),
         "bank_code": "044",
         "is_default": False,
     }

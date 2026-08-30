@@ -31,6 +31,7 @@ class BankAccount(
     is_suspended = models.BooleanField(default=False)
     bank_code = models.CharField(max_length=64, blank=True)
     paystack_recipient_code = models.CharField(max_length=50, null=True, blank=True)
+    flutterwave_recipient_code = models.CharField(max_length=50, null=True, blank=True)
     account_type = models.CharField(
         verbose_name=_("Account Type"),
         max_length=15,

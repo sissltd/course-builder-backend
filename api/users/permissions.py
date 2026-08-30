@@ -1,3 +1,4 @@
+from django.conf import settings
 from rest_framework import exceptions
 from rest_framework.permissions import BasePermission
 
@@ -160,6 +161,11 @@ class IsMFAVerifiedForSession(BasePermission):
         user = request.user
         if not (user and user.is_authenticated):
             return False
+
+        if not settings.MFA_ENFORCED:
+            # Non-production deployment - MFA is not mandated, so there is
+            # nothing to verify regardless of role or token claim.
+            return True
 
         from api.authentication.services import mfa_service
 

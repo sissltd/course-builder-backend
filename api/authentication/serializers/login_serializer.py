@@ -1,6 +1,7 @@
 import logging
 from datetime import timedelta
 
+from django.conf import settings
 from django.utils import timezone
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
@@ -11,7 +12,6 @@ from api.authentication.services import (
     mfa_service,
 )
 from api.notification.models import Notification
-from shared.tasks import send_templated_email_task
 from api.users.enums import UserActivityActionEnums, AccountStatus
 from api.users.models import User, UserActivityLog
 from api.users.permissions import IsAdminOrSuperAdminRole
@@ -111,32 +111,39 @@ class LoginSerializer(TokenObtainPairSerializer):
 
         request = self.context.get("request")
 
-        # MFA gate - only ADMIN/SUPER_ADMIN are ever required to have it.
-        # Everyone else's password check above is the entire login.
-        if user.role in mfa_service.MFA_MANDATED_ROLES:
-            if mfa_service.is_mfa_enabled(user=user):
-                # Do not mint tokens yet - hand back a challenge instead.
-                # POST /auth/mfa/verify/ completes the login on success.
-                challenge_token = mfa_service.create_challenge(user=user)
-                return {"mfa_required": True, "challenge_token": challenge_token}
-
-            data = authentication_service.finish_login(
-                user=user, request=request, mfa_verified=False
-            )
-            if mfa_service.is_within_grace_period(user=user):
-                data["mfa_enrollment_required"] = True
-                data["mfa_grace_period_ends_at"] = user.mfa_grace_period_ends_at
-            else:
-                # Grace period has lapsed - login itself still succeeds (no
-                # support-desk lockout spiral), but mfa_verified=False means
-                # IsMFAVerifiedForSession-gated actions stay blocked until
-                # they enroll.
-                data["mfa_enrollment_overdue"] = True
-            return data
-
-        return authentication_service.finish_login(
-            user=user, request=request, mfa_verified=True
+        # MFA gate - only ADMIN/SUPER_ADMIN are ever required to have it, and
+        # only on deployments that enforce MFA (production). Where
+        # MFA_ENFORCED is off (dev/staging), a mandated role's password check
+        # above is the entire login; `mfa_verified=true` is minted into the
+        # token so IsMFAVerifiedForSession-gated admin endpoints stay
+        # reachable without an enrollment step.
+        mfa_enforced = (
+            settings.MFA_ENFORCED and user.role in mfa_service.MFA_MANDATED_ROLES
         )
+        if not mfa_enforced:
+            return authentication_service.finish_login(
+                user=user, request=request, mfa_verified=True
+            )
+
+        if mfa_service.is_mfa_enabled(user=user):
+            # Do not mint tokens yet - hand back a challenge instead.
+            # POST /auth/mfa/verify/ completes the login on success.
+            challenge_token = mfa_service.create_challenge(user=user)
+            return {"mfa_required": True, "challenge_token": challenge_token}
+
+        data = authentication_service.finish_login(
+            user=user, request=request, mfa_verified=False
+        )
+        if mfa_service.is_within_grace_period(user=user):
+            data["mfa_enrollment_required"] = True
+            data["mfa_grace_period_ends_at"] = user.mfa_grace_period_ends_at
+        else:
+            # Grace period has lapsed - login itself still succeeds (no
+            # support-desk lockout spiral), but mfa_verified=False means
+            # IsMFAVerifiedForSession-gated actions stay blocked until
+            # they enroll.
+            data["mfa_enrollment_overdue"] = True
+        return data
 
     def _register_failed_attempt(self, user: User) -> None:
         """Increment failed_login_attempts and, at the threshold, lock the
@@ -169,23 +176,31 @@ class LoginSerializer(TokenObtainPairSerializer):
             request=request,
         )
 
-        email_result = send_templated_email_task.delay(
-            receivers=[user.email],
-            subject="Your account was temporarily locked",
-            template_name="emails/account_locked",
-            context={
-                "first_name": user.first_name,
-                "lock_minutes": LOCKOUT_DURATION_MINUTES,
-            },
-            email_type="ACCOUNT_LOCKED",
-        )
-        logger.info(
-            "auth_email_queued email_type=ACCOUNT_LOCKED recipients=%s subject=%s "
-            "task_id=%s",
-            [user.email],
-            "Your account was temporarily locked",
-            email_result.id,
-        )
+        from api.notification.services.email_service import send_templated_email
+
+        try:
+            sent_count = send_templated_email(
+                receivers=[user.email],
+                subject="Your account was temporarily locked",
+                template_name="emails/account_locked",
+                context={
+                    "first_name": user.first_name,
+                    "lock_minutes": LOCKOUT_DURATION_MINUTES,
+                },
+            )
+            logger.info(
+                "auth_email_sent email_type=ACCOUNT_LOCKED recipients=%s subject=%s "
+                "sent_count=%s",
+                [user.email],
+                "Your account was temporarily locked",
+                sent_count,
+            )
+        except Exception:
+            logger.exception(
+                "auth_email_failed email_type=ACCOUNT_LOCKED recipients=%s subject=%s",
+                [user.email],
+                "Your account was temporarily locked",
+            )
 
         window_start = timezone.now() - timedelta(hours=REPEATED_LOCKOUT_WINDOW_HOURS)
         lockout_count = UserActivityLog.objects.filter(

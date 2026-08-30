@@ -22,6 +22,7 @@ from api.mie.serializers.submission_serializer import (
     SubmissionIngestSerializer,
 )
 from api.mie.services import submission_service
+from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 
 QUEUE_FILTER_PARAMETERS = [
     OpenApiParameter(
@@ -40,15 +41,9 @@ QUEUE_FILTER_PARAMETERS = [
 ]
 
 
-@extend_schema(tags=["MIE Developer — Submissions"])
+@extend_schema(tags=["Developer — MIE Submissions"])
 class MieSubmissionIngestView(APIView):
-    """Endpoint 1 - submit a course idea for the MIE pipeline.
-
-    Authenticated with the developer's API key. The body is stored
-    verbatim; the dedup engine decides the outcome immediately and a
-    signed webhook event is recorded for every outcome, including
-    short-circuits.
-    """
+    """Endpoint 1 - submit a course idea for the MIE pipeline."""
 
     authentication_classes = [MieDeveloperAuthentication]
     permission_classes = [IsMieDeveloper]
@@ -58,16 +53,36 @@ class MieSubmissionIngestView(APIView):
     @extend_schema(
         summary="Submit a course idea",
         description=(
-            "Receives one course idea (title plus any extra context keys). "
-            "The title runs three sequential checks before anything is "
-            "queued: previously rejected, duplicate of an existing course, "
-            "duplicate already in queue. The response status tells you "
-            "which outcome applied; a webhook event is fired immediately "
-            "in all cases.\n\n"
-            "Possible statuses: PENDING_REVIEW (queued for admin review), "
-            "DUPLICATE_IN_QUEUE, DUPLICATE_EXISTING, PREVIOUSLY_REJECTED."
+            "Receives one course idea (title plus any extra context keys) and "
+            "runs it through a three-stage deduplication engine before deciding "
+            "whether to queue it for admin review. The response status indicates "
+            "which outcome applied: new submission queued, duplicate already in "
+            "queue, duplicate matching an existing course, or previously "
+            "rejected.\n\n"
+
+            "Called by a developer integration whenever it has a new course "
+            "idea to submit into the MIE pipeline.\n\n"
+
+            "**Auth:** Requires a valid MIE developer API key.\n\n"
+
+            "**Prerequisites:** The developer account must be in ACTIVE "
+            "status (approved by a superadmin).\n\n"
+
+            "**Important:** A signed webhook event is fired immediately for "
+            "every outcome, including short-circuits. The dedup checks are "
+            "sequential and non-idempotent — resubmitting the same title may "
+            "produce a different result if queue contents have changed."
         ),
         request=SubmissionIngestSerializer,
+        examples=[
+            OpenApiExample(
+                name="New course idea",
+                request_only=True,
+                value={
+                    "title": "Introduction to Machine Learning with Python",
+                },
+            ),
+        ],
         responses={
             status.HTTP_201_CREATED: OpenApiResponse(
                 SubmissionIngestResponseSerializer,
@@ -76,36 +91,11 @@ class MieSubmissionIngestView(APIView):
                     "status field carries the outcome."
                 ),
             ),
-            status.HTTP_400_BAD_REQUEST: OpenApiResponse(
-                description="Missing/invalid title or malformed JSON.",
-            ),
-            status.HTTP_401_UNAUTHORIZED: OpenApiResponse(
-                description="Missing/invalid API key, or account not active."
-            ),
-            status.HTTP_429_TOO_MANY_REQUESTS: OpenApiResponse(
-                description="Rate limit exceeded; retry later."
-            ),
+            **STANDARD_ERROR_RESPONSES["validation"],
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["rate_limited"],
+            **STANDARD_ERROR_RESPONSES["server"],
         },
-        examples=[
-            OpenApiExample(
-                "Queued",
-                value={
-                    "id": "0d1c7b2e-6f5a-4a3f-9a2b-1f4e8c9d0a11",
-                    "reference": "SCB-0d1c7b2e-P",
-                    "status": "PENDING_REVIEW",
-                },
-                response_only=True,
-            ),
-            OpenApiExample(
-                "Short-circuited as duplicate",
-                value={
-                    "id": "7a2b9c4d-1111-4a3f-9a2b-1f4e8c9d0a22",
-                    "reference": "SCB-7a2b9c4d-E",
-                    "status": "DUPLICATE_EXISTING",
-                },
-                response_only=True,
-            ),
-        ],
     )
     def post(self, request):
         if not isinstance(request.data, dict):
@@ -126,15 +116,9 @@ class MieSubmissionIngestView(APIView):
         )
 
 
-@extend_schema(tags=["MIE Developer — Submissions"])
+@extend_schema(tags=["Developer — MIE Submissions"])
 class MieSubmissionQueueView(ListAPIView):
-    """The developer's own submission queue.
-
-    Rows are hard-scoped server-side to the authenticated developer -
-    there is no developer filter parameter on this surface by design, so
-    no query combination can expose another developer's data. Every
-    pipeline state appears here, including dedup short-circuits.
-    """
+    """The developer's own submission queue."""
 
     authentication_classes = [MieDeveloperAuthentication]
     permission_classes = [IsMieDeveloper]
@@ -150,17 +134,30 @@ class MieSubmissionQueueView(ListAPIView):
     @extend_schema(
         summary="List your submissions",
         description=(
-            "Your submission queue - every idea you have submitted, in "
-            "every possible state, newest first. Filter with ?status= "
-            "(one pipeline state) and ?search= (title substring). The "
-            "reference suffix letter always reflects the current state."
+            "Returns the authenticated developer's complete submission queue: "
+            "every idea they have submitted in every pipeline state, ordered "
+            "newest first. Supports filtering by pipeline state and title "
+            "substring search. The reference suffix letter always reflects "
+            "the current state.\n\n"
+
+            "Called when a developer opens their submissions dashboard or "
+            "needs to check the status of previously submitted ideas.\n\n"
+
+            "**Auth:** Requires a valid MIE developer API key.\n\n"
+
+            "**Prerequisites:** The developer account must be in ACTIVE "
+            "status (approved by a superadmin).\n\n"
+
+            "**Important:** Results are scoped server-side to the "
+            "authenticated developer — no query parameter can expose another "
+            "developer's submissions. Every pipeline state appears here, "
+            "including dedup short-circuits."
         ),
         parameters=QUEUE_FILTER_PARAMETERS,
         responses={
             status.HTTP_200_OK: DevSubmissionSerializer(many=True),
-            status.HTTP_401_UNAUTHORIZED: OpenApiResponse(
-                description="Missing/invalid credentials or account not active."
-            ),
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["server"],
         },
     )
     def get(self, request, *args, **kwargs):

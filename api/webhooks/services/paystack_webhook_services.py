@@ -25,7 +25,7 @@ class NonRetryableWebhookError(WebhookProcessingError):
     """Webhook payload is invalid or unsupported, so retries will not help."""
 
 
-class WebhookServices:
+class PaystackWebhookServices:
     @staticmethod
     def verify_paystack_webhook(payload, signature, secret_key):
         computed_hash = hmac.new(
@@ -35,7 +35,7 @@ class WebhookServices:
         return hmac.compare_digest(computed_hash, signature)
 
     @staticmethod
-    def parse_paystack_event(event_data):
+    def parse_webhook_event(event_data):
         try:
             if not isinstance(event_data, dict):
                 raise NonRetryableWebhookError("Webhook payload must be a JSON object")
@@ -47,9 +47,9 @@ class WebhookServices:
 
             match event_type:
                 case "transfer.success":
-                    return WebhookServices._handle_transfer_success(data)
+                    return PaystackWebhookServices._handle_transfer_success(data)
                 case "transfer.failed" | "transfer.reversed":
-                    return WebhookServices._handle_transfer_failure(data)
+                    return PaystackWebhookServices._handle_transfer_failure(data)
                 case _:
                     raise NonRetryableWebhookError(
                         f"Unhandled event type: {event_type}"

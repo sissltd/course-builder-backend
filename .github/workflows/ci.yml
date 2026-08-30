@@ -115,6 +115,12 @@ jobs:
       # raise at runtime without a real Fernet key, so tests need one. Not a
       # real secret — generated fresh for this comment, thrown away.
       FIELD_ENCRYPTION_KEY: 6iYSAd8pRX8mSg1Uebfb7zGEvSEcjWDS8EwkefOjrsM=
+      # Flutterwave Env Variables
+      FLUTTERWAVE_CLIENT_ID: dummy--917c-4480-bfd7-5e53afa7cedb
+      FLUTTERWAVE_CLIENT_SECRET: dummpy-hG4OaKaL2Izk6hKr3JeVWZ9z
+      FLUTTERWAVE_ENCRYPTION_KEY: dummy-gR4Pr3IOmMMdYGSqNbupdRYXOIqNBUxrs=
+      FLUTTERWAVE_BASE_URL: https://developersandbox-api.flutterwave.com
+      FLUTTERWAVE_SECRET_HASH: dummy-fd5938f9974dc56069e65705248c5b9d19e83ec45a941c4f4f8
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -178,6 +184,7 @@ jobs:
       - name: Ping Dokploy deploy webhook
         env:
           WEBHOOK_URL: ${{ secrets.DOKPLOY_STAGING_DEPLOY_WEBHOOK }}
+          REPO_FULL_NAME: ${{ github.repository }}
         run: |
           if [ -z "$WEBHOOK_URL" ]; then
             echo "::error::DOKPLOY_STAGING_DEPLOY_WEBHOOK secret is not set."
@@ -185,7 +192,11 @@ jobs:
           fi
           for attempt in 1 2 3; do
             code=$(curl -s -o /tmp/dokploy_resp.txt -w "%{http_code}" \
-              -X POST --max-time 30 "$WEBHOOK_URL") || code=000
+              -X POST --max-time 30 \
+              -H "Content-Type: application/json" \
+              -H "X-GitHub-Event: push" \
+              -d "{\"ref\":\"refs/heads/staging\",\"repository\":{\"full_name\":\"${REPO_FULL_NAME}\"}}" \
+              "$WEBHOOK_URL") || code=000
             echo "attempt ${attempt}: HTTP ${code}"
             case "$code" in
               2*)

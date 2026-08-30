@@ -159,6 +159,8 @@ class UserActivityLogExportView(APIView):
 
     @extend_schema(
         summary="Export my activity log as CSV",
+        request=None,
+        responses={(200, "text/csv"): OpenApiResponse(description="CSV file")},
         description=(
             "Downloads the current user's own activity log as a CSV file "
             "(the Data & Privacy screen's 'download activity log').\n\n"

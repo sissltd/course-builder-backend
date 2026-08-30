@@ -2,24 +2,28 @@ import json
 from decimal import Decimal
 
 from django.db import transaction
-from drf_spectacular.utils import extend_schema_view
+from django.utils.decorators import method_decorator
+from django.views.decorators.csrf import csrf_exempt
+from drf_spectacular.utils import extend_schema
 from rest_framework import status
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from api.webhooks.services.paystack_webhook_services import WebhookServices
-from api.webhooks.tasks import process_paystack_webhook_task
-from core.models import PaystackWebhookEvent
+from api.platform.enums import PaymentProcessors
+from api.webhooks.services.paystack_webhook_services import PaystackWebhookServices
+from api.webhooks.tasks import process_webhook_task
+from core.models import WebhookEvent
 from shared.constants.environ import DJANGO_ENV
 from shared.constants.paystack import PAYSTACK_SECRET_KEY
 from shared.response.success import custom_success_response
 
 
-@extend_schema_view(exclude=True)
+@method_decorator(csrf_exempt, name="dispatch")
 class PaystackWebhookView(APIView):
     permission_classes = [AllowAny]
 
+    @extend_schema(exclude=True)
     def post(self, request, *args, **kwargs):
         payload = request.body
 
@@ -33,7 +37,7 @@ class PaystackWebhookView(APIView):
                 status=status.HTTP_200_OK,
             )
 
-        is_valid = WebhookServices.verify_paystack_webhook(
+        is_valid = PaystackWebhookServices.verify_paystack_webhook(
             payload=payload,
             signature=signature,
             secret_key=PAYSTACK_SECRET_KEY,
@@ -65,20 +69,21 @@ class PaystackWebhookView(APIView):
         try:
             with transaction.atomic():
                 # Check if we already received this to prevent double-logging
-                event, created = PaystackWebhookEvent.objects.get_or_create(
+                event, created = WebhookEvent.objects.get_or_create(
                     event_id=event_id,
                     defaults={
                         "event_type": event_type,
                         "payload": data,
                         "status": "PENDING",
                         "amount": amount,
+                        "provider": PaymentProcessors.PAYSTACK,
                     },
                 )
 
                 if created:
                     # Queue the task only if it's a brand new event.
                     transaction.on_commit(
-                        lambda: process_paystack_webhook_task.delay(event.id)  # type: ignore
+                        lambda: process_webhook_task.delay(event.id)  # type: ignore
                     )
 
         except Exception:

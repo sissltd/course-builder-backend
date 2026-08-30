@@ -1,7 +1,8 @@
+from unittest.mock import patch
+
 from django.conf import settings
 from django.core import mail
 from django.test import TestCase
-from unittest.mock import patch
 from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -58,8 +59,12 @@ class SignupTests(TestCase):
         self.assertIn(f"{settings.FRONTEND_URL}/verify-email", mail.outbox[0].body)
         self.assertIn("token=", mail.outbox[0].body)
 
-    def test_successful_celery_send_is_logged(self):
-        with self.assertLogs("shared.tasks", level="INFO") as logs:
+    @patch("api.notification.services.email_service.send_templated_email")
+    def test_successful_send_is_logged(self, mock_send):
+        mock_send.return_value = 1
+        with self.assertLogs(
+            "api.authentication.services.authentication_service", level="INFO"
+        ) as logs:
             with self.captureOnCommitCallbacks(execute=True):
                 service.signup(
                     email="logged@example.com",
@@ -69,6 +74,7 @@ class SignupTests(TestCase):
                     country="NG",
                 )
 
+        mock_send.assert_called_once()
         self.assertTrue(
             any(
                 "auth_email_sent email_type=SIGNUP_VERIFICATION" in message
@@ -232,13 +238,11 @@ class ForgotPasswordTests(TestCase):
         service.forgot_password(email="ghost@example.com")
         self.assertEqual(len(mail.outbox), 0)
 
-    @patch(
-        "api.authentication.services.authentication_service.send_templated_email_task.delay"
-    )
-    def test_existing_user_queues_password_reset_through_celery(self, delay):
+    def test_existing_user_sends_password_reset_email(self):
         user = make_user()
 
         service.forgot_password(email=user.email)
 
-        delay.assert_called_once()
-        self.assertEqual(delay.call_args.kwargs["email_type"], "PASSWORD_RESET_REQUEST")
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn("Reset your password", mail.outbox[0].subject)
+        self.assertIn("reset-password", mail.outbox[0].body)

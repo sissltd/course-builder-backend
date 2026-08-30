@@ -102,9 +102,9 @@ def create_transaction(
         type=type,
         status=status,
         description=description,
-        recipient_account_name=recipient_account_name,
-        recipient_account_number=recipient_account_number,
-        recipient_provider_name=recipient_provider_name,
+        recipient_account_name=recipient_account_name or "",
+        recipient_account_number=recipient_account_number or "",
+        recipient_provider_name=recipient_provider_name or "",
     )
     return txn
 

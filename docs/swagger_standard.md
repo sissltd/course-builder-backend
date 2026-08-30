@@ -1,7 +1,7 @@
 # Course Builder Swagger Documentation Standard
 
 **Audience:** every backend engineer adding or editing an endpoint.
-**Goal:** a frontend developer opens `/api/v1/docs/`, finds any endpoint, and knows **what to send, what they'll get back, who can call it, and what every error means** — without ever asking a backend engineer.
+**Goal:** a frontend developer opens `/api/schema/swagger/`, finds any endpoint, and knows **what to send, what they'll get back, who can call it, and what every error means** — without ever asking a backend engineer.
 
 This is the **non-negotiable contract** for endpoint documentation.
 
@@ -15,8 +15,9 @@ This is the **non-negotiable contract** for endpoint documentation.
 
 | Good                               | Bad                             |
 | ---------------------------------- | ------------------------------- |
-| `"List published courses"`         | `"Get courses"`                 |
-| `"Create a course"`                | `"Course creation"`             |
+| `"Complete vendor onboarding"`     | `"Vendor onboarding endpoint."` |
+| `"List active product categories"` | `"Get categories"`              |
+| `"Approve a brand suggestion"`     | `"Brand approval"`              |
 
 ---
 
@@ -33,7 +34,7 @@ Every description must have **all five** sections below, in this order, even if 
 
 <Optional second paragraph — when to call this endpoint in the user journey. e.g. "Called immediately after the OTP verify step, before the user can access any vendor screens.">
 
-**Auth:** <required role + any extra gate. e.g. "Admin" or "Public — no auth required". Always include, even when public.>
+**Auth:** <required role + any extra gate. e.g. "Vendor (KYC-verified)" or "Admin" or "Public — no auth required". Always include, even when public.>
 
 **Prerequisites:** <what must already be true on the server side. e.g. "User must have a valid Bearer token from /auth/otp/verify". Write "None" if there are no prerequisites.>
 
@@ -52,12 +53,21 @@ Every description must have **all five** sections below, in this order, even if 
 
 ```
 description=(
-    "Completes a staff invitation: verifies the emailed token, sets the "
-    "invitee's chosen password, and activates the account in the role the "
-    "Super Admin selected. This proves the invitee controls the mailbox that "
-    "was invited, which is why the account stays dormant until this call "
-    "succeeds. A JWT pair is returned so the new staff member lands straight "
-    "in the dashboard without a separate login round-trip"
+    "Completes the vendor onboarding flow by collecting business "
+    "details, identity documents, and password. Creates the base "
+    "UserProfile and VendorProfile in a single atomic transaction "
+    "and assigns the Vendor role automatically.\n\n"
+    "This is step 3 of vendor signup: invitation → OTP verify → "
+    "**onboarding** → KYC. After this call succeeds, the vendor can "
+    "log in with email + password but cannot trade until KYC clears.\n\n"
+    "**Auth:** Bearer token from `/auth/otp/verify` (the temporary "
+    "post-OTP token, not a long-lived session token).\n\n"
+    "**Prerequisites:** The user must have verified their email via "
+    "OTP. The same email used for OTP must match the token's claim.\n\n"
+    "**Important:** This endpoint is idempotent on the user — a second "
+    "call with the same token returns 409 Conflict. The password set "
+    "here becomes the vendor's permanent login credential; subsequent "
+    "logins use email + password (no OTP)."
 ),
 ```
 
@@ -71,31 +81,47 @@ description=(
 
 ### Approved audiences
 
-| Audience    | When to use                                             |
-| ----------- | ------------------------------------------------------- |
-| `Public`    | No auth required — anyone can call (e.g. health checks) |
-| `Auth`      | Auth lifecycle — login, OTP, password reset, onboarding |
-| `Admin`     | Requires admin/staff role                               |
-| `Creator`   | Called by course creators or their collaborators         |
-| `Reviewer`  | Called by content or QA reviewers                         |
-| `Writer`    | Legacy label; use `Creator` for new endpoint tags       |
-| `System`    | Webhooks, internal callbacks                            |
+| Audience   | When to use                                                                                       |
+| ---------- | ------------------------------------------------------------------------------------------------- |
+| `Public`   | No auth required — anyone can call (e.g. bank lookup, health checks)                              |
+| `Auth`     | Auth lifecycle — signup, login, OTP/email verification, password, MFA, sessions, staff invitation |
+| `Creator`  | Called by Course Creators and Writers (course authoring, wallet, collaborators)                   |
+| `Reviewer` | Called by Creator Reviewers / Verifiers / Approvers / AI / QA (review queues)                     |
+| `Admin`    | Called by Admins and Super Admins (platform management, KYC review, staff)                        |
+| `System`   | Webhooks, internal callbacks (e.g. Paystack)                                                      |
 
-### Approved tag examples (a growing list)
+### Approved tag examples
 
 ```
-"Admin — Staff"
-"Auth — Login"
+"Auth — Session"
+"Auth — Signup & Verification"
+"Auth — Password"
+"Auth — MFA"
 "Admin — Categories"
+"Admin — Users"
+"Admin — Wallets"
+"Admin — Staff"
+"Creator — Courses"
+"Creator — Modules"
+"Creator — Lessons"
+"Creator — Assessments"
+"Creator — Topics"
+"Creator — Topic Reservations"
+"Creator — Collaborators"
+"Creator — Wallet"
+"Reviewer — Review Queue"
+"Reviewer — Availability"
+"Reviewer — Queue Preferences"
+"Reviewer — Topic Reservations"
 "System — Webhooks"
-"Auth — Staff Invitation"                                  
 ```
 
 ### Not allowed
 
-- Other separators: `"Admin • Categories"`, `"Admin-Categories"`, `"Admin--Categories"`.
+- Other separators: `"Creator • Courses"`, `"Creator-Courses"`, `"Courses--Creator"`.
 - Multiple tags on one endpoint.
-- Tags without audience: `"Categories"`, `"Courses"`.
+- Tags without audience: `"Courses"`, `"Wallet"`, `"Quiz"`.
+- Resource-first tags: `"Courses — Topics"`, `"Users — KYC"`.
 
 ---
 
@@ -126,10 +152,10 @@ examples=[
 
 ## 5. `responses` — success code + every possible error, all with examples
 
-Document the **success code** AND **every error this endpoint can return**. Pull boilerplate errors from `includes/spectacular/responses.py` so we don't rewrite them 50 times.
+Document the **success code** AND **every error this endpoint can return**. Pull boilerplate errors from `shared/spectacular/responses.py` so we don't rewrite them 50 times.
 
 ```python
-from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
+from shared.spectacular.responses import STANDARD_ERROR_RESPONSES
 
 responses={
     201: OpenApiResponse(
@@ -153,15 +179,10 @@ responses={
             OpenApiExample(
                 name="Already onboarded",
                 value={
-                    "errors": [
-                        {
-                        "type": "client_error",
-                        "code": "not_authenticated",
-                        "message": "Authentication credentials were not provided.",
-                        "field_name": null
-                        }
-                    ]
-                    },
+                    "success": False,
+                    "status": 409,
+                    "message": "This account has already been onboarded.",
+                },
             ),
         ],
     ),
@@ -224,4 +245,7 @@ For every endpoint in a PR, we will check:
 
 ## Reference implementation
 
-The gold-standard reference is [vendor_onboarding_view.py](../api/authentication/views/onboarding/vendor_onboarding_view.py). When in doubt, mirror it.
+The gold-standard references are the admin-side views in
+[course_views.py](../api/courses/views/course_views.py) (review queue) and
+[platform/views.py](../api/platform/views.py) (platform settings). When in
+doubt, mirror their summary/description/tags/responses structure.

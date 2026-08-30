@@ -438,7 +438,11 @@ class LoginView(APIView):
             "who already knows the password can trigger that, it doesn't "
             "leak account existence to anyone else. `workspace` tells the "
             "frontend which dashboard to route to based on role; `role` is "
-            "also embedded in the access token's claims."
+            "also embedded in the access token's claims. The "
+            "`mfa_required`/`mfa_enrollment_required` fields only appear "
+            "where MFA is enforced (production); in dev/staging a "
+            "mandated-role super admin logs straight in and the token "
+            "carries `mfa_verified=true`."
         ),
         tags=["Auth — Session"],
         request=LoginSerializer,

@@ -17,14 +17,22 @@ logger = logging.getLogger(__name__)
 class EmailService:
     @staticmethod
     def _send_email(subject, recipient, html_content):
-        from shared.tasks import send_email_task
+        from shared.tasks import dispatch_email
 
         try:
-            send_email_task.delay(subject, str(recipient), str(html_content))
-            logger.info(f"Email queued for {recipient} with subject: {subject}")
+            dispatch_email(
+                subject=subject,
+                recipients=[str(recipient)],
+                # dispatch_email mirrors EMAIL_SERVICE.md: "gmail" (SMTP) and
+                # "resend" providers both need a plain-text body. Reuse the
+                # subject + html as the fallback, matching send_email_task.
+                text_content=f"{subject}\n\n{html_content}",
+                html_content=str(html_content),
+            )
+            logger.info(f"Email sent to {recipient} with subject: {subject}")
             return True
         except Exception as e:
-            logger.error(f"Failed to queue email for {recipient}. Error: {e}")
+            logger.error(f"Failed to send email to {recipient}. Error: {e}")
             return None
 
     @staticmethod
