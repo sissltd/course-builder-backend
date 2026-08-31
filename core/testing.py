@@ -1,6 +1,129 @@
 """Shared test-suite helpers."""
 
+import uuid
+
 from django.db import connection
+from django.utils.text import slugify
+
+
+SEED_CATEGORIES = [
+    (
+        "Web Development",
+        "Frontend, backend, and full-stack engineering courses.",
+        "150000.00",
+        "CREATOR_PREFERRED",
+    ),
+    (
+        "Data Science & Analytics",
+        "Data analysis, machine learning, and visualisation courses.",
+        "180000.00",
+        "CREATOR_PREFERRED",
+    ),
+    (
+        "Mobile App Development",
+        "iOS, Android, and cross-platform app development courses.",
+        "160000.00",
+        "CREATOR_PREFERRED",
+    ),
+    (
+        "UI/UX Design",
+        "Interface design, design systems, and user research courses.",
+        "120000.00",
+        "CREATOR_PREFERRED",
+    ),
+    (
+        "Cloud & DevOps",
+        "Cloud infrastructure, CI/CD, and site-reliability courses.",
+        "200000.00",
+        "CREATOR_PREFERRED",
+    ),
+    (
+        "Cybersecurity",
+        "Security engineering, offensive security, and compliance courses.",
+        "190000.00",
+        "CREATOR_PREFERRED",
+    ),
+    (
+        "Digital Marketing",
+        "Growth, SEO, paid media, and content strategy courses.",
+        "90000.00",
+        "CREATOR_PREFERRED",
+    ),
+    (
+        "Product Management",
+        "Product discovery, delivery, and analytics courses.",
+        "140000.00",
+        "CREATOR_PREFERRED",
+    ),
+    (
+        "Blockchain & Web3",
+        "Smart contracts, protocols, and decentralised app courses.",
+        "210000.00",
+        "OPEN",
+    ),
+    (
+        "Business & Entrepreneurship",
+        "Startup operations, finance, and leadership courses.",
+        "100000.00",
+        "OPEN",
+    ),
+]
+
+SEED_TOPICS = [
+    (
+        "Web Development",
+        ["HTML & CSS Fundamentals", "JavaScript Development", "React Development"],
+    ),
+    (
+        "Data Science & Analytics",
+        ["Python for Data Analysis", "Advanced Excel", "Power BI"],
+    ),
+    (
+        "Mobile App Development",
+        [
+            "Flutter Development",
+            "React Native Development",
+            "Android Development with Kotlin",
+        ],
+    ),
+    (
+        "UI/UX Design",
+        ["UI/UX Design Fundamentals", "Figma for Interface Design", "UX Research"],
+    ),
+    (
+        "Cloud & DevOps",
+        [
+            "AWS Cloud Practitioner",
+            "Microsoft Azure Fundamentals",
+            "Docker & Kubernetes",
+        ],
+    ),
+    (
+        "Cybersecurity",
+        ["Cybersecurity Fundamentals", "Ethical Hacking", "Network Security"],
+    ),
+    (
+        "Digital Marketing",
+        [
+            "Digital Marketing Fundamentals",
+            "Search Engine Optimization",
+            "Social Media Marketing",
+        ],
+    ),
+    ("Product Management", ["Project Management", "Agile & Scrum", "Product Strategy"]),
+    (
+        "Blockchain & Web3",
+        [
+            "Blockchain Fundamentals",
+            "Solidity Smart Contract Development",
+            "Web3 Application Development",
+        ],
+    ),
+    (
+        "Business & Entrepreneurship",
+        ["Entrepreneurship Fundamentals", "Business Strategy", "Financial Management"],
+    ),
+]
 
 
 def reseed_reference_data() -> None:
@@ -14,13 +137,42 @@ def reseed_reference_data() -> None:
     state. Keep this in sync with new seed migrations.
     """
 
+    from api.catalog.models import Category, Topic
     from api.courses.models import CourseVersion
     from api.payments.models.ledgeraccount_models import InternalAccount
     from api.reviews.models import QualityCheckCriterion
 
-    CourseVersion.objects.get_or_create(
-        label="1.0", defaults={"is_active": True}
-    )
+    categories = {}
+    for name, description, price, track in SEED_CATEGORIES:
+        category, _ = Category.objects.get_or_create(
+            name=name,
+            defaults={
+                "slug": slugify(name)[:160],
+                "description": description,
+                "creator_price": price,
+                "track_preference": track,
+            },
+        )
+        categories[name] = category
+
+    for category_name, topic_names in SEED_TOPICS:
+        category = categories[category_name]
+        for topic_name in topic_names:
+            Topic.objects.get_or_create(
+                category=category,
+                name=topic_name,
+                defaults={
+                    "id": uuid.uuid5(
+                        uuid.NAMESPACE_URL,
+                        f"soludesks:catalog-topic:{category_name}:{topic_name}",
+                    ),
+                    "slug": slugify(topic_name)[:160],
+                    "creator_price": category.creator_price,
+                    "status": "ACTIVE",
+                },
+            )
+
+    CourseVersion.objects.get_or_create(label="1.0", defaults={"is_active": True})
     for code_name, name in (
         ("paystack_transfer", "Paystack Transfer"),
         ("general", "General Ledger"),
