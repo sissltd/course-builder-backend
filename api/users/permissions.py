@@ -46,6 +46,17 @@ class IsCourseCreatorRole(HasRole):
     allowed_roles = (UserRole.COURSE_CREATOR, UserRole.STAFF_WRITER)
 
 
+class IsPublicCourseCreatorRole(HasRole):
+    """Grants access only to self-registered Course Creators.
+
+    Unlike ``IsCourseCreatorRole``, this deliberately excludes invited staff
+    writers. Superusers retain the conventional bypass implemented by
+    ``HasRole``.
+    """
+
+    allowed_roles = (UserRole.COURSE_CREATOR,)
+
+
 class IsCreatorReviewerRole(HasRole):
     """Grants access to users who review submitted courses.
 
