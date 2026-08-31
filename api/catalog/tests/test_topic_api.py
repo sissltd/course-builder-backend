@@ -31,7 +31,9 @@ class TopicApiTests(APITestCase):
         make_topic(category=self.category, name="Frontend Development")
         self.client.force_authenticate(self.creator)
 
-        response = self.client.get("/api/v1/topics/")
+        response = self.client.get(
+            "/api/v1/topics/", {"category": str(self.category.id)}
+        )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data["data"]["results"]), 1)
 
