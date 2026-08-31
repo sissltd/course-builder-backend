@@ -2,6 +2,7 @@ import django_filters
 from django.db.models import Q
 
 from api.catalog.enums import TrackPreference
+from api.courses.enums import CourseSourceType
 from api.courses.models import Course
 from api.users.enums import QueueTrackFilter
 
@@ -13,6 +14,40 @@ _TRACK_FILTER_TO_CATEGORY_TRACK_PREFERENCE = {
     QueueTrackFilter.CREATOR_TRACK: TrackPreference.CREATOR_PREFERRED,
     QueueTrackFilter.AI_TRACK: TrackPreference.AI_PREFERRED,
 }
+
+
+class CourseFilter(django_filters.FilterSet):
+    """Filters on the creator/admin My Courses screen."""
+
+    course_id = django_filters.UUIDFilter(field_name="id", label="Course ID")
+    search = django_filters.CharFilter(method="filter_search", label="Course title")
+    creator_type = django_filters.ChoiceFilter(
+        field_name="source_type",
+        choices=CourseSourceType.choices,
+        label="Creator type",
+    )
+    quality_score = django_filters.NumberFilter(
+        field_name="quality_score", lookup_expr="exact"
+    )
+    date_from = django_filters.DateFilter(
+        field_name="created_datetime", lookup_expr="date__gte", label="Start date"
+    )
+    date_to = django_filters.DateFilter(
+        field_name="created_datetime", lookup_expr="date__lte", label="End date"
+    )
+
+    class Meta:
+        model = Course
+        fields = {
+            "category": ["exact"],
+            "topic": ["exact"],
+            "status": ["exact"],
+            "source_type": ["exact"],
+            "difficulty_level": ["exact"],
+        }
+
+    def filter_search(self, queryset, name, value):
+        return queryset.filter(title__icontains=value)
 
 
 class CourseReviewQueueFilter(django_filters.FilterSet):
