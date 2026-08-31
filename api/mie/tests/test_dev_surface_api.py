@@ -353,6 +353,31 @@ class DocumentationDownloadTests(DevSurfaceAuthBase):
                 self.assertTrue(response.content.startswith(b"%PDF-"))
                 self.assertEqual(account.status, "APPROVED")
 
+    def test_serves_the_accept_header_swagger_sends(self):
+        """Regression: the schema advertises application/pdf, so Swagger
+        asks for exactly that. Without a renderer declaring the type, DRF
+        negotiated a 406 before the view ever ran."""
+
+        for accept in ("application/pdf", "*/*", "application/pdf, */*;q=0.8"):
+            with self.subTest(accept=accept):
+                response = self.client.get(DOCS_DOWNLOAD_URL, HTTP_ACCEPT=accept)
+
+                self.assertEqual(response.status_code, status.HTTP_200_OK)
+                self.assertEqual(response["Content-Type"], "application/pdf")
+                self.assertTrue(response.content.startswith(b"%PDF-"))
+
+    def test_errors_stay_json_even_when_pdf_was_requested(self):
+        """Negotiation runs before authentication, so an unauthenticated
+        request for application/pdf must still get a readable envelope."""
+
+        self.client.credentials()
+
+        response = self.client.get(DOCS_DOWNLOAD_URL, HTTP_ACCEPT="application/pdf")
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assertIn("application/json", response["Content-Type"])
+        self.assertIn("errors", response.json())
+
     def test_requires_credentials(self):
         self.client.credentials()
 

@@ -132,10 +132,14 @@ class MFAEnrollConfirmView(APIView):
         )
 
 
+# Public endpoint: no security requirement, so Swagger's padlock does
+# not attach a bearer token to it.
+@extend_schema(auth=[{}])
 class MFAVerifyView(APIView):
     """Second half of login: exchange a challenge_token + live code for the
     normal login token payload."""
 
+    authentication_classes = []  # public: a stale token must not 401 this
     permission_classes = [AllowAny]
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = "login"

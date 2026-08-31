@@ -84,9 +84,13 @@ _LOGIN_RESPONSE_SCHEMA = {
 }
 
 
+# Public endpoint: no security requirement, so Swagger's padlock does
+# not attach a bearer token to it.
+@extend_schema(auth=[{}])
 class SignupView(APIView):
     """Create an inactive user and email a signup-verification link."""
 
+    authentication_classes = []  # public: a stale token must not 401 this
     permission_classes = [AllowAny]
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = "signup"
@@ -223,9 +227,13 @@ class ReviewerSignupView(SignupView):
         return super().post(request)
 
 
+# Public endpoint: no security requirement, so Swagger's padlock does
+# not attach a bearer token to it.
+@extend_schema(auth=[{}])
 class VerifyEmailView(APIView):
     """Verify a signup link token, activate the account, and auto-issue tokens."""
 
+    authentication_classes = []  # public: a stale token must not 401 this
     permission_classes = [AllowAny]
     serializer_class = (
         VerifyEmailSerializer  # for schema generation only; not a GenericAPIView
@@ -315,9 +323,13 @@ class VerifyEmailView(APIView):
         return Response({**tokens, "user": MeSerializer(user).data}, status=200)
 
 
+# Public endpoint: no security requirement, so Swagger's padlock does
+# not attach a bearer token to it.
+@extend_schema(auth=[{}])
 class ResendVerificationView(APIView):
     """Re-issue a verification link for signup verification or password reset."""
 
+    authentication_classes = []  # public: a stale token must not 401 this
     permission_classes = [AllowAny]
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = "resend_verification"
@@ -404,9 +416,13 @@ class ResendVerificationView(APIView):
         )
 
 
+# Public endpoint: no security requirement, so Swagger's padlock does
+# not attach a bearer token to it.
+@extend_schema(auth=[{}])
 class LoginView(APIView):
     """Exchange email+password for a JWT access/refresh token pair."""
 
+    authentication_classes = []  # public: a stale token must not 401 this
     permission_classes = [AllowAny]
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = "login"
@@ -740,9 +756,13 @@ class TokenRefreshView(SimpleJWTTokenRefreshView):
         return super().post(request, *args, **kwargs)
 
 
+# Public endpoint: no security requirement, so Swagger's padlock does
+# not attach a bearer token to it.
+@extend_schema(auth=[{}])
 class ForgotPasswordView(APIView):
     """Request a password-reset link. Never reveals whether the email exists."""
 
+    authentication_classes = []  # public: a stale token must not 401 this
     permission_classes = [AllowAny]
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = "forgot_password"
@@ -805,9 +825,13 @@ class ForgotPasswordView(APIView):
         )
 
 
+# Public endpoint: no security requirement, so Swagger's padlock does
+# not attach a bearer token to it.
+@extend_schema(auth=[{}])
 class ResetPasswordView(APIView):
     """Consume a password-reset link token and set a new password."""
 
+    authentication_classes = []  # public: a stale token must not 401 this
     permission_classes = [AllowAny]
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = "reset_password"
@@ -1095,6 +1119,9 @@ class ChangeEmailRequestView(APIView):
         )
 
 
+# Public endpoint: no security requirement, so Swagger's padlock does
+# not attach a bearer token to it.
+@extend_schema(auth=[{}])
 class ChangeEmailConfirmView(APIView):
     """Consume an email-change confirmation link token and apply the new email.
 
@@ -1104,6 +1131,7 @@ class ChangeEmailConfirmView(APIView):
     of the new inbox.
     """
 
+    authentication_classes = []  # public: a stale token must not 401 this
     permission_classes = [AllowAny]
     serializer_class = (
         ChangeEmailConfirmSerializer  # for schema generation only; not a GenericAPIView

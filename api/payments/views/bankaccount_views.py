@@ -181,8 +181,9 @@ class BankAccountSuspendView(APIView):
         )
 
 
-@extend_schema(**BANK_ACCOUNT_VERIFY_DOCS)
+@extend_schema(**BANK_ACCOUNT_VERIFY_DOCS, auth=[{}])
 class VerifyBankAccountView(APIView):
+    authentication_classes = []  # public: a stale token must not 401 this
     permission_classes: ClassVar[list] = [AllowAny]
     serializer_class = BankAccountVerifySerializer
 
@@ -217,8 +218,9 @@ class VerifyBankAccountView(APIView):
             )
 
 
-@extend_schema(**BANK_LIST_DOCS)
+@extend_schema(**BANK_LIST_DOCS, auth=[{}])
 class BankListView(APIView):
+    authentication_classes = []  # public: a stale token must not 401 this
     permission_classes = [AllowAny]
 
     def get(self, request):

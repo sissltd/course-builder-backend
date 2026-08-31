@@ -63,9 +63,13 @@ _ACTIVE_STAFF_EXAMPLE = {
 }
 
 
+# Public endpoint: no security requirement, so Swagger's padlock does
+# not attach a bearer token to it.
+@extend_schema(auth=[{}])
 class SuperAdminBootstrapView(APIView):
     """Claim the platform's single Super Admin seat in enabled environments."""
 
+    authentication_classes = []  # public: a stale token must not 401 this
     permission_classes = [AllowAny]
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = "superadmin_bootstrap"
@@ -592,9 +596,13 @@ class ReactivateStaffView(APIView):
         )
 
 
+# Public endpoint: no security requirement, so Swagger's padlock does
+# not attach a bearer token to it.
+@extend_schema(auth=[{}])
 class AcceptStaffInvitationView(APIView):
     """Consume a staff invitation token, set a password, and activate."""
 
+    authentication_classes = []  # public: a stale token must not 401 this
     permission_classes = [AllowAny]
     serializer_class = AcceptStaffInvitationSerializer  # schema generation only
 

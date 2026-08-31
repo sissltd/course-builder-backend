@@ -1,11 +1,13 @@
 from django.http import HttpResponse
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiExample, OpenApiResponse, extend_schema
+from rest_framework.renderers import JSONRenderer
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from api.mie.authentication import MieDeveloperAuthentication
 from api.mie.permissions import IsMieDeveloper
+from api.mie.renderers import PdfRenderer
 from api.mie.serializers.dev_me_serializer import DeveloperMeSerializer
 from api.mie.services import documentation_pdf_service, documentation_service
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
@@ -215,6 +217,26 @@ class MieDocumentationDownloadView(APIView):
 
     authentication_classes = [MieDeveloperAuthentication]
     permission_classes = [IsMieDeveloper]
+    # PdfRenderer first so `Accept: application/pdf` (what Swagger sends,
+    # reading the schema below) and `Accept: */*` both negotiate; JSON is
+    # kept so a client asking for it still gets readable error bodies.
+    renderer_classes = [PdfRenderer, JSONRenderer]
+
+    def finalize_response(self, request, response, *args, **kwargs):
+        """Render error bodies as JSON whatever the client asked for.
+
+        Content negotiation happens before authentication, so a request
+        for application/pdf that then 401s would otherwise try to render
+        the error envelope through PdfRenderer and emit an unreadable
+        body. The swap has to happen on the *request*: DRF's own
+        finalize_response copies request.accepted_renderer onto the
+        response, overwriting anything set here directly.
+        """
+
+        if isinstance(response, Response) and response.status_code >= 400:
+            request.accepted_renderer = JSONRenderer()
+            request.accepted_media_type = "application/json"
+        return super().finalize_response(request, response, *args, **kwargs)
 
     @extend_schema(
         summary="Integration documentation (PDF download)",
