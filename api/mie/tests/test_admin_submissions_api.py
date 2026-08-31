@@ -1,3 +1,5 @@
+import json
+
 from rest_framework import status
 from rest_framework.test import APITestCase
 
@@ -8,6 +10,8 @@ from api.mie.enums import (
     WebhookEventType,
 )
 from api.mie.models import WebhookEvent
+from api.mie.services import submission_service
+from api.mie.services.webhook_dispatcher import render_body
 from api.mie.tests.factories import (
     make_approved_developer,
     make_decided_submission,
@@ -231,8 +235,83 @@ class SignalAndBypassTests(APITestCase):
             event_type=WebhookEventType.SUBMISSION_PAYOUT_BYPASS_UPDATED
         ).order_by("created_datetime")
         self.assertEqual(bypass_events.count(), 2)
-        payloads = [e.payload["payout_bypass"] for e in bypass_events]
+        payloads = [e.payload["submission"]["payout_bypass"] for e in bypass_events]
         self.assertEqual(payloads, [True, False])
+
+
+class DecisionEventWireShapeTests(APITestCase):
+    """Every event-producing path must store the envelope the dispatcher
+    reads. render_body only wires `payload["submission"]` onto the
+    network, so a flat payload here silently delivers an empty object to
+    the developer."""
+
+    def setUp(self):
+        self.superadmin = make_user(role=UserRole.SUPER_ADMIN)
+        self.client.force_authenticate(self.superadmin)
+        self.account, _raw = make_approved_developer()
+        self.reason = make_rejection_reason(label="Prohibited subject")
+
+    def _wire_body(self, submission, event_type):
+        event = WebhookEvent.objects.filter(
+            submission=submission, event_type=event_type
+        ).latest("created_datetime")
+        return json.loads(render_body(event))
+
+    def test_approval_delivers_a_populated_submission(self):
+        submission = make_submission(developer=self.account)
+
+        self.client.post(f"{QUEUE_URL}{submission.id}/approve/", {}, format="json")
+
+        body = self._wire_body(submission, WebhookEventType.SUBMISSION_APPROVED)
+        submission.refresh_from_db()
+        self.assertEqual(
+            body["submission"],
+            {
+                "reference": submission.public_reference,
+                "status": SubmissionStatus.APPROVED,
+                "title": submission.title,
+            },
+        )
+
+    def test_rejection_delivers_reason_and_note_on_the_wire(self):
+        submission = make_submission(developer=self.account)
+
+        self.client.post(
+            f"{QUEUE_URL}{submission.id}/reject/",
+            {"rejection_reason": "Prohibited subject", "rejection_note": "Off-topic."},
+            format="json",
+        )
+
+        body = self._wire_body(submission, WebhookEventType.SUBMISSION_REJECTED)
+        self.assertEqual(body["submission"]["status"], SubmissionStatus.REJECTED)
+        self.assertEqual(body["submission"]["rejection_reason"], "Prohibited subject")
+        self.assertEqual(body["submission"]["rejection_note"], "Off-topic.")
+
+    def test_payout_bypass_delivers_the_flag_on_the_wire(self):
+        submission = make_submission(developer=self.account)
+
+        self.client.post(
+            f"{QUEUE_URL}{submission.id}/payout_bypass/",
+            {"payout_bypass": True},
+            format="json",
+        )
+
+        body = self._wire_body(
+            submission, WebhookEventType.SUBMISSION_PAYOUT_BYPASS_UPDATED
+        )
+        self.assertTrue(body["submission"]["payout_bypass"])
+        self.assertEqual(body["submission"]["title"], submission.title)
+
+    def test_ingestion_and_decision_events_share_one_envelope(self):
+        submission = make_submission(developer=self.account)
+        submission_service.record_event(submission)
+        self.client.post(f"{QUEUE_URL}{submission.id}/approve/", {}, format="json")
+
+        queued = self._wire_body(submission, WebhookEventType.SUBMISSION_QUEUED)
+        approved = self._wire_body(submission, WebhookEventType.SUBMISSION_APPROVED)
+
+        self.assertEqual(set(queued), set(approved))
+        self.assertEqual(set(queued["submission"]), set(approved["submission"]))
 
 
 class RejectionReasonTaxonomyTests(APITestCase):

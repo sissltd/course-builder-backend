@@ -4,6 +4,7 @@ from rest_framework.routers import DefaultRouter
 from api.mie.views import (
     MieDeveloperAdminViewSet,
     MieDeveloperMeView,
+    MieDocumentationDownloadView,
     MieDocumentationView,
     MieDeveloperRegistrationView,
     MieSubmissionAdminViewSet,
@@ -31,4 +32,9 @@ urlpatterns = router.urls + [
     path("mie/v1/submissions/queue/", MieSubmissionQueueView.as_view(), name="mie-submission-queue"),
     path("mie/v1/me/", MieDeveloperMeView.as_view(), name="mie-developer-me"),
     path("mie/v1/documentation/", MieDocumentationView.as_view(), name="mie-documentation"),
+    path(
+        "mie/v1/documentation/download/",
+        MieDocumentationDownloadView.as_view(),
+        name="mie-documentation-download",
+    ),
 ]
