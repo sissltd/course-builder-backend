@@ -1,5 +1,7 @@
 from rest_framework import status
 from rest_framework.test import APITestCase
+from django.utils import timezone
+from datetime import timedelta
 
 from api.collaborators.tests.factories import make_collaborator
 from api.courses.enums import CourseStatus, DistributionStatus
@@ -175,6 +177,63 @@ class CourseApiTests(APITestCase):
         response = self.client.get("/api/v1/courses/")
         results = response.data["data"]["results"]
         self.assertEqual(len(results), 1)
+
+    def test_creator_course_list_supports_figma_filters(self):
+        matching = make_draft_course(
+            creator=self.creator,
+            category=self.category,
+            title="Python Analytics",
+            source_type="CREATOR_UPLOADED",
+            quality_score=80,
+        )
+        other_category = make_category()
+        old_course = make_draft_course(
+            creator=self.creator,
+            category=other_category,
+            title="Unrelated Course",
+            source_type="AI_GENERATED",
+            quality_score=20,
+        )
+        Course.objects.filter(id=old_course.id).update(
+            created_datetime=timezone.now() - timedelta(days=30)
+        )
+        self.client.force_authenticate(self.creator)
+
+        response = self.client.get(
+            "/api/v1/courses/",
+            {
+                "course_id": str(matching.id),
+                "search": "Python",
+                "category": str(self.category.id),
+                "status": "DRAFT",
+                "creator_type": "CREATOR_UPLOADED",
+                "quality_score": 80,
+                "date_from": timezone.localdate().isoformat(),
+                "date_to": timezone.localdate().isoformat(),
+            },
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        results = response.data["data"]["results"]
+        self.assertEqual([row["id"] for row in results], [str(matching.id)])
+
+    def test_creator_type_alias_matches_source_type_filter(self):
+        matching = make_draft_course(
+            creator=self.creator,
+            category=self.category,
+            source_type="AI_GENERATED",
+        )
+        make_draft_course(
+            creator=self.creator,
+            category=self.category,
+            source_type="CREATOR_UPLOADED",
+        )
+        self.client.force_authenticate(self.creator)
+
+        response = self.client.get("/api/v1/courses/", {"creator_type": "AI_GENERATED"})
+
+        results = response.data["data"]["results"]
+        self.assertEqual([row["id"] for row in results], [str(matching.id)])
 
     def test_creator_cannot_retrieve_others_course(self):
         course = make_draft_course(creator=self.other_creator, category=self.category)

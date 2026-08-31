@@ -5,7 +5,7 @@ from django.utils import timezone
 from api.collaborators.enums import CollaboratorRole
 from api.collaborators.models import CourseCollaborator
 from api.collaborators.tests.factories import make_collaborator
-from api.courses.tests.factories import make_draft_course, make_user
+from api.courses.tests.factories import make_category, make_draft_course, make_user
 from api.users.enums import UserRole
 
 
@@ -39,6 +39,9 @@ class CollaboratorApiTests(APITestCase):
         self.assertIn("date_added", row)
         self.assertEqual(row["role"], "COLLABORATOR")
         self.assertEqual(row["role_label"], "Collaborator")
+        self.assertEqual(row["course_id"], str(self.course.id))
+        self.assertEqual(row["course_title"], self.course.title)
+        self.assertEqual(row["category"]["id"], str(self.course.category_id))
         self.assertNotIn("user", row)
         self.assertNotIn("created_datetime", row)
 
@@ -60,11 +63,40 @@ class CollaboratorApiTests(APITestCase):
         self.assertEqual(response.data["data"]["paginator"]["count"], 1)
         self.assertEqual(response.data["data"]["results"][0]["id"], str(matching.id))
 
-    def test_list_requires_course_id(self):
+    def test_list_without_course_id_returns_all_owned_course_assignments(self):
+        first = make_collaborator(course=self.course, user=self.invitee)
+        second_course = make_draft_course(creator=self.creator)
+        second = make_collaborator(course=second_course, user=make_user())
+        another_creator = make_user()
+        hidden = make_collaborator(
+            course=make_draft_course(creator=another_creator), user=make_user()
+        )
         self.client.force_authenticate(self.creator)
 
         response = self.client.get("/api/v1/collaborators/")
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        ids = {row["id"] for row in response.data["data"]["results"]}
+        self.assertEqual(ids, {str(first.id), str(second.id)})
+        self.assertNotIn(str(hidden.id), ids)
+
+    def test_global_list_filters_by_category(self):
+        matching = make_collaborator(course=self.course, user=self.invitee)
+        other_category = make_category()
+        other = make_collaborator(
+            course=make_draft_course(creator=self.creator, category=other_category),
+            user=make_user(),
+        )
+        self.client.force_authenticate(self.creator)
+
+        response = self.client.get(
+            "/api/v1/collaborators/",
+            {"category": str(self.course.category_id)},
+        )
+
+        ids = [row["id"] for row in response.data["data"]["results"]]
+        self.assertEqual(ids, [str(matching.id)])
+        self.assertNotIn(str(other.id), ids)
 
     def test_list_empty_for_non_collaborator(self):
         # Matches ModuleViewSet's own convention: list never calls get_object(),

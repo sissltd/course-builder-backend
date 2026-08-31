@@ -3,6 +3,7 @@ from rest_framework import serializers
 
 from api.collaborators.enums import CollaboratorRole
 from api.collaborators.models import CollaboratorInvite, CourseCollaborator
+from api.catalog.serializers.category_serializer import CategoryMiniSerializer
 from api.courses.models import Module
 from api.courses.serializers.module_serializer import ModuleMiniSerializer
 
@@ -20,6 +21,9 @@ class CollaboratorSerializer(serializers.ModelSerializer):
     date_added = serializers.DateTimeField(source="created_datetime", read_only=True)
     role_label = serializers.CharField(source="get_role_display", read_only=True)
     assigned_modules = ModuleMiniSerializer(many=True, read_only=True)
+    course_id = serializers.UUIDField(source="course.id", read_only=True)
+    course_title = serializers.CharField(source="course.title", read_only=True)
+    category = CategoryMiniSerializer(source="course.category", read_only=True)
 
     class Meta:
         model = CourseCollaborator
@@ -31,6 +35,9 @@ class CollaboratorSerializer(serializers.ModelSerializer):
             "date_added",
             "role",
             "role_label",
+            "course_id",
+            "course_title",
+            "category",
             "assigned_modules",
         ]
         read_only_fields = fields

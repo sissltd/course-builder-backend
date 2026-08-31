@@ -12,7 +12,7 @@ from rest_framework.viewsets import ModelViewSet, ReadOnlyModelViewSet
 
 from api.collaborators.services import collaborator_service
 from api.courses.enums import CourseStatus
-from api.courses.filters import CourseReviewQueueFilter
+from api.courses.filters import CourseFilter, CourseReviewQueueFilter
 from api.courses.models import Course
 from api.reviews.models import MediaAsset, ReviewComment
 from api.courses.permissions import IsCourseOwner
@@ -440,6 +440,16 @@ class CourseViewSet(ModelViewSet):
     """
 
     permission_classes = [IsCourseCreatorRole | IsAdminRole]
+    filterset_class = CourseFilter
+    filter_backends = [DjangoFilterBackend, drf_filters.OrderingFilter]
+    ordering_fields = [
+        "title",
+        "created_datetime",
+        "updated_datetime",
+        "submitted_at",
+        "quality_score",
+        "status",
+    ]
 
     def get_queryset(self):
         if getattr(self, "swagger_fake_view", False):

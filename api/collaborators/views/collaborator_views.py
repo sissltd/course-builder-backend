@@ -28,6 +28,12 @@ _COLLABORATOR_EXAMPLE = {
     "date_added": "2026-07-20T11:00:00.000Z",
     "role": "COLLABORATOR",
     "role_label": "Collaborator",
+    "course_id": "3f9a2e11-6b7c-4d2a-9e5f-1c8d4a7b2f30",
+    "course_title": "Intro to Python",
+    "category": {
+        "id": "7d2f4b18-3c9a-4e51-b8f0-1a6c5d3e9b74",
+        "name": "Software Engineering",
+    },
     "assigned_modules": [
         {
             "id": "b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e",
@@ -71,21 +77,22 @@ _MANAGE_ACCESS_403 = OpenApiResponse(
 
 @extend_schema_view(
     list=extend_schema(
-        summary="List a course's collaborators",
+        summary="List collaborators across my courses",
         description=(
-            "Returns everyone with collaborator access to a course, "
-            "identified by `course_id`. Each row uses the Collaborators "
+            "Returns collaborator assignments across every course owned by "
+            "the caller. Supply `course_id` to narrow the result to one "
+            "accessible course. Each row uses the Collaborators "
             "screen field names: `name`, `email`, `date_added`, and `role`. "
-            "Backs the 'Manage collaborators' "
-            "panel on the course builder.\n\n"
-            "Called when opening a course's collaborators panel.\n\n"
+            "It also identifies the course and category for filtering and "
+            "display. The same person appears once per course assignment.\n\n"
+            "Called from the global Collaborators screen, or with `course_id` "
+            "from a course's manage-collaborators panel.\n\n"
             f"{_AUTH_LINE}\n\n"
-            "**Prerequisites:** `course_id` is required.\n\n"
-            "**Important:** Matches ModuleViewSet's own convention: `list` "
-            "never calls `get_object()`, so a course the caller can't "
-            "access returns an empty 200 rather than 403/404. Omitting "
-            "`course_id` returns 400, not an unscoped list of every "
-            "collaborator on the platform."
+            "**Prerequisites:** None for the global list.\n\n"
+            "**Important:** An inaccessible `course_id` returns an empty "
+            "200 rather than leaking whether the course exists. The unscoped "
+            "list includes only courses the caller owns, never another "
+            "creator's courses on which the caller merely collaborates."
         ),
         tags=["Creator — Collaborators"],
         parameters=[
@@ -93,8 +100,17 @@ _MANAGE_ACCESS_403 = OpenApiResponse(
                 name="course_id",
                 type=str,
                 location=OpenApiParameter.QUERY,
-                required=True,
-                description="UUID of the course to list collaborators for.",
+                required=False,
+                description=(
+                    "Optional course UUID. Omit it to list assignments across "
+                    "all courses owned by the caller."
+                ),
+            ),
+            OpenApiParameter(
+                name="category",
+                type=str,
+                location=OpenApiParameter.QUERY,
+                description="Category UUID used by the Figma category filter.",
             ),
             OpenApiParameter(
                 name="search",
@@ -125,27 +141,9 @@ _MANAGE_ACCESS_403 = OpenApiResponse(
         responses={
             200: OpenApiResponse(
                 response=CollaboratorSerializer(many=True),
-                description="Collaborators on the course.",
+                description="Collaborator assignments across the selected courses.",
                 examples=[
                     OpenApiExample(name="Success", value=[_COLLABORATOR_EXAMPLE])
-                ],
-            ),
-            400: OpenApiResponse(
-                description="`course_id` was not supplied.",
-                examples=[
-                    OpenApiExample(
-                        name="Missing course_id",
-                        value={
-                            "errors": [
-                                {
-                                    "type": "validation_error",
-                                    "code": "required",
-                                    "message": "This query parameter is required.",
-                                    "field_name": "course_id",
-                                }
-                            ]
-                        },
-                    ),
                 ],
             ),
             **STANDARD_ERROR_RESPONSES["auth"],
@@ -201,9 +199,10 @@ _MANAGE_ACCESS_403 = OpenApiResponse(
     ),
 )
 class CourseCollaboratorViewSet(ModelViewSet):
-    """Flat resource for course collaborators (course scoped via
-    `course_id` on list, and via the collaborator object itself on
-    retrieve/update/destroy).
+    """Flat resource for collaborators across the creator's owned courses.
+
+    List can be narrowed via `course_id`; detail actions resolve through the
+    collaborator object itself.
 
     New collaborators are created exclusively by accepting an invite (see
     CollaboratorInviteViewSet), so this viewset has no create action -
@@ -227,14 +226,13 @@ class CourseCollaboratorViewSet(ModelViewSet):
             course__in=collaborator_service.get_courses_accessible_to(
                 self.request.user
             ),
-        ).select_related("user", "invited_by")
+        ).select_related("user", "invited_by", "course", "course__category")
         if self.action == "list":
             course_id = self.request.query_params.get("course_id")
-            if not course_id:
-                raise exceptions.ValidationError(
-                    {"course_id": "This query parameter is required."}
-                )
-            queryset = queryset.filter(course_id=course_id)
+            if course_id:
+                queryset = queryset.filter(course_id=course_id)
+            else:
+                queryset = queryset.filter(course__creator=self.request.user)
         return queryset
 
     def get_serializer_class(self):
