@@ -13,7 +13,7 @@ from api.mie.services import developer_service
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 
 
-@extend_schema(tags=["Public — MIE Registration"])
+@extend_schema(tags=["Public — MIE Registration"], auth=[{}])
 class MieDeveloperRegistrationView(APIView):
     """Self-service developer registration (step 1 of the journey).
 

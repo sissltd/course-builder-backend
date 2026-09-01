@@ -19,8 +19,12 @@ from shared.constants.paystack import PAYSTACK_SECRET_KEY
 from shared.response.success import custom_success_response
 
 
+# Public endpoint: no security requirement, so Swagger's padlock does
+# not attach a bearer token to it.
+@extend_schema(auth=[{}])
 @method_decorator(csrf_exempt, name="dispatch")
 class PaystackWebhookView(APIView):
+    authentication_classes = []  # public: a stale token must not 401 this
     permission_classes = [AllowAny]
 
     @extend_schema(exclude=True)

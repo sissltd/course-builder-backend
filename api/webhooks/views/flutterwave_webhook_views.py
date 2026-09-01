@@ -19,8 +19,12 @@ from shared.constants.environ import DJANGO_ENV
 from shared.response.success import custom_success_response
 
 
+# Public endpoint: no security requirement, so Swagger's padlock does
+# not attach a bearer token to it.
+@extend_schema(auth=[{}])
 @method_decorator(csrf_exempt, name="dispatch")
 class FlutterwaveWebhookView(APIView):
+    authentication_classes = []  # public: a stale token must not 401 this
     permission_classes = [AllowAny]
 
     FLUTTERWAVE_SECRET_HASH = config("FLUTTERWAVE_SECRET_HASH", default="")

@@ -144,10 +144,20 @@ def _flag_resulting_course_if_any(submission: CourseSubmission) -> None:
 
 
 def _base_payload(submission: CourseSubmission) -> dict:
+    """Envelope shape shared with submission_service._event_payload.
+
+    The dispatcher wires only `payload["submission"]` onto the network
+    (webhook_dispatcher.render_body), so every event-producing path must
+    nest under that key - a flat dict here would deliver an empty
+    submission object to the developer.
+    """
+
     return {
-        "reference": submission.public_reference,
-        "status": submission.status,
-        "title": submission.title,
+        "submission": {
+            "reference": submission.public_reference,
+            "status": submission.status,
+            "title": submission.title,
+        },
         "developer_email": submission.developer.email,
     }
 
@@ -155,14 +165,14 @@ def _base_payload(submission: CourseSubmission) -> dict:
 def _decision_payload(submission: CourseSubmission) -> dict:
     payload = _base_payload(submission)
     if submission.status == SubmissionStatus.REJECTED:
-        payload["rejection_reason"] = (
+        payload["submission"]["rejection_reason"] = (
             submission.rejection_reason.label if submission.rejection_reason else None
         )
-        payload["rejection_note"] = submission.rejection_note
+        payload["submission"]["rejection_note"] = submission.rejection_note
     return payload
 
 
 def _bypass_payload(submission: CourseSubmission) -> dict:
     payload = _base_payload(submission)
-    payload["payout_bypass"] = submission.payout_bypass
+    payload["submission"]["payout_bypass"] = submission.payout_bypass
     return payload
