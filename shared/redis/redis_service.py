@@ -7,19 +7,21 @@ from uuid import UUID
 
 import redis.asyncio as aioredis
 from django.conf import settings
+from django.core.cache import cache
+from django_redis import get_redis_connection
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 
 def get_redis_client():
-    from django_redis import get_redis_connection
-
     return get_redis_connection("default")
 
 
 def get_async_redis_client():
-    redis_url = settings.CACHES["default"]["LOCATION"]
+    redis_url = settings.CACHES["default"].get("LOCATION")
+    if not redis_url:
+        return None
     return aioredis.Redis.from_url(redis_url)
 
 
@@ -66,7 +68,10 @@ class RedisService:
         Publish a user notification to Redis channel.
         """
         try:
-            client = await RedisService.get_async_redis_client()
+            client = RedisService.get_async_redis_client()
+            if client is None:
+                logger.debug("Skipping notification publishing because the default cache has no Redis URL")
+                return
             channel = f"user:notifications:{user_id}"
             payload = json.dumps({"message": message})
             await client.publish(channel, payload)
@@ -346,7 +351,7 @@ class RedisService:
     _BANKS_CACHE_TTL = 24 * 60 * 60  # 24 hours
 
     @classmethod
-    def get_cached_banks(cls) -> dict | None:
+    def get_cached_banks(cls) -> list[dict] | None:
         try:
             client = get_redis_client()
             value = client.get(cls._BANKS_CACHE_KEY)
@@ -359,7 +364,7 @@ class RedisService:
             return None
 
     @classmethod
-    def set_cached_banks(cls, data: dict) -> None:
+    def set_cached_banks(cls, data: list[dict]) -> None:
         try:
             client = get_redis_client()
             client.setex(cls._BANKS_CACHE_KEY, cls._BANKS_CACHE_TTL, json.dumps(data))
@@ -373,10 +378,12 @@ class RedisService:
         Acquire a distributed lock using Redis.
         Returns a unique token if the lock is acquired, else None.
         """
-        client = get_redis_client()
-
         token = str(uuid.uuid4())
-        acquired = client.set(lock_name, token, nx=True, ex=expire_seconds)
+        try:
+            client = get_redis_client()
+            acquired = client.set(lock_name, token, nx=True, ex=expire_seconds)
+        except NotImplementedError:
+            acquired = cache.add(lock_name, token, timeout=expire_seconds)
 
         if not acquired:
             return None  # Failed to get the lock
@@ -398,6 +405,11 @@ class RedisService:
         Release the lock if the lock value matches.
         """
 
-        client = get_redis_client()
-        script = client.register_script(RedisService._UNLOCK_SCRIPT)
-        return script(keys=[key], args=[lock_value])
+        try:
+            client = get_redis_client()
+            script = client.register_script(RedisService._UNLOCK_SCRIPT)
+            return script(keys=[key], args=[lock_value])
+        except NotImplementedError:
+            if cache.get(key) != lock_value:
+                return 0
+            return int(cache.delete(key))
