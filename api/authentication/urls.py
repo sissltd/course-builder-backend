@@ -100,6 +100,11 @@ urlpatterns = [
         name="auth-staff-invitation-accept",
     ),
     path(
+        "auth/staff/<uuid:pk>/",
+        views.StaffDetailView.as_view(),
+        name="auth-staff-detail",
+    ),
+    path(
         "auth/staff/<uuid:pk>/revoke/",
         views.RevokeStaffView.as_view(),
         name="auth-staff-revoke",

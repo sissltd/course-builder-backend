@@ -236,6 +236,40 @@ class InviteStaffApiTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
+    def test_super_admin_can_retrieve_full_staff_profile(self):
+        staff = make_user(
+            email="profile@example.com",
+            first_name="Ada",
+            last_name="Okafor",
+            role=UserRole.STAFF_VERIFIER,
+            created_by=self.super_admin,
+            country="NG",
+            state="Lagos",
+            phone_number="+2348000000000",
+            sex="FEMALE",
+            timezone="Africa/Lagos",
+            avatar_url="https://example.com/avatar.png",
+        )
+        self.client.force_authenticate(self.super_admin)
+
+        response = self.client.get(f"/api/v1/auth/staff/{staff.id}/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["id"], str(staff.id))
+        self.assertEqual(response.data["country"], "NG")
+        self.assertEqual(response.data["role_label"], "Verifier")
+        self.assertEqual(response.data["invited_by"], self.super_admin.email)
+        self.assertNotIn("password", response.data)
+        self.assertNotIn("failed_login_attempts", response.data)
+
+    def test_staff_detail_hides_course_creators(self):
+        creator = make_user(email="creator-detail@example.com")
+        self.client.force_authenticate(self.super_admin)
+
+        response = self.client.get(f"/api/v1/auth/staff/{creator.id}/")
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
     def test_anonymous_cannot_invite(self):
         response = self.client.post(INVITE_URL, self.payload, format="json")
 

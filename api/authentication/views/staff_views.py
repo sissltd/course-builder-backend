@@ -1,6 +1,7 @@
 from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import OpenApiExample, OpenApiResponse, extend_schema
 from rest_framework.permissions import AllowAny
+from rest_framework.exceptions import NotFound
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
@@ -8,6 +9,7 @@ from rest_framework.views import APIView
 from api.authentication.serializers import (
     AcceptStaffInvitationSerializer,
     StaffInvitationSerializer,
+    StaffDetailSerializer,
     StaffMemberSerializer,
     SuperAdminBootstrapSerializer,
 )
@@ -238,6 +240,37 @@ class StaffListView(APIView):
     def get(self, request):
         staff = staff_service.list_staff()
         return Response(StaffMemberSerializer(staff, many=True).data, status=200)
+
+
+class StaffDetailView(APIView):
+    """Retrieve one staff member for the Team profile panel."""
+
+    permission_classes = [IsSuperAdminRole]
+    serializer_class = StaffDetailSerializer
+
+    @extend_schema(
+        operation_id="auth_staff_detail_retrieve",
+        summary="Retrieve staff details",
+        description=(
+            "Returns the full non-sensitive Team profile for an active, pending, "
+            "or revoked staff member. Public course creators are not addressable "
+            "through this endpoint.\n\n**Auth:** Super Admin."
+        ),
+        tags=["Admin — Staff"],
+        responses={
+            200: StaffDetailSerializer,
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
+            **STANDARD_ERROR_RESPONSES["not_found"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
+    def get(self, request, pk):
+        try:
+            staff = staff_service.get_staff(staff_id=pk)
+        except User.DoesNotExist as exc:
+            raise NotFound("Staff member not found.") from exc
+        return Response(StaffDetailSerializer(staff).data)
 
 
 class InviteStaffView(APIView):
