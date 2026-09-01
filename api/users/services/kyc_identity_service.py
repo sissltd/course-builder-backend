@@ -18,7 +18,6 @@ import logging
 
 from django.contrib.auth.models import User
 
-from shared.constants.digital_ocean import DIGITAL_OCEAN_CDN_URL
 from shared.services.storage_service import StorageError, StorageService
 
 logger = logging.getLogger(__name__)
@@ -27,13 +26,6 @@ logger = logging.getLogger(__name__)
 # exact key is vendor-dependent, so we probe the common spellings.
 _DOB_KEYS = ("dateOfBirth", "date_of_birth", "birthDate", "birthdate", "dob")
 _DOC_FOLDER = "kyc-documents"
-
-# Liveness selfies become the user's public profile picture, so they go in a
-# public folder — unlike the government photos above, which stay private.
-_AVATAR_FOLDER = "profile-pictures"
-
-# Content types we accept from a data-URI prefix; anything else falls back to jpeg.
-_DATA_URI_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp"}
 
 
 def _first_present(raw, *keys):

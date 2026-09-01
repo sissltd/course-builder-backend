@@ -1,19 +1,3 @@
-from shared.spectacular.responses import ErrorEnvelopeSerializer
-
-"""
-Admin views over the SISSLConfiguration singleton.
-
-Two endpoints (both GET/PATCH on the same singleton row):
-  GET    admin/config/   — current thresholds + HTTP knobs
-  PATCH  admin/config/   — partial update
-
-Why no POST: there is only ever ONE SISSLConfiguration row. Use the
-`seed_sissl_config` management command (or the model admin) to create it
-once; from then on, PATCH is the only thing the API surface should do.
-
-Why no DELETE: deleting the singleton silently degrades every SISSL call
-to env-var defaults. If you want to revert to defaults, PATCH the values.
-"""
 
 from drf_spectacular.utils import OpenApiExample, OpenApiResponse, extend_schema
 from rest_framework import status
@@ -26,6 +10,7 @@ from api.sissl_verification.serializers.admin_sissl_configuration_serializer imp
 )
 from shared.response.error import custom_error_response
 from shared.response.success import custom_success_response
+from shared.spectacular.responses import ErrorEnvelopeSerializer
 
 
 # >>>>>>>>>>>>>>>>>>>>>>> Config View <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<

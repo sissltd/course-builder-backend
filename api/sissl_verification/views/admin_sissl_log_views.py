@@ -1,15 +1,3 @@
-from shared.spectacular.responses import ErrorEnvelopeSerializer
-
-"""
-Admin views over the SISSLLog table.
-
-Two endpoints:
-  GET  admin/logs/                 — paginated list with optional filters
-  GET  admin/logs/<uuid:log_id>/   — single log detail
-
-PII is never written into SISSLLog (the service redacts at write time),
-so the admin is free to read any row without leakage concerns.
-"""
 
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiExample, OpenApiParameter, OpenApiResponse, extend_schema
@@ -24,6 +12,7 @@ from api.sissl_verification.serializers.readonly_sissl_log_serializer import (
 )
 from shared.response.error import custom_error_response
 from shared.response.success import custom_success_response
+from shared.spectacular.responses import ErrorEnvelopeSerializer
 
 """
 [IsAdminUser LOGIC]: Only admin users should be able to inspect verification
