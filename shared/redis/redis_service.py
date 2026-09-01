@@ -96,11 +96,7 @@ class RedisService:
             bool: True if successful, False otherwise
         """
         try:
-            client = get_redis_client()
-            if expiry_seconds:
-                client.setex(key, expiry_seconds, value)
-            else:
-                client.set(key, value)
+            cache.set(key, value, timeout=expiry_seconds)
             logger.info(f"Stored key {key} in Redis")
             return True
         except Exception as e:
@@ -119,8 +115,7 @@ class RedisService:
             str: The value if exists, None otherwise
         """
         try:
-            client = get_redis_client()
-            value = client.get(key)
+            value = cache.get(key)
             if not value:
                 return None
 
@@ -154,8 +149,7 @@ class RedisService:
             bool: True if successful, False otherwise
         """
         try:
-            client = get_redis_client()
-            client.delete(key)
+            cache.delete(key)
             logger.info(f"Deleted key {key} from Redis")
             return True
         except Exception as e:
@@ -353,8 +347,7 @@ class RedisService:
     @classmethod
     def get_cached_banks(cls) -> list[dict] | None:
         try:
-            client = get_redis_client()
-            value = client.get(cls._BANKS_CACHE_KEY)
+            value = cache.get(cls._BANKS_CACHE_KEY)
             if not value:
                 return None
             raw = value.decode("utf-8") if isinstance(value, bytes) else value
@@ -366,8 +359,11 @@ class RedisService:
     @classmethod
     def set_cached_banks(cls, data: list[dict]) -> None:
         try:
-            client = get_redis_client()
-            client.setex(cls._BANKS_CACHE_KEY, cls._BANKS_CACHE_TTL, json.dumps(data))
+            cache.set(
+                cls._BANKS_CACHE_KEY,
+                json.dumps(data),
+                timeout=cls._BANKS_CACHE_TTL,
+            )
             logger.info("Banks list cached in Redis for 24 hours")
         except Exception as e:
             logger.error(f"Error caching banks: {e}")
