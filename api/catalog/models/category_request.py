@@ -26,6 +26,15 @@ class CategoryRequest(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
         max_length=150,
         help_text=_("Requested category name."),
     )
+    description = models.TextField(
+        verbose_name=_("Description"),
+        blank=True,
+        default="",
+        help_text=_(
+            "Why this category is needed and what belongs in it. Carried "
+            "onto the Category created on approval."
+        ),
+    )
     status = models.CharField(
         verbose_name=_("Status"),
         max_length=10,

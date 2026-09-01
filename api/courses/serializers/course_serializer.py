@@ -3,7 +3,7 @@ from rest_framework import serializers
 
 from api.catalog.serializers.category_serializer import CategoryMiniSerializer
 from api.catalog.serializers.topic_serializer import TopicMiniSerializer
-from api.courses.models import Course, CourseDistribution
+from api.courses.models import Course, CourseDistribution, CourseVersion
 from api.courses.serializers.assessment_serializer import AssessmentSerializer
 from api.courses.serializers.module_serializer import ModuleSerializer
 from api.reviews.serializers import (
@@ -489,6 +489,16 @@ class CourseUpdateSerializer(serializers.ModelSerializer):
     (missing ones treated as 0 for that call).
     """
 
+    version = serializers.PrimaryKeyRelatedField(
+        queryset=CourseVersion.objects.filter(is_active=True),
+        required=False,
+        allow_null=True,
+        help_text=(
+            "Id of the CourseVersion this course should publish under. "
+            "List the options at GET /api/v1/course-versions/. Only active "
+            "versions may be selected; publishing honours this choice."
+        ),
+    )
     duration_hours = serializers.IntegerField(
         required=False, min_value=0, write_only=True
     )
@@ -514,6 +524,7 @@ class CourseUpdateSerializer(serializers.ModelSerializer):
             "duration_hours",
             "duration_minutes",
             "duration_seconds",
+            "version",
         ]
         extra_kwargs = {"topic": {"required": False}}
 
@@ -539,6 +550,20 @@ class CourseUpdateSerializer(serializers.ModelSerializer):
 
     def to_representation(self, instance):
         return CourseDetailSerializer(instance, context=self.context).data
+
+
+class CoursePreviewSerializer(serializers.Serializer):
+    """A signed, expiring link to preview a course as a student sees it."""
+
+    preview_url = serializers.URLField(
+        help_text="Open or share this. The token in the query string is the grant."
+    )
+    expires_at = serializers.DateTimeField(
+        help_text="When the link stops working (ISO-8601, UTC)."
+    )
+    expires_in = serializers.IntegerField(
+        help_text="Seconds of validity remaining at issue time."
+    )
 
 
 class ReviewApproveSerializer(serializers.Serializer):

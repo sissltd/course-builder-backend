@@ -5,6 +5,7 @@ from api.courses.views import (
     assessment_views,
     course_appeal_views,
     course_thumbnail_views,
+    course_version_views,
     course_views,
     lesson_sub_resource_views,
     lesson_views,
@@ -24,9 +25,19 @@ router.register(
 
 urlpatterns = router.urls + [
     path(
+        "course-versions/",
+        course_version_views.CourseVersionListView.as_view(),
+        name="course-version-list",
+    ),
+    path(
         "courses/<uuid:course_pk>/modules/",
         module_views.ModuleViewSet.as_view({"get": "list", "post": "create"}),
         name="course-module-list",
+    ),
+    path(
+        "courses/<uuid:course_pk>/modules/reorder/",
+        module_views.ModuleViewSet.as_view({"patch": "reorder"}),
+        name="course-module-reorder",
     ),
     path(
         "courses/<uuid:course_pk>/modules/<uuid:pk>/",
@@ -40,10 +51,32 @@ urlpatterns = router.urls + [
         ),
         name="course-module-detail",
     ),
+    # ModuleViewSet is mounted by explicit method maps rather than a router,
+    # so its @action routes need declaring by hand or they are unreachable.
+    path(
+        "courses/<uuid:course_pk>/modules/<uuid:pk>/lock/",
+        module_views.ModuleViewSet.as_view({"post": "lock"}),
+        name="course-module-lock",
+    ),
+    path(
+        "courses/<uuid:course_pk>/modules/<uuid:pk>/unlock/",
+        module_views.ModuleViewSet.as_view({"post": "unlock"}),
+        name="course-module-unlock",
+    ),
+    path(
+        "courses/<uuid:course_pk>/modules/<uuid:pk>/heartbeat/",
+        module_views.ModuleViewSet.as_view({"post": "heartbeat"}),
+        name="course-module-heartbeat",
+    ),
     path(
         "courses/<uuid:course_pk>/modules/<uuid:module_pk>/lessons/",
         lesson_views.LessonViewSet.as_view({"get": "list", "post": "create"}),
         name="module-lesson-list",
+    ),
+    path(
+        "courses/<uuid:course_pk>/modules/<uuid:module_pk>/lessons/reorder/",
+        lesson_views.LessonViewSet.as_view({"patch": "reorder"}),
+        name="module-lesson-reorder",
     ),
     path(
         "courses/<uuid:course_pk>/modules/<uuid:module_pk>/lessons/<uuid:pk>/",
@@ -78,6 +111,11 @@ urlpatterns = router.urls + [
             {"get": "list", "post": "create"}
         ),
         name="lesson-content-block-list",
+    ),
+    path(
+        "courses/<uuid:course_pk>/modules/<uuid:module_pk>/lessons/<uuid:lesson_pk>/content-blocks/bulk/",
+        lesson_sub_resource_views.LessonContentBlockViewSet.as_view({"put": "bulk"}),
+        name="lesson-content-block-bulk",
     ),
     path(
         "courses/<uuid:course_pk>/modules/<uuid:module_pk>/lessons/<uuid:lesson_pk>/content-blocks/<uuid:pk>/",
