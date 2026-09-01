@@ -1,3 +1,4 @@
+import logging
 import uuid
 
 from django.db import transaction
@@ -13,8 +14,10 @@ from api.users.enums import (
 )
 from api.users.models import KYCVerification, User
 from api.users.permissions import IsAdminOrSuperAdminRole, require_role
-from api.users.tasks import call_sissl_kyc_verification
-from core.models import SISSLOutboxEvent
+from api.users.tasks import call_sissl_kyc_verification, call_youverify_kyc_verification
+from core.models import KYCOutboxEvent
+
+logger = logging.getLogger(__name__)
 
 REVIEWABLE_STATUSES = (KYCStatus.PENDING,)
 
@@ -70,7 +73,7 @@ def submit_verification(
         verification.user.save(update_fields=["first_name", "last_name", "updated_datetime"])
         _notify_admins_of_new_submission(verification)
 
-        outbox_event = SISSLOutboxEvent.objects.create(
+        outbox_event = KYCOutboxEvent.objects.create(
             event_type=document_type,
             kyc_request=verification,
             payload={
@@ -78,7 +81,7 @@ def submit_verification(
             },
         )
 
-        transaction.on_commit(lambda event_id=outbox_event.id: _enqueue_sissl_kyc_verification(event_id=event_id))
+        transaction.on_commit(lambda event_id=outbox_event.id: _enqueue_kyc_verification(event_id=event_id))
         return verification
 
 
@@ -103,8 +106,18 @@ def _notify_admins_of_new_submission(verification: KYCVerification) -> None:
         },
     )
 
-def _enqueue_sissl_kyc_verification(event_id: uuid.UUID) -> None:
-    call_sissl_kyc_verification.apply_async(event_id=event_id)  # type: ignore
+def _enqueue_kyc_verification(event_id: uuid.UUID) -> None:
+    from api.platform.services.platform_settings_service import get_settings
+
+    kyc_provider = get_settings().kyc_provider
+
+    match kyc_provider:
+        case "SISSL":
+            call_sissl_kyc_verification.apply_async(event_id=event_id)  # type: ignore
+        case "YOUVERIFY":
+            call_youverify_kyc_verification.apply_async(event_id=event_id)  # type: ignore
+        case _:
+            logger.warning(f"Unsupported KYC provider: {kyc_provider}. No verification task enqueued.")
 
 
 def approve_verification(

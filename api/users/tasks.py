@@ -11,7 +11,7 @@ from django.utils import timezone
 from api.sissl_verification.services.sissl_service import SISSLServices
 from api.users.enums import KYCDocumentType
 from api.users.services.kyc_identity_service import persist_sissl_identity
-from core.models import SISSLOutboxEvent
+from core.models import KYCOutboxEvent
 
 logger = logging.getLogger(__name__)
 
@@ -25,10 +25,8 @@ def call_sissl_kyc_verification(self, event_id):
     """
     Calls the SISSL KYC verification service.
     """
-    
-    outbox_event = SISSLOutboxEvent.objects.filter(
-        id=event_id, is_deleted=False, processed=False
-    ).first()
+
+    outbox_event = KYCOutboxEvent.objects.filter(id=event_id, is_deleted=False, processed=False).first()
     if not outbox_event:
         logger.warning(
             f"[users.call_sissl_kyc_verification] Outbox event with ID {event_id} not found or already processed."
@@ -65,8 +63,7 @@ def call_sissl_kyc_verification(self, event_id):
                     f"[users.call_sissl_kyc_verification] Unsupported event type: {event_type}"
                 )
 
-
-        SISSLOutboxEvent.objects.filter(
+        KYCOutboxEvent.objects.filter(
             id=outbox_event.id,
             is_deleted=False,
             processed=False,
@@ -77,3 +74,11 @@ def call_sissl_kyc_verification(self, event_id):
         raise self.retry(exc=exc)
 
 
+@shared_task(
+    bind=True,
+    max_retries=3,
+    default_retry_delay=10,
+    name="users.call_youverify_kyc_verification",
+)
+def call_youverify_kyc_verification(self, event_id):
+    pass

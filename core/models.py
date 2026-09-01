@@ -25,7 +25,7 @@ class KYCLivenessType(models.TextChoices):
     LIVENESS = "LIVENESS", "Liveness Verification"
 
 
-class SISSLOutboxEvent(UUIDPrimaryKeyModelMixin, SoftDeleteModelMixin, DateHistoryModelMixin, models.Model):
+class KYCOutboxEvent(UUIDPrimaryKeyModelMixin, SoftDeleteModelMixin, DateHistoryModelMixin, models.Model):
     """Stores outbox events waiting to be dispatched safely to an event bus."""
 
     event_type = models.CharField(max_length=255, choices=[*KYCDocumentType.choices, *KYCLivenessType.choices])
@@ -34,13 +34,13 @@ class SISSLOutboxEvent(UUIDPrimaryKeyModelMixin, SoftDeleteModelMixin, DateHisto
     kyc_request = models.OneToOneField(
         "users.KYCVerification",
         on_delete=models.CASCADE,
-        related_name="sissl_outbox_event",
+        related_name="kyc_outbox_event",
         null=True,
         blank=True,
     )
 
     class Meta:
-        db_table = "sissl_outbox_events"
+        db_table = "kyc_outbox_events"
         ordering = ["created_datetime"]
 
 
