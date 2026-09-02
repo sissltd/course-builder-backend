@@ -463,7 +463,7 @@ class CourseVersionTests(APITestCase):
         response = self.client.get("/api/v1/course-versions/")
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        labels = [row["label"] for row in response.data]
+        labels = [row["label"] for row in response.data["data"]["results"]]
         self.assertIn(active.label, labels)
         self.assertNotIn("9.9", labels)
 
