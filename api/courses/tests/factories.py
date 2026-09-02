@@ -18,6 +18,7 @@ from api.courses.models import (
     Assessment,
     Course,
     CourseAppeal,
+    CourseVersion,
     Lesson,
     Module,
 )
@@ -107,6 +108,7 @@ def make_draft_course(*, creator=None, category=None, **kwargs):
         "description": "word "
         * 150,  # 150 words: within COURSE_DESCRIPTION_WORD_MIN/MAX (100-500)
         "preview_video_url": "https://example.com/preview.mp4",
+        "learning_objectives": [f"Course objective {i}" for i in range(1, 6)],
         "terms_accepted_at": timezone.now(),
     }
     defaults.update(kwargs)
@@ -138,7 +140,8 @@ def build_compliant_course(
     course_validation_service.validate_structural_standards, so tests that
     need a submittable course don't have to re-derive PRD thresholds."""
 
-    course = make_draft_course(creator=creator, category=category)
+    version, _ = CourseVersion.objects.get_or_create(label="1.0")
+    course = make_draft_course(creator=creator, category=category, version=version)
     script = "word " * 600  # 600 words: within LESSON_SCRIPT_WORD_MIN/MAX (500-1500)
 
     for m in range(module_count):

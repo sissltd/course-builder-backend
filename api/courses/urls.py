@@ -14,6 +14,9 @@ from api.courses.views import (
 router = DefaultRouter()
 router.register("courses", course_views.CourseViewSet, basename="course")
 router.register(
+    "course-versions", course_views.CourseVersionViewSet, basename="course-version"
+)
+router.register(
     "review-queue", course_views.CourseReviewViewSet, basename="course-review"
 )
 router.register(

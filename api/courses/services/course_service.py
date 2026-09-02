@@ -65,6 +65,7 @@ DRAFT_EDITABLE_FIELDS = {
     "learning_objectives",
     "tags",
     "planned_duration_seconds",
+    "version",
 }
 
 
@@ -89,6 +90,7 @@ def create_draft_course(
     difficulty_level: str = "",
     learning_objectives: list | None = None,
     tags: list | None = None,
+    version: CourseVersion | None = None,
     duration_hours: int = 0,
     duration_minutes: int = 0,
     duration_seconds: int = 0,
@@ -139,6 +141,7 @@ def create_draft_course(
             difficulty_level=difficulty_level,
             learning_objectives=learning_objectives or [],
             tags=tags or [],
+            version=version,
             planned_duration_seconds=duration_hours * 3600
             + duration_minutes * 60
             + duration_seconds,

@@ -456,6 +456,8 @@ Auth: Course Creator role
   "category": "{{category_id}}",
   "title": "Python for Data Science",
   "description": "A 150+ word description covering target audience, prerequisites, and outcomes... (100-500 words required at submit time)",
+  "learning_objectives": ["Objective 1", "Objective 2", "Objective 3", "Objective 4", "Objective 5"],
+  "version": "{{course_version_id}}",
   "preview_video_url": "https://cdn.example.com/previews/python-ds.mp4",
   "terms_accepted": true
 }
@@ -545,7 +547,7 @@ Auth: owning Course Creator, **Draft status only**
 
 **Body**
 ```json
-{ "title": "Python for Data Science — Updated" }
+{ "title": "Python for Data Science — Updated", "version": "{{course_version_id}}" }
 ```
 
 **200 OK** — updated `CourseDetailSerializer` object.
@@ -557,6 +559,16 @@ Auth: owning Course Creator, **Draft status only**
     { "type": "validation_error", "code": "invalid", "message": "Only Draft courses can be edited.", "field_name": "non_field_errors" }
   ]
 }
+```
+
+### List Course Versions
+`GET {{base_url}}/api/v1/course-versions/`
+
+Returns active values for the builder's Versioning step. Save the selected
+`id` through course create or update.
+
+```json
+[{ "id": "2f9a1e4b-7c8d-4a6e-9f0c-2d3e4f5a6b7c", "label": "1.0" }]
 ```
 
 ### Delete Draft Course
@@ -626,15 +638,33 @@ read shape (`id`, `title`, `order`, nested `lessons[]`, `assessment`).
 
 **Body**
 ```json
-{ "title": "Getting Started with Python", "order": 1 }
+{
+  "title": "Getting Started with Python",
+  "order": 1,
+  "description": "Set up Python and run a first program.",
+  "learning_objectives": [
+    "Install Python and a code editor",
+    "Run a Python program from the command line"
+  ]
+}
 ```
 
 **201 Created**
 ```json
-{ "id": "m1...", "title": "Getting Started with Python", "order": 1 }
+{
+  "id": "m1...",
+  "title": "Getting Started with Python",
+  "order": 1,
+  "description": "Set up Python and run a first program.",
+  "learning_objectives": [
+    "Install Python and a code editor",
+    "Run a Python program from the command line"
+  ]
+}
 ```
 *(The create/update response uses the write serializer's minimal shape —
-`id`, `title`, `order` — not the nested `lessons`/`assessment` read shape.
+`id`, `title`, `order`, `description`, `learning_objectives` — not the nested
+`lessons`/`assessment` read shape.
 `GET`/`retrieve` a module to see its full tree.)*
 
 ### Retrieve / Update / Delete Module
@@ -642,7 +672,12 @@ read shape (`id`, `title`, `order`, nested `lessons[]`, `assessment`).
 
 **PUT/PATCH body**
 ```json
-{ "title": "Getting Started with Python (Revised)", "order": 1 }
+{
+  "title": "Getting Started with Python (Revised)",
+  "order": 1,
+  "description": "Updated module description.",
+  "learning_objectives": ["Build and run a basic Python program"]
+}
 ```
 
 **400 Bad Request** (course not Draft)
@@ -919,17 +954,19 @@ persisted as a status (a rejection immediately reopens the course as `DRAFT`).
 ### Course quality standards (checked at submit)
 | Rule | Threshold | Setting |
 |---|---|---|
-| Modules per course | 4–12 | `COURSE_MODULE_COUNT_MIN/MAX` |
-| Lessons per module | 3–8 | `COURSE_LESSONS_PER_MODULE_MIN/MAX` |
-| Learning objectives per lesson | 2–5 | `COURSE_LEARNING_OBJECTIVES_MIN/MAX` |
-| Lesson script length | 500–1500 words | `LESSON_SCRIPT_WORD_MIN/MAX` |
-| Quiz questions per lesson | 3–5 | `LESSON_QUIZ_QUESTIONS_MIN/MAX` |
+| Modules per course | 4–12 | `course_module_count_min/max` |
+| Lessons per module | 3–8 | `course_lessons_per_module_min/max` |
+| Learning objectives per course | 5 | `course_learning_objectives_min/max` |
+| Learning objectives per lesson | 2–5 | `lesson_learning_objectives_min/max` |
+| Lesson script length | 500–1500 words | `lesson_script_word_min/max` |
+| Quiz questions per lesson | 3–5 | `lesson_quiz_questions_min/max` |
 | Module-level assessment | required (1 per module) | — |
-| Course description length | 100–500 words | `COURSE_DESCRIPTION_WORD_MIN/MAX` |
-| Total course duration | 2–8 hours | `COURSE_DURATION_MIN/MAX_MINUTES` |
+| Course description length | 100–500 words | `course_description_word_min/max` |
+| Total course duration | 2–8 hours | `course_duration_min/max_minutes` |
 | Preview video | required (BR-015) | — |
+| Course version | required | `GET /course-versions/` |
 | Terms accepted | required (BR-005) | — |
-| Final assessment | required, ≥15 questions | `COURSE_FINAL_ASSESSMENT_MIN_QUESTIONS` |
+| Final assessment | required, ≥15 questions | `course_final_assessment_min_questions` |
 
 ### Roles
 | Role | Value | Can do |

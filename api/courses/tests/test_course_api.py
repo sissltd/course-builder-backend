@@ -46,6 +46,7 @@ class CourseApiTests(APITestCase):
 
     def test_creator_can_create_with_topic_and_course_information_fields(self):
         topic = make_topic(category=self.category)
+        version = CourseVersion.objects.get(label="1.0")
         self.client.force_authenticate(self.creator)
 
         response = self.client.post(
@@ -58,6 +59,7 @@ class CourseApiTests(APITestCase):
                 "difficulty_level": "BEGINNER",
                 "learning_objectives": ["Objective 1", "Objective 2"],
                 "tags": ["Python", "Backend"],
+                "version": str(version.id),
                 "thumbnail_url": "https://example.com/thumb.jpg",
                 "duration_hours": 1,
                 "duration_minutes": 30,
@@ -72,8 +74,35 @@ class CourseApiTests(APITestCase):
         self.assertEqual(course.difficulty_level, "BEGINNER")
         self.assertEqual(course.learning_objectives, ["Objective 1", "Objective 2"])
         self.assertEqual(course.tags, ["Python", "Backend"])
+        self.assertEqual(course.version_id, version.id)
+        self.assertEqual(response.data["version"]["label"], "1.0")
         self.assertEqual(course.thumbnail_url, "https://example.com/thumb.jpg")
         self.assertEqual(course.planned_duration_seconds, 90 * 60)
+
+    def test_creator_can_list_active_course_versions(self):
+        CourseVersion.objects.create(label="0.9", is_active=False)
+        self.client.force_authenticate(self.creator)
+
+        response = self.client.get("/api/v1/course-versions/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual([item["label"] for item in response.data], ["1.0"])
+
+    def test_creator_can_select_version_on_draft(self):
+        version = CourseVersion.objects.get(label="1.0")
+        course = make_draft_course(creator=self.creator, category=self.category)
+        self.client.force_authenticate(self.creator)
+
+        response = self.client.patch(
+            f"/api/v1/courses/{course.id}/",
+            {"version": str(version.id)},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["version"]["label"], "1.0")
+        course.refresh_from_db()
+        self.assertEqual(course.version_id, version.id)
 
     def test_create_with_mismatched_topic_and_category_rejected(self):
         other_category = make_category()

@@ -3,7 +3,7 @@ from rest_framework import serializers
 
 from api.catalog.serializers.category_serializer import CategoryMiniSerializer
 from api.catalog.serializers.topic_serializer import TopicMiniSerializer
-from api.courses.models import Course, CourseDistribution
+from api.courses.models import Course, CourseDistribution, CourseVersion
 from api.courses.serializers.assessment_serializer import AssessmentSerializer
 from api.courses.serializers.module_serializer import ModuleSerializer
 from api.reviews.serializers import (
@@ -25,6 +25,15 @@ def _validate_string_list(value, field_name):
             f"{field_name} must be a list of non-empty strings."
         )
     return value
+
+
+class CourseVersionSerializer(serializers.ModelSerializer):
+    """Active version option shown on the course builder's Versioning step."""
+
+    class Meta:
+        model = CourseVersion
+        fields = ["id", "label"]
+        read_only_fields = fields
 
 
 class CourseListSerializer(serializers.ModelSerializer):
@@ -345,6 +354,7 @@ class CourseDetailSerializer(serializers.ModelSerializer):
     review_comments = ReviewCommentSerializer(many=True, read_only=True)
     qa_video_samples = serializers.SerializerMethodField()
     distribution_channels = CourseDistributionSerializer(many=True, read_only=True)
+    version = CourseVersionSerializer(read_only=True)
 
     class Meta:
         model = Course
@@ -428,6 +438,9 @@ class CourseCreateSerializer(serializers.ModelSerializer):
     duration_seconds = serializers.IntegerField(
         required=False, default=0, min_value=0, write_only=True
     )
+    version = serializers.PrimaryKeyRelatedField(
+        queryset=CourseVersion.objects.filter(is_active=True), required=False
+    )
 
     class Meta:
         model = Course
@@ -441,6 +454,7 @@ class CourseCreateSerializer(serializers.ModelSerializer):
             "difficulty_level",
             "learning_objectives",
             "tags",
+            "version",
             "duration_hours",
             "duration_minutes",
             "duration_seconds",
@@ -467,6 +481,7 @@ class CourseCreateSerializer(serializers.ModelSerializer):
             difficulty_level=validated_data.get("difficulty_level", ""),
             learning_objectives=validated_data.get("learning_objectives"),
             tags=validated_data.get("tags"),
+            version=validated_data.get("version"),
             duration_hours=validated_data.get("duration_hours", 0),
             duration_minutes=validated_data.get("duration_minutes", 0),
             duration_seconds=validated_data.get("duration_seconds", 0),
@@ -498,6 +513,9 @@ class CourseUpdateSerializer(serializers.ModelSerializer):
     duration_seconds = serializers.IntegerField(
         required=False, min_value=0, write_only=True
     )
+    version = serializers.PrimaryKeyRelatedField(
+        queryset=CourseVersion.objects.filter(is_active=True), required=False
+    )
 
     class Meta:
         model = Course
@@ -511,6 +529,7 @@ class CourseUpdateSerializer(serializers.ModelSerializer):
             "difficulty_level",
             "learning_objectives",
             "tags",
+            "version",
             "duration_hours",
             "duration_minutes",
             "duration_seconds",

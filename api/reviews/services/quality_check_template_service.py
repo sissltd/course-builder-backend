@@ -15,7 +15,9 @@ _AUTOMATED_MATCHERS = {
         f for f in failures if "description" in f
     ],
     "Learning objectives": lambda failures: [
-        f for f in failures if "learning objectives" in f
+        f
+        for f in failures
+        if f.startswith("Course must") and "learning objectives" in f
     ],
     "Course duration": lambda failures: [
         f for f in failures if "duration" in f
@@ -37,6 +39,9 @@ _AUTOMATED_MATCHERS = {
     ],
     "Final assessment": lambda failures: [
         f for f in failures if "final assessment" in f
+    ],
+    "Version selected": lambda failures: [
+        f for f in failures if "version must be selected" in f
     ],
 }
 

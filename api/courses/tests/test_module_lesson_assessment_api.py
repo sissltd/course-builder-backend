@@ -25,10 +25,32 @@ class ModuleLessonAssessmentApiTests(APITestCase):
 
         response = self.client.post(
             f"/api/v1/courses/{self.course.id}/modules/",
-            {"title": "Module 1", "order": 1},
+            {
+                "title": "Module 1",
+                "order": 1,
+                "description": "An introduction to the course tools.",
+                "learning_objectives": [
+                    "Install the required tools",
+                    "Create a first project",
+                ],
+            },
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(
+            response.data["description"], "An introduction to the course tools."
+        )
+        self.assertEqual(
+            response.data["learning_objectives"],
+            ["Install the required tools", "Create a first project"],
+        )
+
+        module = Module.objects.get(id=response.data["id"])
+        self.assertEqual(module.description, "An introduction to the course tools.")
+        self.assertEqual(
+            module.learning_objectives,
+            ["Install the required tools", "Create a first project"],
+        )
 
     def test_non_owner_gets_404_creating_module(self):
         self.client.force_authenticate(self.other_creator)
