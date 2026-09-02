@@ -567,8 +567,10 @@ Auth: owning Course Creator, **Draft status only**
 Returns active values for the builder's Versioning step. Save the selected
 `id` through course create or update.
 
+**200 OK** — standard paginated envelope; each item in `data.results` is:
+
 ```json
-[{ "id": "2f9a1e4b-7c8d-4a6e-9f0c-2d3e4f5a6b7c", "label": "1.0" }]
+{ "id": "2f9a1e4b-7c8d-4a6e-9f0c-2d3e4f5a6b7c", "label": "1.0" }
 ```
 
 ### Delete Draft Course

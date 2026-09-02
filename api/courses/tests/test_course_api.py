@@ -86,7 +86,9 @@ class CourseApiTests(APITestCase):
         response = self.client.get("/api/v1/course-versions/")
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual([item["label"] for item in response.data], ["1.0"])
+        self.assertEqual(
+            [item["label"] for item in response.data["data"]["results"]], ["1.0"]
+        )
 
     def test_creator_can_select_version_on_draft(self):
         version = CourseVersion.objects.get(label="1.0")
