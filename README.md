@@ -753,9 +753,17 @@ A `debug_task` is included as a lightweight smoke-test task for local setup and 
 
 ## Storage and S3
 
-The scaffold includes `config/settings/s3.py` as a reserved settings extension point, but it does not yet ship an active S3 storage implementation or required S3 environment variables.
+Authenticated clients request a presigned PUT from
+`POST /api/v1/uploads/presign/`, upload the raw file directly to the configured
+S3-compatible store using the returned `upload_headers`, and persist
+`file_url` after a successful upload. Public URLs use path-style addressing
+and are derived from `DIGITAL_OCEAN_ENDPOINT` and `DIGITAL_OCEAN_BUCKET`; no
+separate CDN setting is required.
 
-That keeps the base Django scaffold lean. Projects that need file storage can add their preferred storage backend and settings without removing unused defaults.
+The endpoint must be browser-accessible over trusted HTTPS. Storage CORS must
+allow the frontend origin, `Content-Type`, and `x-amz-meta-*` on PUT requests,
+while the bucket policy must allow public `GetObject` for `uploads/*` without
+allowing anonymous writes or bucket listing.
 
 ## GitHub Actions Workflows
 

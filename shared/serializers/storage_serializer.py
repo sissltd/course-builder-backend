@@ -38,11 +38,41 @@ class UploadRequestSerializer(serializers.Serializer):
         required=False,
         min_value=1,
         help_text=(
-            "Optional file size in bytes. When supplied it is checked "
-            "against the limit for the content type (images 10MB, videos "
-            "500MB, PDFs 20MB) so an oversized file is rejected before the "
-            "upload starts rather than after it fails."
+            "File size in bytes. Required for creator course media and signed "
+            "into the PUT request; limits depend on purpose. Optional for "
+            "legacy non-course uploads."
         ),
+    )
+    purpose = serializers.ChoiceField(
+        choices=[
+            "COURSE_THUMBNAIL",
+            "LESSON_IMAGE",
+            "LESSON_VIDEO",
+            "COURSE_PREVIEW_VIDEO",
+            "SUBTITLE",
+        ],
+        required=False,
+        help_text="Required for creator course media; selects its PRD validation rules.",
+    )
+    width = serializers.IntegerField(
+        required=False,
+        min_value=1,
+        help_text="Required pixel width for thumbnails and course videos.",
+    )
+    height = serializers.IntegerField(
+        required=False,
+        min_value=1,
+        help_text="Required pixel height for thumbnails and course videos.",
+    )
+    duration_seconds = serializers.IntegerField(
+        required=False,
+        min_value=1,
+        help_text="Required for course preview videos; must be 60–120 seconds.",
+    )
+    codec = serializers.CharField(
+        required=False,
+        max_length=30,
+        help_text="Required for course videos; the PRD-supported value is h264.",
     )
 
 
@@ -52,8 +82,12 @@ class UploadResponseSerializer(serializers.Serializer):
     """
 
     upload_url = serializers.URLField(help_text="PUT this URL with the file bytes")
+    upload_headers = serializers.DictField(
+        child=serializers.CharField(),
+        help_text="Headers that must be sent unchanged with the upload PUT request",
+    )
     file_url = serializers.URLField(
-        help_text="CDN URL where the file will be accessible after upload"
+        help_text="Public object URL where the file is accessible after upload"
     )
     file_key = serializers.CharField(
         help_text="File key — save this if you need to delete later"

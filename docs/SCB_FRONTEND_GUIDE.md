@@ -44,6 +44,9 @@ const presign = await api.post("/api/v1/uploads/presign/", {
   content_type: file.type, // must be an allowed MIME type, see below
   folder: "thumbnails", // or 'courses' for lesson media
   size: file.size,
+  purpose: "COURSE_THUMBNAIL",
+  width: mediaWidth,
+  height: mediaHeight,
 });
 
 // 2. PUT the bytes straight to storage. Note: no auth header here, the
@@ -51,10 +54,10 @@ const presign = await api.post("/api/v1/uploads/presign/", {
 await fetch(presign.data.upload_url, {
   method: "PUT",
   body: file,
-  headers: { "Content-Type": file.type },
+  headers: presign.data.upload_headers,
 });
 
-// 3. Save the CDN URL onto the resource.
+// 3. Save the public object URL onto the resource.
 await api.patch(`/api/v1/courses/${courseId}/`, {
   thumbnail_url: presign.data.file_url,
 });
@@ -65,7 +68,13 @@ await api.patch(`/api/v1/courses/${courseId}/`, {
 ```json
 {
   "upload_url": "https://...signed PUT URL...",
-  "file_url": "https://cdn.../uploads/thumbnails/abc123.png",
+  "upload_headers": {
+    "Content-Type": "image/png",
+    "x-amz-meta-upload-purpose": "COURSE_THUMBNAIL",
+    "x-amz-meta-width": "1280",
+    "x-amz-meta-height": "720"
+  },
+  "file_url": "https://storage.../bucket/uploads/thumbnails/abc123.png",
   "file_key": "uploads/thumbnails/abc123.png",
   "expires_in": 600
 }
@@ -73,11 +82,14 @@ await api.patch(`/api/v1/courses/${courseId}/`, {
 
 **Limits and allowed types**
 
-| Category | Limit                           | Accepted MIME types                                  |
-| -------- | ------------------------------- | ---------------------------------------------------- |
-| Image    | 10 MB                           | `image/jpeg`, `image/png`, `image/webp`, `image/gif` |
-| Video    | **500 MB** (raised from 100 MB) | `video/mp4`, `video/quicktime`, `video/webm`         |
-| Document | 20 MB                           | `application/pdf`                                    |
+| Purpose | Limit | Accepted type and media requirements |
+| --- | ---: | --- |
+| `COURSE_THUMBNAIL` | 5 MB | JPEG/PNG, minimum 1280×720, exactly 16:9 |
+| `LESSON_IMAGE` | 10 MB | JPEG/PNG/WebP/GIF |
+| `LESSON_VIDEO` | 500 MB | H.264 MP4, minimum 1280×720 |
+| `COURSE_PREVIEW_VIDEO` | 100 MB | H.264 MP4, minimum 1280×720, 60–120 seconds |
+| `SUBTITLE` | 20 MB | `.srt` as `application/x-subrip` or `text/plain` |
+| Generic document | 20 MB | `application/pdf` |
 
 Folders now include `courses` (lesson media) and `thumbnails` (cover
 images) alongside the existing ones.
@@ -86,8 +98,11 @@ images) alongside the existing ones.
 
 - `upload_url` expires after **10 minutes**. Request it when the user
   picks the file, not when the form loads.
-- `size` is optional but send it — without it an oversized upload only
-  fails at the end.
+- `purpose` and `size` are required for course media. `width` and `height`
+  are also required for thumbnails and videos; videos require `codec: "h264"`,
+  and previews require `duration_seconds`.
+- Send every returned `upload_headers` entry unchanged. Storage CORS must allow
+  `Content-Type` and `x-amz-meta-*`; do not add the application auth header.
 - Course fields `thumbnail_url` and `preview_video_url` are already
   writable on `PATCH /courses/{id}/`. There is also
   `POST /courses/{course_pk}/thumbnail/` if you want the dedicated route.
