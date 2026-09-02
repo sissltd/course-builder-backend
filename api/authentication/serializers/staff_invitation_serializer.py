@@ -120,3 +120,43 @@ class StaffMemberSerializer(serializers.Serializer):
 
     def get_invited_by(self, obj) -> str | None:
         return obj.created_by.email if obj.created_by else None
+
+
+class StaffDetailSerializer(StaffMemberSerializer):
+    """Full, non-sensitive profile used by the Team detail panel."""
+
+    avatar_url = serializers.URLField(read_only=True)
+    phone_number = serializers.CharField(read_only=True)
+    sex = serializers.CharField(read_only=True)
+    country = serializers.CharField(read_only=True)
+    state = serializers.CharField(read_only=True)
+    address = serializers.CharField(read_only=True)
+    timezone = serializers.CharField(read_only=True)
+    status = serializers.CharField(read_only=True)
+    is_active = serializers.BooleanField(read_only=True)
+    last_login = serializers.DateTimeField(read_only=True, allow_null=True)
+    updated_datetime = serializers.DateTimeField(read_only=True)
+
+    class Meta:
+        fields = [
+            "id",
+            "email",
+            "first_name",
+            "last_name",
+            "avatar_url",
+            "phone_number",
+            "sex",
+            "country",
+            "state",
+            "address",
+            "timezone",
+            "role",
+            "role_label",
+            "status",
+            "is_active",
+            "invitation_status",
+            "invited_by",
+            "last_login",
+            "created_datetime",
+            "updated_datetime",
+        ]

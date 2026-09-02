@@ -20,6 +20,7 @@ from .staff_invitation_serializer import (
     AcceptStaffInvitationSerializer,
     StaffInvitationSerializer,
     StaffMemberSerializer,
+    StaffDetailSerializer,
 )
 from .superadmin_bootstrap_serializer import SuperAdminBootstrapSerializer
 from .token_refresh_serializer import TokenRefreshSerializer
@@ -42,6 +43,7 @@ __all__ = [
     "SignupSerializer",
     "StaffInvitationSerializer",
     "StaffMemberSerializer",
+    "StaffDetailSerializer",
     "SuperAdminBootstrapSerializer",
     "TokenRefreshSerializer",
     "UserSessionSerializer",

@@ -27,6 +27,7 @@ from .staff_views import (
     InviteStaffView,
     ReactivateStaffView,
     RevokeStaffView,
+    StaffDetailView,
     StaffListView,
     SuperAdminBootstrapView,
 )
@@ -54,6 +55,7 @@ __all__ = [
     "ReviewerSignupView",
     "SignupView",
     "StaffListView",
+    "StaffDetailView",
     "SuperAdminBootstrapView",
     "TokenRefreshView",
     "UserSessionListView",

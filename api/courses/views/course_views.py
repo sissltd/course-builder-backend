@@ -12,7 +12,7 @@ from rest_framework.viewsets import ModelViewSet, ReadOnlyModelViewSet
 
 from api.collaborators.services import collaborator_service
 from api.courses.enums import CourseStatus
-from api.courses.filters import CourseFilter, CourseReviewQueueFilter
+from api.courses.filters import AdminCourseFilter, CourseFilter, CourseReviewQueueFilter
 from api.courses.models import Course
 from api.reviews.models import MediaAsset, ReviewComment
 from api.courses.permissions import IsCourseOwner
@@ -1598,3 +1598,55 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
             course=course, reviewer=request.user, **serializer.validated_data
         )
         return Response(ReviewCommentSerializer(comment).data, status=201)
+
+
+@extend_schema_view(
+    list=extend_schema(
+        summary="List courses for administration", tags=["Admin — Courses"]
+    ),
+    retrieve=extend_schema(
+        summary="Retrieve course details for administration",
+        tags=["Admin — Courses"],
+    ),
+    claim=extend_schema(tags=["Admin — Courses"]),
+    approve=extend_schema(tags=["Admin — Courses"]),
+    content_approve=extend_schema(tags=["Admin — Courses"]),
+    reject=extend_schema(tags=["Admin — Courses"]),
+    content_reject=extend_schema(tags=["Admin — Courses"]),
+    qa_claim=extend_schema(tags=["Admin — Courses"]),
+    qa_approve=extend_schema(tags=["Admin — Courses"]),
+    qa_reject=extend_schema(tags=["Admin — Courses"]),
+    comments=extend_schema(tags=["Admin — Courses"]),
+)
+class AdminCourseViewSet(CourseReviewViewSet):
+    """All-course Admin table with the existing two-stage review actions."""
+
+    filterset_class = AdminCourseFilter
+    ordering_fields = [
+        "title",
+        "created_datetime",
+        "updated_datetime",
+        "submitted_at",
+        "approved_at",
+        "published_at",
+        "quality_score",
+        "status",
+    ]
+    ordering = ["-created_datetime"]
+
+    def get_queryset(self):
+        if getattr(self, "swagger_fake_view", False):
+            return Course.objects.none()
+        return Course.objects.select_related(
+            "category", "topic", "creator"
+        ).prefetch_related(
+            "modules__lessons__assessment",
+            "modules__assessment",
+            "final_assessment",
+            "media_assets__verified_by",
+            "media_assets__lesson__module",
+            "quality_check_runs__findings",
+            "quality_findings",
+            "review_assignments__reviewer",
+            "review_comments__reviewer",
+        )
