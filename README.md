@@ -374,11 +374,11 @@ Projects can implement OTP, passwordless, social login, or vendor-backed authent
 
 `UserRole` splits into three groups, and the distinction is load-bearing:
 
-| Group          | Roles                                                | How you get it            |
-| -------------- | ---------------------------------------------------- | ------------------------- |
-| **Public**     | `COURSE_CREATOR`                                     | Public signup             |
-| **Staff**      | `STAFF_WRITER`, `STAFF_VERIFIER`, `STAFF_APPROVER`   | Super Admin invitation    |
-| **Privileged** | `ADMIN`, `SUPER_ADMIN`                               | Bootstrap / direct assign |
+| Group          | Roles                                              | How you get it            |
+| -------------- | -------------------------------------------------- | ------------------------- |
+| **Public**     | `COURSE_CREATOR`                                   | Public signup             |
+| **Staff**      | `STAFF_WRITER`, `STAFF_VERIFIER`, `STAFF_APPROVER` | Super Admin invitation    |
+| **Privileged** | `ADMIN`, `SUPER_ADMIN`                             | Bootstrap / direct assign |
 
 The three staff roles are the Writer / Verifier / Approver options in the
 "Invite a staff" dialog and mirror the authoring pipeline (write → verify →
@@ -440,7 +440,7 @@ The Teams page is backed by three more Super Admin endpoints:
 Read `invitation_status` rather than `is_active` when rendering a row: `PENDING`
 and `REVOKED` are both inactive but offer different actions, and they are told
 apart by whether an unconsumed invitation token still exists. An invitation
-revoked *before* acceptance cannot be reactivated — that account has no usable
+revoked _before_ acceptance cannot be reactivated — that account has no usable
 password — so those must be re-invited instead.
 
 Neither revoke nor reactivate can target your own account, and the Super Admin
@@ -449,7 +449,7 @@ could not be replaced through the API.
 
 Django's `is_staff` / `is_superuser` flags are set on the bootstrapped Super
 Admin so it can also reach `/admin/`. Note that `is_superuser` bypasses every
-role check in `api.users.permissions.HasRole` *and* in `require_role`, so a
+role check in `api.users.permissions.HasRole` _and_ in `require_role`, so a
 Django superuser passes as any role — including `IsCourseCreatorRole`. That is
 Django's convention, and it means role checks are not a boundary for such an
 account at all.
@@ -459,7 +459,7 @@ account at all.
 its `COURSE_CREATOR` default, which produced a full-authority account that
 reported itself as a public creator, was routed to the creator dashboard at
 login, and — because the partial unique index only constrains rows whose role
-*is* `SUPER_ADMIN` — escaped the one-seat rule entirely, so any number could
+_is_ `SUPER_ADMIN` — escaped the one-seat rule entirely, so any number could
 exist. Shell-created superusers now fall under the same rule as the bootstrap
 endpoint: the second one fails with a readable message rather than silently
 becoming an invisible co-owner.
@@ -496,10 +496,10 @@ hold foreign keys into it, so `categories` is a dependency of `courses` and
 Write access is narrower than everywhere else in the platform and does not
 follow the usual "admins can do anything" shape:
 
-| Action                | Who                       |
-| --------------------- | ------------------------- |
-| List / retrieve       | Any authenticated user    |
-| Create/update/delete  | Writer, Super Admin       |
+| Action               | Who                    |
+| -------------------- | ---------------------- |
+| List / retrieve      | Any authenticated user |
+| Create/update/delete | Writer, Super Admin    |
 
 Admins and Approvers deliberately get **read only** here (`CanManageCategories`
 in `api.users.permissions`), even though they have full course CRUD. Note also
@@ -518,7 +518,7 @@ Two things worth knowing before changing a category:
   `Course.category` is `PROTECT`, so a category with courses cannot be deleted;
   `category_service.delete_category` turns that into a 400 with a usable message
   rather than the 500 an unhandled `ProtectedError` would produce. Creator
-  profiles are `SET_NULL`, so they do *not* block deletion and silently lose
+  profiles are `SET_NULL`, so they do _not_ block deletion and silently lose
   their stated expertise — prefer setting `status` to `INACTIVE` to retire a
   category people have already selected.
 
@@ -536,15 +536,15 @@ administrative tier rather than scoping to `creator`. Two deliberate limits:
 
 - **Submission stays owner-scoped.** Submitting is the author vouching for
   their own work, so an Admin may submit only a course they created.
-- **Workflow rules still apply.** Wider access changes *who* may act, not
-  *what* the workflow allows — an Admin editing a Published course gets the
+- **Workflow rules still apply.** Wider access changes _who_ may act, not
+  _what_ the workflow allows — an Admin editing a Published course gets the
   same "Only Draft courses can be edited" error a creator would.
 
 ### Admin Operations
 
 Two administrative tiers already exist and are kept apart on purpose. The
-Super Admin runs the *organization* — inviting, revoking, and reactivating
-staff through `/api/v1/auth/staff/…` — while Admins run the *platform*. The
+Super Admin runs the _organization_ — inviting, revoking, and reactivating
+staff through `/api/v1/auth/staff/…` — while Admins run the _platform_. The
 endpoints below are the Admin tier's, gated on `IsAdminOrSuperAdminRole`,
 which excludes Approvers: they are invited staff whose job is course
 approvals, not account moderation or platform configuration.
@@ -578,7 +578,7 @@ Four things worth knowing:
   token refresh had always rejected the status, but nothing in the codebase
   ever assigned it, so the policy was unenforceable — the enum value existed
   and no code path produced it. `suspend_user` is now the only writer of it.
-  Suspension also blacklists outstanding refresh tokens, but an *access* token
+  Suspension also blacklists outstanding refresh tokens, but an _access_ token
   already in hand keeps working until it expires, so the cut-off lands at the
   user's next refresh rather than instantly.
 - **The admin wallet reads exist because the creator-facing ones 403 for
@@ -593,7 +593,7 @@ Four things worth knowing:
   transaction, and nothing — here, in the Django admin, or anywhere else —
   advances that to `COMPLETED` or `FAILED`. Payout settlement is not
   implemented, so read `CONFIRMED` as "awaiting a manual bank transfer". A
-  status dropdown was deliberately *not* added to the Django admin: letting an
+  status dropdown was deliberately _not_ added to the Django admin: letting an
   operator mark a payout done without money moving is worse than the gap being
   visible.
 
@@ -603,7 +603,7 @@ the user form because both have service-layer rules behind them (session
 revocation, notifications, activity logging) that a direct database edit would
 skip; `Transaction` and `UserActivityLog` are fully immutable there, since an
 audit log that can be edited from the admin is not an audit log. `TopicAdmin`
-remains the one admin that *writes*, routing through `topic_service` so it
+remains the one admin that _writes_, routing through `topic_service` so it
 cannot bypass the price-snapshot rules.
 
 ## User Model

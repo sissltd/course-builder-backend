@@ -14,7 +14,8 @@ from api.collaborators.services import collaborator_service
 from api.courses.enums import CourseStatus
 from api.courses.models import Course, Module
 from api.courses.serializers import ModuleSerializer, ModuleWriteSerializer
-from api.courses.services import module_lock_service
+from api.courses.serializers.ordering_serializer import ReorderSerializer
+from api.courses.services import module_lock_service, ordering_service
 from api.users.permissions import IsCourseCreatorRole
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 
@@ -384,6 +385,70 @@ class ModuleViewSet(ModelViewSet):
             **STANDARD_ERROR_RESPONSES["server"],
         },
     )
+    @extend_schema(
+        summary="Reorder a course's modules",
+        description=(
+            "Applies a new order to every module in the course in one "
+            "request, for the builder's drag-and-drop outline.\n\n"
+            "Call this once when a drag gesture settles, instead of "
+            "PATCHing each module individually.\n\n"
+            "**Auth:** Course creator or an Admin collaborator.\n\n"
+            "**Prerequisites:** The course must be Draft.\n\n"
+            "**Important:** The payload must list **every** module in the "
+            "course, not just the ones that moved \u2014 a partial list "
+            "returns 400 naming the missing ids. Order values must be "
+            "distinct. The whole reorder is one transaction: it either "
+            "applies completely or not at all."
+        ),
+        tags=["Creator — Modules"],
+        parameters=[_COURSE_PK_PARAMETER],
+        request=ReorderSerializer,
+        responses={
+            200: OpenApiResponse(
+                response=ModuleSerializer(many=True),
+                description="The course's modules in their new order.",
+            ),
+            400: OpenApiResponse(
+                description=(
+                    "Incomplete list, unknown or duplicate ids, duplicate "
+                    "order values, or the course is not Draft."
+                )
+            ),
+            423: OpenApiResponse(
+                description="A module in this course is locked by another user."
+            ),
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
+            **STANDARD_ERROR_RESPONSES["not_found"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
+    @action(detail=False, methods=["patch"])
+    def reorder(self, request, *args, **kwargs):
+        course = self._get_course()
+        self._require_manage_access(course)
+        if course.status != CourseStatus.DRAFT:
+            raise exceptions.ValidationError(
+                "Modules can only be reordered while the course is Draft."
+            )
+
+        serializer = ReorderSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        queryset = Module.objects.filter(course=course)
+        # perform_update refuses to touch a module someone else holds, so
+        # the bulk path must too - otherwise reorder is a way around the
+        # lock.
+        for module in queryset.select_related("locked_by"):
+            module_lock_service.check_not_locked(module=module, user=request.user)
+
+        modules = ordering_service.reorder(
+            queryset=queryset,
+            items=serializer.validated_data["order"],
+            actor=request.user,
+        )
+        return Response(ModuleSerializer(modules, many=True).data)
+
     @action(detail=True, methods=["post"])
     def lock(self, request, *args, **kwargs):
         module = module_lock_service.acquire_lock(

@@ -4,7 +4,10 @@ from drf_spectacular.utils import (
     extend_schema,
     extend_schema_view,
 )
+from django.db import transaction
 from rest_framework import exceptions
+from rest_framework.decorators import action
+from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 
 from api.collaborators.services import collaborator_service
@@ -147,6 +150,74 @@ class LessonContentBlockViewSet(_BaseLessonSubResourceViewSet):
     model = LessonContentBlock
     serializer_class = LessonContentBlockSerializer
     editable_noun = "Content blocks"
+
+    @extend_schema(
+        summary="Replace a lesson's whole body in one request",
+        description=(
+            "Replaces every content block on the lesson with the submitted "
+            "set, in one transaction. This is the endpoint a rich-text "
+            "editor should save through: one request per save instead of a "
+            "create/update/delete per block.\n\n"
+            "Map the editor's document to blocks before sending \u2014 a "
+            "heading becomes HEADING_1/HEADING_2 with `text_content`, an "
+            "image becomes IMAGE with `media_url`, and so on. Do **not** "
+            "put rich-text HTML in the lesson's `script` field: that is "
+            "narration copy under a separate word-count rule.\n\n"
+            "**Auth:** Course Creator/Writer with access to the lesson's "
+            "module.\n\n"
+            "**Prerequisites:** The parent course must be Draft and the "
+            "module must not be locked by another user.\n\n"
+            "**Important:** This is a full replace, not a merge \u2014 "
+            "blocks absent from the payload are deleted, and block ids are "
+            "not preserved across a save. Sending an empty list clears the "
+            "lesson body. Each block's payload must match its type, the "
+            "same rule the per-block endpoints enforce."
+        ),
+        tags=["Creator — Lessons"],
+        parameters=[_LESSON_PK_PARAMETER],
+        request=LessonContentBlockSerializer(many=True),
+        responses={
+            200: OpenApiResponse(
+                response=LessonContentBlockSerializer(many=True),
+                description="The lesson's new body, in order.",
+            ),
+            400: OpenApiResponse(
+                description=(
+                    "A block's payload does not match its type, or the "
+                    "course is not Draft."
+                )
+            ),
+            423: OpenApiResponse(description="The module is locked by another user."),
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
+            **STANDARD_ERROR_RESPONSES["not_found"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
+    @action(detail=False, methods=["put"])
+    def bulk(self, request, *args, **kwargs):
+        lesson = self._get_lesson()
+        self._check_editable(lesson)
+
+        serializer = LessonContentBlockSerializer(data=request.data, many=True)
+        serializer.is_valid(raise_exception=True)
+
+        with transaction.atomic():
+            LessonContentBlock.objects.filter(lesson=lesson).delete()
+            blocks = LessonContentBlock.objects.bulk_create(
+                [
+                    LessonContentBlock(
+                        lesson=lesson,
+                        created_by=request.user,
+                        updated_by=request.user,
+                        **block,
+                    )
+                    for block in serializer.validated_data
+                ]
+            )
+
+        blocks.sort(key=lambda block: block.order)
+        return Response(LessonContentBlockSerializer(blocks, many=True).data)
 
 
 @extend_schema_view(

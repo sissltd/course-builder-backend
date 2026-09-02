@@ -35,12 +35,18 @@ ALLOWED_CONTENT_TYPES = {
 # Max file sizes per category (in bytes)
 MAX_FILE_SIZES = {
     "image": 10 * 1024 * 1024,  # 10MB
-    "video": 100 * 1024 * 1024,  # 100MB
+    "video": 500 * 1024 * 1024,  # 500MB - course lesson and cover videos
     "application": 20 * 1024 * 1024,  # 20MB
 }
 
 # Presigned URL expiry (seconds)
 PRESIGN_EXPIRY = 600  # 10 minutes
+
+
+def max_size_for(content_type: str):
+    """Byte cap for a MIME type's category, or None if uncapped."""
+
+    return MAX_FILE_SIZES.get(content_type.split("/", 1)[0])
 
 
 # >>>>>>>>>>>>>>>>>>>> Custom Exceptions <<<<<<<<<<<<<<<<<<<<<<
@@ -106,7 +112,7 @@ class StorageService:
     """
 
     @staticmethod
-    def request_upload(filename, content_type, folder="general"):
+    def request_upload(filename, content_type, folder="general", size=None):
         """
         Generates a presigned PUT URL for direct upload to DO Spaces.
 
@@ -114,6 +120,14 @@ class StorageService:
             filename:     Original filename (used to extract extension)
             content_type: MIME type (e.g., "image/jpeg")
             folder:       Storage folder (e.g., "profiles", "certificates", "videos", "jobs", "chat")
+            size:         Optional byte count, checked against MAX_FILE_SIZES.
+
+        Note on size enforcement: a presigned PUT cannot carry a size
+        condition, so `size` is what the client declares, not what it
+        uploads. It catches honest mistakes (picking a 2GB video) before a
+        long upload fails, but it is not a security control - a client can
+        under-declare. Hard enforcement needs a presigned POST with a
+        content-length-range condition, or a bucket-side policy.
 
         Returns:
             dict with:
@@ -129,6 +143,16 @@ class StorageService:
                 f"File type '{content_type}' is not allowed. "
                 f"Allowed types: {', '.join(sorted(ALLOWED_CONTENT_TYPES))}"
             )
+
+        # [1b] Validate the declared size against the per-category cap.
+        if size is not None:
+            limit = max_size_for(content_type)
+            if limit is not None and size > limit:
+                raise FileTooLarge(
+                    f"File is {size} bytes; the limit for "
+                    f"'{content_type}' is {limit} bytes "
+                    f"({limit // (1024 * 1024)}MB)."
+                )
 
         # [2] Generate unique filename (prevents overwrites and name collisions)
         extension = filename.rsplit(".", 1)[-1].lower() if "." in filename else "bin"

@@ -23,18 +23,22 @@ from api.courses.serializers import (
     CourseUpdateSerializer,
     CourseVersionSerializer,
     CourseDistributionSerializer,
-    ReviewAndPublishSerializer,
-    ReviewApproveSerializer,
-    ReviewRejectSerializer,
+    CourseListSerializer,
+    CoursePreviewSerializer,
+    CourseUpdateSerializer,
+    MediaAssetSerializer,
     QAApprovalSerializer,
     QARejectSerializer,
+    ReviewAndPublishSerializer,
+    ReviewApproveSerializer,
     ReviewCommentCreateSerializer,
     ReviewCommentSerializer,
-    MediaAssetSerializer,
+    ReviewRejectSerializer,
 )
-from api.courses.services import course_service
+from api.courses.services import course_preview_service, course_service
 from api.reviews.serializers import ReviewActionSerializer
 from api.reviews.services import review_service
+from shared.constants.authentication import FRONTEND_URL
 from api.users.permissions import (
     IsAdminRole,
     IsCourseCreatorRole,
@@ -895,6 +899,67 @@ class CourseViewSet(ModelViewSet):
             **STANDARD_ERROR_RESPONSES["server"],
         },
     )
+    @extend_schema(
+        summary="Get a shareable preview link",
+        description=(
+            "Returns a short-lived signed URL that renders the course as a "
+            "student would see it, including while it is still Draft.\n\n"
+            "Call this from the builder's Preview button. Open the returned "
+            "`preview_url`, or share it with a reviewer who is not signed "
+            "in \u2014 the token in the link is the authorisation, so no "
+            "account is required to open it.\n\n"
+            "**Auth:** Anyone with access to the course.\n\n"
+            "**Prerequisites:** The course must exist and be accessible to "
+            "the caller.\n\n"
+            "**Important:** The link expires 15 minutes after it is issued "
+            "\u2014 generate a fresh one per preview rather than storing "
+            "it. The token authorises reading this one course and nothing "
+            "else; it carries no user identity and grants no write access. "
+            "The course is not made public: nothing changes on the course "
+            "itself, and the link simply stops working when it expires."
+        ),
+        responses={
+            200: OpenApiResponse(
+                response=CoursePreviewSerializer,
+                description="A signed, expiring preview URL.",
+                examples=[
+                    OpenApiExample(
+                        name="Success",
+                        value={
+                            "preview_url": (
+                                "https://app.example.com/courses/"
+                                "0d1c7b2e-6f5a-4a3f-9a2b-1f4e8c9d0a11"
+                                "/preview?token=eyJhbGciOiJIUzI1NiJ9..."
+                            ),
+                            "expires_at": "2026-09-01T12:15:00Z",
+                            "expires_in": 900,
+                        },
+                    )
+                ],
+            ),
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
+            **STANDARD_ERROR_RESPONSES["not_found"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
+    @action(detail=True, methods=["get"])
+    def preview(self, request, pk=None):
+        course = self.get_object()
+        token, expires_at = course_preview_service.issue_preview_token(course=course)
+        return Response(
+            {
+                "preview_url": (
+                    f"{FRONTEND_URL.rstrip('/')}/courses/{course.id}"
+                    f"/preview?token={token}"
+                ),
+                "expires_at": expires_at,
+                "expires_in": int(
+                    course_preview_service.PREVIEW_TTL.total_seconds()
+                ),
+            }
+        )
+
     @action(detail=True, methods=["get", "post"], url_path="media-assets")
     def media_assets(self, request, pk=None):
         """Read or register the metadata that the QA stage verifies."""

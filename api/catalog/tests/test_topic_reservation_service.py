@@ -96,6 +96,10 @@ class ApproveRequestTests(TestCase):
                 request=request, actor=make_user(role=UserRole.ADMIN)
             )
 
+        request.refresh_from_db()
+        self.assertEqual(request.status, ReservationStatus.PENDING)
+        self.assertIsNone(request.topic_id)
+
 
 class RejectRequestTests(TestCase):
     def test_rejects_with_reason_and_creates_no_topic(self):

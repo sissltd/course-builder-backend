@@ -35,9 +35,12 @@ from api.payments.services.bankaccount_services import (
     set_default_bank_account,
     suspend_bank_account,
 )
+from api.platform.enums import PaymentProcessors
+from api.platform.services.platform_settings_service import get_settings
 from api.users.permissions import IsAdminRole
 from shared.response.error import custom_error_response
 from shared.response.success import custom_success_response
+from shared.services.flutterwave_service import FlutterwaveService
 from shared.services.paystack_service import PaystackService
 from shared.utils.client_meta import client_meta
 
@@ -200,21 +203,43 @@ class VerifyBankAccountView(APIView):
                 message="Both account number and bank code are required",
             )
 
-        try:
-            verification_result = PaystackService.resolve_bank(
-                account_number=account_number, bank_code=bank_code
-            )
-            return custom_success_response(
-                status=status.HTTP_200_OK,
-                message="Bank account verified successfully",
-                data=verification_result,
-            )
-        except Exception as exc:
-            logger.error(exc)
+        processor = get_settings().payment_processor
+        if processor == PaymentProcessors.FLUTTERWAVE:
+            try:
+                verification_result = FlutterwaveService().resolve_bank(
+                    account_number=account_number, bank_code=bank_code
+                )
+                return custom_success_response(
+                    status=status.HTTP_200_OK,
+                    message="Bank account verified successfully",
+                    data=verification_result,
+                )
+            except Exception as exc:
+                logger.error(exc)
+                return custom_error_response(
+                    status=status.HTTP_400_BAD_REQUEST,
+                    message="Bank account verification failed",
+                    technical_message=str(exc),
+                )
+        elif processor == PaymentProcessors.PAYSTACK:
+            try:
+                verification_result = PaystackService().resolve_bank(account_number=account_number, bank_code=bank_code)
+                return custom_success_response(
+                    status=status.HTTP_200_OK,
+                    message="Bank account verified successfully",
+                    data=verification_result,
+                )
+            except Exception as exc:
+                logger.error(exc)
+                return custom_error_response(
+                    status=status.HTTP_400_BAD_REQUEST,
+                    message="Bank account verification failed",
+                    technical_message=str(exc),
+                )
+        else:
             return custom_error_response(
                 status=status.HTTP_400_BAD_REQUEST,
-                message="Bank account verification failed",
-                technical_message=str(exc),
+                message="Unsupported payment processor",
             )
 
 
