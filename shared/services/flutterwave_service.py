@@ -140,8 +140,7 @@ class FlutterwaveService:
             "Content-Type": "application/json",
         }
 
-    def resolve_account(self, account_number, bank_code, account_name):
-        from shared.utils.bank_account_check import check_account_name_matches_profile
+    def resolve_bank(self, account_number, bank_code):
 
         payload = {
             "account": {
@@ -167,9 +166,7 @@ class FlutterwaveService:
         resolved_name = response_data.get("data", {}).get("account_name")
         if not resolved_name:
             raise ValueError("Flutterwave did not return an account name.")
-        if not check_account_name_matches_profile({name.lower() for name in account_name.split()}, resolved_name):
-            raise ValueError("Resolved account name does not match the provided account name.")
-
+        response_data = response_data.get("data", {})
         return response_data
 
     def fetch_recipient_id(self, account_number, bank_code) -> tuple[str, str] | tuple[None, None]:

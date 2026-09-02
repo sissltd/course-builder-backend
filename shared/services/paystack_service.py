@@ -27,8 +27,7 @@ class PaystackService:
             "Content-Type": "application/json",
         }
 
-    @staticmethod
-    def resolve_bank(account_number: str, bank_code: str) -> dict[str, Any]:
+    def resolve_bank(self, account_number: str, bank_code: str) -> dict[str, Any]:
         """
         Resolve using Paystack API
 
@@ -52,8 +51,10 @@ class PaystackService:
             raise PaystackServiceError(error_message)
 
         result = response.json()
+        data = result.get("data", {})
+        data["bank_code"] = data.pop("bank_id", None)
 
-        return result.get("data", {})
+        return data
 
     @staticmethod
     def initialize_payment(
