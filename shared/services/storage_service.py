@@ -1,5 +1,6 @@
 import logging
 import uuid
+from urllib.parse import urlsplit
 
 import boto3
 from botocore.config import Config
@@ -8,13 +9,34 @@ from botocore.exceptions import ClientError
 from shared.constants.digital_ocean import (
     DIGITAL_OCEAN_ACCESS_KEY,
     DIGITAL_OCEAN_BUCKET,
-    DIGITAL_OCEAN_CDN_URL,
     DIGITAL_OCEAN_ENDPOINT,
     DIGITAL_OCEAN_REGION,
     DIGITAL_OCEAN_SECRET_KEY,
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _storage_endpoint():
+    return DIGITAL_OCEAN_ENDPOINT.rstrip("/")
+
+
+def _public_base_url():
+    return f"{_storage_endpoint()}/{DIGITAL_OCEAN_BUCKET}"
+
+
+def _file_key_from_value(file_key):
+    """Return the object key from either a raw key or path-style object URL."""
+    if not file_key.startswith(("http://", "https://")):
+        return file_key
+
+    path = urlsplit(file_key).path.lstrip("/")
+    bucket_prefix = f"{DIGITAL_OCEAN_BUCKET}/"
+    if path.startswith(bucket_prefix):
+        path = path[len(bucket_prefix) :]
+    if not path:
+        raise FileNotFound("Invalid file URL format.")
+    return path
 
 
 # >>>>>>>>>>>>>>>>>>>> Allowed file types <<<<<<<<<<<<<<<<<<<<<<
@@ -30,6 +52,9 @@ ALLOWED_CONTENT_TYPES = {
     "video/webm",
     # Documents
     "application/pdf",
+    # Subtitles
+    "application/x-subrip",
+    "text/plain",
 }
 
 # Max file sizes per category (in bytes)
@@ -37,6 +62,49 @@ MAX_FILE_SIZES = {
     "image": 10 * 1024 * 1024,  # 10MB
     "video": 500 * 1024 * 1024,  # 500MB - course lesson and cover videos
     "application": 20 * 1024 * 1024,  # 20MB
+    "text": 20 * 1024 * 1024,  # 20MB
+}
+
+MB = 1024 * 1024
+
+COURSE_UPLOAD_RULES = {
+    "COURSE_THUMBNAIL": {
+        "folder": "thumbnails",
+        "content_types": {"image/jpeg", "image/png"},
+        "extensions": {"jpg", "jpeg", "png"},
+        "max_size": 5 * MB,
+        "dimensions": True,
+        "aspect_ratio": (16, 9),
+    },
+    "LESSON_IMAGE": {
+        "folder": "courses",
+        "content_types": {"image/jpeg", "image/png", "image/webp", "image/gif"},
+        "extensions": {"jpg", "jpeg", "png", "webp", "gif"},
+        "max_size": 10 * MB,
+    },
+    "LESSON_VIDEO": {
+        "folder": "courses",
+        "content_types": {"video/mp4"},
+        "extensions": {"mp4"},
+        "max_size": 500 * MB,
+        "dimensions": True,
+        "codec": "h264",
+    },
+    "COURSE_PREVIEW_VIDEO": {
+        "folder": "courses",
+        "content_types": {"video/mp4"},
+        "extensions": {"mp4"},
+        "max_size": 100 * MB,
+        "dimensions": True,
+        "codec": "h264",
+        "duration_range": (60, 120),
+    },
+    "SUBTITLE": {
+        "folder": "courses",
+        "content_types": {"application/x-subrip", "text/plain"},
+        "extensions": {"srt"},
+        "max_size": 20 * MB,
+    },
 }
 
 # Presigned URL expiry (seconds)
@@ -57,6 +125,10 @@ class InvalidFileType(Exception):
 
 
 class FileTooLarge(Exception):
+    pass
+
+
+class InvalidUploadMetadata(Exception):
     pass
 
 
@@ -81,10 +153,13 @@ def _get_s3_client():
     return boto3.client(
         "s3",
         region_name=DIGITAL_OCEAN_REGION,
-        endpoint_url=DIGITAL_OCEAN_ENDPOINT,
+        endpoint_url=_storage_endpoint(),
         aws_access_key_id=DIGITAL_OCEAN_ACCESS_KEY,
         aws_secret_access_key=DIGITAL_OCEAN_SECRET_KEY,
-        config=Config(signature_version="s3v4"),
+        config=Config(
+            signature_version="s3v4",
+            s3={"addressing_style": "path"},
+        ),
     )
 
 
@@ -112,7 +187,17 @@ class StorageService:
     """
 
     @staticmethod
-    def request_upload(filename, content_type, folder="general", size=None):
+    def request_upload(
+        filename,
+        content_type,
+        folder="general",
+        size=None,
+        purpose=None,
+        width=None,
+        height=None,
+        duration_seconds=None,
+        codec=None,
+    ):
         """
         Generates a presigned PUT URL for direct upload to DO Spaces.
 
@@ -121,18 +206,23 @@ class StorageService:
             content_type: MIME type (e.g., "image/jpeg")
             folder:       Storage folder (e.g., "profiles", "certificates", "videos", "jobs", "chat")
             size:         Optional byte count, checked against MAX_FILE_SIZES.
+            purpose:      Creator course-media preset; required for course uploads.
+            width:        Declared media width in pixels.
+            height:       Declared media height in pixels.
+            duration_seconds: Declared duration for course preview videos.
+            codec:        Declared video codec; creator videos require h264.
 
-        Note on size enforcement: a presigned PUT cannot carry a size
-        condition, so `size` is what the client declares, not what it
-        uploads. It catches honest mistakes (picking a 2GB video) before a
-        long upload fails, but it is not a security control - a client can
-        under-declare. Hard enforcement needs a presigned POST with a
-        content-length-range condition, or a bucket-side policy.
+        For creator course media, size is included in the signed PUT as
+        Content-Length. Media dimensions, duration and codec are signed into
+        object metadata so the registration/QA flow can audit what the client
+        declared; inspecting the underlying codec remains a media-processing
+        concern rather than a presign operation.
 
         Returns:
             dict with:
                 upload_url:  Presigned PUT URL (frontend uploads here)
-                file_url:    CDN URL where the file will be accessible after upload
+                upload_headers: Headers the frontend must send with the PUT
+                file_url:    Public URL where the file is accessible after upload
                 file_key:    The S3 key (used for deletion later)
                 expires_in:  Seconds until the presigned URL expires
         """
@@ -144,9 +234,70 @@ class StorageService:
                 f"Allowed types: {', '.join(sorted(ALLOWED_CONTENT_TYPES))}"
             )
 
-        # [1b] Validate the declared size against the per-category cap.
+        extension = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+
+        # Creator course uploads must declare their purpose so preview videos,
+        # lesson videos, thumbnails and subtitles receive different rules.
+        if folder in {"courses", "thumbnails"} and not purpose:
+            raise InvalidUploadMetadata(
+                "purpose is required for course and thumbnail uploads."
+            )
+
+        rule = COURSE_UPLOAD_RULES.get(purpose) if purpose else None
+        if purpose and not rule:
+            raise InvalidUploadMetadata(f"Unknown course upload purpose '{purpose}'.")
+        if rule:
+            if folder != rule["folder"]:
+                raise InvalidUploadMetadata(
+                    f"{purpose} uploads must use the '{rule['folder']}' folder."
+                )
+            if content_type not in rule["content_types"]:
+                allowed = ", ".join(sorted(rule["content_types"]))
+                raise InvalidFileType(f"{purpose} accepts only: {allowed}.")
+            if extension not in rule["extensions"]:
+                allowed = ", ".join(sorted(rule["extensions"]))
+                raise InvalidFileType(
+                    f"{purpose} requires one of these file extensions: {allowed}."
+                )
+            if size is None:
+                raise InvalidUploadMetadata(f"size is required for {purpose} uploads.")
+            if size > rule["max_size"]:
+                raise FileTooLarge(
+                    f"{purpose} files cannot exceed {rule['max_size'] // MB}MB."
+                )
+            if rule.get("dimensions"):
+                if width is None or height is None:
+                    raise InvalidUploadMetadata(
+                        f"width and height are required for {purpose} uploads."
+                    )
+                if width < 1280 or height < 720:
+                    raise InvalidUploadMetadata(
+                        f"{purpose} requires a minimum resolution of 1280x720."
+                    )
+            if "aspect_ratio" in rule:
+                ratio_width, ratio_height = rule["aspect_ratio"]
+                if width * ratio_height != height * ratio_width:
+                    raise InvalidUploadMetadata(
+                        f"{purpose} must use a {ratio_width}:{ratio_height} aspect ratio."
+                    )
+            required_codec = rule.get("codec")
+            if required_codec and (codec or "").lower() != required_codec:
+                raise InvalidUploadMetadata(
+                    f"{purpose} requires the {required_codec.upper()} codec."
+                )
+            duration_range = rule.get("duration_range")
+            if duration_range and (
+                duration_seconds is None
+                or not duration_range[0] <= duration_seconds <= duration_range[1]
+            ):
+                raise InvalidUploadMetadata(
+                    f"{purpose} must be between {duration_range[0]} and "
+                    f"{duration_range[1]} seconds."
+                )
+
+        # Generic non-course uploads keep their existing category limit.
         if size is not None:
-            limit = max_size_for(content_type)
+            limit = rule["max_size"] if rule else max_size_for(content_type)
             if limit is not None and size > limit:
                 raise FileTooLarge(
                     f"File is {size} bytes; the limit for "
@@ -155,9 +306,30 @@ class StorageService:
                 )
 
         # [2] Generate unique filename (prevents overwrites and name collisions)
-        extension = filename.rsplit(".", 1)[-1].lower() if "." in filename else "bin"
-        unique_name = f"{uuid.uuid4().hex}.{extension}"
+        unique_name = f"{uuid.uuid4().hex}.{extension or 'bin'}"
         file_key = f"uploads/{folder}/{unique_name}"
+
+        metadata = {}
+        if purpose:
+            metadata["upload-purpose"] = purpose
+        if width is not None:
+            metadata["width"] = str(width)
+        if height is not None:
+            metadata["height"] = str(height)
+        if duration_seconds is not None:
+            metadata["duration-seconds"] = str(duration_seconds)
+        if codec:
+            metadata["codec"] = codec.lower()
+
+        put_params = {
+            "Bucket": DIGITAL_OCEAN_BUCKET,
+            "Key": file_key,
+            "ContentType": content_type,
+        }
+        if size is not None:
+            put_params["ContentLength"] = size
+        if metadata:
+            put_params["Metadata"] = metadata
 
         # [3] Generate presigned PUT URL
         try:
@@ -165,25 +337,26 @@ class StorageService:
 
             upload_url = client.generate_presigned_url(
                 "put_object",
-                Params={
-                    "Bucket": DIGITAL_OCEAN_BUCKET,
-                    "Key": file_key,
-                    "ContentType": content_type,
-                    "ACL": "public-read",
-                },
+                Params=put_params,
                 ExpiresIn=PRESIGN_EXPIRY,
             )
         except ClientError as e:
             logger.error(f"[<>Storage<>] Presign failed: {e}")
             raise StorageError("Failed to generate upload URL. Please try again.")
 
-        # [4] Build the CDN URL where the file will be accessible
-        file_url = f"{DIGITAL_OCEAN_CDN_URL}/{file_key}"
+        # Build the path-style public URL; read access comes from bucket policy.
+        file_url = f"{_public_base_url()}/{file_key}"
 
         logger.info(f"[<>Storage<>] Upload URL generated: {file_key} ({content_type})")
 
+        upload_headers = {"Content-Type": content_type}
+        upload_headers.update(
+            {f"x-amz-meta-{key}": value for key, value in metadata.items()}
+        )
+
         return {
             "upload_url": upload_url,
+            "upload_headers": upload_headers,
             "file_url": file_url,
             "file_key": file_key,
             "expires_in": PRESIGN_EXPIRY,
@@ -240,8 +413,7 @@ class StorageService:
         Returns None on empty input or failure."""
         if not file_key:
             return None
-        if file_key.startswith("http"):
-            file_key = file_key.split(DIGITAL_OCEAN_CDN_URL + "/")[-1]
+        file_key = _file_key_from_value(file_key)
 
         try:
             client = _get_s3_client()
@@ -267,14 +439,7 @@ class StorageService:
             bool: True if deleted, False if failed
         """
 
-        # Handle full URL input (extract key from CDN URL)
-        if file_key.startswith("http"):
-            # e.g., https://bucket.lon1.cdn.digitaloceanspaces.com/uploads/profiles/abc.jpg
-            # Extract everything after the domain
-            try:
-                file_key = file_key.split(DIGITAL_OCEAN_CDN_URL + "/")[-1]
-            except Exception:
-                raise FileNotFound("Invalid file URL format.")
+        file_key = _file_key_from_value(file_key)
 
         try:
             client = _get_s3_client()

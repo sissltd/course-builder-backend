@@ -38,10 +38,18 @@ class UploadPresignApiTests(APITestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIn("upload_url", response.data)
+        self.assertEqual(
+            response.data["upload_headers"], {"Content-Type": "image/jpeg"}
+        )
         self.assertIn("file_url", response.data)
         self.assertIn("file_key", response.data)
         self.assertIn("expires_in", response.data)
         self.assertTrue(response.data["file_key"].startswith("uploads/profiles/"))
+
+        params = mock_get_client.return_value.generate_presigned_url.call_args.kwargs[
+            "Params"
+        ]
+        self.assertNotIn("ACL", params)
 
     def test_invalid_content_type_rejected(self):
         user = make_user()

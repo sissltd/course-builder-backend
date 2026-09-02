@@ -109,7 +109,6 @@ jobs:
       DIGITAL_OCEAN_BUCKET: ci-dummy-bucket
       DIGITAL_OCEAN_ENDPOINT: https://ci-dummy.digitaloceanspaces.com
       DIGITAL_OCEAN_REGION: lon1
-      DIGITAL_OCEAN_CDN_URL: https://ci-dummy.cdn.digitaloceanspaces.com
       # Field-level encryption (shared/utils/encryption.py) — defaults to ""
       # so it won't crash `check`, but MFA's encrypt_field/decrypt_field calls
       # raise at runtime without a real Fernet key, so tests need one. Not a
