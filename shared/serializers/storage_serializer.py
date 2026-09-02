@@ -20,13 +20,29 @@ class UploadRequestSerializer(serializers.Serializer):
             "profiles",
             "certificates",
             "videos",
+            "courses",
+            "thumbnails",
             "jobs",
             "chat",
             "quotations",
             "general",
         ],
         default="general",
-        help_text="Storage folder — organizes files by purpose",
+        help_text=(
+            "Storage folder — organizes files by purpose. Course builder "
+            "uploads use 'thumbnails' for cover images and 'courses' for "
+            "lesson media."
+        ),
+    )
+    size = serializers.IntegerField(
+        required=False,
+        min_value=1,
+        help_text=(
+            "Optional file size in bytes. When supplied it is checked "
+            "against the limit for the content type (images 10MB, videos "
+            "500MB, PDFs 20MB) so an oversized file is rejected before the "
+            "upload starts rather than after it fails."
+        ),
     )
 
 

@@ -242,10 +242,8 @@ class TopicReservationRequestViewSet(ModelViewSet):
     Admin/Reviewer approve/reject. Approving both creates the Topic and
     reserves it to the requester in one step. Reserving an *existing* topic
     doesn't go through this viewset at all - see
-    course_service.create_draft_course's automatic reservation. This is now
-    the only category/topic-adjacent request flow a Course Creator has -
-    proposing a brand-new Category is no longer possible via the API since
-    Admins/Writers create categories directly."""
+    course_service.create_draft_course's automatic reservation. Proposing a brand-new
+    Category has its own parallel flow - see CategoryRequestViewSet."""
 
     permission_classes = [IsCourseCreatorRole | IsAdminRole | IsCreatorReviewerRole]
 

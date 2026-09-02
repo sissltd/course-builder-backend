@@ -145,6 +145,13 @@ SPECTACULAR_SETTINGS = {
             ),
         },
         {
+            "name": "Creator — Category Requests",
+            "description": (
+                "Requesting a brand-new category: file a request, track "
+                "your own, and (as an Admin) approve or reject them."
+            ),
+        },
+        {
             "name": "Creator — Topic Reservations",
             "description": (
                 "Requesting a brand-new topic: file, view, and manage the "

@@ -1,6 +1,6 @@
 from datetime import timedelta
 
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 from rest_framework import exceptions
 
@@ -60,13 +60,17 @@ def approve_request(
     expiry_days = platform_settings_service.get_settings().topic_reservation_expiry_days
 
     try:
-        topic = Topic.objects.create(
-            category=request.category,
-            name=request.name,
-            creator_price=request.category.creator_price,
-            reserved_by=request.requested_by,
-            reserved_until=timezone.localdate() + timedelta(days=expiry_days),
-        )
+        # The name check is enforced by the database and can race with
+        # another approval. Catching IntegrityError requires its own atomic
+        # block so the surrounding transaction remains usable.
+        with transaction.atomic():
+            topic = Topic.objects.create(
+                category=request.category,
+                name=request.name,
+                creator_price=request.category.creator_price,
+                reserved_by=request.requested_by,
+                reserved_until=timezone.localdate() + timedelta(days=expiry_days),
+            )
     except IntegrityError as exc:
         raise exceptions.ValidationError(
             "A topic with this name already exists in this category."

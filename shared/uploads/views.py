@@ -9,6 +9,7 @@ from shared.serializers.storage_serializer import (
     UploadResponseSerializer,
 )
 from shared.services.storage_service import (
+    FileTooLarge,
     InvalidFileType,
     StorageError,
     StorageService,
@@ -35,7 +36,7 @@ class UploadPresignView(APIView):
 
         try:
             result = StorageService.request_upload(**serializer.validated_data)
-        except InvalidFileType as exc:
+        except (InvalidFileType, FileTooLarge) as exc:
             raise exceptions.ValidationError(str(exc)) from exc
         except StorageError as exc:
             raise exceptions.APIException(str(exc)) from exc

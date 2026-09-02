@@ -65,6 +65,9 @@ DRAFT_EDITABLE_FIELDS = {
     "learning_objectives",
     "tags",
     "planned_duration_seconds",
+    # Creators pick a target version during authoring; _get_publish_version
+    # honours an already-assigned version, so this choice survives to publish.
+    "version",
 }
 
 

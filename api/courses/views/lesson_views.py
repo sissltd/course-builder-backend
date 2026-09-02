@@ -6,13 +6,16 @@ from drf_spectacular.utils import (
     extend_schema_view,
 )
 from rest_framework import exceptions
+from rest_framework.decorators import action
+from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 
 from api.collaborators.services import collaborator_service
 from api.courses.enums import CourseStatus
 from api.courses.models import Lesson, Module
 from api.courses.serializers import LessonSerializer, LessonWriteSerializer
-from api.courses.services import course_service, module_lock_service
+from api.courses.serializers.ordering_serializer import ReorderSerializer
+from api.courses.services import course_service, module_lock_service, ordering_service
 from api.users.permissions import IsCourseCreatorRole
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 
@@ -314,6 +317,60 @@ class LessonViewSet(ModelViewSet):
         if self.action in {"list", "retrieve"}:
             return LessonSerializer
         return LessonWriteSerializer
+
+    @extend_schema(
+        summary="Reorder a module's lessons",
+        description=(
+            "Applies a new order to every lesson in the module in one "
+            "request, for the builder's drag-and-drop outline.\n\n"
+            "Call this once when a drag gesture settles, instead of "
+            "PATCHing each lesson individually.\n\n"
+            "**Auth:** Course Creator/Writer with access to the module.\n\n"
+            "**Prerequisites:** The parent course must be Draft and the "
+            "module must not be locked by another user.\n\n"
+            "**Important:** The payload must list **every** lesson in the "
+            "module, not just the ones that moved \u2014 a partial list "
+            "returns 400 naming the missing ids. Order values must be "
+            "distinct. The whole reorder is one transaction."
+        ),
+        tags=["Creator — Lessons"],
+        request=ReorderSerializer,
+        responses={
+            200: OpenApiResponse(
+                response=LessonSerializer(many=True),
+                description="The module's lessons in their new order.",
+            ),
+            400: OpenApiResponse(
+                description=(
+                    "Incomplete list, unknown or duplicate ids, duplicate "
+                    "order values, or the course is not Draft."
+                )
+            ),
+            423: OpenApiResponse(description="The module is locked by another user."),
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
+            **STANDARD_ERROR_RESPONSES["not_found"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
+    @action(detail=False, methods=["patch"])
+    def reorder(self, request, *args, **kwargs):
+        module = self._get_module()
+        if module.course.status != CourseStatus.DRAFT:
+            raise exceptions.ValidationError(
+                "Lessons can only be reordered while the course is Draft."
+            )
+        module_lock_service.check_not_locked(module=module, user=request.user)
+
+        serializer = ReorderSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        lessons = ordering_service.reorder(
+            queryset=Lesson.objects.filter(module=module),
+            items=serializer.validated_data["order"],
+            actor=request.user,
+        )
+        return Response(LessonSerializer(lessons, many=True).data)
 
     def _get_module(self) -> Module:
         accessible_modules = collaborator_service.get_modules_accessible_to(
