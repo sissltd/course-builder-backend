@@ -4,6 +4,7 @@ from django.db.models import Q
 from api.catalog.enums import TrackPreference
 from api.courses.enums import CourseSourceType
 from api.courses.models import Course
+from api.reviews.enums import ReviewStage
 from api.users.enums import QueueTrackFilter
 
 
@@ -92,3 +93,35 @@ class CourseReviewQueueFilter(django_filters.FilterSet):
         if category_track_preference is None:
             return queryset
         return queryset.filter(category__track_preference=category_track_preference)
+
+
+class AdminCourseFilter(CourseFilter):
+    """Filters used by the cross-creator Admin Courses table."""
+
+    creator = django_filters.UUIDFilter(field_name="creator_id")
+    reviewer = django_filters.UUIDFilter(
+        field_name="review_assignments__reviewer_id", distinct=True
+    )
+    review_stage = django_filters.ChoiceFilter(
+        choices=ReviewStage.choices, method="filter_review_stage"
+    )
+
+    class Meta(CourseFilter.Meta):
+        fields = {
+            **CourseFilter.Meta.fields,
+            "creator": ["exact"],
+        }
+
+    def filter_search(self, queryset, name, value):
+        return queryset.filter(
+            Q(id__icontains=value)
+            | Q(title__icontains=value)
+            | Q(creator__first_name__icontains=value)
+            | Q(creator__last_name__icontains=value)
+            | Q(creator__email__icontains=value)
+        )
+
+    def filter_review_stage(self, queryset, name, value):
+        if value == ReviewStage.QA:
+            return queryset.filter(status="QA_VERIFICATION")
+        return queryset.exclude(status="QA_VERIFICATION")

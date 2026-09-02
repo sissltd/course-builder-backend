@@ -11,6 +11,8 @@ from .category_request_serializer import (
     CategoryRequestSerializer,
 )
 from .topic_reservation_serializer import (
+    ActiveTopicReservationSerializer,
+    AdminTopicReservationRequestSerializer,
     TopicReservationRejectSerializer,
     TopicReservationRequestCreateSerializer,
     TopicReservationRequestSerializer,
@@ -18,6 +20,8 @@ from .topic_reservation_serializer import (
 from .topic_serializer import TopicMiniSerializer, TopicSerializer, TopicWriteSerializer
 
 __all__ = [
+    "ActiveTopicReservationSerializer",
+    "AdminTopicReservationRequestSerializer",
     "CategoryDeletionImpactSerializer",
     "CategoryDeletionSerializer",
     "CategoryMiniSerializer",

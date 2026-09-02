@@ -1,6 +1,7 @@
 from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import OpenApiExample, OpenApiResponse, extend_schema
 from rest_framework.permissions import AllowAny
+from rest_framework.exceptions import NotFound
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
@@ -8,6 +9,7 @@ from rest_framework.views import APIView
 from api.authentication.serializers import (
     AcceptStaffInvitationSerializer,
     StaffInvitationSerializer,
+    StaffDetailSerializer,
     StaffMemberSerializer,
     SuperAdminBootstrapSerializer,
 )
@@ -222,7 +224,7 @@ class StaffListView(APIView):
             "The response is an unpaginated array; the roster is expected to "
             "stay small."
         ),
-        tags=["Admin — Staff"],
+        tags=["Admin — Teams"],
         responses={
             200: OpenApiResponse(
                 response=StaffMemberSerializer(many=True),
@@ -242,6 +244,37 @@ class StaffListView(APIView):
     def get(self, request):
         staff = staff_service.list_staff()
         return Response(StaffMemberSerializer(staff, many=True).data, status=200)
+
+
+class StaffDetailView(APIView):
+    """Retrieve one staff member for the Team profile panel."""
+
+    permission_classes = [IsSuperAdminRole]
+    serializer_class = StaffDetailSerializer
+
+    @extend_schema(
+        operation_id="auth_staff_detail_retrieve",
+        summary="Retrieve staff details",
+        description=(
+            "Returns the full non-sensitive Team profile for an active, pending, "
+            "or revoked staff member. Public course creators are not addressable "
+            "through this endpoint.\n\n**Auth:** Super Admin."
+        ),
+        tags=["Admin — Teams"],
+        responses={
+            200: StaffDetailSerializer,
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
+            **STANDARD_ERROR_RESPONSES["not_found"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
+    def get(self, request, pk):
+        try:
+            staff = staff_service.get_staff(staff_id=pk)
+        except User.DoesNotExist as exc:
+            raise NotFound("Staff member not found.") from exc
+        return Response(StaffDetailSerializer(staff).data)
 
 
 class InviteStaffView(APIView):
@@ -280,7 +313,7 @@ class InviteStaffView(APIView):
             "returns 400. The invitation link expires; after that the invitee "
             "needs a fresh one."
         ),
-        tags=["Admin — Staff"],
+        tags=["Admin — Teams"],
         request=StaffInvitationSerializer,
         examples=[
             OpenApiExample(
@@ -419,7 +452,7 @@ class RevokeStaffView(APIView):
             "replaced through the API. Revoking does not free the email "
             "address for reuse."
         ),
-        tags=["Admin — Staff"],
+        tags=["Admin — Teams"],
         request=None,
         responses={
             200: OpenApiResponse(
@@ -520,7 +553,7 @@ class ReactivateStaffView(APIView):
             "someone's role, revoke and re-invite; this endpoint does not "
             "alter roles."
         ),
-        tags=["Admin — Staff"],
+        tags=["Admin — Teams"],
         request=None,
         responses={
             200: OpenApiResponse(

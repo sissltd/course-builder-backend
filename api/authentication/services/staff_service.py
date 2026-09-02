@@ -17,6 +17,7 @@ from api.users.enums import (
     UserActivityActionEnums,
     UserRole,
 )
+
 User = get_user_model()
 logger = logging.getLogger(__name__)
 
@@ -257,6 +258,16 @@ class StaffService:
             .select_related("created_by")
             .annotate(has_open_invitation=Exists(_open_invitation_subquery()))
             .order_by("-created_datetime")
+        )
+
+    def get_staff(self, *, staff_id):
+        """Return one staff profile, including pending and revoked members."""
+
+        return (
+            User.objects.filter(role__in=STAFF_ROLES)
+            .select_related("created_by")
+            .annotate(has_open_invitation=Exists(_open_invitation_subquery()))
+            .get(pk=staff_id)
         )
 
     def revoke_staff(self, *, actor: User, staff: User, request=None) -> User:

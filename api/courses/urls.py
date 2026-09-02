@@ -18,6 +18,9 @@ router.register(
     "review-queue", course_views.CourseReviewViewSet, basename="course-review"
 )
 router.register(
+    "admin/courses", course_views.AdminCourseViewSet, basename="admin-course"
+)
+router.register(
     "course-appeals",
     course_appeal_views.CourseAppealViewSet,
     basename="course-appeal",
