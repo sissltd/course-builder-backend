@@ -224,7 +224,7 @@ class StaffListView(APIView):
             "The response is an unpaginated array; the roster is expected to "
             "stay small."
         ),
-        tags=["Admin — Staff"],
+        tags=["Admin — Teams"],
         responses={
             200: OpenApiResponse(
                 response=StaffMemberSerializer(many=True),
@@ -260,7 +260,7 @@ class StaffDetailView(APIView):
             "or revoked staff member. Public course creators are not addressable "
             "through this endpoint.\n\n**Auth:** Super Admin."
         ),
-        tags=["Admin — Staff"],
+        tags=["Admin — Teams"],
         responses={
             200: StaffDetailSerializer,
             **STANDARD_ERROR_RESPONSES["auth"],
@@ -313,7 +313,7 @@ class InviteStaffView(APIView):
             "returns 400. The invitation link expires; after that the invitee "
             "needs a fresh one."
         ),
-        tags=["Admin — Staff"],
+        tags=["Admin — Teams"],
         request=StaffInvitationSerializer,
         examples=[
             OpenApiExample(
@@ -452,7 +452,7 @@ class RevokeStaffView(APIView):
             "replaced through the API. Revoking does not free the email "
             "address for reuse."
         ),
-        tags=["Admin — Staff"],
+        tags=["Admin — Teams"],
         request=None,
         responses={
             200: OpenApiResponse(
@@ -553,7 +553,7 @@ class ReactivateStaffView(APIView):
             "someone's role, revoke and re-invite; this endpoint does not "
             "alter roles."
         ),
-        tags=["Admin — Staff"],
+        tags=["Admin — Teams"],
         request=None,
         responses={
             200: OpenApiResponse(

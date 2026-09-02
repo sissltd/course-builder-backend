@@ -1600,6 +1600,24 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
         return Response(ReviewCommentSerializer(comment).data, status=201)
 
 
+@extend_schema_view(
+    list=extend_schema(
+        summary="List courses for administration", tags=["Admin — Courses"]
+    ),
+    retrieve=extend_schema(
+        summary="Retrieve course details for administration",
+        tags=["Admin — Courses"],
+    ),
+    claim=extend_schema(tags=["Admin — Courses"]),
+    approve=extend_schema(tags=["Admin — Courses"]),
+    content_approve=extend_schema(tags=["Admin — Courses"]),
+    reject=extend_schema(tags=["Admin — Courses"]),
+    content_reject=extend_schema(tags=["Admin — Courses"]),
+    qa_claim=extend_schema(tags=["Admin — Courses"]),
+    qa_approve=extend_schema(tags=["Admin — Courses"]),
+    qa_reject=extend_schema(tags=["Admin — Courses"]),
+    comments=extend_schema(tags=["Admin — Courses"]),
+)
 class AdminCourseViewSet(CourseReviewViewSet):
     """All-course Admin table with the existing two-stage review actions."""
 

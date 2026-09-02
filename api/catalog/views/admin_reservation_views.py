@@ -1,5 +1,6 @@
 from django.utils import timezone
 from django_filters.rest_framework import DjangoFilterBackend
+from drf_spectacular.utils import extend_schema, extend_schema_view
 from rest_framework import filters as drf_filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -19,6 +20,16 @@ from api.catalog.services import topic_reservation_service
 from api.users.permissions import IsAdminRole
 
 
+@extend_schema_view(
+    list=extend_schema(
+        summary="List reservation requests", tags=["Admin — Reservation"]
+    ),
+    retrieve=extend_schema(
+        summary="Retrieve a reservation request", tags=["Admin — Reservation"]
+    ),
+    approve=extend_schema(tags=["Admin — Reservation"]),
+    reject=extend_schema(tags=["Admin — Reservation"]),
+)
 class AdminTopicReservationRequestViewSet(ReadOnlyModelViewSet):
     """Admin dashboard queue for proposed-topic reservation requests."""
 
@@ -59,6 +70,15 @@ class AdminTopicReservationRequestViewSet(ReadOnlyModelViewSet):
         return Response(self.get_serializer(reservation_request).data)
 
 
+@extend_schema_view(
+    list=extend_schema(
+        summary="List active reservations", tags=["Admin — Reservation"]
+    ),
+    retrieve=extend_schema(
+        summary="Retrieve an active reservation", tags=["Admin — Reservation"]
+    ),
+    release=extend_schema(tags=["Admin — Reservation"]),
+)
 class ActiveTopicReservationViewSet(ReadOnlyModelViewSet):
     """Currently active topic reservations for the Admin dashboard."""
 
