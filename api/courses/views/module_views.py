@@ -23,6 +23,11 @@ _MODULE_EXAMPLE = {
     "id": "b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e",
     "title": "Getting Started",
     "order": 1,
+    "description": "Set up the tools needed to begin the course.",
+    "learning_objectives": [
+        "Install the required development tools",
+        "Run a first program",
+    ],
     "lessons": [],
     "assessment": None,
     "locked_by": None,
@@ -152,7 +157,15 @@ _MODULE_LOCKED_423 = OpenApiResponse(
             OpenApiExample(
                 name="Sample Request",
                 request_only=True,
-                value={"title": "Getting Started", "order": 1},
+                value={
+                    "title": "Getting Started",
+                    "order": 1,
+                    "description": "Set up the tools needed to begin the course.",
+                    "learning_objectives": [
+                        "Install the required development tools",
+                        "Run a first program",
+                    ],
+                },
             ),
         ],
         responses={
@@ -171,7 +184,8 @@ _MODULE_LOCKED_423 = OpenApiResponse(
     update=extend_schema(
         summary="Replace a module",
         description=(
-            "Overwrites a module's title/order. Send the full object.\n\n"
+            "Overwrites a module's title, order, description, and learning "
+            "objectives. Send the full object.\n\n"
             "Called from the module edit form.\n\n"
             "**Auth:** Course Creator/Writer with access to the course.\n\n"
             "**Prerequisites:** The parent course must be `DRAFT`.\n\n"

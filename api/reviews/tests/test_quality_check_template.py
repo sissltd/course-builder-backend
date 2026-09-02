@@ -70,18 +70,18 @@ class CourseQualityCheckApiTests(APITestCase):
         # A compliant course passes every automated criterion.
         for label in (
             "Course description",
+            "Learning objectives",
             "Preview video",
             "Module count",
             "Lessons per module",
             "Lesson scripts",
             "Final assessment",
+            "Version selected",
         ):
             self.assertTrue(
                 by_label[label]["is_checked"], msg=f"{label} should pass"
             )
             self.assertEqual(by_label[label]["warning_note"], "")
-        # Manual criteria remain unticked and refresh-stable.
-        self.assertFalse(by_label["Version selected"]["is_checked"])
 
     def test_refresh_flags_failures_with_warning_notes(self):
         course = build_compliant_course(creator=self.creator)

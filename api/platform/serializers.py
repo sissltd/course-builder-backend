@@ -18,6 +18,8 @@ class PlatformSettingsSerializer(serializers.ModelSerializer):
             "course_lessons_per_module_max",
             "course_learning_objectives_min",
             "course_learning_objectives_max",
+            "lesson_learning_objectives_min",
+            "lesson_learning_objectives_max",
             "course_description_word_min",
             "course_description_word_max",
             "lesson_script_word_min",
@@ -79,6 +81,16 @@ class PlatformSettingsUpdateSerializer(serializers.Serializer):
         required=False,
         min_value=1,
         help_text="Most learning objectives a course may declare.",
+    )
+    lesson_learning_objectives_min = serializers.IntegerField(
+        required=False,
+        min_value=1,
+        help_text="Fewest learning objectives each lesson must declare.",
+    )
+    lesson_learning_objectives_max = serializers.IntegerField(
+        required=False,
+        min_value=1,
+        help_text="Most learning objectives each lesson may declare.",
     )
     course_description_word_min = serializers.IntegerField(
         required=False,

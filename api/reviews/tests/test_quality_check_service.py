@@ -26,14 +26,26 @@ class ValidateStructuralStandardsTests(TestCase):
         failures = quality_check_service.validate_structural_standards(course)
         self.assertTrue(any("lessons" in f for f in failures))
 
-    def test_fails_when_learning_objectives_out_of_range(self):
+    def test_fails_when_course_learning_objectives_out_of_range(self):
+        course = build_compliant_course()
+        course.learning_objectives = ["Only one"]
+        course.save()
+
+        failures = quality_check_service.validate_structural_standards(course)
+        self.assertTrue(
+            any(f.startswith("Course must") and "learning objectives" in f for f in failures)
+        )
+
+    def test_fails_when_lesson_learning_objectives_out_of_range(self):
         course = build_compliant_course()
         lesson = Lesson.objects.filter(module__course=course).first()
         lesson.learning_objectives = ["Only one"]
         lesson.save()
 
         failures = quality_check_service.validate_structural_standards(course)
-        self.assertTrue(any("learning objectives" in f for f in failures))
+        self.assertTrue(
+            any(f.startswith("Lesson") and "learning objectives" in f for f in failures)
+        )
 
     def test_fails_when_description_too_short(self):
         course = build_compliant_course()
@@ -98,6 +110,14 @@ class ValidateStructuralStandardsTests(TestCase):
 
         failures = quality_check_service.validate_structural_standards(course)
         self.assertTrue(any("preview video" in f for f in failures))
+
+    def test_fails_when_version_is_not_selected(self):
+        course = build_compliant_course()
+        course.version = None
+        course.save()
+
+        failures = quality_check_service.validate_structural_standards(course)
+        self.assertTrue(any("version must be selected" in f for f in failures))
 
     def test_fails_when_terms_not_accepted(self):
         course = build_compliant_course()

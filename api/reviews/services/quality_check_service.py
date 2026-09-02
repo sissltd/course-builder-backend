@@ -43,6 +43,19 @@ def validate_structural_standards(course: Course) -> list[str]:
     failures: list[str] = []
     modules = list(course.modules.all().prefetch_related("lessons", "assessment"))
 
+    course_objective_count = len(course.learning_objectives or [])
+    if not (
+        platform_settings.course_learning_objectives_min
+        <= course_objective_count
+        <= platform_settings.course_learning_objectives_max
+    ):
+        failures.append(
+            "Course must have between "
+            f"{platform_settings.course_learning_objectives_min} and "
+            f"{platform_settings.course_learning_objectives_max} learning objectives "
+            f"(has {course_objective_count})."
+        )
+
     module_count = len(modules)
     if not (
         platform_settings.course_module_count_min
@@ -76,14 +89,14 @@ def validate_structural_standards(course: Course) -> list[str]:
         for lesson in lessons:
             objective_count = len(lesson.learning_objectives or [])
             if not (
-                platform_settings.course_learning_objectives_min
+                platform_settings.lesson_learning_objectives_min
                 <= objective_count
-                <= platform_settings.course_learning_objectives_max
+                <= platform_settings.lesson_learning_objectives_max
             ):
                 failures.append(
                     f"Lesson '{lesson.title}' must have between "
-                    f"{platform_settings.course_learning_objectives_min} and "
-                    f"{platform_settings.course_learning_objectives_max} learning objectives "
+                    f"{platform_settings.lesson_learning_objectives_min} and "
+                    f"{platform_settings.lesson_learning_objectives_max} learning objectives "
                     f"(has {objective_count})."
                 )
 
@@ -138,6 +151,9 @@ def validate_structural_standards(course: Course) -> list[str]:
 
     if not course.preview_video_url:
         failures.append("Course must have a preview video before submission (BR-015).")
+
+    if not course.version_id:
+        failures.append("Course version must be selected before submission.")
 
     if not course.terms_accepted_at:
         failures.append(

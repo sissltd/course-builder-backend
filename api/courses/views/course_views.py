@@ -13,16 +13,17 @@ from rest_framework.viewsets import ModelViewSet, ReadOnlyModelViewSet
 from api.collaborators.services import collaborator_service
 from api.courses.enums import CourseStatus
 from api.courses.filters import AdminCourseFilter, CourseFilter, CourseReviewQueueFilter
-from api.courses.models import Course
+from api.courses.models import Course, CourseVersion
 from api.reviews.models import MediaAsset, ReviewComment
 from api.courses.permissions import IsCourseOwner
 from api.courses.serializers import (
     CourseCreateSerializer,
     CourseDetailSerializer,
-    CourseDistributionSerializer,
     CourseListSerializer,
-    CoursePreviewSerializer,
     CourseUpdateSerializer,
+    CourseVersionSerializer,
+    CourseDistributionSerializer,
+    CoursePreviewSerializer,
     MediaAssetSerializer,
     QAApprovalSerializer,
     QARejectSerializer,
@@ -74,6 +75,31 @@ _COURSE_LIST_EXAMPLE = {
     "updated_datetime": "2026-07-12T09:30:11.204Z",
 }
 
+
+@extend_schema_view(
+    list=extend_schema(
+        summary="List active course versions",
+        description=(
+            "Returns the selectable values for the course builder's Versioning "
+            "step. Only active versions are offered for new draft selections."
+        ),
+        tags=["Creator — Courses"],
+        responses={200: CourseVersionSerializer(many=True)},
+    ),
+    retrieve=extend_schema(
+        summary="Retrieve a course version",
+        tags=["Creator — Courses"],
+        responses={200: CourseVersionSerializer},
+    ),
+)
+class CourseVersionViewSet(ReadOnlyModelViewSet):
+    """Read-only lookup used by the draft course Versioning screen."""
+
+    serializer_class = CourseVersionSerializer
+    permission_classes = [IsCourseCreatorRole]
+    queryset = CourseVersion.objects.filter(is_active=True).order_by("label")
+
+
 _COURSE_DETAIL_EXAMPLE = {
     **_COURSE_LIST_EXAMPLE,
     "description": "A hands-on introduction to Python for beginners.",
@@ -90,7 +116,10 @@ _COURSE_DETAIL_EXAMPLE = {
     "modules": [],
     "final_assessment": None,
     "duration_estimate_minutes": 120,
-    "version": "2f9a1e4b-7c8d-4a6e-9f0c-2d3e4f5a6b7c",
+    "version": {
+        "id": "2f9a1e4b-7c8d-4a6e-9f0c-2d3e4f5a6b7c",
+        "label": "1.0",
+    },
     "updated_datetime": "2026-07-12T09:30:11.204Z",
 }
 

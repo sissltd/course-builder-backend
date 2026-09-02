@@ -8,6 +8,8 @@ UPDATABLE_FIELDS = {
     "course_lessons_per_module_max",
     "course_learning_objectives_min",
     "course_learning_objectives_max",
+    "lesson_learning_objectives_min",
+    "lesson_learning_objectives_max",
     "course_description_word_min",
     "course_description_word_max",
     "lesson_script_word_min",
