@@ -26,9 +26,9 @@ def approve_course(
     Raises ValidationError if the course is not Submitted/In Review - this is
     what prevents double-approval (an already Approved/Published/Draft course
     cannot be approved again). On success: records a ReviewAction, transitions
-    the course to Approved, credits the creator's wallet with the price
-    snapshotted at submission, and notifies the creator. All in one atomic
-    transaction so a failure partway through leaves nothing half-applied.
+    the course to Approved, credits creator-uploaded work with the price
+    snapshotted at submission, and notifies the creator. AI-generated courses
+    are approved without a payout. All changes are atomic.
     """
 
     require_role(
@@ -55,18 +55,30 @@ def approve_course(
             update_fields=["status", "approved_at", "updated_by", "updated_datetime"]
         )
 
-        wallet_service.credit_wallet(
-            user=course.creator,
-            amount=course.creator_price_snapshot,
-            course=course,
-            description=f"Course '{course.title}' approved",
-        )
+        if course.source_type == CourseSourceType.CREATOR_UPLOADED:
+            wallet_service.credit_wallet(
+                user=course.creator,
+                amount=course.creator_price_snapshot,
+                course=course,
+                description=f"Course '{course.title}' approved",
+            )
 
         Notification.emit_in_app_notification(
             receivers=[course.creator],
             title="Course approved",
-            content=f"Your course '{course.title}' has been approved and your wallet has been credited.",
-            metadata={"course_id": course.id, "amount": course.creator_price_snapshot},
+            content=(
+                f"Your course '{course.title}' has been approved and your wallet has been credited."
+                if course.source_type == CourseSourceType.CREATOR_UPLOADED
+                else f"Your AI-generated course '{course.title}' has been approved."
+            ),
+            metadata={
+                "course_id": course.id,
+                "amount": (
+                    course.creator_price_snapshot
+                    if course.source_type == CourseSourceType.CREATOR_UPLOADED
+                    else None
+                ),
+            },
         )
         activity_service.log_activity(
             user=reviewer,
@@ -167,7 +179,9 @@ def _create_review_flags(*, review_action: ReviewAction, flags: list[dict]) -> N
                 }
             )
         lesson = (
-            Lesson.objects.filter(pk=flag.get("lesson_id"), module__course=review_action.course).first()
+            Lesson.objects.filter(
+                pk=flag.get("lesson_id"), module__course=review_action.course
+            ).first()
             if flag.get("lesson_id")
             else None
         )
@@ -176,7 +190,9 @@ def _create_review_flags(*, review_action: ReviewAction, flags: list[dict]) -> N
                 {"flags": "flag lesson_id must belong to the reviewed course."}
             )
         module = (
-            Module.objects.filter(pk=flag.get("module_id"), course=review_action.course).first()
+            Module.objects.filter(
+                pk=flag.get("module_id"), course=review_action.course
+            ).first()
             if flag.get("module_id")
             else None
         )
@@ -201,6 +217,7 @@ def _create_review_flags(*, review_action: ReviewAction, flags: list[dict]) -> N
 
 # --- Two-stage review flow (content review -> QA verification) ---------
 # Ported from upstream; complements the single-stage functions above.
+
 
 def approve_content(
     *, course: Course, reviewer: User, feedback: dict | None = None

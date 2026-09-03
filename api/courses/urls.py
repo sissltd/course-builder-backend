@@ -3,6 +3,7 @@ from rest_framework.routers import DefaultRouter
 
 from api.courses.views import (
     assessment_views,
+    ai_generation_views,
     course_appeal_views,
     course_thumbnail_views,
     course_version_views,
@@ -30,6 +31,36 @@ router.register(
 )
 
 urlpatterns = router.urls + [
+    path(
+        "course-ai-generations/",
+        ai_generation_views.AICourseGenerationListCreateView.as_view(),
+        name="course-ai-generation-list",
+    ),
+    path(
+        "course-ai-generations/<uuid:pk>/",
+        ai_generation_views.AIGenerationDetailView.as_view(),
+        name="course-ai-generation-detail",
+    ),
+    path(
+        "courses/<uuid:course_pk>/ai-assists/",
+        ai_generation_views.AIAssistListCreateView.as_view(),
+        name="course-ai-assist-list",
+    ),
+    path(
+        "courses/<uuid:course_pk>/ai-assists/<uuid:pk>/apply/",
+        ai_generation_views.AIAssistApplyView.as_view(),
+        name="course-ai-assist-apply",
+    ),
+    path(
+        "courses/<uuid:course_pk>/ai-thumbnail/",
+        ai_generation_views.AIThumbnailCreateView.as_view(),
+        name="course-ai-thumbnail-create",
+    ),
+    path(
+        "courses/<uuid:course_pk>/ai-thumbnail/<uuid:pk>/apply/",
+        ai_generation_views.AIThumbnailApplyView.as_view(),
+        name="course-ai-thumbnail-apply",
+    ),
     path(
         "course-versions/",
         course_version_views.CourseVersionListView.as_view(),

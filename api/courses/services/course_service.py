@@ -17,7 +17,12 @@ from rest_framework import exceptions
 from api.authentication.services import activity_service
 from api.catalog.enums import CategoryStatus, TrackPreference
 from api.catalog.models import Category, Topic
-from api.courses.enums import CourseStatus, DistributionChannel, DistributionStatus
+from api.courses.enums import (
+    CourseSourceType,
+    CourseStatus,
+    DistributionChannel,
+    DistributionStatus,
+)
 from api.courses.models import (
     Course,
     CourseDistribution,
@@ -95,6 +100,7 @@ def create_draft_course(
     duration_minutes: int = 0,
     duration_seconds: int = 0,
     terms_accepted: bool,
+    source_type: str = CourseSourceType.CREATOR_UPLOADED,
 ) -> Course:
     """Create a new Draft course owned by `creator`.
 
@@ -146,6 +152,7 @@ def create_draft_course(
             + duration_minutes * 60
             + duration_seconds,
             terms_accepted_at=timezone.now(),
+            source_type=source_type,
             created_by=creator,
             updated_by=creator,
         )
@@ -200,10 +207,8 @@ def submit_course(*, course: Course, actor: User) -> Course:
     - The course must currently be Draft (BR-001: no bypassing review).
     - Runs quality_check_service.validate_structural_standards(); any
       failures abort the transition with an aggregated ValidationError.
-    - Snapshots the category's current creator_price onto the course, read
-      literally per "pricing applies only to new submissions" - a category
-      price change mid-draft is picked up at submission time, not frozen at
-      draft creation.
+    - Creator-uploaded courses snapshot the current topic/category price.
+      AI-generated courses remain unpaid and keep this field null.
     """
 
     require_role(actor, IsCourseCreatorRole.allowed_roles + IsAdminRole.allowed_roles)
@@ -222,9 +227,13 @@ def submit_course(*, course: Course, actor: User) -> Course:
 
     with transaction.atomic():
         course.creator_price_snapshot = (
-            course.topic.creator_price
-            if course.topic_id
-            else course.category.creator_price
+            None
+            if course.source_type == CourseSourceType.AI_GENERATED
+            else (
+                course.topic.creator_price
+                if course.topic_id
+                else course.category.creator_price
+            )
         )
         course.status = CourseStatus.SUBMITTED
         course.submitted_at = timezone.now()

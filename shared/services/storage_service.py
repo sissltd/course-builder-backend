@@ -200,6 +200,11 @@ class StorageService:
     """
 
     @staticmethod
+    def public_url(file_key):
+        """Return the stable public URL for an object stored under file_key."""
+        return f"{_public_base_url()}/{file_key.lstrip('/')}"
+
+    @staticmethod
     def request_upload(
         filename,
         content_type,
