@@ -1,3 +1,4 @@
+from django.db.models import Count
 from django_filters.rest_framework import DjangoFilterBackend
 from drf_spectacular.utils import (
     OpenApiExample,
@@ -15,6 +16,7 @@ from api.catalog.enums import CategoryDeletionStrategy
 from api.catalog.filters import CategoryFilter
 from api.catalog.models import Category
 from api.catalog.serializers import (
+    CategoryStatsSerializer,
     CategoryDeletionImpactSerializer,
     CategoryDeletionSerializer,
     CategorySerializer,
@@ -392,7 +394,25 @@ class CategoryViewSet(ModelViewSet):
     queryset = Category.objects.all()
     filterset_class = CategoryFilter
     filter_backends = [DjangoFilterBackend, drf_filters.OrderingFilter]
-    ordering_fields = ["name", "creator_price", "created_datetime"]
+    ordering_fields = [
+        "name",
+        "creator_price_beginner",
+        "creator_price_advanced",
+        "created_datetime",
+    ]
+
+    def get_queryset(self):
+        # Annotated once here so listing N categories costs one query
+        # rather than a count per row.
+        # Explicit order_by: the annotation's GROUP BY leaves the queryset
+        # unordered as far as the paginator is concerned, which makes page
+        # boundaries non-deterministic.
+        return (
+            super()
+            .get_queryset()
+            .annotate(total_courses=Count("courses"))
+            .order_by("name")
+        )
 
     def get_serializer_class(self):
         if self.action in WRITE_ACTIONS:
@@ -402,9 +422,102 @@ class CategoryViewSet(ModelViewSet):
         return CategorySerializer
 
     def get_permissions(self):
-        if self.action in WRITE_ACTIONS:
+        if self.action in WRITE_ACTIONS or self.action in ("archive", "unarchive"):
             return [CanManageCategories(), IsMFAVerifiedForSession()]
         return super().get_permissions()
+
+    @extend_schema(
+        summary="Category counts by status",
+        description=(
+            "Returns the total, active, inactive and archived category "
+            "counts behind the tiles above the categories table.\n\n"
+            "**Auth:** Any authenticated user.\n\n"
+            "**Prerequisites:** None.\n\n"
+            "**Important:** Every key is always present, including zeroes, "
+            "so a tile never disappears when its bucket empties."
+        ),
+        tags=["Creator — Categories"],
+        responses={
+            200: OpenApiResponse(
+                response=CategoryStatsSerializer,
+                description="Counts by status.",
+            ),
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
+    @action(detail=False, methods=["get"])
+    def stats(self, request):
+        return Response(
+            CategoryStatsSerializer(category_service.get_category_stats()).data
+        )
+
+    @extend_schema(
+        summary="Archive a category",
+        description=(
+            "Retires a category so creators can no longer view it or file "
+            "new courses under it, without deleting anything.\n\n"
+            "Use this instead of delete when a category is being retired "
+            "but its courses must stay. Reversible via unarchive.\n\n"
+            "**Auth:** Writer, Admin or Super Admin, with an MFA-verified "
+            "session.\n\n"
+            "**Prerequisites:** The category must not already be archived.\n\n"
+            "**Important:** Existing courses, payouts and price snapshots "
+            "are untouched \u2014 archiving only removes the category from "
+            "the creator picker. Archiving an already-archived category is "
+            "a 400, not a silent success."
+        ),
+        tags=["Admin — Categories"],
+        request=None,
+        responses={
+            200: OpenApiResponse(
+                response=CategorySerializer, description="The archived category."
+            ),
+            **STANDARD_ERROR_RESPONSES["validation"],
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
+            **STANDARD_ERROR_RESPONSES["not_found"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
+    @action(detail=True, methods=["post"])
+    def archive(self, request, pk=None):
+        category = category_service.archive_category(
+            category=self.get_object(), actor=request.user
+        )
+        return Response(CategorySerializer(category).data)
+
+    @extend_schema(
+        summary="Restore an archived category",
+        description=(
+            "Returns an archived category to ACTIVE so creators can use it "
+            "again.\n\n"
+            "**Auth:** Writer, Admin or Super Admin, with an MFA-verified "
+            "session.\n\n"
+            "**Prerequisites:** The category must currently be archived.\n\n"
+            "**Important:** Restores to ACTIVE, not to whatever status it "
+            "held before archiving \u2014 an INACTIVE category that was "
+            "archived comes back active."
+        ),
+        tags=["Admin — Categories"],
+        request=None,
+        responses={
+            200: OpenApiResponse(
+                response=CategorySerializer, description="The restored category."
+            ),
+            **STANDARD_ERROR_RESPONSES["validation"],
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
+            **STANDARD_ERROR_RESPONSES["not_found"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
+    @action(detail=True, methods=["post"])
+    def unarchive(self, request, pk=None):
+        category = category_service.unarchive_category(
+            category=self.get_object(), actor=request.user
+        )
+        return Response(CategorySerializer(category).data)
 
     @extend_schema(
         summary="Preview what deleting a category would affect",

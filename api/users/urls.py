@@ -66,6 +66,11 @@ urlpatterns = [
         name="user-admin-detail",
     ),
     path(
+        "users/admin/<uuid:pk>/assign-track/",
+        UserAdminViewSet.as_view({"post": "assign_track"}),
+        name="user-admin-assign-track",
+    ),
+    path(
         "users/admin/<uuid:pk>/suspend/",
         UserAdminViewSet.as_view({"post": "suspend"}),
         name="user-admin-suspend",

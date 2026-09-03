@@ -15,7 +15,18 @@ class CategoryMiniSerializer(serializers.ModelSerializer):
 
 
 class CategorySerializer(serializers.ModelSerializer):
-    """Read-only representation of a Category for creators/reviewers."""
+    """Read-only representation of a Category for creators/reviewers.
+
+    `total_courses` comes from an annotation the viewset adds, so listing
+    N categories stays one query rather than N+1. It reads 0 when the
+    annotation is absent (e.g. a serializer used outside that queryset).
+    """
+
+    total_courses = serializers.IntegerField(
+        read_only=True,
+        default=0,
+        help_text="Courses filed under this category. Annotated by the list view.",
+    )
 
     class Meta:
         model = Category
@@ -23,9 +34,13 @@ class CategorySerializer(serializers.ModelSerializer):
             "id",
             "name",
             "description",
-            "creator_price",
+            "creator_price_beginner",
+            "creator_price_intermediate",
+            "creator_price_advanced",
+            "icon",
             "track_preference",
             "status",
+            "total_courses",
             "created_datetime",
             "updated_datetime",
         ]
@@ -35,7 +50,7 @@ class CategorySerializer(serializers.ModelSerializer):
 class CategoryWriteSerializer(serializers.ModelSerializer):
     """Create/update serializer for Category, used by Writers and Super Admins.
 
-    creator_price's non-negativity is enforced by the model field's
+    The price levels' non-negativity is enforced by the model fields'
     MinValueValidator, which ModelSerializer picks up automatically - no
     duplicate validation here. Includes read-only `id` so a client creating a
     category gets it back without a second GET round-trip.
@@ -50,7 +65,10 @@ class CategoryWriteSerializer(serializers.ModelSerializer):
             "id",
             "name",
             "description",
-            "creator_price",
+            "creator_price_beginner",
+            "creator_price_intermediate",
+            "creator_price_advanced",
+            "icon",
             "track_preference",
             "status",
         ]
@@ -68,13 +86,31 @@ class CategoryWriteSerializer(serializers.ModelSerializer):
                     "Optional - omit or send an empty string for none."
                 )
             },
-            "creator_price": {
+            "creator_price_beginner": {
                 "help_text": (
-                    "Fixed amount paid to a creator for an approved course in "
-                    'this category, as a decimal string (e.g. "150.00"). '
-                    "Must be zero or greater. Changing it is not retroactive: "
-                    "each course freezes the rate in effect when it was "
-                    "submitted, so existing payouts are unaffected."
+                    "Payout for an approved Beginner course, as a decimal "
+                    'string (e.g. "500.00"). Zero or greater. Also the rate '
+                    "a brand-new topic in this category inherits."
+                )
+            },
+            "creator_price_intermediate": {
+                "help_text": (
+                    "Payout for an approved Intermediate course, as a "
+                    "decimal string. Zero or greater."
+                )
+            },
+            "creator_price_advanced": {
+                "help_text": (
+                    "Payout for an approved Advanced course, as a decimal "
+                    "string. Zero or greater. Price changes are never "
+                    "retroactive: a course freezes the rate in effect when "
+                    "it was submitted, so existing payouts are unaffected."
+                )
+            },
+            "icon": {
+                "help_text": (
+                    "Icon identifier for the category picker. Free text - "
+                    "the client owns its own icon set."
                 )
             },
             "track_preference": {
@@ -87,7 +123,8 @@ class CategoryWriteSerializer(serializers.ModelSerializer):
             "status": {
                 "help_text": (
                     "`ACTIVE` accepts new course submissions; `INACTIVE` "
-                    "closes the category without deleting it or affecting "
+                    "pauses it; `ARCHIVED` retires it from the creator "
+                    "picker entirely. None of them delete anything or affect "
                     "courses already in flight. Defaults to `ACTIVE`."
                 )
             },
@@ -180,3 +217,12 @@ class CategoryDeletionSerializer(serializers.Serializer):
             "deleted."
         ),
     )
+
+
+class CategoryStatsSerializer(serializers.Serializer):
+    """Header tiles above the categories table."""
+
+    total = serializers.IntegerField(help_text="Every category, whatever its status.")
+    active = serializers.IntegerField(help_text="Accepting new course submissions.")
+    inactive = serializers.IntegerField(help_text="Temporarily paused.")
+    archived = serializers.IntegerField(help_text="Retired from the creator picker.")

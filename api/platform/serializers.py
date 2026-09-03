@@ -187,6 +187,42 @@ class AdminOverviewWalletTotalsSerializer(serializers.Serializer):
     )
 
 
+class AdminTodayTilesSerializer(serializers.Serializer):
+    """The four headline tiles on the admin dashboard.
+
+    Change percentages are null when there is no prior period to compare
+    against - distinct from 0, which would claim flat performance.
+    """
+
+    courses_created_today = serializers.IntegerField()
+    courses_created_change_percent = serializers.DecimalField(
+        max_digits=8, decimal_places=2, allow_null=True,
+        help_text="Movement vs yesterday. Null when yesterday had none.",
+    )
+    published_last_24h = serializers.IntegerField()
+    published_total = serializers.IntegerField()
+    daily_cost = serializers.CharField(
+        allow_null=True, help_text="Today's spend as a decimal string; null if none."
+    )
+    daily_cost_change_percent = serializers.DecimalField(
+        max_digits=8, decimal_places=2, allow_null=True
+    )
+    avg_cost_per_course = serializers.CharField(
+        allow_null=True,
+        help_text="Lifetime spend over published courses; null without both.",
+    )
+
+
+class AdminProductionTrendPointSerializer(serializers.Serializer):
+    date = serializers.DateField()
+    count = serializers.IntegerField()
+
+
+class AdminCostTrendPointSerializer(serializers.Serializer):
+    date = serializers.DateField()
+    amount = serializers.CharField(help_text="Decimal as a string.")
+
+
 class AdminOverviewSerializer(serializers.Serializer):
     """Counts and totals backing the admin home screen.
 
@@ -213,6 +249,18 @@ class AdminOverviewSerializer(serializers.Serializer):
     )
     wallet_totals = AdminOverviewWalletTotalsSerializer(
         help_text="Platform-wide wallet money figures."
+    )
+    period = serializers.CharField(
+        help_text="Window the trend series cover, echoing the request."
+    )
+    today = AdminTodayTilesSerializer(
+        help_text="The dashboard's headline tiles with their period-on-period deltas."
+    )
+    production_trend = AdminProductionTrendPointSerializer(
+        many=True, help_text="Courses created per day, zero-filled, oldest first."
+    )
+    cost_trend = AdminCostTrendPointSerializer(
+        many=True, help_text="Production spend per day, zero-filled, oldest first."
     )
 
 
@@ -290,6 +338,59 @@ class ReviewerOverviewSerializer(serializers.Serializer):
     )
     my_decisions = ReviewerMyDecisionsSerializer(
         help_text="The reviewer's own approve/reject history summary."
+    )
+    courses_reviewed = serializers.IntegerField(
+        help_text="Lifetime decisions this reviewer has recorded (approve + reject)."
+    )
+    courses_in_queue = serializers.IntegerField(
+        help_text="Courses awaiting review across every reviewable state."
+    )
+    escalations_resolved = serializers.IntegerField(
+        help_text=(
+            "Appeals this reviewer has decided. An appeal is the platform's "
+            "escalation path for a disputed rejection."
+        )
+    )
+
+
+class ReviewerActivityPointSerializer(serializers.Serializer):
+    """One day on the Activity Overview chart."""
+
+    date = serializers.DateField(help_text="The local calendar day, ISO-8601.")
+    escalated = serializers.IntegerField(
+        help_text="Appeals this reviewer decided on this day."
+    )
+    approved = serializers.IntegerField(
+        help_text="Courses this reviewer approved on this day."
+    )
+    rejected = serializers.IntegerField(
+        help_text="Courses this reviewer rejected on this day."
+    )
+
+
+class ReviewerActivityTotalsSerializer(serializers.Serializer):
+    """Series totals across the whole selected period."""
+
+    escalated = serializers.IntegerField()
+    approved = serializers.IntegerField()
+    rejected = serializers.IntegerField()
+
+
+class ReviewerActivityOverviewSerializer(serializers.Serializer):
+    """The reviewer dashboard's Activity Overview chart.
+
+    `series` carries one entry per day in range including zeroes, so the
+    chart has a stable x-axis and the client never fills gaps itself.
+    """
+
+    period = serializers.CharField(help_text="The range this series covers.")
+    start_date = serializers.DateField(help_text="First day in the series, inclusive.")
+    end_date = serializers.DateField(help_text="Last day in the series, inclusive.")
+    totals = ReviewerActivityTotalsSerializer(
+        help_text="Sum of each series across the period."
+    )
+    series = ReviewerActivityPointSerializer(
+        many=True, help_text="One entry per day, oldest first, zeroes included."
     )
 
 

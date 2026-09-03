@@ -11,7 +11,6 @@ from rest_framework.views import APIView
 
 from api.authentication.services import activity_service
 from api.users.enums import UserActivityActionEnums, UserActivityCategoryEnums
-from api.users.permissions import IsPublicCourseCreatorRole
 from api.users.serializers import (
     MeSerializer,
     MeUpdateSerializer,
@@ -149,7 +148,11 @@ class MeView(RetrieveUpdateAPIView):
     Email is deliberately not editable here - see MeUpdateSerializer.
     """
 
-    permission_classes = [IsAuthenticated, IsPublicCourseCreatorRole]
+    # Self-scoped: get_object() returns request.user, so no role can reach
+    # another account's record. Every role needs its own Account settings
+    # screen - reviewers included - so this is deliberately not gated on
+    # IsPublicCourseCreatorRole, which would 403 reviewers and staff.
+    permission_classes = [IsAuthenticated]
     http_method_names = ["get", "patch", "head", "options"]
 
     def get_object(self):

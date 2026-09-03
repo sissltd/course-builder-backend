@@ -13,9 +13,11 @@ from rest_framework.viewsets import ReadOnlyModelViewSet
 from api.users.filters import UserAdminFilter
 from api.users.models import User
 from api.users.permissions import IsAdminOrSuperAdminRole
+from api.users.enums import QueueTrackFilter
 from api.users.serializers import (
     UserAdminSerializer,
     UserReinstateSerializer,
+    UserAssignTrackSerializer,
     UserSuspendSerializer,
 )
 from api.users.services import user_admin_service
@@ -257,6 +259,57 @@ class UserAdminViewSet(ReadOnlyModelViewSet):
             **STANDARD_ERROR_RESPONSES["server"],
         },
     )
+    @extend_schema(
+        summary="Assign a reviewer to a production track",
+        description=(
+            "Sets the production track a reviewer is assigned to, shown "
+            "read-only on their Account settings screen.\n\n"
+            "Call this when allocating a reviewer to the Creator or AI "
+            "track. Send `null` to clear the assignment.\n\n"
+            "**Auth:** Admin or Super Admin.\n\n"
+            "**Prerequisites:** The target user must exist.\n\n"
+            "**Important:** This is the admin-controlled assignment, not "
+            "the reviewer's own queue filter \u2014 reviewers set that "
+            "themselves at `/users/me/queue-preferences/`, and this "
+            "endpoint does not change it."
+        ),
+        request=UserAssignTrackSerializer,
+        examples=[
+            OpenApiExample(
+                name="Assign the creator track",
+                request_only=True,
+                value={"assigned_track": QueueTrackFilter.CREATOR_TRACK.value},
+            ),
+            OpenApiExample(
+                name="Clear the assignment",
+                request_only=True,
+                value={"assigned_track": None},
+            ),
+        ],
+        responses={
+            200: OpenApiResponse(
+                response=UserAdminSerializer,
+                description="The user with the new track assignment.",
+            ),
+            **STANDARD_ERROR_RESPONSES["validation"],
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
+            **STANDARD_ERROR_RESPONSES["not_found"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
+    @action(detail=True, methods=["post"], url_path="assign-track")
+    def assign_track(self, request, pk=None):
+        serializer = UserAssignTrackSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = user_admin_service.assign_track(
+            actor=request.user,
+            user=self.get_object(),
+            track=serializer.validated_data["assigned_track"],
+            request=request,
+        )
+        return Response(UserAdminSerializer(user).data)
+
     @action(detail=True, methods=["post"])
     def suspend(self, request, pk=None):
         serializer = UserSuspendSerializer(data=request.data)

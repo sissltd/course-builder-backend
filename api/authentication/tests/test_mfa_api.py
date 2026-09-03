@@ -388,7 +388,9 @@ class IsMFAVerifiedForSessionApiTests(APITestCase):
             "/api/v1/categories/",
             {
                 "name": "Writer Category",
-                "creator_price": "50.00",
+                "creator_price_beginner": "50.00",
+                "creator_price_intermediate": "50.00",
+                "creator_price_advanced": "50.00",
                 "track_preference": "OPEN",
                 "status": "ACTIVE",
             },

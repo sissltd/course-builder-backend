@@ -32,7 +32,9 @@ def _force_authenticate_mfa_verified(client, user):
 
 VALID_PAYLOAD = {
     "name": "New Cat",
-    "creator_price": "100.00",
+    "creator_price_beginner": "100.00",
+    "creator_price_intermediate": "120.00",
+    "creator_price_advanced": "150.00",
     "track_preference": "OPEN",
     "status": "ACTIVE",
 }
@@ -194,15 +196,17 @@ class CategoryWriteBehaviourTests(APITestCase):
         self.assertEqual(response.data["name"], "New Cat")
 
     def test_writer_can_update_price(self):
-        category = make_category(creator_price=Decimal("50.00"))
+        category = make_category(creator_price_advanced=Decimal("50.00"))
 
         response = self.client.patch(
-            detail_url(category), {"creator_price": "75.00"}, format="json"
+            detail_url(category), {"creator_price_advanced": "75.00"}, format="json"
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         category.refresh_from_db()
-        self.assertEqual(category.creator_price, Decimal("75.00"))
+        self.assertEqual(category.creator_price_advanced, Decimal("75.00"))
+        # The other tiers are untouched by a single-tier edit.
+        self.assertEqual(category.creator_price_beginner, Decimal("100.00"))
 
     def test_update_records_the_editor(self):
         category = make_category()
@@ -240,7 +244,7 @@ class CategoryWriteBehaviourTests(APITestCase):
 
     def test_negative_price_rejected(self):
         response = self.client.post(
-            LIST_URL, {**VALID_PAYLOAD, "creator_price": "-1.00"}
+            LIST_URL, {**VALID_PAYLOAD, "creator_price_beginner": "-1.00"}
         )
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)

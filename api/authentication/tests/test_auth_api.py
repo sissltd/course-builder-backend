@@ -1113,7 +1113,14 @@ class MeApiTests(APITestCase):
         response = self.client.get("/api/v1/users/me/")
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
-    def test_non_creator_roles_are_forbidden(self):
+    def test_every_role_can_read_its_own_profile(self):
+        """/users/me/ is self-scoped, so it is not gated on role.
+
+        It was previously creator-only, which 403'd reviewers and made the
+        reviewer Account settings screen impossible to build. The scoping
+        that matters is `get_object() -> request.user`, asserted below.
+        """
+
         roles = [
             UserRole.STAFF_WRITER,
             UserRole.CREATOR_REVIEWER,
@@ -1123,8 +1130,13 @@ class MeApiTests(APITestCase):
             with self.subTest(role=role):
                 user = make_user(email=f"noncreator{index}@example.com", role=role)
                 self.client.force_authenticate(user)
+
                 response = self.client.get("/api/v1/users/me/")
-                self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+                self.assertEqual(response.status_code, status.HTTP_200_OK)
+                # Each role sees itself and nothing else.
+                self.assertEqual(response.data["email"], user.email)
+                self.assertEqual(response.data["role"], role)
 
     def test_superuser_retains_permission_bypass(self):
         user = make_user(role=UserRole.ADMIN, is_superuser=True, is_staff=True)
@@ -1165,7 +1177,9 @@ class MeApiTests(APITestCase):
 
     def test_patch_assigns_category_and_creates_creator_profile(self):
         user = make_user()
-        category = Category.objects.create(name="Web Applications", creator_price="100")
+        category = Category.objects.create(
+            name="Web Applications", creator_price_beginner="100", creator_price_intermediate="100", creator_price_advanced="100"
+        )
         self.client.force_authenticate(user)
 
         response = self.client.patch(
@@ -1182,7 +1196,9 @@ class MeApiTests(APITestCase):
 
     def test_patch_null_category_clears_existing_category(self):
         user = make_user()
-        category = Category.objects.create(name="Data Science", creator_price="100")
+        category = Category.objects.create(
+            name="Data Science", creator_price_beginner="100", creator_price_intermediate="100", creator_price_advanced="100"
+        )
         CreatorProfile.objects.create(user=user, primary_expertise_category=category)
         self.client.force_authenticate(user)
 
@@ -1198,7 +1214,9 @@ class MeApiTests(APITestCase):
 
     def test_omitted_category_remains_unchanged(self):
         user = make_user()
-        category = Category.objects.create(name="Product Design", creator_price="100")
+        category = Category.objects.create(
+            name="Product Design", creator_price_beginner="100", creator_price_intermediate="100", creator_price_advanced="100"
+        )
         CreatorProfile.objects.create(user=user, primary_expertise_category=category)
         self.client.force_authenticate(user)
 
@@ -1213,7 +1231,9 @@ class MeApiTests(APITestCase):
         user = make_user(first_name="Original")
         category = Category.objects.create(
             name="Inactive Category",
-            creator_price="100",
+            creator_price_beginner="100",
+            creator_price_intermediate="100",
+            creator_price_advanced="100",
             status=CategoryStatus.INACTIVE,
         )
         self.client.force_authenticate(user)

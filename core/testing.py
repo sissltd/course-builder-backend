@@ -149,7 +149,11 @@ def reseed_reference_data() -> None:
             defaults={
                 "slug": slugify(name)[:160],
                 "description": description,
-                "creator_price": price,
+                # Seed every tier at the same rate; differentiating them is
+                # a deliberate admin edit, not a fixture concern.
+                "creator_price_beginner": price,
+                "creator_price_intermediate": price,
+                "creator_price_advanced": price,
                 "track_preference": track,
             },
         )
@@ -167,7 +171,7 @@ def reseed_reference_data() -> None:
                         f"soludesks:catalog-topic:{category_name}:{topic_name}",
                     ),
                     "slug": slugify(topic_name)[:160],
-                    "creator_price": category.creator_price,
+                    "creator_price": category.creator_price_beginner,
                     "status": "ACTIVE",
                 },
             )
