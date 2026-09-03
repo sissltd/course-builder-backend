@@ -29,6 +29,7 @@ CUSTOM_APPS = [
     "shared.audit",
     "shared.uploads",
     "api.platform",
+    "api.operations",
     "core",
     "api.webhooks",
 ]

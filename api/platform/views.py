@@ -1,4 +1,9 @@
-from drf_spectacular.utils import OpenApiExample, OpenApiResponse, extend_schema
+from drf_spectacular.utils import (
+    OpenApiExample,
+    OpenApiParameter,
+    OpenApiResponse,
+    extend_schema,
+)
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -8,6 +13,7 @@ from api.platform.serializers import (
     CreatorOverviewSerializer,
     PlatformSettingsSerializer,
     PlatformSettingsUpdateSerializer,
+    ReviewerActivityOverviewSerializer,
     ReviewerOverviewSerializer,
     TestEmailSerializer,
 )
@@ -185,9 +191,27 @@ class AdminOverviewView(APIView):
             "Figures are computed live on each request and are not cached. "
             "`awaiting_payout` is money already deducted from creator balances "
             "but not yet settled — the platform has no settlement step yet, so "
-            "expect it to accumulate."
+            "expect it to accumulate. `today` carries the headline tiles "
+            "with their period-on-period deltas, and `production_trend` / "
+            "`cost_trend` carry the two charts \u2014 both zero-filled so "
+            "the x-axis stays stable. A delta is null when there is no "
+            "prior period to compare against, which is not the same as 0."
         ),
         tags=["Admin — Overview"],
+        parameters=[
+            OpenApiParameter(
+                name="period",
+                type=str,
+                enum=list(admin_overview_service.TREND_DAYS),
+                required=False,
+                description=(
+                    "Window the trend charts cover, matching the screen's "
+                    "24hrs / 7days / 31days / 6months control. Defaults to "
+                    f"`{admin_overview_service.DEFAULT_PERIOD}`. An unknown "
+                    "value falls back to the default rather than erroring."
+                ),
+            )
+        ],
         responses={
             200: OpenApiResponse(
                 response=AdminOverviewSerializer,
@@ -231,7 +255,12 @@ class AdminOverviewView(APIView):
         },
     )
     def get(self, request):
-        overview = admin_overview_service.get_overview(actor=request.user)
+        overview = admin_overview_service.get_overview(
+            actor=request.user,
+            period=request.query_params.get(
+                "period", admin_overview_service.DEFAULT_PERIOD
+            ),
+        )
         return Response(AdminOverviewSerializer(overview).data)
 
 
@@ -319,7 +348,11 @@ class ReviewerOverviewView(APIView):
             "role.\n\n"
             "**Important:** Counts only - the queue itself is at "
             "`/review-queue/`. Both queue keys are always present, including "
-            "zeroes."
+            "zeroes. `courses_reviewed`, `courses_in_queue` and "
+            "`escalations_resolved` are the three dashboard tiles; "
+            "`queue`/`my_decisions` are the same data broken down, kept for "
+            "existing clients. The dashboard chart is a separate call to "
+            "`/api/v1/reviewer/activity-overview/`."
         ),
         tags=["Reviewer — Overview"],
         responses={
@@ -332,6 +365,9 @@ class ReviewerOverviewView(APIView):
                         value={
                             "queue": {"SUBMITTED": 4, "IN_REVIEW": 2},
                             "my_decisions": {"approved": 31, "today": 3},
+                            "courses_reviewed": 245,
+                            "courses_in_queue": 6,
+                            "escalations_resolved": 12,
                         },
                     )
                 ],
@@ -344,6 +380,94 @@ class ReviewerOverviewView(APIView):
     def get(self, request):
         overview = reviewer_overview_service.get_overview(actor=request.user)
         return Response(ReviewerOverviewSerializer(overview).data)
+
+
+class ReviewerActivityOverviewView(APIView):
+    """Daily activity series behind the reviewer dashboard chart."""
+
+    permission_classes = [IsAuthenticated]
+    serializer_class = ReviewerActivityOverviewSerializer  # schema generation only
+
+    @extend_schema(
+        summary="Retrieve the reviewer activity chart series",
+        description=(
+            "Returns the reviewer's own Escalated / Approved / Rejected "
+            "counts per day, for the Activity Overview chart on the "
+            "dashboard.\n\n"
+            "Called when the dashboard loads and again whenever the period "
+            "dropdown changes.\n\n"
+            "**Auth:** Creator Reviewer or Verifier (role enforced in the "
+            "service layer).\n\n"
+            "**Prerequisites:** None beyond being signed in with a reviewer "
+            "role.\n\n"
+            "**Important:** Every day in range is present including zeroes, "
+            "so the chart has a stable x-axis - do not fill gaps client "
+            "side. Scoped to the calling reviewer only. `all_time` runs from "
+            "their first recorded activity; a reviewer with no activity gets "
+            "a single zeroed day rather than an empty series. An unknown "
+            "`period` falls back to `today` rather than erroring."
+        ),
+        tags=["Reviewer — Overview"],
+        parameters=[
+            OpenApiParameter(
+                name="period",
+                type=str,
+                enum=list(reviewer_overview_service.ACTIVITY_PERIODS),
+                required=False,
+                description=(
+                    "Range to cover. Defaults to `today`. Matches the "
+                    "dashboard dropdown: All time / Today / This week / "
+                    "This month."
+                ),
+            )
+        ],
+        responses={
+            200: OpenApiResponse(
+                response=ReviewerActivityOverviewSerializer,
+                description="Daily activity counts for the selected period.",
+                examples=[
+                    OpenApiExample(
+                        name="This week",
+                        value={
+                            "period": "this_week",
+                            "start_date": "2026-08-31",
+                            "end_date": "2026-09-01",
+                            "totals": {
+                                "escalated": 3,
+                                "approved": 12,
+                                "rejected": 4,
+                            },
+                            "series": [
+                                {
+                                    "date": "2026-08-31",
+                                    "escalated": 1,
+                                    "approved": 7,
+                                    "rejected": 2,
+                                },
+                                {
+                                    "date": "2026-09-01",
+                                    "escalated": 2,
+                                    "approved": 5,
+                                    "rejected": 2,
+                                },
+                            ],
+                        },
+                    )
+                ],
+            ),
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
+    def get(self, request):
+        overview = reviewer_overview_service.get_activity_overview(
+            actor=request.user,
+            period=request.query_params.get(
+                "period", reviewer_overview_service.DEFAULT_ACTIVITY_PERIOD
+            ),
+        )
+        return Response(ReviewerActivityOverviewSerializer(overview).data)
 
 
 class TestEmailView(APIView):

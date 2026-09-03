@@ -38,7 +38,9 @@ def make_category(**kwargs):
     defaults = {
         "name": f"Category {n}",
         "description": "A test category.",
-        "creator_price": Decimal("100.00"),
+        "creator_price_beginner": Decimal("100.00"),
+        "creator_price_intermediate": Decimal("100.00"),
+        "creator_price_advanced": Decimal("100.00"),
         "track_preference": TrackPreference.OPEN,
         "status": CategoryStatus.ACTIVE,
     }

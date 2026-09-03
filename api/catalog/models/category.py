@@ -44,13 +44,36 @@ class Category(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModel
         default="",
         help_text=_("Description of the category shown to creators."),
     )
-    creator_price = models.DecimalField(
-        verbose_name=_("Creator Price"),
+    creator_price_beginner = models.DecimalField(
+        verbose_name=_("Creator Price - Beginner"),
         max_digits=10,
         decimal_places=2,
         validators=[MinValueValidator(Decimal(0))],
+        help_text=_("Payout for an approved Beginner course in this category."),
+    )
+    creator_price_intermediate = models.DecimalField(
+        verbose_name=_("Creator Price - Intermediate"),
+        max_digits=10,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal(0))],
+        help_text=_("Payout for an approved Intermediate course in this category."),
+    )
+    creator_price_advanced = models.DecimalField(
+        verbose_name=_("Creator Price - Advanced"),
+        max_digits=10,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal(0))],
+        help_text=_("Payout for an approved Advanced course in this category."),
+    )
+    icon = models.CharField(
+        verbose_name=_("Icon"),
+        max_length=50,
+        blank=True,
+        default="",
         help_text=_(
-            "Fixed price paid to a creator for an approved course in this category."
+            "Icon identifier shown beside the category in the picker. Free "
+            "text so the client owns its own icon set rather than the API "
+            "constraining it to one library."
         ),
     )
     track_preference = models.CharField(
@@ -83,6 +106,21 @@ class Category(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModel
         if not self.slug:
             self.slug = slugify(self.name)[:160]
         super().save(*args, **kwargs)
+
+    def price_for(self, difficulty_level) -> Decimal:
+        """Payout for a course of `difficulty_level` in this category.
+
+        The three levels key off courses.DifficultyLevel. An unrecognised
+        or missing level falls back to the beginner rate rather than
+        raising: a payout must always resolve to a number, and the entry
+        rate is the safe direction to err in.
+        """
+
+        return {
+            "BEGINNER": self.creator_price_beginner,
+            "INTERMEDIATE": self.creator_price_intermediate,
+            "ADVANCED": self.creator_price_advanced,
+        }.get(difficulty_level, self.creator_price_beginner)
 
     def __str__(self):
         """Use the category name as the human-readable label."""

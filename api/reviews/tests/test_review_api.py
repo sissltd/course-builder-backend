@@ -23,7 +23,11 @@ class ReviewQueueApiTests(APITestCase):
         self.reviewer = make_user(role=UserRole.CREATOR_REVIEWER)
         self.qa_reviewer = make_user(role=UserRole.QA_REVIEWER)
         self.admin = make_user(role=UserRole.ADMIN)
-        self.category = make_category(creator_price=Decimal("120.00"))
+        self.category = make_category(
+            creator_price_beginner=Decimal("120.00"),
+            creator_price_intermediate=Decimal("120.00"),
+            creator_price_advanced=Decimal("120.00"),
+        )
         CourseVersion.objects.get_or_create(label="1.0")
 
     def _submitted_course(self, category=None):
@@ -114,7 +118,10 @@ class ReviewQueueApiTests(APITestCase):
         creator_course = self._submitted_course(category=creator_category)
         self._submitted_course(category=ai_category)
         queue_preference_service.update_preference(
-            user=self.reviewer, track_filter="CREATOR_TRACK"
+            user=self.reviewer,
+            show_both_track=False,
+            show_creator_track=True,
+            show_ai_track=False,
         )
         self.client.force_authenticate(self.reviewer)
 
@@ -130,7 +137,10 @@ class ReviewQueueApiTests(APITestCase):
         self._submitted_course(category=creator_category)
         ai_course = self._submitted_course(category=ai_category)
         queue_preference_service.update_preference(
-            user=self.reviewer, track_filter="CREATOR_TRACK"
+            user=self.reviewer,
+            show_both_track=False,
+            show_creator_track=True,
+            show_ai_track=False,
         )
         self.client.force_authenticate(self.reviewer)
 
@@ -411,7 +421,11 @@ class ReviewServiceRoleEnforcementTests(APITestCase):
 
     def setUp(self):
         self.creator = make_user(role=UserRole.COURSE_CREATOR)
-        self.category = make_category(creator_price=Decimal("120.00"))
+        self.category = make_category(
+            creator_price_beginner=Decimal("120.00"),
+            creator_price_intermediate=Decimal("120.00"),
+            creator_price_advanced=Decimal("120.00"),
+        )
 
     def _submitted_course(self):
         course = build_compliant_course(creator=self.creator, category=self.category)

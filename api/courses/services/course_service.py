@@ -34,6 +34,7 @@ from api.notification.models import Notification
 from api.notification.services import sla_threshold_service
 from api.platform.services import platform_settings_service
 from api.users.enums import (
+    QUEUE_SORT_WINDOW_DAYS,
     QueueTrackFilter,
     UserActivityActionEnums,
     UserActivityCategoryEnums,
@@ -221,10 +222,13 @@ def submit_course(*, course: Course, actor: User) -> Course:
         raise exceptions.ValidationError({"structural_standards": failures})
 
     with transaction.atomic():
+        # A topic-specific price still overrides the category, unchanged.
+        # Otherwise the payout follows the course's own difficulty, which
+        # is what the category's three price levels exist to express.
         course.creator_price_snapshot = (
             course.topic.creator_price
             if course.topic_id
-            else course.category.creator_price
+            else course.category.price_for(course.difficulty_level)
         )
         course.status = CourseStatus.SUBMITTED
         course.submitted_at = timezone.now()
@@ -473,11 +477,15 @@ def get_review_queue(
 
     Defaults to oldest-submitted-first (unchanged from before Queue
     Behaviour preferences existed). `sort_order` accepts a QueueSortOrder
-    value: NEWEST_FIRST reverses the default; SLA_URGENCY needs `sla_user`
-    (whose effective amber/red thresholds decide urgency) to rank
-    breached/red courses first, then amber, then everything else, oldest-
-    first within each tier. `track_filter` accepts a QueueTrackFilter value
-    and narrows to courses whose category matches that track preference.
+    value: NEWEST_FIRST reverses the default; LAST_30_DAYS / LAST_7_DAYS /
+    LAST_24_HOURS narrow to that window and sort oldest-first; ALL and
+    OLDEST_FIRST are the unfiltered default. SLA_URGENCY is still
+    honoured - it needs `sla_user`, whose effective amber/red thresholds
+    rank breached/red first, then amber, then the rest, oldest-first
+    within each tier - but is no longer offered as a stored preference.
+
+    `track_filter` accepts a QueueTrackFilter value and narrows to courses
+    whose category matches; NONE returns an empty queue by design.
     """
 
     statuses = status_in or [CourseStatus.SUBMITTED, CourseStatus.IN_REVIEW]
@@ -491,11 +499,26 @@ def get_review_queue(
         )
     )
 
+    # A reviewer who turned every track off asked for an empty queue;
+    # honour it rather than quietly showing them everything.
+    if track_filter == QueueTrackFilter.NONE:
+        return queryset.none()
+
     category_track_preference = QUEUE_TRACK_FILTER_TO_CATEGORY_TRACK_PREFERENCE.get(
         track_filter
     )
     if category_track_preference is not None:
         queryset = queryset.filter(category__track_preference=category_track_preference)
+
+    # The date-scoped views narrow to a recent window, then sort oldest
+    # first - they are a filter the design presents inside the same
+    # dropdown as the orderings.
+    window_days = QUEUE_SORT_WINDOW_DAYS.get(sort_order)
+    if window_days is not None:
+        queryset = queryset.filter(
+            submitted_at__gte=timezone.now() - timedelta(days=window_days)
+        )
+        return queryset.order_by("submitted_at")
 
     if sort_order == "NEWEST_FIRST":
         return queryset.order_by("-submitted_at")

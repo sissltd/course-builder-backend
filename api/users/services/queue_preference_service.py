@@ -17,7 +17,9 @@ def update_preference(
     user: User,
     default_sort_order: str | None = None,
     auto_advance_enabled: bool | None = None,
-    track_filter: str | None = None,
+    show_ai_track: bool | None = None,
+    show_creator_track: bool | None = None,
+    show_both_track: bool | None = None,
 ) -> QueueBehaviourPreference:
     """Apply whichever queue-behaviour fields were provided (all optional)."""
 
@@ -30,9 +32,14 @@ def update_preference(
     if auto_advance_enabled is not None:
         preference.auto_advance_enabled = auto_advance_enabled
         update_fields.append("auto_advance_enabled")
-    if track_filter is not None:
-        preference.track_filter = track_filter
-        update_fields.append("track_filter")
+    for field, value in (
+        ("show_ai_track", show_ai_track),
+        ("show_creator_track", show_creator_track),
+        ("show_both_track", show_both_track),
+    ):
+        if value is not None:
+            setattr(preference, field, value)
+            update_fields.append(field)
 
     if len(update_fields) > 1:
         preference.save(update_fields=list(dict.fromkeys(update_fields)))

@@ -220,9 +220,10 @@ class QueueBehaviourPreferenceApiTests(APITestCase):
 
         response = self.client.get("/api/v1/users/me/queue-preferences/")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data["default_sort_order"], "OLDEST_FIRST")
+        # Default is now ALL - the design's dropdown leads with it.
+        self.assertEqual(response.data["default_sort_order"], "ALL")
         self.assertFalse(response.data["auto_advance_enabled"])
-        self.assertEqual(response.data["track_filter"], "ALL")
+        self.assertEqual(response.data["effective_track_filter"], "ALL")
 
     def test_patch_updates_one_field(self):
         user = _make_user()
@@ -235,7 +236,7 @@ class QueueBehaviourPreferenceApiTests(APITestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["default_sort_order"], "NEWEST_FIRST")
-        self.assertEqual(response.data["track_filter"], "ALL")
+        self.assertEqual(response.data["effective_track_filter"], "ALL")
 
     def test_patch_empty_body_rejected(self):
         user = _make_user()

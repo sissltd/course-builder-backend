@@ -15,10 +15,17 @@ class TrackPreference(models.TextChoices):
 
 
 class CategoryStatus(models.TextChoices):
-    """Whether a category currently accepts new course submissions."""
+    """Whether a category currently accepts new course submissions.
+
+    ARCHIVED is distinct from INACTIVE: inactive is a temporary pause an
+    admin can flip back at will, archived is a retirement that hides the
+    category from creators entirely while keeping every historical course
+    and its payout intact.
+    """
 
     ACTIVE = "ACTIVE", "Active"
     INACTIVE = "INACTIVE", "Inactive"
+    ARCHIVED = "ARCHIVED", "Archived"
 
 
 class CategoryDeletionStrategy(models.TextChoices):

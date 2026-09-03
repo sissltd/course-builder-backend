@@ -55,7 +55,11 @@ class ApproveRequestTests(TestCase):
     def test_creates_topic_and_reserves_it_using_platform_settings_expiry(self):
         platform_settings_service.update_settings(topic_reservation_expiry_days=10)
         creator = make_user()
-        category = make_category(creator_price=Decimal("120.00"))
+        category = make_category(
+            creator_price_beginner=Decimal("120.00"),
+            creator_price_intermediate=Decimal("120.00"),
+            creator_price_advanced=Decimal("120.00"),
+        )
         request = make_topic_reservation_request(
             requested_by=creator, category=category, name="New Topic"
         )

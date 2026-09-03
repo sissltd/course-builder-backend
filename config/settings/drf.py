@@ -255,6 +255,34 @@ SPECTACULAR_SETTINGS = {
             ),
         },
         {
+            "name": "Admin — MIE Recommendations",
+            "description": (
+                "Partner-submitted course ideas ranked by the demand "
+                "signals admins record on them."
+            ),
+        },
+        {
+            "name": "Admin — Analytics",
+            "description": (
+                "Catalogue, enrolment, production cost, channel "
+                "distribution and the KPI scorecard."
+            ),
+        },
+        {
+            "name": "Admin — System Health",
+            "description": (
+                "Uptime, latency and current status for every monitored "
+                "dependency."
+            ),
+        },
+        {
+            "name": "Admin — APE Pipeline",
+            "description": (
+                "The AI production funnel: job counts per stage and "
+                "external provider load."
+            ),
+        },
+        {
             "name": "Admin — Overview",
             "description": (
                 "Aggregate platform counts and wallet totals for the admin dashboard."

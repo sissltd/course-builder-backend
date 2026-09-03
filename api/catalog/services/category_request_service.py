@@ -70,7 +70,11 @@ def approve_request(
         "name": request.name,
         "slug": slugify(request.name),
         "description": request.description,
-        "creator_price": creator_price,
+        # The approving admin supplies one rate; every tier starts there
+        # and can be differentiated afterwards through the category editor.
+        "creator_price_beginner": creator_price,
+        "creator_price_intermediate": creator_price,
+        "creator_price_advanced": creator_price,
     }
     if track_preference is not None:
         fields["track_preference"] = track_preference
