@@ -756,9 +756,8 @@ A `debug_task` is included as a lightweight smoke-test task for local setup and 
 Authenticated clients request a presigned PUT from
 `POST /api/v1/uploads/presign/`, upload the raw file directly to the configured
 S3-compatible store using the returned `upload_headers`, and persist
-`file_url` after a successful upload. Public URLs use path-style addressing
-and are derived from `DIGITAL_OCEAN_ENDPOINT` and `DIGITAL_OCEAN_BUCKET`; no
-separate CDN setting is required.
+`file_url` after a successful upload. Public URLs are derived from
+`BUCKET_URL`; no separate CDN setting is required.
 
 The endpoint must be browser-accessible over trusted HTTPS. Storage CORS must
 allow the frontend origin, `Content-Type`, and `x-amz-meta-*` on PUT requests,

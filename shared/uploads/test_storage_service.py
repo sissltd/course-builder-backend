@@ -8,15 +8,14 @@ from shared.services import storage_service
 class StorageServiceTests(TestCase):
     def test_presign_and_file_url_use_endpoint_bucket_and_path_addressing(self):
         with (
-            patch.object(storage_service, "DIGITAL_OCEAN_ACCESS_KEY", "access-key"),
-            patch.object(storage_service, "DIGITAL_OCEAN_SECRET_KEY", "secret-key"),
+            patch.object(storage_service, "ACCESS_KEY_ID", "access-key"),
+            patch.object(storage_service, "ACCESS_SECRET_KEY", "secret-key"),
+            patch.object(storage_service, "BUCKET_NAME", "course-files"),
             patch.object(
                 storage_service,
-                "DIGITAL_OCEAN_ENDPOINT",
-                "https://storage.example.com/",
+                "BUCKET_URL",
+                "https://storage.example.com/course-files",
             ),
-            patch.object(storage_service, "DIGITAL_OCEAN_BUCKET", "course-files"),
-            patch.object(storage_service, "DIGITAL_OCEAN_REGION", "us-east-1"),
         ):
             result = storage_service.StorageService.request_upload(
                 filename="lesson.mp4",
@@ -48,10 +47,43 @@ class StorageServiceTests(TestCase):
         self.assertEqual(result["upload_headers"]["Content-Type"], "video/mp4")
         self.assertEqual(result["upload_headers"]["x-amz-meta-codec"], "h264")
 
+    def test_spaces_bucket_url_drives_public_url_endpoint_and_region(self):
+        with (
+            patch.object(storage_service, "ACCESS_KEY_ID", "access-key"),
+            patch.object(storage_service, "ACCESS_SECRET_KEY", "secret-key"),
+            patch.object(storage_service, "BUCKET_NAME", "coursebuilder"),
+            patch.object(
+                storage_service,
+                "BUCKET_URL",
+                "https://coursebuilder.lon1.digitaloceanspaces.com/",
+            ),
+        ):
+            result = storage_service.StorageService.request_upload(
+                filename="lesson.mp4",
+                content_type="video/mp4",
+                folder="courses",
+                size=1024,
+                purpose="LESSON_VIDEO",
+                width=1280,
+                height=720,
+                codec="h264",
+            )
+
+        upload_url = urlsplit(result["upload_url"])
+        self.assertEqual(upload_url.netloc, "lon1.digitaloceanspaces.com")
+        self.assertEqual(
+            parse_qs(upload_url.query)["X-Amz-Credential"][0].split("/")[2], "lon1"
+        )
+        self.assertTrue(
+            result["file_url"].startswith(
+                "https://coursebuilder.lon1.digitaloceanspaces.com/uploads/courses/"
+            )
+        )
+
     def test_public_object_url_is_normalized_back_to_a_file_key(self):
         with patch.object(
             storage_service,
-            "DIGITAL_OCEAN_BUCKET",
+            "BUCKET_NAME",
             "course-files",
         ):
             key = storage_service._file_key_from_value(
