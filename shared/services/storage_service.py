@@ -6,23 +6,36 @@ import boto3
 from botocore.config import Config
 from botocore.exceptions import ClientError
 
-from shared.constants.digital_ocean import (
-    DIGITAL_OCEAN_ACCESS_KEY,
-    DIGITAL_OCEAN_BUCKET,
-    DIGITAL_OCEAN_ENDPOINT,
-    DIGITAL_OCEAN_REGION,
-    DIGITAL_OCEAN_SECRET_KEY,
+from shared.constants.object_storage import (
+    ACCESS_KEY_ID,
+    ACCESS_SECRET_KEY,
+    BUCKET_NAME,
+    BUCKET_URL,
 )
 
 logger = logging.getLogger(__name__)
 
 
 def _storage_endpoint():
-    return DIGITAL_OCEAN_ENDPOINT.rstrip("/")
+    parsed = urlsplit(BUCKET_URL.rstrip("/"))
+    bucket_prefix = f"{BUCKET_NAME}."
+    if not parsed.scheme or not parsed.hostname:
+        raise StorageError("BUCKET_URL must be an absolute URL.")
+    if parsed.hostname.startswith(bucket_prefix):
+        service_host = parsed.hostname[len(bucket_prefix) :]
+        return f"{parsed.scheme}://{service_host}"
+    return f"{parsed.scheme}://{parsed.hostname}"
 
 
 def _public_base_url():
-    return f"{_storage_endpoint()}/{DIGITAL_OCEAN_BUCKET}"
+    return BUCKET_URL.rstrip("/")
+
+
+def _storage_region():
+    hostname_parts = (urlsplit(BUCKET_URL).hostname or "").split(".")
+    if hostname_parts and hostname_parts[0] == BUCKET_NAME:
+        hostname_parts.pop(0)
+    return hostname_parts[0] if len(hostname_parts) > 2 else "us-east-1"
 
 
 def _file_key_from_value(file_key):
@@ -31,7 +44,7 @@ def _file_key_from_value(file_key):
         return file_key
 
     path = urlsplit(file_key).path.lstrip("/")
-    bucket_prefix = f"{DIGITAL_OCEAN_BUCKET}/"
+    bucket_prefix = f"{BUCKET_NAME}/"
     if path.startswith(bucket_prefix):
         path = path[len(bucket_prefix) :]
     if not path:
@@ -145,17 +158,17 @@ class FileNotFound(Exception):
 
 def _get_s3_client():
     """
-    Creates and returns a boto3 S3 client configured for DO Spaces.
+    Creates and returns a boto3 client configured for S3-compatible storage.
 
-    DO Spaces is S3-compatible, so we use the standard boto3 client
-    with the DO endpoint instead of AWS.
+    The bucket service is S3-compatible, so the standard boto3 client can be
+    used with its endpoint.
     """
     return boto3.client(
         "s3",
-        region_name=DIGITAL_OCEAN_REGION,
+        region_name=_storage_region(),
         endpoint_url=_storage_endpoint(),
-        aws_access_key_id=DIGITAL_OCEAN_ACCESS_KEY,
-        aws_secret_access_key=DIGITAL_OCEAN_SECRET_KEY,
+        aws_access_key_id=ACCESS_KEY_ID,
+        aws_secret_access_key=ACCESS_SECRET_KEY,
         config=Config(
             signature_version="s3v4",
             s3={"addressing_style": "path"},
@@ -168,11 +181,11 @@ def _get_s3_client():
 
 class StorageService:
     """
-    Centralized file storage service using DigitalOcean Spaces (S3-compatible).
+    Centralized file storage service using an S3-compatible bucket.
 
     The flow:
         1. Frontend calls request_upload() to get a presigned PUT URL
-        2. Frontend uploads the file directly to DO Spaces using that URL
+        2. Frontend uploads the file directly to object storage using that URL
         3. Frontend uses the returned CDN URL in subsequent API calls
         4. Backend never touches the file bytes — it's just a URL broker
 
@@ -199,7 +212,7 @@ class StorageService:
         codec=None,
     ):
         """
-        Generates a presigned PUT URL for direct upload to DO Spaces.
+        Generates a presigned PUT URL for direct upload to object storage.
 
         Args:
             filename:     Original filename (used to extract extension)
@@ -322,7 +335,7 @@ class StorageService:
             metadata["codec"] = codec.lower()
 
         put_params = {
-            "Bucket": DIGITAL_OCEAN_BUCKET,
+            "Bucket": BUCKET_NAME,
             "Key": file_key,
             "ContentType": content_type,
         }
@@ -391,7 +404,7 @@ class StorageService:
         try:
             client = _get_s3_client()
             client.put_object(
-                Bucket=DIGITAL_OCEAN_BUCKET,
+                Bucket=BUCKET_NAME,
                 Key=file_key,
                 Body=data,
                 ContentType=content_type,
@@ -419,7 +432,7 @@ class StorageService:
             client = _get_s3_client()
             return client.generate_presigned_url(
                 "get_object",
-                Params={"Bucket": DIGITAL_OCEAN_BUCKET, "Key": file_key},
+                Params={"Bucket": BUCKET_NAME, "Key": file_key},
                 ExpiresIn=expires_in,
             )
         except ClientError as e:
@@ -429,7 +442,7 @@ class StorageService:
     @staticmethod
     def delete_file(file_key):
         """
-        Deletes a file from DO Spaces by its key.
+        Deletes a file from object storage by its key.
 
         Args:
             file_key: The S3 key (e.g., "uploads/profiles/a1b2c3d4.jpg")
@@ -445,7 +458,7 @@ class StorageService:
             client = _get_s3_client()
 
             client.delete_object(
-                Bucket=DIGITAL_OCEAN_BUCKET,
+                Bucket=BUCKET_NAME,
                 Key=file_key,
             )
 
@@ -459,7 +472,7 @@ class StorageService:
     @staticmethod
     def file_exists(file_key):
         """
-        Checks if a file exists in DO Spaces.
+        Checks if a file exists in object storage.
 
         Returns:
             bool: True if exists, False otherwise
@@ -468,7 +481,7 @@ class StorageService:
         try:
             client = _get_s3_client()
             client.head_object(
-                Bucket=DIGITAL_OCEAN_BUCKET,
+                Bucket=BUCKET_NAME,
                 Key=file_key,
             )
             return True
