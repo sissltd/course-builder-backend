@@ -3,7 +3,7 @@ from django.db.models import Count, ProtectedError
 from django.utils import timezone
 from rest_framework import exceptions
 
-from api.catalog.enums import CategoryDeletionStrategy
+from api.catalog.enums import CategoryDeletionStrategy, CategoryStatus
 from api.catalog.exceptions import CategoryDeletionNeedsStrategy
 from api.catalog.models import Category
 from api.users.models import User
@@ -18,15 +18,22 @@ def create_category(*, actor: User, **fields) -> Category:
 def update_category(*, category: Category, actor: User, data: dict) -> Category:
     """Apply `data` to `category` and record who changed it.
 
-    Editing `creator_price` is allowed and takes effect only for courses
+    Editing a price level is allowed and takes effect only for courses
     submitted afterwards - Course.creator_price_snapshot freezes the rate at
     submission time, so no existing payout is altered retroactively.
+
+    This allowlist must stay in step with CategoryWriteSerializer: a field
+    the serializer accepts but this set omits is silently dropped, which
+    looks to the caller like a successful save that changed nothing.
     """
 
     editable_fields = {
         "name",
         "description",
-        "creator_price",
+        "creator_price_beginner",
+        "creator_price_intermediate",
+        "creator_price_advanced",
+        "icon",
         "track_preference",
         "status",
     }
@@ -204,3 +211,53 @@ def _delete_or_explain(category: Category) -> None:
             "references it. Refresh and try again, or set its status to "
             "'INACTIVE' to stop new submissions."
         ) from exc
+
+
+def archive_category(*, category, actor: User):
+    """Retire a category from the creator picker without deleting it.
+
+    Distinct from deletion, which needs a strategy for the courses left
+    behind: archiving keeps every course, every payout and every
+    historical reference exactly as they are, and is reversible. Already
+    archived is a validation error rather than a silent no-op so the UI
+    cannot report success for an action that did nothing.
+    """
+
+    if category.status == CategoryStatus.ARCHIVED:
+        raise exceptions.ValidationError({"status": ["Category is already archived."]})
+
+    category.status = CategoryStatus.ARCHIVED
+    category.updated_by = actor
+    category.save(update_fields=["status", "updated_by", "updated_datetime"])
+    return category
+
+
+def unarchive_category(*, category, actor: User):
+    """Return an archived category to active use."""
+
+    if category.status != CategoryStatus.ARCHIVED:
+        raise exceptions.ValidationError({"status": ["Category is not archived."]})
+
+    category.status = CategoryStatus.ACTIVE
+    category.updated_by = actor
+    category.save(update_fields=["status", "updated_by", "updated_datetime"])
+    return category
+
+
+def get_category_stats() -> dict:
+    """Total / active / archived counts for the header tiles.
+
+    One grouped query rather than three counts, and every status key is
+    present so the tiles never vanish when a bucket empties.
+    """
+
+    counted = {
+        row["status"]: row["count"]
+        for row in Category.objects.values("status").annotate(count=Count("id"))
+    }
+    return {
+        "total": sum(counted.values()),
+        "active": counted.get(CategoryStatus.ACTIVE.value, 0),
+        "inactive": counted.get(CategoryStatus.INACTIVE.value, 0),
+        "archived": counted.get(CategoryStatus.ARCHIVED.value, 0),
+    }

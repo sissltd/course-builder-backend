@@ -1083,7 +1083,7 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
                 if "ordering" not in self.request.query_params:
                     sort_order = preference.default_sort_order
                 if "track" not in self.request.query_params:
-                    track_filter = preference.track_filter
+                    track_filter = preference.effective_track_filter
             return course_service.get_review_queue(
                 status_in=[
                     CourseStatus.SUBMITTED,

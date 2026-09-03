@@ -228,7 +228,11 @@ class SubmitCourseTests(TestCase):
         self.assertIn("structural_standards", ctx.exception.detail)
 
     def test_happy_path_snapshots_price_transitions_status_and_notifies(self):
-        category = make_category(creator_price=Decimal("150.00"))
+        category = make_category(
+            creator_price_beginner=Decimal("150.00"),
+            creator_price_intermediate=Decimal("150.00"),
+            creator_price_advanced=Decimal("150.00"),
+        )
         course = build_compliant_course(category=category)
 
         result = course_service.submit_course(course=course, actor=course.creator)
@@ -246,17 +250,29 @@ class SubmitCourseTests(TestCase):
     def test_price_snapshot_reflects_category_price_at_submit_time_not_creation_time(
         self,
     ):
-        category = make_category(creator_price=Decimal("100.00"))
+        category = make_category(
+            creator_price_beginner=Decimal("100.00"),
+            creator_price_intermediate=Decimal("100.00"),
+            creator_price_advanced=Decimal("100.00"),
+        )
         course = build_compliant_course(category=category)
 
-        category.creator_price = Decimal("200.00")
+        # Raise every tier so the assertion holds whatever difficulty the
+        # compliant-course builder picked.
+        category.creator_price_beginner = Decimal("200.00")
+        category.creator_price_intermediate = Decimal("200.00")
+        category.creator_price_advanced = Decimal("200.00")
         category.save()
 
         result = course_service.submit_course(course=course, actor=course.creator)
         self.assertEqual(result.creator_price_snapshot, Decimal("200.00"))
 
     def test_price_snapshot_uses_topic_price_over_category_price_when_topic_set(self):
-        category = make_category(creator_price=Decimal("100.00"))
+        category = make_category(
+            creator_price_beginner=Decimal("100.00"),
+            creator_price_intermediate=Decimal("100.00"),
+            creator_price_advanced=Decimal("100.00"),
+        )
         topic = make_topic(category=category, creator_price=Decimal("25.00"))
         course = build_compliant_course(category=category)
         course.topic = topic

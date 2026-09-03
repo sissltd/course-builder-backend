@@ -4,6 +4,7 @@ from api.platform.views import (
     AdminOverviewView,
     CreatorOverviewView,
     PlatformSettingsView,
+    ReviewerActivityOverviewView,
     ReviewerOverviewView,
     TestEmailView,
 )
@@ -28,6 +29,11 @@ urlpatterns = [
         "reviewer/overview/",
         ReviewerOverviewView.as_view(),
         name="reviewer-overview",
+    ),
+    path(
+        "reviewer/activity-overview/",
+        ReviewerActivityOverviewView.as_view(),
+        name="reviewer-activity-overview",
     ),
     path(
         "test-email/",

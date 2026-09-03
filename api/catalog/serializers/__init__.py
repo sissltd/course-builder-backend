@@ -2,6 +2,7 @@ from .category_serializer import (
     CategoryDeletionImpactSerializer,
     CategoryDeletionSerializer,
     CategoryMiniSerializer,
+    CategoryStatsSerializer,
     CategorySerializer,
     CategoryWriteSerializer,
 )
@@ -25,6 +26,7 @@ __all__ = [
     "CategoryDeletionImpactSerializer",
     "CategoryDeletionSerializer",
     "CategoryMiniSerializer",
+    "CategoryStatsSerializer",
     "CategoryRequestApproveSerializer",
     "CategoryRequestCreateSerializer",
     "CategoryRequestSerializer",

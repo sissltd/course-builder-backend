@@ -72,6 +72,7 @@ class MeSerializer(serializers.ModelSerializer):
             "avatar_url",
             "terms_accepted_at",
             "role",
+            "assigned_track",
             "is_active",
             "status",
             "created_datetime",

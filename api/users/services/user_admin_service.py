@@ -169,6 +169,22 @@ def reinstate_user(*, actor: User, user: User, request=None) -> User:
     return user
 
 
+def assign_track(*, actor: User, user: User, track, request=None) -> User:
+    """Set the production track a reviewer is assigned to.
+
+    Admin-controlled and deliberately distinct from the reviewer's own
+    QueueBehaviourPreference's track toggles: those are a personal queue
+    filter the reviewer sets, this is the assignment they cannot change.
+    Passing None clears the assignment.
+    """
+
+    require_role(actor, IsAdminOrSuperAdminRole.allowed_roles)
+
+    user.assigned_track = track
+    user.save(update_fields=["assigned_track", "updated_datetime"])
+    return user
+
+
 def _assert_moderatable(*, actor: User, user: User, verb: str) -> None:
     """Guard the ways account moderation could be turned against the platform."""
 

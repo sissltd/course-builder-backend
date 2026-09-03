@@ -73,7 +73,10 @@ class CategoryRequestFlowTests(APITestCase):
         self.assertEqual(response.data["status"], CategoryRequestStatus.APPROVED)
 
         category = Category.objects.get(name="Data Science")
-        self.assertEqual(category.creator_price, Decimal("150000.00"))
+        # The approving admin supplies one rate; every tier starts there.
+        self.assertEqual(category.creator_price_beginner, Decimal("150000.00"))
+        self.assertEqual(category.creator_price_intermediate, Decimal("150000.00"))
+        self.assertEqual(category.creator_price_advanced, Decimal("150000.00"))
         self.assertEqual(category.description, "Analysis and ML courses.")
         self.assertEqual(category.slug, "data-science")
 
@@ -155,7 +158,11 @@ class CategoryRequestFlowTests(APITestCase):
 
     def test_duplicate_category_name_is_refused_at_approval(self):
         Category.objects.create(
-            name="Data Science", slug="data-science", creator_price=Decimal("1.00")
+            name="Data Science",
+            slug="data-science",
+            creator_price_beginner=Decimal("1.00"),
+            creator_price_intermediate=Decimal("1.00"),
+            creator_price_advanced=Decimal("1.00"),
         )
         request_id = self._file().data["id"]
         self.client.force_authenticate(self.admin)

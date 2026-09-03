@@ -364,28 +364,6 @@ class ModuleViewSet(ModelViewSet):
         instance.delete()
 
     @extend_schema(
-        summary="Acquire the edit lock on a module",
-        description=(
-            "Acquires (or renews, if the caller already holds it) a "
-            "short-TTL edit lock on the module, so two collaborators don't "
-            "clobber each other's changes (SCCS PRD Section 14). This is a "
-            "simple REST lock with a heartbeat, not real-time presence.\n\n"
-            "**Auth:** Anyone with access to the module.\n\n"
-            "**Important:** Returns 423 Locked if someone else currently "
-            "holds an unexpired lock."
-        ),
-        tags=["Creator — Modules"],
-        parameters=[_COURSE_PK_PARAMETER],
-        request=None,
-        responses={
-            200: OpenApiResponse(response=ModuleSerializer),
-            423: OpenApiResponse(description="Locked by another user."),
-            **STANDARD_ERROR_RESPONSES["auth"],
-            **STANDARD_ERROR_RESPONSES["not_found"],
-            **STANDARD_ERROR_RESPONSES["server"],
-        },
-    )
-    @extend_schema(
         summary="Reorder a course's modules",
         description=(
             "Applies a new order to every module in the course in one "
@@ -449,6 +427,28 @@ class ModuleViewSet(ModelViewSet):
         )
         return Response(ModuleSerializer(modules, many=True).data)
 
+    @extend_schema(
+        summary="Acquire the edit lock on a module",
+        description=(
+            "Acquires (or renews, if the caller already holds it) a "
+            "short-TTL edit lock on the module, so two collaborators don't "
+            "clobber each other's changes (SCCS PRD Section 14). This is a "
+            "simple REST lock with a heartbeat, not real-time presence.\n\n"
+            "**Auth:** Anyone with access to the module.\n\n"
+            "**Important:** Returns 423 Locked if someone else currently "
+            "holds an unexpired lock."
+        ),
+        tags=["Creator — Modules"],
+        parameters=[_COURSE_PK_PARAMETER],
+        request=None,
+        responses={
+            200: OpenApiResponse(response=ModuleSerializer),
+            423: OpenApiResponse(description="Locked by another user."),
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["not_found"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
     @action(detail=True, methods=["post"])
     def lock(self, request, *args, **kwargs):
         module = module_lock_service.acquire_lock(

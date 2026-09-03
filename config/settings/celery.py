@@ -21,4 +21,11 @@ CELERY_BEAT_SCHEDULE = {
         "task": "api.mie.tasks.dispatch_due_webhooks_task",
         "schedule": 60.0,
     },
+    # Feeds the System Health screen. Five minutes rather than one: uptime
+    # is measured over a 30-day window by default, so a tighter cadence
+    # buys accuracy nobody reads while multiplying stored samples.
+    "operations-probe-service-health": {
+        "task": "api.operations.tasks.probe_service_health_task",
+        "schedule": 300.0,
+    },
 }

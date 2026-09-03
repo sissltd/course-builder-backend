@@ -3,7 +3,7 @@ from django.contrib.auth.models import AbstractUser
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
-from api.users.enums import AccountStatus, Sex, UserRole
+from api.users.enums import AccountStatus, QueueTrackFilter, Sex, UserRole
 from api.users.models.manager import CustomUserManager
 from core.mixins import (
     DateHistoryModelMixin,
@@ -33,6 +33,24 @@ class User(
         choices=UserRole.choices,
         default=UserRole.COURSE_CREATOR,
         help_text=_("Primary role used for role-based permission checks."),
+    )
+    assigned_track = models.CharField(
+        verbose_name=_("Assigned Track"),
+        max_length=20,
+        choices=[
+            (choice.value, choice.label)
+            for choice in QueueTrackFilter
+            if choice != QueueTrackFilter.NONE
+        ],
+        null=True,
+        blank=True,
+        help_text=_(
+            "Production track a reviewer is assigned to, set by an admin. "
+            "NONE is deliberately not offered - it is a queue-narrowing "
+            "outcome, not an assignment. Read-only to the reviewer - "
+            "distinct from their own QueueBehaviourPreference toggles, "
+            "which they control."
+        ),
     )
     status = models.CharField(
         verbose_name=_("Account Status"),

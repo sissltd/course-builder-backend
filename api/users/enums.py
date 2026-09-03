@@ -189,23 +189,49 @@ class KYCStatus(models.TextChoices):
 
 
 class QueueSortOrder(models.TextChoices):
-    """A reviewer's preferred default ordering for the review queue."""
+    """A reviewer's default review-queue view.
 
-    OLDEST_FIRST = "OLDEST_FIRST", "Oldest First"
+    Matches the Queue Behaviour screen's dropdown exactly. The options mix
+    two concerns, which is how the design presents them: ORDERING values
+    change the sort, and the LAST_* values narrow to a recent window and
+    then sort oldest-first. `ALL` is the unfiltered default.
+
+    SLA-urgency ordering is deliberately absent - it is not offered in the
+    design. The capability still exists in
+    course_service.get_review_queue, which accepts a plain string, so it
+    can be re-exposed here without rebuilding it.
+    """
+
+    ALL = "ALL", "All"
     NEWEST_FIRST = "NEWEST_FIRST", "Newest First"
-    SLA_URGENCY = "SLA_URGENCY", "SLA Urgency"
+    OLDEST_FIRST = "OLDEST_FIRST", "Oldest First"
+    LAST_30_DAYS = "LAST_30_DAYS", "Last 30 days"
+    LAST_7_DAYS = "LAST_7_DAYS", "Last 7 days"
+    LAST_24_HOURS = "LAST_24_HOURS", "Last 24 hours"
+
+
+#: Window in days for the date-scoped queue views. Absent keys apply no
+#: date filter at all.
+QUEUE_SORT_WINDOW_DAYS = {
+    QueueSortOrder.LAST_30_DAYS: 30,
+    QueueSortOrder.LAST_7_DAYS: 7,
+    QueueSortOrder.LAST_24_HOURS: 1,
+}
 
 
 class QueueTrackFilter(models.TextChoices):
-    """A reviewer's preferred default track filter for the review queue.
+    """Effective track narrowing derived from a reviewer's three toggles.
 
-    Maps onto api.catalog.enums.TrackPreference's CREATOR_PREFERRED /
-    AI_PREFERRED values; ALL applies no filter.
+    No longer stored - QueueBehaviourPreference holds the three booleans
+    the design shows, and derives one of these from them. Retained because
+    course_service.get_review_queue and User.assigned_track both speak in
+    these terms.
     """
 
     ALL = "ALL", "All Tracks"
     CREATOR_TRACK = "CREATOR_TRACK", "Creator Track"
     AI_TRACK = "AI_TRACK", "AI Track"
+    NONE = "NONE", "No Tracks"
 
 
 class UnavailabilityReason(models.TextChoices):
