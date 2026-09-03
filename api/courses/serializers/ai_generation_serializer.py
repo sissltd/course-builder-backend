@@ -113,16 +113,35 @@ class AICourseGenerationCreateSerializer(serializers.Serializer):
 
 
 class AIAssistCreateSerializer(serializers.Serializer):
-    target_type = serializers.ChoiceField(choices=["course", "module", "lesson"])
-    target_id = serializers.UUIDField()
-    field = serializers.CharField(max_length=64)
-    current_value = serializers.JSONField(required=False)
-    instruction = serializers.CharField(max_length=2000)
-    target_updated_at = serializers.DateTimeField()
+    target_type = serializers.ChoiceField(
+        choices=["course", "module", "lesson"],
+        help_text="Type of course-builder record whose field should be improved.",
+    )
+    target_id = serializers.UUIDField(
+        help_text="UUID of the course, module, or lesson selected by target_type."
+    )
+    field = serializers.CharField(
+        max_length=64,
+        help_text="Editable field to improve, such as title or learning_objectives.",
+    )
+    current_value = serializers.JSONField(
+        required=False,
+        help_text="Current field value supplied as context; omit when the field is empty.",
+    )
+    instruction = serializers.CharField(
+        max_length=2000,
+        help_text="Plain-language instruction describing the requested improvement.",
+    )
+    target_updated_at = serializers.DateTimeField(
+        help_text="Last known target update time in ISO 8601 format for conflict detection."
+    )
 
 
 class AIThumbnailCreateSerializer(serializers.Serializer):
-    prompt = serializers.CharField(max_length=2000)
+    prompt = serializers.CharField(
+        max_length=2000,
+        help_text="Visual description for the generated course thumbnail.",
+    )
 
 
 class AIAssistApplyResponseSerializer(serializers.Serializer):

@@ -124,6 +124,14 @@ SPECTACULAR_SETTINGS = {
             ),
         },
         {
+            "name": "Creator — AI",
+            "description": (
+                "AI-assisted course creation: generate a complete course in two "
+                "phases, poll or cancel generation, improve individual fields, "
+                "and generate or apply course thumbnails."
+            ),
+        },
+        {
             "name": "Creator — Modules",
             "description": "Authoring modules within a Draft course.",
         },
