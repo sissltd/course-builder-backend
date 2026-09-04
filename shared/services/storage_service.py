@@ -200,6 +200,11 @@ class StorageService:
     """
 
     @staticmethod
+    def public_url(file_key):
+        """Return the stable public URL for an object stored under file_key."""
+        return f"{_public_base_url()}/{file_key.lstrip('/')}"
+
+    @staticmethod
     def request_upload(
         filename,
         content_type,
@@ -235,7 +240,7 @@ class StorageService:
             dict with:
                 upload_url:  Presigned PUT URL (frontend uploads here)
                 upload_headers: Headers the frontend must send with the PUT
-                file_url:    Public URL where the file is accessible after upload
+                file_url:    Temporary presigned GET URL for reading the file
                 file_key:    The S3 key (used for deletion later)
                 expires_in:  Seconds until the presigned URL expires
         """
@@ -322,6 +327,14 @@ class StorageService:
         unique_name = f"{uuid.uuid4().hex}.{extension or 'bin'}"
         file_key = f"uploads/{folder}/{unique_name}"
 
+        logger.info(
+            "[<>Storage<>] Upload requested: bucket=%s key=%s content_type=%s size=%s",
+            BUCKET_NAME,
+            file_key,
+            content_type,
+            size,
+        )
+
         metadata = {}
         if purpose:
             metadata["upload-purpose"] = purpose
@@ -347,20 +360,33 @@ class StorageService:
         # [3] Generate presigned PUT URL
         try:
             client = _get_s3_client()
-
             upload_url = client.generate_presigned_url(
                 "put_object",
                 Params=put_params,
+                ExpiresIn=PRESIGN_EXPIRY,
+            )
+
+            # The bucket is private, so the direct bucket URL cannot be used
+            # by the browser for playback. Generate a separate, short-lived
+            # read URL for the just-created object; file_key remains the
+            # durable value callers should persist for future URL refreshes.
+            file_url = client.generate_presigned_url(
+                "get_object",
+                Params={"Bucket": BUCKET_NAME, "Key": file_key},
                 ExpiresIn=PRESIGN_EXPIRY,
             )
         except ClientError as e:
             logger.error(f"[<>Storage<>] Presign failed: {e}")
             raise StorageError("Failed to generate upload URL. Please try again.")
 
-        # Build the path-style public URL; read access comes from bucket policy.
-        file_url = f"{_public_base_url()}/{file_key}"
-
-        logger.info(f"[<>Storage<>] Upload URL generated: {file_key} ({content_type})")
+        logger.info(
+            "[<>Storage<>] Upload/read URLs generated: bucket=%s key=%s "
+            "content_type=%s expires_in=%s",
+            BUCKET_NAME,
+            file_key,
+            content_type,
+            PRESIGN_EXPIRY,
+        )
 
         upload_headers = {"Content-Type": content_type}
         upload_headers.update(
@@ -428,13 +454,26 @@ class StorageService:
             return None
         file_key = _file_key_from_value(file_key)
 
+        logger.info(
+            "[<>Storage<>] Presigned GET requested: bucket=%s key=%s expires_in=%s",
+            BUCKET_NAME,
+            file_key,
+            expires_in,
+        )
+
         try:
             client = _get_s3_client()
-            return client.generate_presigned_url(
+            download_url = client.generate_presigned_url(
                 "get_object",
                 Params={"Bucket": BUCKET_NAME, "Key": file_key},
                 ExpiresIn=expires_in,
             )
+            logger.info(
+                "[<>Storage<>] Presigned GET generated: bucket=%s key=%s",
+                BUCKET_NAME,
+                file_key,
+            )
+            return download_url
         except ClientError as e:
             logger.error(f"[<>Storage<>] presigned GET failed for {file_key}: {e}")
             return None

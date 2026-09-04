@@ -17,7 +17,12 @@ from rest_framework import exceptions
 from api.authentication.services import activity_service
 from api.catalog.enums import CategoryStatus, TrackPreference
 from api.catalog.models import Category, Topic
-from api.courses.enums import CourseStatus, DistributionChannel, DistributionStatus
+from api.courses.enums import (
+    CourseSourceType,
+    CourseStatus,
+    DistributionChannel,
+    DistributionStatus,
+)
 from api.courses.models import (
     Course,
     CourseDistribution,
@@ -96,6 +101,7 @@ def create_draft_course(
     duration_minutes: int = 0,
     duration_seconds: int = 0,
     terms_accepted: bool,
+    source_type: str = CourseSourceType.CREATOR_UPLOADED,
 ) -> Course:
     """Create a new Draft course owned by `creator`.
 
@@ -147,6 +153,7 @@ def create_draft_course(
             + duration_minutes * 60
             + duration_seconds,
             terms_accepted_at=timezone.now(),
+            source_type=source_type,
             created_by=creator,
             updated_by=creator,
         )
@@ -201,10 +208,8 @@ def submit_course(*, course: Course, actor: User) -> Course:
     - The course must currently be Draft (BR-001: no bypassing review).
     - Runs quality_check_service.validate_structural_standards(); any
       failures abort the transition with an aggregated ValidationError.
-    - Snapshots the category's current creator_price onto the course, read
-      literally per "pricing applies only to new submissions" - a category
-      price change mid-draft is picked up at submission time, not frozen at
-      draft creation.
+    - Creator-uploaded courses snapshot the current topic/category price.
+      AI-generated courses remain unpaid and keep this field null.
     """
 
     require_role(actor, IsCourseCreatorRole.allowed_roles + IsAdminRole.allowed_roles)
@@ -226,9 +231,13 @@ def submit_course(*, course: Course, actor: User) -> Course:
         # Otherwise the payout follows the course's own difficulty, which
         # is what the category's three price levels exist to express.
         course.creator_price_snapshot = (
-            course.topic.creator_price
-            if course.topic_id
-            else course.category.price_for(course.difficulty_level)
+            None
+            if course.source_type == CourseSourceType.AI_GENERATED
+            else (
+                course.topic.creator_price
+                if course.topic_id
+                else course.category.price_for(course.difficulty_level)
+            )
         )
         course.status = CourseStatus.SUBMITTED
         course.submitted_at = timezone.now()
@@ -382,17 +391,21 @@ def publish_course(
     actor: User,
     distribution_channels: list[dict] | None = None,
 ) -> Course:
-    """Transition an Approved course to Published (Admin-only, enforced by view
-    permission), recording a PublishedCourseSnapshot under the canonical
-    CourseVersion label (SCCS PRD Section 15). No external LMS push -
-    deferred until LMS integration exists.
+    """Transition an Approved course to Published for a reviewer or admin.
+
+    Records a PublishedCourseSnapshot under the canonical CourseVersion
+    label (SCCS PRD Section 15). No external LMS push is attempted; that is
+    deferred until each marketplace integration exists.
 
     There is no re-edit-after-publish workflow yet (publishing is one-way,
     no unpublish action), so this only ever creates a single snapshot per
     course today - see CourseVersion's docstring.
     """
 
-    require_role(actor, IsAdminRole.allowed_roles)
+    require_role(
+        actor,
+        IsCreatorReviewerRole.allowed_roles + IsAdminRole.allowed_roles,
+    )
     if course.status != CourseStatus.APPROVED:
         raise exceptions.ValidationError(
             f"Course cannot be published from status '{course.status}'."
@@ -491,11 +504,13 @@ def get_review_queue(
     statuses = status_in or [CourseStatus.SUBMITTED, CourseStatus.IN_REVIEW]
     queryset = (
         Course.objects.filter(status__in=statuses)
-        .select_related("category", "creator")
+        .select_related("category", "topic", "creator")
         .prefetch_related(
             "review_assignments__reviewer",
+            "review_actions__reviewer",
             "quality_check_runs",
             "quality_findings",
+            "distribution_channels",
         )
     )
 

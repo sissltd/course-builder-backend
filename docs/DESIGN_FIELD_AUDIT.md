@@ -21,6 +21,56 @@ silent difference.
 
 `GET /api/v1/reviewer/overview/` · `GET /api/v1/reviewer/activity-overview/`
 
+## Reviewer — Course tables and drawers
+
+| Screen / design label | API field or input | ✓ |
+|---|---|---|
+| Pending → Creators / Created with AI | `?source_type=CREATOR_UPLOADED\|AI_GENERATED` | ✓ |
+| Search course title, ID etc | `?search=` | ✓ |
+| Category | `?category=<uuid>` | ✓ |
+| Difficulty level | `?difficulty_level=BEGINNER\|INTERMEDIATE\|ADVANCED` | ✓ |
+| Reviewer / Verifier | `?reviewer=<user_uuid>` | ✓ |
+| Approved by | `?approved_by=<user_uuid>` | ✓ |
+| Date picker | `?date_from=YYYY-MM-DD&date_to=YYYY-MM-DD` | ✓ |
+| Creator | `creator.full_name` | ✓ |
+| Course Title / Course ID | `course_title` / `course_id` | ✓ |
+| Reviewer / Reviewer ID | `reviewer` / `reviewer_id` | ✓ |
+| Date Reviewed | `date_reviewed` | ✓ |
+| Last reviewed | `last_reviewed_at` | ✓ |
+| Reviewer's Note | `reviewer_note` | ✓ |
+| Price | `price` | ✓ |
+| Channel | `channels[]` / `channel_summary` | ✓ |
+| Source → AI Created | `source_label` | ✓ |
+| Owner's Information | `owner_information` | ✓ |
+| Price Information cards | `price_information[]` | ✓ |
+
+Each sidebar screen now has a status-safe endpoint and matching Swagger header:
+
+- `GET /api/v1/review-queue/pending/` — `Reviewer — Pending Courses`
+- `GET /api/v1/review-queue/approved/` — `Reviewer — Approved Courses`
+- `GET /api/v1/review-queue/in-review/` — `Reviewer — In Review`
+- `GET /api/v1/review-queue/published/` — `Reviewer — Published Courses`
+- `GET /api/v1/review-queue/{id}/` — all three Course Information drawer blocks
+
+## Reviewer — Review prices and publish
+
+| Design label | API field / endpoint | ✓ |
+|---|---|---|
+| Publish channel → SoluDesk / Udemy / Coursera | `distribution_channels[].channel` | ✓ |
+| Learner price / Learner fee | `learner_price` / `learner_fee` | ✓ |
+| MIE Suggestion | `mie_suggestion` | ✓ |
+| One-time / Subscription / Promotional / B2B only | `model` | ✓ |
+| Course fee | `course_fee_percent` | ✓ |
+| Promotional pricing | `promotional_pricing` | ✓ |
+| Platform revenue per enrollment | `platform_revenue_per_enrollment` | ✓ |
+| MIE explanation panel | `mie_explanation` | ✓ |
+| Related / Comparable courses | `comparable_courses[]` | ✓ |
+| Creator payout (Fixed) | `creator_payout_fixed` (read-only) | ✓ |
+| Review and publish overview | `channels[]`, each channel's `learner_price` | ✓ |
+
+`GET/PUT /api/v1/review-queue/{id}/review-prices/` ·
+`POST /api/v1/review-queue/{id}/publish/`
+
 ## Reviewer — Settings → Account
 
 | Design label | API field | ✓ |

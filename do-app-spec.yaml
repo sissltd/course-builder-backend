@@ -25,6 +25,18 @@ services:
       - key: CORS_ALLOWED_ORIGINS
         scope: RUN_TIME
         value: "${CORS_ALLOWED_ORIGINS}"
+      - key: ACCESS_KEY_ID
+        type: SECRET
+        scope: RUN_TIME
+      - key: ACCESS_SECRET_KEY
+        type: SECRET
+        scope: RUN_TIME
+      - key: BUCKET_NAME
+        scope: RUN_TIME
+        value: coursebuilder
+      - key: BUCKET_URL
+        scope: RUN_TIME
+        value: https://coursebuilder.lon1.digitaloceanspaces.com
       - key: DB_HOST
         scope: RUN_TIME
         value: "${db.HOSTNAME}"

@@ -5,6 +5,7 @@ from drf_spectacular.utils import (
     extend_schema,
     extend_schema_view,
 )
+from django.db import transaction
 from rest_framework import exceptions
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -15,20 +16,92 @@ from api.courses.enums import CourseStatus
 from api.courses.models import Lesson, Module
 from api.courses.serializers import LessonSerializer, LessonWriteSerializer
 from api.courses.serializers.ordering_serializer import ReorderSerializer
-from api.courses.services import course_service, module_lock_service, ordering_service
+from api.courses.services import (
+    course_service,
+    lesson_service,
+    module_lock_service,
+    ordering_service,
+)
 from api.users.permissions import IsCourseCreatorRole
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 
-_LESSON_EXAMPLE = {
-    "id": "c3d4e5f6-a7b8-4c9d-0e1f-2a3b4c5d6e7f",
+_VIDEO_LESSON_REQUEST_EXAMPLE = {
     "title": "Variables and Data Types",
     "order": 1,
+    "lesson_type": "VIDEO",
     "script": "In this lesson we cover Python's core data types...",
     "video_url": "https://example.com/lessons/variables.mp4",
-    "learning_objectives": ["Identify Python's built-in data types"],
+    "embedded_link": "",
+    "video_script_file": "uploads/lessons/variables.srt",
+    "learning_objectives": [
+        "Identify Python's built-in data types, variables, and constants"
+    ],
     "duration_minutes": 15,
-    "assessment": None,
+    "requirements": [
+        {
+            "text": "Basic computer literacy and access to Python 3.",
+            "order": 1,
+        }
+    ],
 }
+
+_QUIZ_LESSON_REQUEST_EXAMPLE = {
+    "title": "Variables Knowledge Check",
+    "order": 2,
+    "lesson_type": "QUIZ",
+    "script": "Check your understanding of Python variables and data types.",
+    "video_url": "",
+    "embedded_link": "",
+    "video_script_file": "",
+    "learning_objectives": ["Apply Python variable and data-type concepts"],
+    "duration_minutes": 10,
+    "requirements": [],
+}
+
+_TEXT_LESSON_REQUEST_EXAMPLE = {
+    "title": "Python Variable Reference",
+    "order": 3,
+    "lesson_type": "TEXT",
+    "script": "Use this lesson as a written reference for Python variables...",
+    "video_url": "",
+    "embedded_link": "",
+    "video_script_file": "",
+    "learning_objectives": ["Explain how Python variables store values"],
+    "duration_minutes": 10,
+    "requirements": [],
+}
+
+_LESSON_WRITE_RESPONSE_EXAMPLE = {
+    "id": "c3d4e5f6-a7b8-4c9d-0e1f-2a3b4c5d6e7f",
+    **_VIDEO_LESSON_REQUEST_EXAMPLE,
+    "content_type": "VIDEO",
+}
+
+_LESSON_READ_EXAMPLE = {
+    **_LESSON_WRITE_RESPONSE_EXAMPLE,
+    "assessment": None,
+    "content_blocks": [],
+    "images": [],
+    "requirements": [],
+}
+
+_LESSON_TYPE_REQUEST_EXAMPLES = [
+    OpenApiExample(
+        name="Video lesson",
+        request_only=True,
+        value=_VIDEO_LESSON_REQUEST_EXAMPLE,
+    ),
+    OpenApiExample(
+        name="Quiz lesson",
+        request_only=True,
+        value=_QUIZ_LESSON_REQUEST_EXAMPLE,
+    ),
+    OpenApiExample(
+        name="Text lesson",
+        request_only=True,
+        value=_TEXT_LESSON_REQUEST_EXAMPLE,
+    ),
+]
 
 _PATH_PARAMETERS = [
     OpenApiParameter(
@@ -106,7 +179,7 @@ _MODULE_LOCKED_423 = OpenApiResponse(
             200: OpenApiResponse(
                 response=LessonSerializer(many=True),
                 description="Lessons, in whatever order the queryset returns them.",
-                examples=[OpenApiExample(name="Success", value=[_LESSON_EXAMPLE])],
+                examples=[OpenApiExample(name="Success", value=[_LESSON_READ_EXAMPLE])],
             ),
             **STANDARD_ERROR_RESPONSES["auth"],
             **STANDARD_ERROR_RESPONSES["permission"],
@@ -129,7 +202,7 @@ _MODULE_LOCKED_423 = OpenApiResponse(
             200: OpenApiResponse(
                 response=LessonSerializer,
                 description="The requested lesson.",
-                examples=[OpenApiExample(name="Success", value=_LESSON_EXAMPLE)],
+                examples=[OpenApiExample(name="Success", value=_LESSON_READ_EXAMPLE)],
             ),
             **STANDARD_ERROR_RESPONSES["auth"],
             **STANDARD_ERROR_RESPONSES["permission"],
@@ -146,34 +219,31 @@ _MODULE_LOCKED_423 = OpenApiResponse(
             "Called from the 'Add lesson' action in the course builder.\n\n"
             "**Auth:** Course Creator/Writer with access to the course.\n\n"
             "**Prerequisites:** The parent course must be `DRAFT`.\n\n"
-            "**Important:** `learning_objectives` is only validated for "
+            "**Important:** Set `lesson_type` to `VIDEO`, `QUIZ`, or `TEXT`; "
+            "older clients that omit it create a `TEXT` lesson. A `VIDEO` lesson "
+            "requires either `video_url` or `embedded_link`. Create a `QUIZ` "
+            "lesson first, then use its returned `id` with the lesson assessment "
+            "endpoint. `learning_objectives` is only validated for "
             "shape here (a list of non-empty strings) - the 2-5 "
-            "count-per-lesson rule is enforced later, at submit time. "
-            "`video_url` is optional. Returns 423 if the parent module is "
-            "currently locked by another user."
+            "count-per-lesson rule is enforced later, at submit time. Each "
+            "array item is one objective; commas inside an item are preserved. "
+            "`requirements` accepts the ordered Lesson Requirement content "
+            "shown in Figma. "
+            "Deprecated `content_type` remains accepted temporarily; if both type "
+            "fields are sent, they must match. "
+            "Returns 423 if the parent module is currently locked by another user."
         ),
         tags=["Creator — Lessons"],
         parameters=_PATH_PARAMETERS,
         request=LessonWriteSerializer,
-        examples=[
-            OpenApiExample(
-                name="Sample Request",
-                request_only=True,
-                value={
-                    "title": "Variables and Data Types",
-                    "order": 1,
-                    "script": "In this lesson we cover Python's core data types...",
-                    "video_url": "https://example.com/lessons/variables.mp4",
-                    "learning_objectives": ["Identify Python's built-in data types"],
-                    "duration_minutes": 15,
-                },
-            ),
-        ],
+        examples=_LESSON_TYPE_REQUEST_EXAMPLES,
         responses={
             201: OpenApiResponse(
                 response=LessonWriteSerializer,
                 description="Lesson created.",
-                examples=[OpenApiExample(name="Success", value=_LESSON_EXAMPLE)],
+                examples=[
+                    OpenApiExample(name="Success", value=_LESSON_WRITE_RESPONSE_EXAMPLE)
+                ],
             ),
             400: _DRAFT_ONLY_400,
             423: _MODULE_LOCKED_423,
@@ -190,17 +260,24 @@ _MODULE_LOCKED_423 = OpenApiResponse(
             "Called from the lesson edit form.\n\n"
             "**Auth:** Course Creator/Writer with access to the course.\n\n"
             "**Prerequisites:** The parent course must be `DRAFT`.\n\n"
-            "**Important:** Returns 423 if the parent module is currently "
-            "locked by another user."
+            "**Important:** `lesson_type` must be `VIDEO`, `QUIZ`, or `TEXT`. "
+            "A `VIDEO` lesson requires `video_url` or `embedded_link`. Returns "
+            "423 if the parent module is currently locked by another user. "
+            "When `requirements` is supplied it replaces the current ordered "
+            "requirements; omitting it preserves them. Deprecated `content_type` "
+            "remains accepted temporarily."
         ),
         tags=["Creator — Lessons"],
         parameters=_PATH_PARAMETERS,
         request=LessonWriteSerializer,
+        examples=_LESSON_TYPE_REQUEST_EXAMPLES,
         responses={
             200: OpenApiResponse(
                 response=LessonWriteSerializer,
                 description="Lesson updated.",
-                examples=[OpenApiExample(name="Success", value=_LESSON_EXAMPLE)],
+                examples=[
+                    OpenApiExample(name="Success", value=_LESSON_WRITE_RESPONSE_EXAMPLE)
+                ],
             ),
             400: _DRAFT_ONLY_400,
             423: _MODULE_LOCKED_423,
@@ -219,8 +296,11 @@ _MODULE_LOCKED_423 = OpenApiResponse(
             "course builder.\n\n"
             "**Auth:** Course Creator/Writer with access to the course.\n\n"
             "**Prerequisites:** The parent course must be `DRAFT`.\n\n"
-            "**Important:** Returns 423 if the parent module is currently "
-            "locked by another user."
+            "**Important:** When changing `lesson_type` to `VIDEO`, also send "
+            "a `video_url` or `embedded_link`. Returns 423 if the parent module "
+            "is currently locked by another user. When `requirements` is supplied "
+            "it replaces the current ordered requirements; omitting it preserves "
+            "them. Deprecated `content_type` remains accepted temporarily."
         ),
         tags=["Creator — Lessons"],
         parameters=_PATH_PARAMETERS,
@@ -231,12 +311,19 @@ _MODULE_LOCKED_423 = OpenApiResponse(
                 request_only=True,
                 value={"order": 2},
             ),
+            OpenApiExample(
+                name="Change to text lesson",
+                request_only=True,
+                value={"lesson_type": "TEXT"},
+            ),
         ],
         responses={
             200: OpenApiResponse(
                 response=LessonWriteSerializer,
                 description="Lesson updated.",
-                examples=[OpenApiExample(name="Success", value=_LESSON_EXAMPLE)],
+                examples=[
+                    OpenApiExample(name="Success", value=_LESSON_WRITE_RESPONSE_EXAMPLE)
+                ],
             ),
             400: _DRAFT_ONLY_400,
             423: _MODULE_LOCKED_423,
@@ -383,6 +470,7 @@ class LessonViewSet(ModelViewSet):
         except Module.DoesNotExist as exc:
             raise exceptions.NotFound("Module not found.") from exc
 
+    @transaction.atomic
     def perform_create(self, serializer):
         module = self._get_module()
         if module.course.status != CourseStatus.DRAFT:
@@ -390,12 +478,19 @@ class LessonViewSet(ModelViewSet):
                 "Lessons can only be added while the course is Draft."
             )
         module_lock_service.check_not_locked(module=module, user=self.request.user)
+        requirements = serializer.validated_data.pop("requirements", [])
         lesson = serializer.save(
             module=module, created_by=self.request.user, updated_by=self.request.user
+        )
+        lesson_service.replace_requirements(
+            lesson=lesson,
+            requirements=requirements,
+            actor=self.request.user,
         )
         course_service.recalculate_duration_estimate(course=module.course)
         return lesson
 
+    @transaction.atomic
     def perform_update(self, serializer):
         module = serializer.instance.module
         if module.course.status != CourseStatus.DRAFT:
@@ -403,7 +498,17 @@ class LessonViewSet(ModelViewSet):
                 "Lessons can only be edited while the course is Draft."
             )
         module_lock_service.check_not_locked(module=module, user=self.request.user)
+        requirements_marker = object()
+        requirements = serializer.validated_data.pop(
+            "requirements", requirements_marker
+        )
         lesson = serializer.save(updated_by=self.request.user)
+        if requirements is not requirements_marker:
+            lesson_service.replace_requirements(
+                lesson=lesson,
+                requirements=requirements,
+                actor=self.request.user,
+            )
         course_service.recalculate_duration_estimate(course=module.course)
         return lesson
 

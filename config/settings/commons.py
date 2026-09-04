@@ -122,6 +122,13 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 AUTH_USER_MODEL = "users.User"
 
+# Course generation is provider-selected so domain services never depend on a
+# vendor-specific model identifier. Provider storage is disabled by the adapter.
+COURSE_AI_PROVIDER = config("COURSE_AI_PROVIDER", default="openai")
+OPENAI_API_KEY = config("OPENAI_API_KEY", default="")
+OPENAI_TEXT_MODEL = config("OPENAI_TEXT_MODEL", default="")
+OPENAI_IMAGE_MODEL = config("OPENAI_IMAGE_MODEL", default="")
+
 # Cache
 # Backs DRF's ScopedRateThrottle (see config/settings/drf.py) - a shared
 # cache is required so rate-limit counts stay consistent across gunicorn

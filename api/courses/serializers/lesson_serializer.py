@@ -1,4 +1,4 @@
-from drf_spectacular.utils import extend_schema_field
+from drf_spectacular.utils import extend_schema_field, extend_schema_serializer
 from rest_framework import serializers
 
 from api.courses.enums import LessonContentType
@@ -9,6 +9,13 @@ from api.courses.models import (
     LessonRequirement,
 )
 from api.courses.serializers.assessment_serializer import AssessmentSerializer
+
+
+_LEARNING_OBJECTIVES_HELP_TEXT = (
+    "JSON array of objective strings. Each array item is one complete objective; "
+    "commas and other punctuation inside a string are preserved and do not create "
+    "a new objective or line."
+)
 
 
 class LessonContentBlockSerializer(serializers.ModelSerializer):
@@ -51,9 +58,7 @@ class LessonContentBlockSerializer(serializers.ModelSerializer):
 
         if block_type == "DIVIDER":
             if text or media or quiz:
-                raise serializers.ValidationError(
-                    "A DIVIDER block carries no content."
-                )
+                raise serializers.ValidationError("A DIVIDER block carries no content.")
         elif block_type == "QUIZ":
             if not quiz:
                 raise serializers.ValidationError(
@@ -96,6 +101,14 @@ class LessonImageSerializer(serializers.ModelSerializer):
 class LessonRequirementSerializer(serializers.ModelSerializer):
     """Representation of one requirement line on a lesson."""
 
+    text = serializers.CharField(
+        max_length=500,
+        help_text=(
+            "Lesson requirement text shown in the Figma editor. Internal line "
+            "breaks and punctuation are preserved."
+        ),
+    )
+
     class Meta:
         model = LessonRequirement
         fields = ["id", "lesson", "text", "order"]
@@ -111,13 +124,36 @@ class LessonMiniSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
+@extend_schema_serializer(deprecate_fields=("content_type",))
 class LessonSerializer(serializers.ModelSerializer):
     """Read-only representation of a Lesson, including its assessment if set."""
 
+    lesson_type = serializers.ChoiceField(
+        source="content_type",
+        choices=LessonContentType.choices,
+        read_only=True,
+        help_text="Primary lesson type selected in the builder: VIDEO, QUIZ, or TEXT.",
+    )
+    content_type = serializers.ChoiceField(
+        choices=LessonContentType.choices,
+        read_only=True,
+        help_text=(
+            "Deprecated alias of lesson_type, retained temporarily for existing clients."
+        ),
+    )
     assessment = serializers.SerializerMethodField()
     content_blocks = LessonContentBlockSerializer(many=True, read_only=True)
     images = LessonImageSerializer(many=True, read_only=True)
-    requirements = LessonRequirementSerializer(many=True, read_only=True)
+    learning_objectives = serializers.ListField(
+        child=serializers.CharField(),
+        read_only=True,
+        help_text=_LEARNING_OBJECTIVES_HELP_TEXT,
+    )
+    requirements = LessonRequirementSerializer(
+        many=True,
+        read_only=True,
+        help_text="Lesson requirements shown in the Figma lesson editor.",
+    )
 
     class Meta:
         model = Lesson
@@ -125,6 +161,7 @@ class LessonSerializer(serializers.ModelSerializer):
             "id",
             "title",
             "order",
+            "lesson_type",
             "content_type",
             "script",
             "video_url",
@@ -148,6 +185,7 @@ class LessonSerializer(serializers.ModelSerializer):
         return AssessmentSerializer(assessment).data if assessment else None
 
 
+@extend_schema_serializer(deprecate_fields=("content_type",))
 class LessonWriteSerializer(serializers.ModelSerializer):
     """Create/update serializer for a Lesson.
 
@@ -157,12 +195,45 @@ class LessonWriteSerializer(serializers.ModelSerializer):
     `id` so a client can immediately use it to set the lesson's assessment.
     """
 
+    lesson_type = serializers.ChoiceField(
+        source="content_type",
+        choices=LessonContentType.choices,
+        default=LessonContentType.TEXT,
+        help_text=(
+            "Primary lesson type selected in the builder: VIDEO, QUIZ, or TEXT. "
+            "Defaults to TEXT when omitted by an older client."
+        ),
+    )
+    content_type = serializers.ChoiceField(
+        choices=LessonContentType.choices,
+        required=False,
+        help_text=(
+            "Deprecated alias of lesson_type. When both fields are supplied, their "
+            "values must match."
+        ),
+    )
+    learning_objectives = serializers.ListField(
+        child=serializers.CharField(allow_blank=False, trim_whitespace=True),
+        required=False,
+        help_text=_LEARNING_OBJECTIVES_HELP_TEXT,
+    )
+    requirements = LessonRequirementSerializer(
+        many=True,
+        required=False,
+        help_text=(
+            "Lesson requirements from the Figma editor. When supplied during an "
+            "update, this array replaces the lesson's current requirements; omit "
+            "it to leave them unchanged."
+        ),
+    )
+
     class Meta:
         model = Lesson
         fields = [
             "id",
             "title",
             "order",
+            "lesson_type",
             "content_type",
             "script",
             "video_url",
@@ -170,8 +241,27 @@ class LessonWriteSerializer(serializers.ModelSerializer):
             "video_script_file",
             "learning_objectives",
             "duration_minutes",
+            "requirements",
         ]
         read_only_fields = ["id"]
+
+    def to_internal_value(self, data):
+        lesson_type = data.get("lesson_type", serializers.empty)
+        legacy_content_type = data.get("content_type", serializers.empty)
+        if (
+            lesson_type is not serializers.empty
+            and legacy_content_type is not serializers.empty
+            and lesson_type != legacy_content_type
+        ):
+            raise serializers.ValidationError(
+                {
+                    "lesson_type": (
+                        "lesson_type and deprecated content_type must match when "
+                        "both are supplied."
+                    )
+                }
+            )
+        return super().to_internal_value(data)
 
     def validate_learning_objectives(self, value):
         if not isinstance(value, list) or not all(
@@ -181,6 +271,20 @@ class LessonWriteSerializer(serializers.ModelSerializer):
                 "learning_objectives must be a list of non-empty strings."
             )
         return value
+
+    def validate_requirements(self, value):
+        """Give omitted orders their list position and reject ambiguous ordering."""
+
+        normalized = [
+            {**requirement, "order": requirement.get("order", position)}
+            for position, requirement in enumerate(value, start=1)
+        ]
+        orders = [requirement["order"] for requirement in normalized]
+        if len(orders) != len(set(orders)):
+            raise serializers.ValidationError(
+                "Each lesson requirement must have a distinct order value."
+            )
+        return normalized
 
     def validate(self, attrs):
         """A VIDEO lesson should carry at least one media reference; a QUIZ

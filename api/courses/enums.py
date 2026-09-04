@@ -99,6 +99,35 @@ class MediaSource(models.TextChoices):
     YOUTUBE = "YOUTUBE", "YouTube"
     DROPBOX = "DROPBOX", "Dropbox"
     LINK = "LINK", "Link"
+    AI_GENERATED = "AI_GENERATED", "AI Generated"
+
+
+class AIGenerationKind(models.TextChoices):
+    FULL_COURSE = "FULL_COURSE", "Full course"
+    ASSIST = "ASSIST", "AI assist"
+    THUMBNAIL = "THUMBNAIL", "Thumbnail"
+
+
+class AIGenerationStatus(models.TextChoices):
+    QUEUED = "QUEUED", "Queued"
+    RUNNING = "RUNNING", "Running"
+    STRUCTURE_READY = "STRUCTURE_READY", "Structure ready"
+    COMPLETED = "COMPLETED", "Completed"
+    FAILED = "FAILED", "Failed"
+    CANCELLED = "CANCELLED", "Cancelled"
+
+
+class AIGenerationPhase(models.TextChoices):
+    CREATING_CONTENT = "CREATING_CONTENT", "Creating content"
+    PREPARING_DETAILS = "PREPARING_DETAILS", "Preparing course details"
+
+
+class AIGenerationItemStatus(models.TextChoices):
+    PENDING = "PENDING", "Pending"
+    RUNNING = "RUNNING", "Running"
+    COMPLETED = "COMPLETED", "Completed"
+    FAILED = "FAILED", "Failed"
+    CANCELLED = "CANCELLED", "Cancelled"
 
 
 class AppealStatus(models.TextChoices):

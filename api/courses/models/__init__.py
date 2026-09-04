@@ -1,4 +1,5 @@
 from .assessment import Assessment
+from .ai_generation import AIGenerationItem, AIGenerationJob
 from .course import Course
 from .course_distribution import CourseDistribution
 from .course_appeal import CourseAppeal
@@ -13,6 +14,8 @@ from .published_course_snapshot import PublishedCourseSnapshot
 
 __all__ = [
     "Assessment",
+    "AIGenerationItem",
+    "AIGenerationJob",
     "Course",
     "CourseDistribution",
     "CourseAppeal",

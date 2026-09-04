@@ -78,6 +78,45 @@ client-side. `all_time` runs from the reviewer's first activity; with no
 activity at all you get a single zeroed day, not an empty chart. An
 unknown `period` falls back to `today` rather than erroring.
 
+### Pending, Approved, In Review, and Published
+
+The four sidebar tables have explicit status-safe routes rather than requiring
+the frontend to remember a `status` query parameter:
+
+```
+GET /api/v1/review-queue/pending/
+GET /api/v1/review-queue/approved/
+GET /api/v1/review-queue/in-review/
+GET /api/v1/review-queue/published/
+```
+
+All return the normal `data.paginator` / `data.results` envelope. Their row
+shape includes the Figma bindings: `creator`, `course_title`, `course_id`,
+`category`, `difficulty_level`, `reviewer`, `reviewer_id`, `approved_by`,
+`date_reviewed`, `last_reviewed_at`, `reviewer_note`, `price`, `channels`,
+`channel_summary`, `source_label`, and `date_created`.
+
+Use `GET /api/v1/review-queue/{id}/` for the drawer. In addition to full course
+content it returns `review_information`, `owner_information`, and
+`price_information` exactly as grouped in the designs.
+
+Filters are `search`, `category`, `date_from`, `date_to`; Pending also accepts
+`source_type` and `difficulty_level`, Approved accepts `reviewer`, In Review
+accepts `reviewer` and `difficulty_level`, and Published accepts `approved_by`.
+
+### Approved course pricing and publication
+
+```
+GET/PUT /api/v1/review-queue/{id}/review-prices/
+POST    /api/v1/review-queue/{id}/publish/
+```
+
+The pricing contract covers all three component frames: learner price, MIE
+suggestion and rationale, four pricing models, marketplace fee, promotional
+price, platform revenue, creator payout, and comparable courses. Reviewer and
+Verifier roles can complete this workflow; SoluDesk publishes locally while
+Udemy/Coursera remain `QUEUED` pending their external integrations.
+
 ### Account screen
 
 `GET/PATCH /users/me/` now works for **every role**. It was previously

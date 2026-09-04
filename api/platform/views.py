@@ -354,7 +354,7 @@ class ReviewerOverviewView(APIView):
             "existing clients. The dashboard chart is a separate call to "
             "`/api/v1/reviewer/activity-overview/`."
         ),
-        tags=["Reviewer — Overview"],
+        tags=["Reviewer — Dashboard"],
         responses={
             200: OpenApiResponse(
                 response=ReviewerOverviewSerializer,
@@ -407,7 +407,7 @@ class ReviewerActivityOverviewView(APIView):
             "a single zeroed day rather than an empty series. An unknown "
             "`period` falls back to `today` rather than erroring."
         ),
-        tags=["Reviewer — Overview"],
+        tags=["Reviewer — Dashboard"],
         parameters=[
             OpenApiParameter(
                 name="period",

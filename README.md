@@ -756,8 +756,13 @@ A `debug_task` is included as a lightweight smoke-test task for local setup and 
 Authenticated clients request a presigned PUT from
 `POST /api/v1/uploads/presign/`, upload the raw file directly to the configured
 S3-compatible store using the returned `upload_headers`, and persist
-`file_url` after a successful upload. Public URLs are derived from
-`BUCKET_URL`; no separate CDN setting is required.
+`file_key` after a successful upload. The response's `file_url` is a temporary
+presigned GET URL for immediate playback; request a fresh presigned GET URL
+when the current one expires. No bucket-public access or separate CDN setting
+is required.
+
+To refresh playback access later, call `POST /api/v1/uploads/access/` with the
+stored `file_key`; use the returned `file_url` as the media source.
 
 The endpoint must be browser-accessible over trusted HTTPS. Storage CORS must
 allow the frontend origin, `Content-Type`, and `x-amz-meta-*` on PUT requests,
@@ -823,3 +828,25 @@ celery -A config beat --loglevel=info --schedule /tmp/celerybeat-schedule
 docker compose up --build
 docker compose down
 ```
+# AI course creation
+
+Creator-facing AI generation runs asynchronously through Celery and stores its
+progress in `AIGenerationJob`. Configure `COURSE_AI_PROVIDER`,
+`OPENAI_API_KEY`, `OPENAI_TEXT_MODEL`, and `OPENAI_IMAGE_MODEL`; model names are
+deployment configuration and are not pinned in application code.
+
+Full-course generation follows the two Figma phases exposed on each progress
+item's `phase` field. `CREATING_CONTENT` generates one compact course outline;
+`PREPARING_DETAILS` expands each module in a separate provider request and then
+creates the final assessment separately. This keeps individual responses
+bounded while the creator polls one job and can cancel between requests.
+
+- `POST /api/v1/course-ai-generations/` starts a course draft.
+- `GET` or `DELETE /api/v1/course-ai-generations/{id}/` polls or cancels it.
+- `POST /api/v1/courses/{id}/ai-assists/` drafts a contextual field rewrite;
+  applying remains an explicit creator action.
+- `POST /api/v1/courses/{id}/ai-thumbnail/` creates an opt-in course cover.
+
+AI-generated drafts retain the selected category/topic and are marked
+`AI_GENERATED`. They do not receive creator payouts. A creator must still add
+the preview video and pass the normal quality/submission workflow.

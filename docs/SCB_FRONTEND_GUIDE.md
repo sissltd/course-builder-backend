@@ -103,6 +103,11 @@ images) alongside the existing ones.
   and previews require `duration_seconds`.
 - Send every returned `upload_headers` entry unchanged. Storage CORS must allow
   `Content-Type` and `x-amz-meta-*`; do not add the application auth header.
+- Persist `file_key` as the durable media reference. `file_url` is a temporary
+  presigned GET URL for playback and expires after 10 minutes; the backend can
+  issue a fresh URL from the persisted key when needed.
+- Before later playback, call `POST /api/v1/uploads/access/` with the saved
+  `file_key` and use its returned `file_url`.
 - Course fields `thumbnail_url` and `preview_video_url` are already
   writable on `PATCH /courses/{id}/`. There is also
   `POST /courses/{course_pk}/thumbnail/` if you want the dedicated route.

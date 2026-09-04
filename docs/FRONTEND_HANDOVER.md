@@ -33,7 +33,7 @@ as **decimal strings**, never floats — parse with a decimal library, not
 
 ## Dashboard tiles
 
-**Swagger tag:** `Reviewer — Overview`
+**Swagger tag:** `Reviewer — Dashboard`
 
 ```
 GET /api/v1/reviewer/overview/
@@ -59,7 +59,7 @@ existing clients don't break.
 
 ## Activity Overview chart
 
-**Swagger tag:** `Reviewer — Overview`
+**Swagger tag:** `Reviewer — Dashboard`
 
 ```
 GET /api/v1/reviewer/activity-overview/?period=all_time|today|this_week|this_month
@@ -84,6 +84,44 @@ GET /api/v1/reviewer/activity-overview/?period=all_time|today|this_week|this_mon
   activity gets a single zeroed day, not an empty series.
 - An unknown `period` falls back to `today` rather than erroring.
 - Scoped to the calling reviewer; no parameter widens it.
+
+## Reviewer course tables
+
+| Screen | Endpoint | Swagger tag |
+|---|---|---|
+| Pending | `GET /api/v1/review-queue/pending/` | `Reviewer — Pending Courses` |
+| Approved Courses | `GET /api/v1/review-queue/approved/` | `Reviewer — Approved Courses` |
+| In Review | `GET /api/v1/review-queue/in-review/` | `Reviewer — In Review` |
+| Published Courses | `GET /api/v1/review-queue/published/` | `Reviewer — Published Courses` |
+
+All four are paginated under `data.results` and enforce their own status.
+Rows expose `creator`, `course_title`, `course_id`, `category`,
+`difficulty_level`, `reviewer`, `reviewer_id`, `approved_by`, `date_reviewed`,
+`last_reviewed_at`, `reviewer_note`, `price`, `channels`, `channel_summary`,
+`source_label`, and `date_created`.
+
+Filters:
+
+- Every screen: `search`, `category`, `date_from`, `date_to`, `page`, `size`
+- Pending: `source_type`, `difficulty_level`
+- Approved: `reviewer`
+- In Review: `reviewer`, `difficulty_level`
+- Published: `approved_by`
+
+`GET /api/v1/review-queue/{id}/` supplies the drawer blocks
+`review_information`, `owner_information`, and `price_information`.
+
+The Approved Courses publish flow uses:
+
+```
+GET/PUT /api/v1/review-queue/{id}/review-prices/
+POST    /api/v1/review-queue/{id}/publish/
+```
+
+Pricing fields match the supplied SoluDesk, Coursera, and Udemy frames:
+`learner_price`, `mie_suggestion`, `model`, `course_fee_percent`,
+`promotional_pricing`, `platform_revenue_per_enrollment`, `mie_explanation`,
+`comparable_courses`, and read-only `creator_payout_fixed`.
 
 ## Settings → Account
 

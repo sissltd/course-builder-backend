@@ -1,3 +1,7 @@
+from uuid import uuid4
+
+from django.test import SimpleTestCase
+from drf_spectacular.generators import SchemaGenerator
 from rest_framework import status
 from rest_framework.test import APITestCase
 
@@ -13,6 +17,41 @@ from api.courses.models import (
 from api.courses.tests.factories import make_draft_course, make_user
 from api.quizzes.models import Quiz
 from api.users.enums import UserRole
+
+
+class LessonOpenApiContractTests(SimpleTestCase):
+    def test_create_lesson_schema_exposes_all_figma_lesson_types(self):
+        schema = SchemaGenerator().get_schema(request=None, public=True)
+        operation = schema["paths"][
+            "/api/v1/courses/{course_pk}/modules/{module_pk}/lessons/"
+        ]["post"]
+        json_body = operation["requestBody"]["content"]["application/json"]
+        component_name = json_body["schema"]["$ref"].rsplit("/", maxsplit=1)[-1]
+
+        self.assertIn(
+            "lesson_type",
+            schema["components"]["schemas"][component_name]["properties"],
+        )
+        self.assertIn(
+            "content_type",
+            schema["components"]["schemas"][component_name]["properties"],
+        )
+        self.assertIn(
+            "requirements",
+            schema["components"]["schemas"][component_name]["properties"],
+        )
+        self.assertTrue(
+            schema["components"]["schemas"][component_name]["properties"][
+                "content_type"
+            ]["deprecated"]
+        )
+        self.assertEqual(
+            {
+                example["value"]["lesson_type"]
+                for example in json_body["examples"].values()
+            },
+            {"VIDEO", "QUIZ", "TEXT"},
+        )
 
 
 class LessonSubResourceApiTests(APITestCase):
@@ -127,9 +166,7 @@ class LessonSubResourceApiTests(APITestCase):
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertTrue(
-            LessonImage.objects.filter(caption="A diagram").exists()
-        )
+        self.assertTrue(LessonImage.objects.filter(caption="A diagram").exists())
 
     # --- requirements -----------------------------------------------------
 
@@ -150,7 +187,10 @@ class LessonSubResourceApiTests(APITestCase):
 
 class LessonNewFieldsApiTests(APITestCase):
     def setUp(self):
-        self.creator = make_user(role=UserRole.COURSE_CREATOR)
+        self.creator = make_user(
+            email=f"lesson-builder-{uuid4()}@example.com",
+            role=UserRole.COURSE_CREATOR,
+        )
         self.course = make_draft_course(creator=self.creator)
         self.module = self.course.modules.create(title="M1", order=1)
         self.lesson_base = (
@@ -171,10 +211,96 @@ class LessonNewFieldsApiTests(APITestCase):
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["lesson_type"], "VIDEO")
         self.assertEqual(response.data["content_type"], "VIDEO")
         lesson = Lesson.objects.get(id=response.data["id"])
         self.assertEqual(lesson.content_type, LessonContentType.VIDEO)
         self.assertEqual(lesson.embedded_link, "https://vimeo.com/123456")
+
+    def test_figma_text_and_quiz_lesson_types_round_trip(self):
+        self.client.force_authenticate(self.creator)
+
+        for order, lesson_type in enumerate(("TEXT", "QUIZ"), start=1):
+            with self.subTest(lesson_type=lesson_type):
+                response = self.client.post(
+                    self.lesson_base,
+                    {
+                        "title": f"{lesson_type.title()} lesson",
+                        "order": order,
+                        "lesson_type": lesson_type,
+                        "duration_minutes": 10,
+                    },
+                    format="json",
+                )
+
+                self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+                self.assertEqual(response.data["lesson_type"], lesson_type)
+                self.assertEqual(response.data["content_type"], lesson_type)
+
+                detail_response = self.client.get(
+                    f"{self.lesson_base}{response.data['id']}/"
+                )
+                self.assertEqual(detail_response.status_code, status.HTTP_200_OK)
+                self.assertEqual(detail_response.data["lesson_type"], lesson_type)
+                self.assertEqual(detail_response.data["content_type"], lesson_type)
+
+    def test_legacy_lesson_without_type_defaults_to_text(self):
+        self.client.force_authenticate(self.creator)
+        response = self.client.post(
+            self.lesson_base,
+            {"title": "Legacy text lesson", "order": 1},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["lesson_type"], LessonContentType.TEXT)
+        self.assertEqual(response.data["content_type"], LessonContentType.TEXT)
+
+    def test_invalid_lesson_type_is_rejected(self):
+        self.client.force_authenticate(self.creator)
+        response = self.client.post(
+            self.lesson_base,
+            {
+                "title": "Unsupported lesson",
+                "order": 1,
+                "lesson_type": "AUDIO",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["errors"][0]["field_name"], "lesson_type")
+
+    def test_conflicting_lesson_type_aliases_are_rejected(self):
+        self.client.force_authenticate(self.creator)
+        response = self.client.post(
+            self.lesson_base,
+            {
+                "title": "Conflicting lesson",
+                "order": 1,
+                "lesson_type": "TEXT",
+                "content_type": "QUIZ",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["errors"][0]["field_name"], "lesson_type")
+
+    def test_patch_lesson_type_uses_canonical_field(self):
+        lesson = self.module.lessons.create(title="Text lesson", order=1)
+        self.client.force_authenticate(self.creator)
+        response = self.client.patch(
+            f"{self.lesson_base}{lesson.id}/",
+            {"lesson_type": "QUIZ"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["lesson_type"], LessonContentType.QUIZ)
+        self.assertEqual(response.data["content_type"], LessonContentType.QUIZ)
+        lesson.refresh_from_db()
+        self.assertEqual(lesson.content_type, LessonContentType.QUIZ)
 
     def test_video_lesson_without_media_rejected(self):
         self.client.force_authenticate(self.creator)
@@ -183,12 +309,82 @@ class LessonNewFieldsApiTests(APITestCase):
             {
                 "title": "Broken video lesson",
                 "order": 1,
-                "content_type": "VIDEO",
+                "lesson_type": "VIDEO",
                 "duration_minutes": 10,
             },
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_create_lesson_includes_figma_requirements(self):
+        self.client.force_authenticate(self.creator)
+        response = self.client.post(
+            self.lesson_base,
+            {
+                "title": "Required knowledge",
+                "order": 1,
+                "lesson_type": "TEXT",
+                "requirements": [
+                    {"text": "Install Python 3", "order": 2},
+                    {"text": "Know basic computer concepts", "order": 1},
+                ],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(
+            [item["text"] for item in response.data["requirements"]],
+            ["Know basic computer concepts", "Install Python 3"],
+        )
+        lesson = Lesson.objects.get(id=response.data["id"])
+        self.assertEqual(lesson.requirements.count(), 2)
+
+    def test_patch_requirements_replaces_them_and_omission_preserves_them(self):
+        lesson = self.module.lessons.create(title="Text lesson", order=1)
+        lesson.requirements.create(text="Old requirement", order=1)
+        self.client.force_authenticate(self.creator)
+
+        response = self.client.patch(
+            f"{self.lesson_base}{lesson.id}/",
+            {"title": "Renamed lesson"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(lesson.requirements.count(), 1)
+
+        response = self.client.patch(
+            f"{self.lesson_base}{lesson.id}/",
+            {"requirements": [{"text": "New requirement"}]},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            [item["text"] for item in response.data["requirements"]],
+            ["New requirement"],
+        )
+        self.assertEqual(list(lesson.requirements.values_list("order", flat=True)), [1])
+
+    def test_learning_objective_commas_are_preserved_in_one_array_item(self):
+        objective = "Compare variables, constants, and scope"
+        self.client.force_authenticate(self.creator)
+        response = self.client.post(
+            self.lesson_base,
+            {
+                "title": "Python names",
+                "order": 1,
+                "lesson_type": "TEXT",
+                "learning_objectives": [objective],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["learning_objectives"], [objective])
+
+        detail_response = self.client.get(f"{self.lesson_base}{response.data['id']}/")
+        self.assertEqual(detail_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(detail_response.data["learning_objectives"], [objective])
 
     def test_lesson_read_includes_sub_resources(self):
         lesson = self.module.lessons.create(
