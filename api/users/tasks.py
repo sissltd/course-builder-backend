@@ -10,7 +10,7 @@ from django.utils import timezone
 
 from api.sissl_verification.services.sissl_service import SISSLServices
 from api.users.enums import KYCDocumentType
-from api.users.services.kyc_identity_service import persist_sissl_identity
+from api.users.services.kyc_identity_service import persist_kyc_identity
 from core.models import KYCOutboxEvent
 
 logger = logging.getLogger(__name__)
@@ -43,7 +43,7 @@ def call_sissl_kyc_verification(self, event_id):
             case KYCDocumentType.NATIONAL_ID.value:
                 try:
                     data = SISSLServices.nin_lookup(kyc_request.user, id_number, kyc_request=kyc_request)
-                    persist_sissl_identity(kyc_request.user, data)
+                    persist_kyc_identity(kyc_request.user, data)
                 except Exception as exc:
                     logger.error(
                         f"[users.call_sissl_kyc_verification] NIN lookup failed for user {kyc_request.user.id}: {exc}"
@@ -52,7 +52,7 @@ def call_sissl_kyc_verification(self, event_id):
             case KYCDocumentType.BVN.value:
                 try:
                     data = SISSLServices.bvn_lookup(kyc_request.user, id_number)
-                    persist_sissl_identity(kyc_request.user, data)
+                    persist_kyc_identity(kyc_request.user, data)
                 except Exception as exc:
                     logger.error(
                         f"[users.call_sissl_kyc_verification] BVN lookup failed for user {kyc_request.user.id}: {exc}"

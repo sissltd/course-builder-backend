@@ -65,24 +65,31 @@ class KYCVerification(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
     reviewed_at = models.DateTimeField(
         verbose_name=_("Reviewed At"), null=True, blank=True
     )
-    sissl_status = models.CharField(
-        verbose_name=_("SISSL Status"),
+    kyc_request_status = models.CharField(
+        verbose_name=_("KYC Request Status"),
         max_length=20,
         blank=True,
         default="",
-        help_text=_("Status returned by SISSL for this submission."),
+        help_text=_("Status returned by the KYC request for this submission."),
     )
-    sissl_request_summary = models.JSONField(
-        verbose_name=_("SISSL Request Summary"),
+    kyc_request_summary = models.JSONField(
+        verbose_name=_("KYC Request Summary"),
         blank=True,
         null=True,
-        help_text=_("Summary of the request sent to SISSL for this submission."),
+        help_text=_("Summary of the request sent to KYC provider for this submission."),
     )
-    sissl_response_summary = models.JSONField(
-        verbose_name=_("SISSL Response Summary"),
+    kyc_response_summary = models.JSONField(
+        verbose_name=_("KYC Response Summary"),
         blank=True,
         null=True,
-        help_text=_("Summary of the response received from SISSL for this submission."),
+        help_text=_("Summary of the response received from the KYC provider for this submission."),
+    )
+    kyc_provider = models.CharField(
+        verbose_name=_("KYC Provider"),
+        max_length=100,
+        blank=True,
+        default="",
+        help_text=_("The KYC provider used for this submission."),
     )
 
     class Meta:

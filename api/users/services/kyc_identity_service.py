@@ -71,14 +71,14 @@ def apply_kyc_document_photo(user_id, image_value):
         user = User.objects.filter(id=user_id).first()
         if user is None:
             return
-        user.sissl_document_image = image_key
-        user.save(update_fields=["sissl_document_image", "updated_datetime"])
+        user.kyc_document_image = image_key
+        user.save(update_fields=["kyc_document_image", "updated_datetime"])
     except Exception:
         logger.exception("[<>KYCIdentity<>] apply_kyc_document_photo failed for user %s", user_id)
 
 
-def persist_sissl_identity(user, raw):
-    """Persist the SISSL-verified identity onto ``user.profile`` and mark the user
+def persist_kyc_identity(user, raw):
+    """Persist the KYC-verified identity onto ``user.profile`` and mark the user
     submitted for KYC review. Idempotent and non-raising."""
     try:
         if not isinstance(raw, dict):
@@ -88,23 +88,23 @@ def persist_sissl_identity(user, raw):
 
         first = _first_present(raw, "firstName", "first_name")
         if first:
-            user.sissl_first_name = first
-            update_fields.append("sissl_first_name")
+            user.kyc_first_name = first
+            update_fields.append("kyc_first_name")
 
         last = _first_present(raw, "lastName", "last_name")
         if last:
-            user.sissl_last_name = last
-            update_fields.append("sissl_last_name")
+            user.kyc_last_name = last
+            update_fields.append("kyc_last_name")
 
         gender = _first_present(raw, "gender")
         if gender:
-            user.sissl_gender = gender
-            update_fields.append("sissl_gender")
+            user.kyc_gender = gender
+            update_fields.append("kyc_gender")
 
         dob = _first_present(raw, *_DOB_KEYS)
         if dob:
-            user.sissl_date_of_birth = dob
-            update_fields.append("sissl_date_of_birth")
+            user.kyc_date_of_birth = dob
+            update_fields.append("kyc_date_of_birth")
 
         if update_fields:
             update_fields.append("updated_datetime")
@@ -119,12 +119,14 @@ def persist_sissl_identity(user, raw):
 
 def update_sissl_response(kyc_request, status, request_summary, response_summary):
     """
-    Updates the KYC request with the SISSL response data.
+    Updates the KYC request with the SISSL/YOUVERIFY response data.
     """
     try:
-        kyc_request.sissl_status = status
-        kyc_request.sissl_request_summary = request_summary
-        kyc_request.sissl_response_summary = response_summary
-        kyc_request.save(update_fields=["sissl_status", "sissl_request_summary", "sissl_response_summary", "updated_datetime"])
+        kyc_request.kyc_request_status = status
+        kyc_request.kyc_request_summary = request_summary
+        kyc_request.kyc_response_summary = response_summary
+        kyc_request.save(
+            update_fields=["kyc_request_status", "kyc_request_summary", "kyc_response_summary", "updated_datetime"]
+        )
     except Exception:
-        logger.exception("[<>KYCIdentity<>] update_sissl_response failed for KYC request %s", kyc_request.id)
+        logger.exception("[<>KYCIdentity<>] update_kyc_response failed for KYC request %s", kyc_request.id)
