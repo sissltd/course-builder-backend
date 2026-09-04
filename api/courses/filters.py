@@ -5,6 +5,7 @@ from api.catalog.enums import TrackPreference
 from api.courses.enums import CourseSourceType
 from api.courses.models import Course
 from api.reviews.enums import ReviewStage
+from api.reviews.enums import ReviewActionType
 from api.users.enums import QueueTrackFilter
 
 
@@ -62,9 +63,8 @@ class CourseReviewQueueFilter(django_filters.FilterSet):
         label="Track",
     )
     difficulty_level = django_filters.CharFilter(field_name="difficulty_level")
-    reviewer = django_filters.UUIDFilter(
-        field_name="review_assignments__reviewer_id", distinct=True
-    )
+    reviewer = django_filters.UUIDFilter(method="filter_reviewer")
+    approved_by = django_filters.UUIDFilter(method="filter_approved_by")
     date_from = django_filters.DateFilter(method="filter_date_from")
     date_to = django_filters.DateFilter(method="filter_date_to")
 
@@ -78,12 +78,32 @@ class CourseReviewQueueFilter(django_filters.FilterSet):
 
     def filter_date_from(self, queryset, name, value):
         return queryset.filter(
-            Q(submitted_at__date__gte=value) | Q(approved_at__date__gte=value)
+            Q(submitted_at__date__gte=value)
+            | Q(approved_at__date__gte=value)
+            | Q(published_at__date__gte=value)
         ).distinct()
 
     def filter_date_to(self, queryset, name, value):
         return queryset.filter(
-            Q(submitted_at__date__lte=value) | Q(approved_at__date__lte=value)
+            Q(submitted_at__date__lte=value)
+            | Q(approved_at__date__lte=value)
+            | Q(published_at__date__lte=value)
+        ).distinct()
+
+    def filter_reviewer(self, queryset, name, value):
+        """Match the assigned reviewer or a reviewer who recorded a decision."""
+
+        return queryset.filter(
+            Q(review_assignments__reviewer_id=value)
+            | Q(review_actions__reviewer_id=value)
+        ).distinct()
+
+    def filter_approved_by(self, queryset, name, value):
+        """Match the reviewer behind an approval decision."""
+
+        return queryset.filter(
+            review_actions__reviewer_id=value,
+            review_actions__action=ReviewActionType.APPROVE,
         ).distinct()
 
     def filter_track(self, queryset, name, value):

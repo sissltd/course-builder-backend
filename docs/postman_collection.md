@@ -697,7 +697,9 @@ Nested under a course's module. Same Draft-only rule as Modules.
 `GET {{base_url}}/api/v1/courses/{{course_id}}/modules/{{module_id}}/lessons/`
 
 **200 OK** — paginated envelope; each result is the full read shape (`id`,
-`title`, `order`, `script`, `learning_objectives`, `duration_minutes`, `assessment`).
+`title`, `order`, `lesson_type`, deprecated `content_type`, `script`, `video_url`, `embedded_link`,
+`video_script_file`, `learning_objectives`, `duration_minutes`, `assessment`,
+`content_blocks`, `images`, `requirements`).
 
 ### Create Lesson
 `POST {{base_url}}/api/v1/courses/{{course_id}}/modules/{{module_id}}/lessons/`
@@ -707,7 +709,11 @@ Nested under a course's module. Same Draft-only rule as Modules.
 {
   "title": "Installing Python and Your First Script",
   "order": 1,
+  "lesson_type": "VIDEO",
   "script": "Welcome to this lesson... (500-1500 words required at submit time)",
+  "video_url": "https://cdn.example.com/lessons/installing-python.mp4",
+  "embedded_link": "",
+  "video_script_file": "uploads/lessons/installing-python.srt",
   "learning_objectives": [
     "Install Python 3 and a code editor",
     "Run a first script from the command line"
@@ -722,13 +728,31 @@ Nested under a course's module. Same Draft-only rule as Modules.
   "id": "l1...",
   "title": "Installing Python and Your First Script",
   "order": 1,
+  "lesson_type": "VIDEO",
+  "content_type": "VIDEO",
   "script": "Welcome to this lesson...",
+  "video_url": "https://cdn.example.com/lessons/installing-python.mp4",
+  "embedded_link": "",
+  "video_script_file": "uploads/lessons/installing-python.srt",
   "learning_objectives": ["Install Python 3 and a code editor", "Run a first script from the command line"],
   "duration_minutes": 20
 }
 ```
 *(Write-serializer shape again — `assessment` isn't included; `GET`/retrieve
 the lesson to see it once you've added one.)*
+
+`lesson_type` matches the three **Add lesson** choices in the Figma builder:
+
+- `VIDEO` — requires either `video_url` or `embedded_link`.
+- `QUIZ` — create the lesson first, then attach its questions through the
+  lesson assessment endpoint using the returned lesson `id`.
+- `TEXT` — written lesson content; this is also the backwards-compatible
+  default when an older client omits the type.
+
+`content_type` is a deprecated read/write alias retained temporarily for existing
+clients. New integrations should send and read `lesson_type`. Responses include
+both fields during the transition, and requests containing different values for
+the two aliases return 400.
 
 ### Retrieve / Update / Delete Lesson
 `GET|PUT|PATCH|DELETE {{base_url}}/api/v1/courses/{{course_id}}/modules/{{module_id}}/lessons/{{lesson_id}}/`

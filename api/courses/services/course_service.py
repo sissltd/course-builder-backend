@@ -236,7 +236,7 @@ def submit_course(*, course: Course, actor: User) -> Course:
             else (
                 course.topic.creator_price
                 if course.topic_id
-                else course.category.creator_price
+                else course.category.price_for(course.difficulty_level)
             )
         )
         course.status = CourseStatus.SUBMITTED
@@ -391,17 +391,21 @@ def publish_course(
     actor: User,
     distribution_channels: list[dict] | None = None,
 ) -> Course:
-    """Transition an Approved course to Published (Admin-only, enforced by view
-    permission), recording a PublishedCourseSnapshot under the canonical
-    CourseVersion label (SCCS PRD Section 15). No external LMS push -
-    deferred until LMS integration exists.
+    """Transition an Approved course to Published for a reviewer or admin.
+
+    Records a PublishedCourseSnapshot under the canonical CourseVersion
+    label (SCCS PRD Section 15). No external LMS push is attempted; that is
+    deferred until each marketplace integration exists.
 
     There is no re-edit-after-publish workflow yet (publishing is one-way,
     no unpublish action), so this only ever creates a single snapshot per
     course today - see CourseVersion's docstring.
     """
 
-    require_role(actor, IsAdminRole.allowed_roles)
+    require_role(
+        actor,
+        IsCreatorReviewerRole.allowed_roles + IsAdminRole.allowed_roles,
+    )
     if course.status != CourseStatus.APPROVED:
         raise exceptions.ValidationError(
             f"Course cannot be published from status '{course.status}'."
@@ -500,11 +504,13 @@ def get_review_queue(
     statuses = status_in or [CourseStatus.SUBMITTED, CourseStatus.IN_REVIEW]
     queryset = (
         Course.objects.filter(status__in=statuses)
-        .select_related("category", "creator")
+        .select_related("category", "topic", "creator")
         .prefetch_related(
             "review_assignments__reviewer",
+            "review_actions__reviewer",
             "quality_check_runs",
             "quality_findings",
+            "distribution_channels",
         )
     )
 

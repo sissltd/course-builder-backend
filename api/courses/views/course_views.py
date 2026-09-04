@@ -1,10 +1,13 @@
 from django_filters.rest_framework import DjangoFilterBackend
 from drf_spectacular.utils import (
     OpenApiExample,
+    OpenApiParameter,
     OpenApiResponse,
+    OpenApiTypes,
     extend_schema,
     extend_schema_view,
 )
+from rest_framework import exceptions
 from rest_framework import filters as drf_filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -32,6 +35,8 @@ from api.courses.serializers import (
     ReviewCommentCreateSerializer,
     ReviewCommentSerializer,
     ReviewRejectSerializer,
+    ReviewerCourseDetailSerializer,
+    ReviewerCourseListSerializer,
 )
 from api.courses.services import course_preview_service, course_service
 from api.reviews.serializers import ReviewActionSerializer
@@ -189,6 +194,79 @@ _REVIEW_PRICE_RESPONSE_EXAMPLE = {
     "published_at": None,
 }
 
+_REVIEWER_SCREEN_STATUSES = {
+    "pending": CourseStatus.SUBMITTED,
+    "in_review": CourseStatus.IN_REVIEW,
+    "approved": CourseStatus.APPROVED,
+    "published": CourseStatus.PUBLISHED,
+}
+
+_REVIEWER_SEARCH_PARAMETER = OpenApiParameter(
+    name="search",
+    type=str,
+    required=False,
+    description="Search by course title, course UUID, or creator name/email.",
+)
+_REVIEWER_CATEGORY_PARAMETER = OpenApiParameter(
+    name="category",
+    type=OpenApiTypes.UUID,
+    required=False,
+    description="Return courses in this category UUID.",
+)
+_REVIEWER_DIFFICULTY_PARAMETER = OpenApiParameter(
+    name="difficulty_level",
+    type=str,
+    enum=["BEGINNER", "INTERMEDIATE", "ADVANCED"],
+    required=False,
+    description="Return courses at this difficulty level.",
+)
+_REVIEWER_REVIEWER_PARAMETER = OpenApiParameter(
+    name="reviewer",
+    type=OpenApiTypes.UUID,
+    required=False,
+    description="Match an assigned reviewer or reviewer who recorded a decision.",
+)
+_REVIEWER_APPROVED_BY_PARAMETER = OpenApiParameter(
+    name="approved_by",
+    type=OpenApiTypes.UUID,
+    required=False,
+    description="Return courses approved by this reviewer UUID.",
+)
+_REVIEWER_DATE_FROM_PARAMETER = OpenApiParameter(
+    name="date_from",
+    type=OpenApiTypes.DATE,
+    required=False,
+    description="Inclusive earliest submitted, approved, or published date.",
+)
+_REVIEWER_DATE_TO_PARAMETER = OpenApiParameter(
+    name="date_to",
+    type=OpenApiTypes.DATE,
+    required=False,
+    description="Inclusive latest submitted, approved, or published date.",
+)
+_REVIEWER_SOURCE_PARAMETER = OpenApiParameter(
+    name="source_type",
+    type=str,
+    enum=["CREATOR_UPLOADED", "AI_GENERATED", "DEVELOPER_API"],
+    required=False,
+    description=(
+        "Select the Pending tab: CREATOR_UPLOADED for Creators or "
+        "AI_GENERATED for Created with AI."
+    ),
+)
+_REVIEWER_PAGE_PARAMETER = OpenApiParameter(
+    name="page",
+    type=int,
+    required=False,
+    description="One-based results page. Defaults to 1.",
+)
+_REVIEWER_SIZE_PARAMETER = OpenApiParameter(
+    name="size",
+    type=int,
+    required=False,
+    description="Rows per page. Defaults to the platform page size.",
+)
+
 _REVIEW_ACTION_EXAMPLE = {
     "id": "9a1c3e5f-2b4d-4a6e-8f0c-3d5e7a9b1c2d",
     "course": "3f9a2e11-6b7c-4d2a-9e5f-1c8d4a7b2f30",
@@ -230,7 +308,7 @@ _AUTH_LINE_COURSE = (
         tags=["Creator — Courses"],
         responses={
             200: OpenApiResponse(
-                response=CourseListSerializer(many=True),
+                response=ReviewerCourseListSerializer(many=True),
                 description="Courses, most recently created first.",
                 examples=[OpenApiExample(name="Success", value=[_COURSE_LIST_EXAMPLE])],
             ),
@@ -254,7 +332,7 @@ _AUTH_LINE_COURSE = (
         tags=["Creator — Courses"],
         responses={
             200: OpenApiResponse(
-                response=CourseDetailSerializer,
+                response=ReviewerCourseDetailSerializer,
                 description="The requested course.",
                 examples=[OpenApiExample(name="Success", value=_COURSE_DETAIL_EXAMPLE)],
             ),
@@ -952,9 +1030,7 @@ class CourseViewSet(ModelViewSet):
                     f"/preview?token={token}"
                 ),
                 "expires_at": expires_at,
-                "expires_in": int(
-                    course_preview_service.PREVIEW_TTL.total_seconds()
-                ),
+                "expires_in": int(course_preview_service.PREVIEW_TTL.total_seconds()),
             }
         )
 
@@ -1066,7 +1142,7 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
     def get_queryset(self):
         if getattr(self, "swagger_fake_view", False):
             return Course.objects.none()
-        if self.action == "list":
+        if self.action == "list" or self.action in _REVIEWER_SCREEN_STATUSES:
             # An explicit ?ordering=/?track= query param always wins over the
             # reviewer's stored preference for that one axis - each is
             # checked independently so overriding one doesn't disable the
@@ -1084,19 +1160,35 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
                     sort_order = preference.default_sort_order
                 if "track" not in self.request.query_params:
                     track_filter = preference.effective_track_filter
-            return course_service.get_review_queue(
-                status_in=[
+            screen_status = _REVIEWER_SCREEN_STATUSES.get(self.action)
+            statuses = (
+                [screen_status]
+                if screen_status
+                else [
                     CourseStatus.SUBMITTED,
                     CourseStatus.IN_REVIEW,
                     CourseStatus.QA_VERIFICATION,
                     CourseStatus.APPROVED,
                     CourseStatus.PUBLISHED,
-                ],
+                ]
+            )
+            queryset = course_service.get_review_queue(
+                status_in=statuses,
                 sort_order=sort_order,
                 track_filter=track_filter,
                 sla_user=self.request.user,
             )
-        return Course.objects.select_related("category", "creator").prefetch_related(
+            if "ordering" not in self.request.query_params:
+                if self.action == "approved":
+                    return queryset.order_by("-approved_at")
+                if self.action == "published":
+                    return queryset.order_by("-published_at")
+                if self.action == "in_review":
+                    return queryset.order_by("-submitted_at")
+            return queryset
+        return Course.objects.select_related(
+            "category", "topic", "creator", "version"
+        ).prefetch_related(
             "modules__lessons__assessment",
             "modules__assessment",
             "final_assessment",
@@ -1105,12 +1197,14 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
             "quality_check_runs__findings",
             "quality_findings",
             "review_assignments__reviewer",
+            "review_actions__reviewer",
             "review_comments__reviewer",
+            "distribution_channels",
         )
 
     def get_serializer_class(self):
-        if self.action == "list":
-            return CourseListSerializer
+        if self.action == "list" or self.action in _REVIEWER_SCREEN_STATUSES:
+            return ReviewerCourseListSerializer
         if self.action in {"approve", "content_approve"}:
             return ReviewApproveSerializer
         if self.action in {"reject", "content_reject"}:
@@ -1121,12 +1215,325 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
             return QARejectSerializer
         if self.action == "comments":
             return ReviewCommentCreateSerializer
-        return CourseDetailSerializer
+        return ReviewerCourseDetailSerializer
 
     def get_permissions(self):
         if self.action in {"qa_claim", "qa_approve", "qa_reject"}:
             return [(IsQaReviewerRole | IsAdminRole)()]
+        if self.action in {"review_prices", "publish"}:
+            return [(IsCreatorReviewerRole | IsAdminRole)()]
         return [permission() for permission in self.permission_classes]
+
+    def _list_current_screen(self, request):
+        queryset = self.filter_queryset(self.get_queryset())
+        page = self.paginate_queryset(queryset)
+        serializer = ReviewerCourseListSerializer(
+            page if page is not None else queryset,
+            many=True,
+            context=self.get_serializer_context(),
+        )
+        if page is not None:
+            return self.get_paginated_response(serializer.data)
+        return Response(serializer.data)
+
+    @extend_schema(
+        summary="List pending reviewer courses",
+        description=(
+            "Returns only Submitted courses for the Pending table. The source "
+            "filter drives the Creators and Created with AI tabs shown in the design.\n\n"
+            "Called when the reviewer opens Pending or changes a table filter.\n\n"
+            "**Auth:** Creator Reviewer, QA Reviewer, Verifier, or Admin.\n\n"
+            "**Prerequisites:** None beyond holding one of those roles.\n\n"
+            "**Important:** This route always enforces `SUBMITTED`; a supplied "
+            "status cannot widen it. Rows are paginated under `data.results`."
+        ),
+        tags=["Reviewer — Pending Courses"],
+        parameters=[
+            _REVIEWER_SEARCH_PARAMETER,
+            _REVIEWER_CATEGORY_PARAMETER,
+            _REVIEWER_DIFFICULTY_PARAMETER,
+            _REVIEWER_SOURCE_PARAMETER,
+            _REVIEWER_DATE_FROM_PARAMETER,
+            _REVIEWER_DATE_TO_PARAMETER,
+            _REVIEWER_PAGE_PARAMETER,
+            _REVIEWER_SIZE_PARAMETER,
+        ],
+        responses={
+            200: OpenApiResponse(
+                response=ReviewerCourseListSerializer(many=True),
+                description="Submitted courses matching the selected Pending tab.",
+                examples=[OpenApiExample(name="Success", value=[_COURSE_LIST_EXAMPLE])],
+            ),
+            **STANDARD_ERROR_RESPONSES["validation"],
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
+    @action(detail=False, methods=["get"], url_path="pending")
+    def pending(self, request):
+        return self._list_current_screen(request)
+
+    @extend_schema(
+        summary="List approved reviewer courses",
+        description=(
+            "Returns only Approved courses for the Approved Courses table, including "
+            "the reviewer, review timestamp, reviewer note, and course drawer fields.\n\n"
+            "Called when the reviewer opens Approved Courses or changes a filter.\n\n"
+            "**Auth:** Creator Reviewer, QA Reviewer, Verifier, or Admin.\n\n"
+            "**Prerequisites:** None beyond holding one of those roles.\n\n"
+            "**Important:** Results default to newest approval first. Use the course "
+            "detail, review-prices, and publish routes for the drawer workflow."
+        ),
+        tags=["Reviewer — Approved Courses"],
+        parameters=[
+            _REVIEWER_SEARCH_PARAMETER,
+            _REVIEWER_CATEGORY_PARAMETER,
+            _REVIEWER_REVIEWER_PARAMETER,
+            _REVIEWER_DATE_FROM_PARAMETER,
+            _REVIEWER_DATE_TO_PARAMETER,
+            _REVIEWER_PAGE_PARAMETER,
+            _REVIEWER_SIZE_PARAMETER,
+        ],
+        responses={
+            200: OpenApiResponse(
+                response=ReviewerCourseListSerializer(many=True),
+                description="Approved courses matching the table filters.",
+                examples=[OpenApiExample(name="Success", value=[_COURSE_LIST_EXAMPLE])],
+            ),
+            **STANDARD_ERROR_RESPONSES["validation"],
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
+    @action(detail=False, methods=["get"], url_path="approved")
+    def approved(self, request):
+        return self._list_current_screen(request)
+
+    @extend_schema(
+        summary="List courses currently in review",
+        description=(
+            "Returns only In Review courses with assigned reviewer and last-reviewed "
+            "metadata for the In Review table and information drawer.\n\n"
+            "Called when the reviewer opens In Review or changes a table filter.\n\n"
+            "**Auth:** Creator Reviewer, QA Reviewer, Verifier, or Admin.\n\n"
+            "**Prerequisites:** None beyond holding one of those roles.\n\n"
+            "**Important:** Results default to most recently submitted first and "
+            "remain fixed to `IN_REVIEW`."
+        ),
+        tags=["Reviewer — In Review"],
+        parameters=[
+            _REVIEWER_SEARCH_PARAMETER,
+            _REVIEWER_CATEGORY_PARAMETER,
+            _REVIEWER_DIFFICULTY_PARAMETER,
+            _REVIEWER_REVIEWER_PARAMETER,
+            _REVIEWER_DATE_FROM_PARAMETER,
+            _REVIEWER_DATE_TO_PARAMETER,
+            _REVIEWER_PAGE_PARAMETER,
+            _REVIEWER_SIZE_PARAMETER,
+        ],
+        responses={
+            200: OpenApiResponse(
+                response=ReviewerCourseListSerializer(many=True),
+                description="In-review courses matching the table filters.",
+                examples=[OpenApiExample(name="Success", value=[_COURSE_LIST_EXAMPLE])],
+            ),
+            **STANDARD_ERROR_RESPONSES["validation"],
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
+    @action(detail=False, methods=["get"], url_path="in-review")
+    def in_review(self, request):
+        return self._list_current_screen(request)
+
+    @extend_schema(
+        summary="List published reviewer courses",
+        description=(
+            "Returns only Published courses with creator price, destination channels, "
+            "approver, source, owner, and per-channel drawer data.\n\n"
+            "Called when the reviewer opens Published Courses or changes a filter.\n\n"
+            "**Auth:** Creator Reviewer, QA Reviewer, Verifier, or Admin.\n\n"
+            "**Prerequisites:** None beyond holding one of those roles.\n\n"
+            "**Important:** Results default to newest publication first. Marketplace "
+            "channel status can remain Queued after the local course is Published."
+        ),
+        tags=["Reviewer — Published Courses"],
+        parameters=[
+            _REVIEWER_SEARCH_PARAMETER,
+            _REVIEWER_CATEGORY_PARAMETER,
+            _REVIEWER_APPROVED_BY_PARAMETER,
+            _REVIEWER_DATE_FROM_PARAMETER,
+            _REVIEWER_DATE_TO_PARAMETER,
+            _REVIEWER_PAGE_PARAMETER,
+            _REVIEWER_SIZE_PARAMETER,
+        ],
+        responses={
+            200: OpenApiResponse(
+                response=ReviewerCourseListSerializer(many=True),
+                description="Published courses matching the table filters.",
+                examples=[OpenApiExample(name="Success", value=[_COURSE_LIST_EXAMPLE])],
+            ),
+            **STANDARD_ERROR_RESPONSES["validation"],
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
+    @action(detail=False, methods=["get"], url_path="published")
+    def published(self, request):
+        return self._list_current_screen(request)
+
+    @extend_schema(
+        methods=["get"],
+        summary="Review approved course prices",
+        description=(
+            "Returns the saved SoluDesk, Coursera, and Udemy pricing tabs for an "
+            "Approved course. The fields correspond directly to the Figma Review modal.\n\n"
+            "Called from Review Prices in the Approved Course information drawer.\n\n"
+            "**Auth:** Creator Reviewer, Verifier, Approver, or Admin.\n\n"
+            "**Prerequisites:** The course must be `APPROVED`.\n\n"
+            "**Important:** `creator_payout_fixed` is read-only and comes from the "
+            "submission price snapshot. Money values are decimal strings."
+        ),
+        tags=["Reviewer — Approved Courses"],
+        responses={
+            200: OpenApiResponse(
+                response=CourseDistributionSerializer(many=True),
+                description="Saved channel pricing tabs.",
+                examples=[
+                    OpenApiExample(
+                        name="SoluDesk pricing tab",
+                        value=[_REVIEW_PRICE_RESPONSE_EXAMPLE],
+                    )
+                ],
+            ),
+            **STANDARD_ERROR_RESPONSES["validation"],
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
+            **STANDARD_ERROR_RESPONSES["not_found"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
+    @extend_schema(
+        methods=["put"],
+        summary="Save approved course prices",
+        description=(
+            "Creates or updates the selected channel tabs before publication. Every "
+            "input corresponds to the learner price, MIE suggestion, model, fee, "
+            "promotional pricing, explanation, or comparable-course fields in Figma.\n\n"
+            "Called when the reviewer continues from the pricing review step.\n\n"
+            "**Auth:** Creator Reviewer, Verifier, Approver, or Admin.\n\n"
+            "**Prerequisites:** The course must be `APPROVED`; at least one unique "
+            "distribution channel is required.\n\n"
+            "**Important:** Omitted channels are left unchanged. Coursera and Udemy "
+            "are queued for external publication only after the publish call."
+        ),
+        tags=["Reviewer — Approved Courses"],
+        request=ReviewAndPublishSerializer,
+        examples=[
+            OpenApiExample(
+                name="Three Figma pricing tabs",
+                request_only=True,
+                value=_REVIEW_PRICES_REQUEST_EXAMPLE,
+            )
+        ],
+        responses={
+            200: OpenApiResponse(
+                response=CourseDistributionSerializer(many=True),
+                description="Saved channel pricing tabs.",
+                examples=[
+                    OpenApiExample(
+                        name="Saved SoluDesk pricing",
+                        value=[_REVIEW_PRICE_RESPONSE_EXAMPLE],
+                    )
+                ],
+            ),
+            **STANDARD_ERROR_RESPONSES["validation"],
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
+            **STANDARD_ERROR_RESPONSES["not_found"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
+    @action(detail=True, methods=["get", "put"], url_path="review-prices")
+    def review_prices(self, request, pk=None):
+        course = self.get_object()
+        if course.status != CourseStatus.APPROVED:
+            raise exceptions.ValidationError(
+                f"Course prices cannot be reviewed from status '{course.status}'."
+            )
+        if request.method == "GET":
+            rows = course.distribution_channels.all()
+        else:
+            serializer = ReviewAndPublishSerializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            rows = course_service.save_distribution_channels(
+                course=course,
+                channels=serializer.validated_data["distribution_channels"],
+            )
+        return Response(CourseDistributionSerializer(rows, many=True).data)
+
+    @extend_schema(
+        summary="Publish an approved reviewer course",
+        description=(
+            "Confirms the Review and publish overview and moves an Approved course "
+            "to Published. Pricing can be supplied here or saved in the prior step.\n\n"
+            "Called when the reviewer presses Continue on Review and publish.\n\n"
+            "**Auth:** Creator Reviewer, Verifier, Approver, or Admin.\n\n"
+            "**Prerequisites:** The course must be `APPROVED` and an active course "
+            "version must exist.\n\n"
+            "**Important:** Publication is atomic and has no unpublish action. "
+            "SoluDesk publishes locally; Coursera and Udemy remain Queued until "
+            "their external integration workers complete."
+        ),
+        tags=["Reviewer — Approved Courses"],
+        request=ReviewAndPublishSerializer,
+        examples=[
+            OpenApiExample(
+                name="Review and publish all channels",
+                request_only=True,
+                value=_REVIEW_PRICES_REQUEST_EXAMPLE,
+            )
+        ],
+        responses={
+            200: OpenApiResponse(
+                response=ReviewerCourseDetailSerializer,
+                description="Course published successfully.",
+                examples=[
+                    OpenApiExample(
+                        name="Published",
+                        value={**_COURSE_DETAIL_EXAMPLE, "status": "PUBLISHED"},
+                    )
+                ],
+            ),
+            **STANDARD_ERROR_RESPONSES["validation"],
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
+            **STANDARD_ERROR_RESPONSES["not_found"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
+    @action(detail=True, methods=["post"], url_path="publish")
+    def publish(self, request, pk=None):
+        course = self.get_object()
+        distribution_channels = None
+        if request.data:
+            serializer = ReviewAndPublishSerializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            distribution_channels = serializer.validated_data["distribution_channels"]
+        course = course_service.publish_course(
+            course=course,
+            actor=request.user,
+            distribution_channels=distribution_channels,
+        )
+        return Response(
+            ReviewerCourseDetailSerializer(
+                course, context=self.get_serializer_context()
+            ).data
+        )
 
     @extend_schema(
         summary="Claim a course for review",

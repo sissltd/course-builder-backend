@@ -236,6 +236,32 @@ SPECTACULAR_SETTINGS = {
             ),
         },
         {
+            "name": "Reviewer — Dashboard",
+            "description": ("The reviewer's metric cards and Activity Overview chart."),
+        },
+        {
+            "name": "Reviewer — Pending Courses",
+            "description": (
+                "Submitted creator and AI courses awaiting a reviewer decision."
+            ),
+        },
+        {
+            "name": "Reviewer — Approved Courses",
+            "description": (
+                "Approved courses, pricing review, channel selection, and publication."
+            ),
+        },
+        {
+            "name": "Reviewer — In Review",
+            "description": "Courses currently claimed and being reviewed.",
+        },
+        {
+            "name": "Reviewer — Published Courses",
+            "description": (
+                "Published courses with owner, approver, price, and channel information."
+            ),
+        },
+        {
             "name": "Reviewer — Review Queue",
             "description": (
                 "The course review queue: browse, claim, approve, and reject "
@@ -279,8 +305,7 @@ SPECTACULAR_SETTINGS = {
         {
             "name": "Admin — System Health",
             "description": (
-                "Uptime, latency and current status for every monitored "
-                "dependency."
+                "Uptime, latency and current status for every monitored " "dependency."
             ),
         },
         {
@@ -492,6 +517,9 @@ SPECTACULAR_SETTINGS = {
         # (CourseSourceType vs MediaSource); pin both.
         "CourseSourceTypeEnum": "api.courses.enums.CourseSourceType",
         "MediaSourceEnum": "api.courses.enums.MediaSource",
+        # lesson_type is canonical while content_type remains a deprecated
+        # alias; both intentionally share one stable enum component.
+        "LessonTypeEnum": "api.courses.enums.LessonContentType",
         # ExpertiseArea — exposed through onboarding serializers; pin to
         # avoid drf-spectacular's auto-generated name.
         "ExpertiseAreaEnum": "api.onboarding.enums.ExpertiseArea",

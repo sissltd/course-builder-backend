@@ -1,13 +1,22 @@
 from decimal import Decimal
+from uuid import uuid4
 
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.test import APITestCase
 
 from api.catalog.enums import TrackPreference
-from api.courses.enums import CourseStatus
-from api.courses.models import CourseVersion
-from api.reviews.models import ReviewAction
+from api.courses.enums import (
+    CourseSourceType,
+    CourseStatus,
+    DistributionStatus,
+)
+from api.courses.models import CourseDistribution, CourseVersion
+from api.reviews.enums import ReviewActionType, ReviewStage
+from api.reviews.models import ReviewAction, ReviewAssignment
 from api.courses.services import course_service
 from api.reviews.services import review_service
 from api.courses.tests.factories import build_compliant_course, make_category, make_user
@@ -412,6 +421,373 @@ class ReviewQueueApiTests(APITestCase):
                 user=self.admin, action="COURSE_PUBLISHED", category="PUBLISH"
             ).exists()
         )
+
+
+class ReviewerCourseScreenApiTests(APITestCase):
+    """HTTP contract for the four Figma reviewer course screens."""
+
+    def setUp(self):
+        self.creator = make_user(
+            role=UserRole.COURSE_CREATOR,
+            email=f"figma-creator-{uuid4()}@example.com",
+            first_name="Ada",
+            last_name="Creator",
+        )
+        self.reviewer = make_user(
+            role=UserRole.CREATOR_REVIEWER,
+            email=f"figma-reviewer-{uuid4()}@example.com",
+            first_name="Rita",
+            last_name="Verifier",
+        )
+        self.other_reviewer = make_user(
+            role=UserRole.CREATOR_REVIEWER,
+            email=f"figma-other-reviewer-{uuid4()}@example.com",
+        )
+        self.category = make_category(
+            name=f"Figma Category {uuid4()}",
+            creator_price_beginner=Decimal("120.00"),
+            creator_price_intermediate=Decimal("120.00"),
+            creator_price_advanced=Decimal("120.00"),
+        )
+        CourseVersion.objects.get_or_create(label="1.0")
+
+    def _course(
+        self, *, status_value, title, source_type=CourseSourceType.CREATOR_UPLOADED
+    ):
+        course = build_compliant_course(creator=self.creator, category=self.category)
+        now = timezone.now()
+        course.title = title
+        course.status = status_value
+        course.source_type = source_type
+        course.difficulty_level = "INTERMEDIATE"
+        course.creator_price_snapshot = Decimal("120.00")
+        course.submitted_at = now
+        if status_value in {CourseStatus.APPROVED, CourseStatus.PUBLISHED}:
+            course.approved_at = now
+        if status_value == CourseStatus.PUBLISHED:
+            course.published_at = now
+        course.save()
+        return course
+
+    def _assign(self, course):
+        return ReviewAssignment.objects.create(
+            course=course,
+            stage=ReviewStage.CONTENT,
+            reviewer=self.reviewer,
+            claimed_at=timezone.now(),
+        )
+
+    def _approve(self, course, *, reviewer=None, note="Ready to publish"):
+        return ReviewAction.objects.create(
+            course=course,
+            reviewer=reviewer or self.reviewer,
+            action=ReviewActionType.APPROVE,
+            stage=ReviewStage.CONTENT,
+            feedback={"summary": note},
+        )
+
+    def test_each_screen_enforces_its_status_and_returns_figma_row_fields(self):
+        pending = self._course(status_value=CourseStatus.SUBMITTED, title="Pending")
+        in_review = self._course(status_value=CourseStatus.IN_REVIEW, title="In review")
+        approved = self._course(status_value=CourseStatus.APPROVED, title="Approved")
+        published = self._course(status_value=CourseStatus.PUBLISHED, title="Published")
+        self._assign(in_review)
+        self._approve(approved)
+        self._approve(published)
+        CourseDistribution.objects.create(
+            course=published,
+            channel="SOLUDESK",
+            learner_price=Decimal("250.98"),
+            status=DistributionStatus.PUBLISHED,
+        )
+        self.client.force_authenticate(self.reviewer)
+
+        expected = {
+            "/api/v1/review-queue/pending/": pending,
+            "/api/v1/review-queue/in-review/": in_review,
+            "/api/v1/review-queue/approved/": approved,
+            "/api/v1/review-queue/published/": published,
+        }
+        figma_fields = {
+            "creator",
+            "course_title",
+            "course_id",
+            "category",
+            "difficulty_level",
+            "reviewer",
+            "reviewer_id",
+            "approved_by",
+            "date_reviewed",
+            "last_reviewed_at",
+            "reviewer_note",
+            "price",
+            "channels",
+            "channel_summary",
+            "source_label",
+            "date_created",
+        }
+        for url, course in expected.items():
+            with self.subTest(url=url):
+                response = self.client.get(url, {"page": 1, "size": 50})
+                self.assertEqual(response.status_code, status.HTTP_200_OK)
+                self.assertTrue(response.data["status"])
+                self.assertIn("paginator", response.data["data"])
+                rows = response.data["data"]["results"]
+                self.assertEqual([row["course_id"] for row in rows], [str(course.id)])
+                self.assertTrue(figma_fields.issubset(rows[0]))
+
+    def test_pending_filters_match_figma_inputs_and_source_tabs(self):
+        matching = self._course(
+            status_value=CourseStatus.SUBMITTED,
+            title="Machine Learning and Design",
+            source_type=CourseSourceType.AI_GENERATED,
+        )
+        self._course(
+            status_value=CourseStatus.SUBMITTED,
+            title="Different creator course",
+        )
+        queue_preference_service.get_or_create_preference(user=self.reviewer)
+        self.client.force_authenticate(self.reviewer)
+        today = timezone.localdate().isoformat()
+
+        response = self.client.get(
+            "/api/v1/review-queue/pending/",
+            {
+                "search": "Machine Learning",
+                "category": str(self.category.id),
+                "difficulty_level": "INTERMEDIATE",
+                "source_type": "AI_GENERATED",
+                "date_from": today,
+                "date_to": today,
+                "ordering": "submitted_at",
+                "page": 1,
+                "size": 50,
+            },
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        rows = response.data["data"]["results"]
+        self.assertEqual([row["course_id"] for row in rows], [str(matching.id)])
+        self.assertEqual(rows[0]["source_label"], "AI Created")
+
+        by_id = self.client.get(
+            "/api/v1/review-queue/pending/", {"search": str(matching.id)}
+        )
+        self.assertEqual(by_id.status_code, status.HTTP_200_OK)
+        self.assertEqual(by_id.data["data"]["paginator"]["count"], 1)
+
+    def test_reviewer_and_approved_by_filters_match_review_history(self):
+        in_review = self._course(
+            status_value=CourseStatus.IN_REVIEW, title="Assigned to Rita"
+        )
+        approved = self._course(
+            status_value=CourseStatus.APPROVED, title="Approved by Rita"
+        )
+        published = self._course(
+            status_value=CourseStatus.PUBLISHED, title="Published by Rita"
+        )
+        self._assign(in_review)
+        self._approve(approved)
+        self._approve(published)
+        self.client.force_authenticate(self.reviewer)
+
+        cases = (
+            ("/api/v1/review-queue/in-review/", "reviewer", in_review),
+            ("/api/v1/review-queue/approved/", "reviewer", approved),
+            ("/api/v1/review-queue/published/", "approved_by", published),
+        )
+        for url, parameter, expected in cases:
+            with self.subTest(url=url):
+                response = self.client.get(url, {parameter: str(self.reviewer.id)})
+                self.assertEqual(response.status_code, status.HTTP_200_OK)
+                rows = response.data["data"]["results"]
+                self.assertEqual([row["course_id"] for row in rows], [str(expected.id)])
+
+                refused = self.client.get(url, {parameter: str(self.other_reviewer.id)})
+                self.assertEqual(refused.data["data"]["paginator"]["count"], 0)
+
+    def test_course_detail_contains_each_figma_drawer_block(self):
+        course = self._course(
+            status_value=CourseStatus.PUBLISHED,
+            title="Machine Learning and Design",
+            source_type=CourseSourceType.AI_GENERATED,
+        )
+        action = self._approve(course, note="Extend the lesson script")
+        CourseDistribution.objects.create(
+            course=course,
+            channel="SOLUDESK",
+            learner_price=Decimal("250.98"),
+            status=DistributionStatus.PUBLISHED,
+        )
+        CourseDistribution.objects.create(
+            course=course,
+            channel="COURSERA",
+            learner_price=Decimal("250.00"),
+            status=DistributionStatus.QUEUED,
+        )
+        self.client.force_authenticate(self.reviewer)
+
+        response = self.client.get(f"/api/v1/review-queue/{course.id}/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["course_id"], str(course.id))
+        self.assertEqual(response.data["course_title"], course.title)
+        self.assertEqual(response.data["source_label"], "AI Created")
+        self.assertEqual(
+            response.data["review_information"]["reviewer_id"],
+            str(self.reviewer.id),
+        )
+        self.assertIsNotNone(action.created_datetime)
+        self.assertIsNotNone(response.data["review_information"]["date_reviewed"])
+        self.assertEqual(
+            response.data["review_information"]["reviewer_note"],
+            "Extend the lesson script",
+        )
+        self.assertEqual(
+            response.data["owner_information"]["user_id"], str(self.creator.id)
+        )
+        self.assertEqual(
+            [row["channel_label"] for row in response.data["price_information"]],
+            ["SoluDesk", "Coursera Marketplace"],
+        )
+        self.assertEqual(response.data["channel_summary"], "SoluDesk & Coursera")
+
+    def test_reviewer_can_save_prices_and_publish_from_approved_screen(self):
+        course = self._course(status_value=CourseStatus.APPROVED, title="Publish me")
+        self._approve(course)
+        payload = {
+            "distribution_channels": [
+                {
+                    "channel": "SOLUDESK",
+                    "approval_rate": "Published within 60 seconds",
+                    "learner_price": "149.00",
+                    "mie_suggestion": "140.00",
+                    "model": "ONE_TIME",
+                    "platform_revenue_per_enrollment": "149.00",
+                    "mie_explanation": "Suggested from competitor analysis.",
+                    "comparable_courses": [
+                        {
+                            "course_title": "Modern computing language",
+                            "difficulty_level": "BEGINNER",
+                            "learner_price": "150.00",
+                        }
+                    ],
+                },
+                {
+                    "channel": "UDEMY",
+                    "approval_rate": "Published within 10 - 15 minutes",
+                    "learner_price": "190.00",
+                    "model": "ONE_TIME",
+                    "course_fee_percent": "32.00",
+                    "promotional_pricing": "150.00",
+                },
+            ]
+        }
+        self.client.force_authenticate(self.reviewer)
+
+        save_response = self.client.put(
+            f"/api/v1/review-queue/{course.id}/review-prices/",
+            payload,
+            format="json",
+        )
+        self.assertEqual(save_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(save_response.data[0]["channel_label"], "SoluDesk")
+        self.assertEqual(save_response.data[0]["creator_payout_fixed"], "120.00")
+        self.assertEqual(save_response.data[0]["mie_suggestion"], "140.00")
+
+        get_response = self.client.get(
+            f"/api/v1/review-queue/{course.id}/review-prices/"
+        )
+        self.assertEqual(get_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(get_response.data), 2)
+
+        publish_response = self.client.post(
+            f"/api/v1/review-queue/{course.id}/publish/", {}, format="json"
+        )
+        self.assertEqual(publish_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(publish_response.data["status"], CourseStatus.PUBLISHED)
+        self.assertEqual(publish_response.data["channels"], ["SOLUDESK", "UDEMY"])
+        course.refresh_from_db()
+        self.assertEqual(course.status, CourseStatus.PUBLISHED)
+        self.assertEqual(
+            CourseDistribution.objects.get(course=course, channel="SOLUDESK").status,
+            DistributionStatus.PUBLISHED,
+        )
+        self.assertEqual(
+            CourseDistribution.objects.get(course=course, channel="UDEMY").status,
+            DistributionStatus.QUEUED,
+        )
+
+    def test_screen_and_publish_permissions_and_invalid_states(self):
+        approved = self._course(status_value=CourseStatus.APPROVED, title="Approved")
+        draft = self._course(status_value=CourseStatus.DRAFT, title="Draft")
+
+        self.assertEqual(
+            self.client.get("/api/v1/review-queue/pending/").status_code,
+            status.HTTP_401_UNAUTHORIZED,
+        )
+        self.client.force_authenticate(self.creator)
+        self.assertEqual(
+            self.client.get("/api/v1/review-queue/approved/").status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+        self.assertEqual(
+            self.client.post(
+                f"/api/v1/review-queue/{approved.id}/publish/", {}, format="json"
+            ).status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+
+        self.client.force_authenticate(self.reviewer)
+        self.assertEqual(
+            self.client.get(
+                f"/api/v1/review-queue/{draft.id}/review-prices/"
+            ).status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+        self.assertEqual(
+            self.client.post(
+                f"/api/v1/review-queue/{draft.id}/publish/", {}, format="json"
+            ).status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+        self.assertEqual(
+            self.client.get(
+                "/api/v1/review-queue/00000000-0000-0000-0000-000000000000/"
+            ).status_code,
+            status.HTTP_404_NOT_FOUND,
+        )
+
+    def test_published_list_query_count_does_not_grow_per_row(self):
+        queue_preference_service.get_or_create_preference(user=self.reviewer)
+        first = self._course(status_value=CourseStatus.PUBLISHED, title="Published 1")
+        self._approve(first)
+        CourseDistribution.objects.create(
+            course=first,
+            channel="SOLUDESK",
+            learner_price=Decimal("149.00"),
+        )
+        self.client.force_authenticate(self.reviewer)
+
+        with CaptureQueriesContext(connection) as one_row_queries:
+            response = self.client.get("/api/v1/review-queue/published/", {"size": 50})
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        for number in range(2, 6):
+            course = self._course(
+                status_value=CourseStatus.PUBLISHED,
+                title=f"Published {number}",
+            )
+            self._approve(course)
+            CourseDistribution.objects.create(
+                course=course,
+                channel="SOLUDESK",
+                learner_price=Decimal("149.00"),
+            )
+
+        with CaptureQueriesContext(connection) as five_row_queries:
+            response = self.client.get("/api/v1/review-queue/published/", {"size": 50})
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        self.assertEqual(len(one_row_queries), len(five_row_queries))
 
 
 class ReviewServiceRoleEnforcementTests(APITestCase):
