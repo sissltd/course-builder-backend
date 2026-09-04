@@ -87,13 +87,36 @@ class UploadResponseSerializer(serializers.Serializer):
         help_text="Headers that must be sent unchanged with the upload PUT request",
     )
     file_url = serializers.URLField(
-        help_text="Public object URL where the file is accessible after upload"
+        help_text=(
+            "Temporary presigned GET URL for reading the file after upload; "
+            "persist file_key so the backend can issue a fresh URL after it expires."
+        )
     )
     file_key = serializers.CharField(
         help_text="File key — save this if you need to delete later"
     )
     expires_in = serializers.IntegerField(
         help_text="Seconds until the upload URL expires"
+    )
+
+
+class FileAccessRequestSerializer(serializers.Serializer):
+    """Input for refreshing a private uploaded file's playback URL."""
+
+    file_key = serializers.CharField(
+        max_length=500,
+        help_text="Durable file_key returned by the upload presign endpoint.",
+    )
+
+
+class FileAccessResponseSerializer(serializers.Serializer):
+    """Temporary URL used by the frontend to read a private object."""
+
+    file_url = serializers.URLField(
+        help_text="Short-lived presigned GET URL for viewing or downloading the file."
+    )
+    expires_in = serializers.IntegerField(
+        help_text="Seconds until the file URL expires; request a fresh URL afterward."
     )
 
 

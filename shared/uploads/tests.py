@@ -46,6 +46,13 @@ class UploadPresignApiTests(APITestCase):
         self.assertIn("expires_in", response.data)
         self.assertTrue(response.data["file_key"].startswith("uploads/profiles/"))
 
+        self.assertEqual(mock_get_client.return_value.generate_presigned_url.call_count, 2)
+        self.assertEqual(
+            mock_get_client.return_value.generate_presigned_url.call_args_list[1]
+            .args[0],
+            "get_object",
+        )
+
         params = mock_get_client.return_value.generate_presigned_url.call_args.kwargs[
             "Params"
         ]
@@ -80,3 +87,22 @@ class UploadPresignApiTests(APITestCase):
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+
+class UploadAccessApiTests(APITestCase):
+    @patch("shared.uploads.views.StorageService.generate_presigned_get")
+    def test_returns_fresh_private_file_url(self, mock_generate):
+        mock_generate.return_value = "https://storage.example.com/signed-read-url"
+        user = make_user()
+        self.client.force_authenticate(user)
+
+        response = self.client.post(
+            "/api/v1/uploads/access/",
+            {"file_key": "uploads/videos/video.mp4"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["file_url"], mock_generate.return_value)
+        self.assertEqual(response.data["expires_in"], 600)
+        mock_generate.assert_called_once_with("uploads/videos/video.mp4")

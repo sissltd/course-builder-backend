@@ -39,11 +39,10 @@ class StorageServiceTests(TestCase):
                 "x-amz-meta-height;x-amz-meta-upload-purpose;x-amz-meta-width"
             ],
         )
-        self.assertTrue(
-            result["file_url"].startswith(
-                "https://storage.example.com/course-files/uploads/courses/"
-            )
-        )
+        file_url = urlsplit(result["file_url"])
+        self.assertEqual(file_url.netloc, "storage.example.com")
+        self.assertTrue(file_url.path.startswith("/course-files/uploads/courses/"))
+        self.assertIn("X-Amz-Signature", parse_qs(file_url.query))
         self.assertEqual(result["upload_headers"]["Content-Type"], "video/mp4")
         self.assertEqual(result["upload_headers"]["x-amz-meta-codec"], "h264")
 
@@ -74,11 +73,10 @@ class StorageServiceTests(TestCase):
         self.assertEqual(
             parse_qs(upload_url.query)["X-Amz-Credential"][0].split("/")[2], "lon1"
         )
-        self.assertTrue(
-            result["file_url"].startswith(
-                "https://coursebuilder.lon1.digitaloceanspaces.com/uploads/courses/"
-            )
-        )
+        file_url = urlsplit(result["file_url"])
+        self.assertEqual(file_url.netloc, "lon1.digitaloceanspaces.com")
+        self.assertTrue(file_url.path.startswith("/coursebuilder/uploads/courses/"))
+        self.assertIn("X-Amz-Signature", parse_qs(file_url.query))
 
     def test_public_object_url_is_normalized_back_to_a_file_key(self):
         with patch.object(

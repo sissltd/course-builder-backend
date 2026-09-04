@@ -715,10 +715,16 @@ Nested under a course's module. Same Draft-only rule as Modules.
   "embedded_link": "",
   "video_script_file": "uploads/lessons/installing-python.srt",
   "learning_objectives": [
-    "Install Python 3 and a code editor",
+    "Install Python 3, a code editor, and the required command-line tools",
     "Run a first script from the command line"
   ],
-  "duration_minutes": 20
+  "duration_minutes": 20,
+  "requirements": [
+    {
+      "text": "Basic computer literacy and access to Python 3.",
+      "order": 1
+    }
+  ]
 }
 ```
 
@@ -734,8 +740,15 @@ Nested under a course's module. Same Draft-only rule as Modules.
   "video_url": "https://cdn.example.com/lessons/installing-python.mp4",
   "embedded_link": "",
   "video_script_file": "uploads/lessons/installing-python.srt",
-  "learning_objectives": ["Install Python 3 and a code editor", "Run a first script from the command line"],
-  "duration_minutes": 20
+  "learning_objectives": ["Install Python 3, a code editor, and the required command-line tools", "Run a first script from the command line"],
+  "duration_minutes": 20,
+  "requirements": [
+    {
+      "id": "r1...",
+      "text": "Basic computer literacy and access to Python 3.",
+      "order": 1
+    }
+  ]
 }
 ```
 *(Write-serializer shape again — `assessment` isn't included; `GET`/retrieve
@@ -753,6 +766,14 @@ the lesson to see it once you've added one.)*
 clients. New integrations should send and read `lesson_type`. Responses include
 both fields during the transition, and requests containing different values for
 the two aliases return 400.
+
+`learning_objectives` is a JSON array: each array item is one complete
+objective. A comma inside an item remains part of that objective; only a new
+array item creates another objective. `requirements` is the ordered Lesson
+Requirement content shown in Figma. Supplying `requirements` on PUT/PATCH
+replaces the current list, sending `[]` clears it, and omitting the field leaves
+the current requirements unchanged. The dedicated `/requirements/` endpoints
+remain available for editing one requirement at a time.
 
 ### Retrieve / Update / Delete Lesson
 `GET|PUT|PATCH|DELETE {{base_url}}/api/v1/courses/{{course_id}}/modules/{{module_id}}/lessons/{{lesson_id}}/`

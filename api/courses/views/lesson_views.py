@@ -5,6 +5,7 @@ from drf_spectacular.utils import (
     extend_schema,
     extend_schema_view,
 )
+from django.db import transaction
 from rest_framework import exceptions
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -15,7 +16,12 @@ from api.courses.enums import CourseStatus
 from api.courses.models import Lesson, Module
 from api.courses.serializers import LessonSerializer, LessonWriteSerializer
 from api.courses.serializers.ordering_serializer import ReorderSerializer
-from api.courses.services import course_service, module_lock_service, ordering_service
+from api.courses.services import (
+    course_service,
+    lesson_service,
+    module_lock_service,
+    ordering_service,
+)
 from api.users.permissions import IsCourseCreatorRole
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 
@@ -27,8 +33,16 @@ _VIDEO_LESSON_REQUEST_EXAMPLE = {
     "video_url": "https://example.com/lessons/variables.mp4",
     "embedded_link": "",
     "video_script_file": "uploads/lessons/variables.srt",
-    "learning_objectives": ["Identify Python's built-in data types"],
+    "learning_objectives": [
+        "Identify Python's built-in data types, variables, and constants"
+    ],
     "duration_minutes": 15,
+    "requirements": [
+        {
+            "text": "Basic computer literacy and access to Python 3.",
+            "order": 1,
+        }
+    ],
 }
 
 _QUIZ_LESSON_REQUEST_EXAMPLE = {
@@ -41,6 +55,7 @@ _QUIZ_LESSON_REQUEST_EXAMPLE = {
     "video_script_file": "",
     "learning_objectives": ["Apply Python variable and data-type concepts"],
     "duration_minutes": 10,
+    "requirements": [],
 }
 
 _TEXT_LESSON_REQUEST_EXAMPLE = {
@@ -53,6 +68,7 @@ _TEXT_LESSON_REQUEST_EXAMPLE = {
     "video_script_file": "",
     "learning_objectives": ["Explain how Python variables store values"],
     "duration_minutes": 10,
+    "requirements": [],
 }
 
 _LESSON_WRITE_RESPONSE_EXAMPLE = {
@@ -209,7 +225,10 @@ _MODULE_LOCKED_423 = OpenApiResponse(
             "lesson first, then use its returned `id` with the lesson assessment "
             "endpoint. `learning_objectives` is only validated for "
             "shape here (a list of non-empty strings) - the 2-5 "
-            "count-per-lesson rule is enforced later, at submit time. "
+            "count-per-lesson rule is enforced later, at submit time. Each "
+            "array item is one objective; commas inside an item are preserved. "
+            "`requirements` accepts the ordered Lesson Requirement content "
+            "shown in Figma. "
             "Deprecated `content_type` remains accepted temporarily; if both type "
             "fields are sent, they must match. "
             "Returns 423 if the parent module is currently locked by another user."
@@ -244,7 +263,9 @@ _MODULE_LOCKED_423 = OpenApiResponse(
             "**Important:** `lesson_type` must be `VIDEO`, `QUIZ`, or `TEXT`. "
             "A `VIDEO` lesson requires `video_url` or `embedded_link`. Returns "
             "423 if the parent module is currently locked by another user. "
-            "Deprecated `content_type` remains accepted temporarily."
+            "When `requirements` is supplied it replaces the current ordered "
+            "requirements; omitting it preserves them. Deprecated `content_type` "
+            "remains accepted temporarily."
         ),
         tags=["Creator — Lessons"],
         parameters=_PATH_PARAMETERS,
@@ -277,8 +298,9 @@ _MODULE_LOCKED_423 = OpenApiResponse(
             "**Prerequisites:** The parent course must be `DRAFT`.\n\n"
             "**Important:** When changing `lesson_type` to `VIDEO`, also send "
             "a `video_url` or `embedded_link`. Returns 423 if the parent module "
-            "is currently locked by another user. Deprecated `content_type` "
-            "remains accepted temporarily."
+            "is currently locked by another user. When `requirements` is supplied "
+            "it replaces the current ordered requirements; omitting it preserves "
+            "them. Deprecated `content_type` remains accepted temporarily."
         ),
         tags=["Creator — Lessons"],
         parameters=_PATH_PARAMETERS,
@@ -448,6 +470,7 @@ class LessonViewSet(ModelViewSet):
         except Module.DoesNotExist as exc:
             raise exceptions.NotFound("Module not found.") from exc
 
+    @transaction.atomic
     def perform_create(self, serializer):
         module = self._get_module()
         if module.course.status != CourseStatus.DRAFT:
@@ -455,12 +478,19 @@ class LessonViewSet(ModelViewSet):
                 "Lessons can only be added while the course is Draft."
             )
         module_lock_service.check_not_locked(module=module, user=self.request.user)
+        requirements = serializer.validated_data.pop("requirements", [])
         lesson = serializer.save(
             module=module, created_by=self.request.user, updated_by=self.request.user
+        )
+        lesson_service.replace_requirements(
+            lesson=lesson,
+            requirements=requirements,
+            actor=self.request.user,
         )
         course_service.recalculate_duration_estimate(course=module.course)
         return lesson
 
+    @transaction.atomic
     def perform_update(self, serializer):
         module = serializer.instance.module
         if module.course.status != CourseStatus.DRAFT:
@@ -468,7 +498,17 @@ class LessonViewSet(ModelViewSet):
                 "Lessons can only be edited while the course is Draft."
             )
         module_lock_service.check_not_locked(module=module, user=self.request.user)
+        requirements_marker = object()
+        requirements = serializer.validated_data.pop(
+            "requirements", requirements_marker
+        )
         lesson = serializer.save(updated_by=self.request.user)
+        if requirements is not requirements_marker:
+            lesson_service.replace_requirements(
+                lesson=lesson,
+                requirements=requirements,
+                actor=self.request.user,
+            )
         course_service.recalculate_duration_estimate(course=module.course)
         return lesson
 

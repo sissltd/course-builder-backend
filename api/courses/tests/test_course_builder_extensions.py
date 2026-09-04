@@ -36,6 +36,10 @@ class LessonOpenApiContractTests(SimpleTestCase):
             "content_type",
             schema["components"]["schemas"][component_name]["properties"],
         )
+        self.assertIn(
+            "requirements",
+            schema["components"]["schemas"][component_name]["properties"],
+        )
         self.assertTrue(
             schema["components"]["schemas"][component_name]["properties"][
                 "content_type"
@@ -311,6 +315,76 @@ class LessonNewFieldsApiTests(APITestCase):
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_create_lesson_includes_figma_requirements(self):
+        self.client.force_authenticate(self.creator)
+        response = self.client.post(
+            self.lesson_base,
+            {
+                "title": "Required knowledge",
+                "order": 1,
+                "lesson_type": "TEXT",
+                "requirements": [
+                    {"text": "Install Python 3", "order": 2},
+                    {"text": "Know basic computer concepts", "order": 1},
+                ],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(
+            [item["text"] for item in response.data["requirements"]],
+            ["Know basic computer concepts", "Install Python 3"],
+        )
+        lesson = Lesson.objects.get(id=response.data["id"])
+        self.assertEqual(lesson.requirements.count(), 2)
+
+    def test_patch_requirements_replaces_them_and_omission_preserves_them(self):
+        lesson = self.module.lessons.create(title="Text lesson", order=1)
+        lesson.requirements.create(text="Old requirement", order=1)
+        self.client.force_authenticate(self.creator)
+
+        response = self.client.patch(
+            f"{self.lesson_base}{lesson.id}/",
+            {"title": "Renamed lesson"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(lesson.requirements.count(), 1)
+
+        response = self.client.patch(
+            f"{self.lesson_base}{lesson.id}/",
+            {"requirements": [{"text": "New requirement"}]},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            [item["text"] for item in response.data["requirements"]],
+            ["New requirement"],
+        )
+        self.assertEqual(list(lesson.requirements.values_list("order", flat=True)), [1])
+
+    def test_learning_objective_commas_are_preserved_in_one_array_item(self):
+        objective = "Compare variables, constants, and scope"
+        self.client.force_authenticate(self.creator)
+        response = self.client.post(
+            self.lesson_base,
+            {
+                "title": "Python names",
+                "order": 1,
+                "lesson_type": "TEXT",
+                "learning_objectives": [objective],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["learning_objectives"], [objective])
+
+        detail_response = self.client.get(f"{self.lesson_base}{response.data['id']}/")
+        self.assertEqual(detail_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(detail_response.data["learning_objectives"], [objective])
 
     def test_lesson_read_includes_sub_resources(self):
         lesson = self.module.lessons.create(
