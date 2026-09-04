@@ -719,12 +719,7 @@ Nested under a course's module. Same Draft-only rule as Modules.
     "Run a first script from the command line"
   ],
   "duration_minutes": 20,
-  "requirements": [
-    {
-      "text": "Basic computer literacy and access to Python 3.",
-      "order": 1
-    }
-  ]
+  "lesson_requirement": "At the end of this lesson, you will understand Python setup.\n\n1. Basic computer literacy\n2. Access to Python 3"
 }
 ```
 
@@ -742,6 +737,7 @@ Nested under a course's module. Same Draft-only rule as Modules.
   "video_script_file": "uploads/lessons/installing-python.srt",
   "learning_objectives": ["Install Python 3, a code editor, and the required command-line tools", "Run a first script from the command line"],
   "duration_minutes": 20,
+  "lesson_requirement": "At the end of this lesson, you will understand Python setup.\n\n1. Basic computer literacy\n2. Access to Python 3",
   "requirements": [
     {
       "id": "r1...",
@@ -769,11 +765,12 @@ the two aliases return 400.
 
 `learning_objectives` is a JSON array: each array item is one complete
 objective. A comma inside an item remains part of that objective; only a new
-array item creates another objective. `requirements` is the ordered Lesson
-Requirement content shown in Figma. Supplying `requirements` on PUT/PATCH
-replaces the current list, sending `[]` clears it, and omitting the field leaves
-the current requirements unchanged. The dedicated `/requirements/` endpoints
-remain available for editing one requirement at a time.
+array item creates another objective. `lesson_requirement` is the single
+rich-text Lesson Requirement input shown in Figma. Supplying it on PUT/PATCH
+replaces the current value, sending `""` clears it, and omitting the field leaves
+the value unchanged. Responses also include the underlying ordered
+`requirements` rows, and the dedicated `/requirements/` endpoints remain
+available for editing those rows individually.
 
 ### Retrieve / Update / Delete Lesson
 `GET|PUT|PATCH|DELETE {{base_url}}/api/v1/courses/{{course_id}}/modules/{{module_id}}/lessons/{{lesson_id}}/`

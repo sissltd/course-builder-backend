@@ -37,12 +37,10 @@ _VIDEO_LESSON_REQUEST_EXAMPLE = {
         "Identify Python's built-in data types, variables, and constants"
     ],
     "duration_minutes": 15,
-    "requirements": [
-        {
-            "text": "Basic computer literacy and access to Python 3.",
-            "order": 1,
-        }
-    ],
+    "lesson_requirement": (
+        "At the end of this lesson, you will understand variables and data "
+        "types.\n\n1. Basic computer literacy\n2. Access to Python 3"
+    ),
 }
 
 _QUIZ_LESSON_REQUEST_EXAMPLE = {
@@ -55,7 +53,7 @@ _QUIZ_LESSON_REQUEST_EXAMPLE = {
     "video_script_file": "",
     "learning_objectives": ["Apply Python variable and data-type concepts"],
     "duration_minutes": 10,
-    "requirements": [],
+    "lesson_requirement": "",
 }
 
 _TEXT_LESSON_REQUEST_EXAMPLE = {
@@ -68,13 +66,20 @@ _TEXT_LESSON_REQUEST_EXAMPLE = {
     "video_script_file": "",
     "learning_objectives": ["Explain how Python variables store values"],
     "duration_minutes": 10,
-    "requirements": [],
+    "lesson_requirement": "Basic computer literacy is recommended.",
 }
 
 _LESSON_WRITE_RESPONSE_EXAMPLE = {
     "id": "c3d4e5f6-a7b8-4c9d-0e1f-2a3b4c5d6e7f",
     **_VIDEO_LESSON_REQUEST_EXAMPLE,
     "content_type": "VIDEO",
+    "requirements": [
+        {
+            "id": "d4e5f6a7-b8c9-4d0e-1f2a-3b4c5d6e7f80",
+            "text": _VIDEO_LESSON_REQUEST_EXAMPLE["lesson_requirement"],
+            "order": 1,
+        }
+    ],
 }
 
 _LESSON_READ_EXAMPLE = {
@@ -82,7 +87,6 @@ _LESSON_READ_EXAMPLE = {
     "assessment": None,
     "content_blocks": [],
     "images": [],
-    "requirements": [],
 }
 
 _LESSON_TYPE_REQUEST_EXAMPLES = [
@@ -227,8 +231,8 @@ _MODULE_LOCKED_423 = OpenApiResponse(
             "shape here (a list of non-empty strings) - the 2-5 "
             "count-per-lesson rule is enforced later, at submit time. Each "
             "array item is one objective; commas inside an item are preserved. "
-            "`requirements` accepts the ordered Lesson Requirement content "
-            "shown in Figma. "
+            "`lesson_requirement` accepts the single rich-text Lesson Requirement "
+            "input shown in Figma, including internal line breaks. "
             "Deprecated `content_type` remains accepted temporarily; if both type "
             "fields are sent, they must match. "
             "Returns 423 if the parent module is currently locked by another user."
@@ -263,9 +267,9 @@ _MODULE_LOCKED_423 = OpenApiResponse(
             "**Important:** `lesson_type` must be `VIDEO`, `QUIZ`, or `TEXT`. "
             "A `VIDEO` lesson requires `video_url` or `embedded_link`. Returns "
             "423 if the parent module is currently locked by another user. "
-            "When `requirements` is supplied it replaces the current ordered "
-            "requirements; omitting it preserves them. Deprecated `content_type` "
-            "remains accepted temporarily."
+            "When `lesson_requirement` is supplied it replaces the current value; "
+            "omitting it preserves the value and sending an empty string clears it. "
+            "Deprecated `content_type` remains accepted temporarily."
         ),
         tags=["Creator — Lessons"],
         parameters=_PATH_PARAMETERS,
@@ -298,9 +302,10 @@ _MODULE_LOCKED_423 = OpenApiResponse(
             "**Prerequisites:** The parent course must be `DRAFT`.\n\n"
             "**Important:** When changing `lesson_type` to `VIDEO`, also send "
             "a `video_url` or `embedded_link`. Returns 423 if the parent module "
-            "is currently locked by another user. When `requirements` is supplied "
-            "it replaces the current ordered requirements; omitting it preserves "
-            "them. Deprecated `content_type` remains accepted temporarily."
+            "is currently locked by another user. When `lesson_requirement` is "
+            "supplied it replaces the current value; omitting it preserves the "
+            "value and sending an empty string clears it. Deprecated `content_type` "
+            "remains accepted temporarily."
         ),
         tags=["Creator — Lessons"],
         parameters=_PATH_PARAMETERS,

@@ -18,6 +18,14 @@ _LEARNING_OBJECTIVES_HELP_TEXT = (
 )
 
 
+def _lesson_requirement_text(requirements: list[dict]) -> str:
+    """Flatten legacy requirement rows into the single Figma editor value."""
+
+    return "\n".join(
+        requirement["text"] for requirement in requirements if requirement["text"]
+    )
+
+
 class LessonContentBlockSerializer(serializers.ModelSerializer):
     """Representation of one block in a lesson's body editor."""
 
@@ -152,7 +160,17 @@ class LessonSerializer(serializers.ModelSerializer):
     requirements = LessonRequirementSerializer(
         many=True,
         read_only=True,
-        help_text="Lesson requirements shown in the Figma lesson editor.",
+        help_text=(
+            "Ordered requirement rows retained for compatibility and granular "
+            "editing through the dedicated requirements endpoints."
+        ),
+    )
+    lesson_requirement = serializers.CharField(
+        read_only=True,
+        help_text=(
+            "The single Lesson Requirement rich-text value shown in Figma. "
+            "Line breaks and punctuation are preserved."
+        ),
     )
 
     class Meta:
@@ -169,12 +187,20 @@ class LessonSerializer(serializers.ModelSerializer):
             "video_script_file",
             "learning_objectives",
             "duration_minutes",
+            "lesson_requirement",
             "assessment",
             "content_blocks",
             "images",
             "requirements",
         ]
         read_only_fields = fields
+
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        representation["lesson_requirement"] = _lesson_requirement_text(
+            representation["requirements"]
+        )
+        return representation
 
     @extend_schema_field(AssessmentSerializer(allow_null=True))
     def get_assessment(self, obj):
@@ -217,13 +243,23 @@ class LessonWriteSerializer(serializers.ModelSerializer):
         required=False,
         help_text=_LEARNING_OBJECTIVES_HELP_TEXT,
     )
+    lesson_requirement = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=500,
+        help_text=(
+            "The single Lesson Requirement rich-text value shown in Figma. "
+            "Internal line breaks, numbered-list text, and punctuation are "
+            "preserved. Send an empty string to clear it."
+        ),
+    )
     requirements = LessonRequirementSerializer(
         many=True,
         required=False,
         help_text=(
-            "Lesson requirements from the Figma editor. When supplied during an "
-            "update, this array replaces the lesson's current requirements; omit "
-            "it to leave them unchanged."
+            "Compatibility form for clients that edit ordered requirement rows. "
+            "Use lesson_requirement for the single Figma editor value. Supplying "
+            "either field replaces the lesson's current requirements."
         ),
     )
 
@@ -241,6 +277,7 @@ class LessonWriteSerializer(serializers.ModelSerializer):
             "video_script_file",
             "learning_objectives",
             "duration_minutes",
+            "lesson_requirement",
             "requirements",
         ]
         read_only_fields = ["id"]
@@ -258,6 +295,14 @@ class LessonWriteSerializer(serializers.ModelSerializer):
                     "lesson_type": (
                         "lesson_type and deprecated content_type must match when "
                         "both are supplied."
+                    )
+                }
+            )
+        if "lesson_requirement" in data and "requirements" in data:
+            raise serializers.ValidationError(
+                {
+                    "lesson_requirement": (
+                        "Send lesson_requirement or requirements, not both."
                     )
                 }
             )
@@ -290,6 +335,12 @@ class LessonWriteSerializer(serializers.ModelSerializer):
         """A VIDEO lesson should carry at least one media reference; a QUIZ
         lesson is validated at submit time (assessment questions rule)."""
 
+        if "lesson_requirement" in attrs:
+            lesson_requirement = attrs.pop("lesson_requirement")
+            attrs["requirements"] = (
+                [{"text": lesson_requirement, "order": 1}] if lesson_requirement else []
+            )
+
         content_type = attrs.get("content_type") or getattr(
             self.instance, "content_type", None
         )
@@ -303,3 +354,10 @@ class LessonWriteSerializer(serializers.ModelSerializer):
                     "A VIDEO lesson requires a video_url or embedded_link."
                 )
         return attrs
+
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        representation["lesson_requirement"] = _lesson_requirement_text(
+            representation["requirements"]
+        )
+        return representation

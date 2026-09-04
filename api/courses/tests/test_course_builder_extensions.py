@@ -40,6 +40,10 @@ class LessonOpenApiContractTests(SimpleTestCase):
             "requirements",
             schema["components"]["schemas"][component_name]["properties"],
         )
+        self.assertIn(
+            "lesson_requirement",
+            schema["components"]["schemas"][component_name]["properties"],
+        )
         self.assertTrue(
             schema["components"]["schemas"][component_name]["properties"][
                 "content_type"
@@ -51,6 +55,12 @@ class LessonOpenApiContractTests(SimpleTestCase):
                 for example in json_body["examples"].values()
             },
             {"VIDEO", "QUIZ", "TEXT"},
+        )
+        self.assertTrue(
+            all(
+                "lesson_requirement" in example["value"]
+                for example in json_body["examples"].values()
+            )
         )
 
 
@@ -316,7 +326,12 @@ class LessonNewFieldsApiTests(APITestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    def test_create_lesson_includes_figma_requirements(self):
+    def test_create_lesson_includes_figma_lesson_requirement(self):
+        lesson_requirement = (
+            "At the end of this lesson, you will understand computer systems.\n\n"
+            "1. The important parts of a computer\n"
+            "2. The difference between analogue and digital computers"
+        )
         self.client.force_authenticate(self.creator)
         response = self.client.post(
             self.lesson_base,
@@ -324,21 +339,16 @@ class LessonNewFieldsApiTests(APITestCase):
                 "title": "Required knowledge",
                 "order": 1,
                 "lesson_type": "TEXT",
-                "requirements": [
-                    {"text": "Install Python 3", "order": 2},
-                    {"text": "Know basic computer concepts", "order": 1},
-                ],
+                "lesson_requirement": lesson_requirement,
             },
             format="json",
         )
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(
-            [item["text"] for item in response.data["requirements"]],
-            ["Know basic computer concepts", "Install Python 3"],
-        )
+        self.assertEqual(response.data["lesson_requirement"], lesson_requirement)
         lesson = Lesson.objects.get(id=response.data["id"])
-        self.assertEqual(lesson.requirements.count(), 2)
+        self.assertEqual(lesson.requirements.count(), 1)
+        self.assertEqual(lesson.requirements.get().text, lesson_requirement)
 
     def test_patch_requirements_replaces_them_and_omission_preserves_them(self):
         lesson = self.module.lessons.create(title="Text lesson", order=1)
@@ -355,15 +365,27 @@ class LessonNewFieldsApiTests(APITestCase):
 
         response = self.client.patch(
             f"{self.lesson_base}{lesson.id}/",
-            {"requirements": [{"text": "New requirement"}]},
+            {"lesson_requirement": "New requirement"},
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(
-            [item["text"] for item in response.data["requirements"]],
-            ["New requirement"],
-        )
+        self.assertEqual(response.data["lesson_requirement"], "New requirement")
         self.assertEqual(list(lesson.requirements.values_list("order", flat=True)), [1])
+
+    def test_empty_lesson_requirement_clears_current_value(self):
+        lesson = self.module.lessons.create(title="Text lesson", order=1)
+        lesson.requirements.create(text="Old requirement", order=1)
+        self.client.force_authenticate(self.creator)
+
+        response = self.client.patch(
+            f"{self.lesson_base}{lesson.id}/",
+            {"lesson_requirement": ""},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["lesson_requirement"], "")
+        self.assertFalse(lesson.requirements.exists())
 
     def test_learning_objective_commas_are_preserved_in_one_array_item(self):
         objective = "Compare variables, constants, and scope"
