@@ -3,7 +3,7 @@ from decimal import Decimal
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
-from api.platform.enums import PaymentProcessors
+from api.platform.enums import KYCProvider, PaymentProcessors
 from core.mixins import DateHistoryModelMixin, UUIDPrimaryKeyModelMixin
 
 
@@ -116,6 +116,13 @@ class PlatformSettings(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
         choices=PaymentProcessors.choices,
         default=PaymentProcessors.FLUTTERWAVE,
         help_text=_("Which payment processor to use for creator payouts."),
+    )
+    kyc_provider = models.CharField(
+        verbose_name=_("KYC service provider"),
+        max_length=20,
+        choices=KYCProvider.choices,
+        default=KYCProvider.YOUVERIFY,
+        help_text=_("Which KYC service provider to use for identity verification."),
     )
 
     class Meta:

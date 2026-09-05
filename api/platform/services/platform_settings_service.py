@@ -24,6 +24,7 @@ UPDATABLE_FIELDS = {
     "sla_red_threshold_hours",
     "mfa_enrollment_grace_period_days",
     "payment_processor",
+    "kyc_provider",
 }
 
 

@@ -12,6 +12,8 @@ The fix is `authentication_classes = []` on genuinely public views. These
 tests pin that: a garbage token must change nothing about the outcome.
 """
 
+from unittest.mock import patch
+
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
@@ -38,6 +40,21 @@ class PublicEndpointsIgnoreStaleTokenTests(APITestCase):
 
     def test_stale_token_does_not_change_the_response(self):
         """The token must be inert: same status with and without it."""
+
+        # banks-list calls out to Paystack/Flutterwave depending on settings; stub both.
+        patches = [
+            patch(
+                "api.payments.views.bankaccount_views.PaystackService.get_banks",
+                return_value=[{"name": "Access Bank", "code": "044"}],
+            ),
+            patch(
+                "api.payments.views.bankaccount_views.FlutterwaveService.get_banks",
+                return_value=[{"name": "Access Bank", "code": "044"}],
+            ),
+        ]
+        for p in patches:
+            p.start()
+        self.addCleanup(lambda: [p.stop() for p in patches])
 
         checked = 0
         for name, method, body in PUBLIC_ROUTES:

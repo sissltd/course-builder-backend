@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from api.platform.enums import PaymentProcessors
+from api.platform.enums import KYCProvider, PaymentProcessors
 from api.platform.models import PlatformSettings
 
 
@@ -35,6 +35,7 @@ class PlatformSettingsSerializer(serializers.ModelSerializer):
             "mfa_enrollment_grace_period_days",
             "updated_datetime",
             "payment_processor",
+            "kyc_provider",
         ]
         read_only_fields = fields
 
@@ -154,6 +155,11 @@ class PlatformSettingsUpdateSerializer(serializers.Serializer):
         required=False,
         choices=PaymentProcessors.choices,
         help_text="Which payment processor to use for creator payouts.",
+    )
+    kyc_provider = serializers.ChoiceField(
+        required=False,
+        choices=KYCProvider.choices,
+        help_text="Which KYC service provider to use for identity verification.",
     )
 
     def validate(self, attrs):

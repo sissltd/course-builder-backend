@@ -150,8 +150,10 @@ class PaystackService:
             raise PaystackServiceError(error_message)
         result = response.json()
 
-        RedisService.set_cached_banks(result)
-        return result
+        bank_list = result["data"]
+        data = [{"name": bnk["name"], "code": bnk["code"]} for bnk in bank_list]
+        RedisService.set_cached_banks(data)
+        return data
 
     @staticmethod
     def get_bank_name(bank_code):
