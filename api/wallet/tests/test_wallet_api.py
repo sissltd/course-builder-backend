@@ -22,6 +22,7 @@ def _approve_kyc(user):
         document_type="NATIONAL_ID",
         id_number="12345",
         status=KYCStatus.APPROVED,
+        date_of_birth="1990-01-01",
     )
 
 

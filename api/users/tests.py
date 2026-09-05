@@ -587,8 +587,6 @@ class KYCApiTests(APITestCase):
                 "id_number": "12345",
                 "first_name": "John",
                 "last_name": "Doe",
-                "address": "123 Main St",
-                "date_of_birth": "1990-01-01"
             },
             format="json",
         )
