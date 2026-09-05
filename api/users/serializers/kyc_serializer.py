@@ -59,9 +59,11 @@ class KYCVerificationSubmitSerializer(serializers.Serializer):
 
     first_name = serializers.CharField(max_length=64)
     last_name = serializers.CharField(max_length=64)
+    address = serializers.CharField(max_length=256)
     country_of_issue = serializers.CharField(max_length=2)
     document_type = serializers.ChoiceField(choices=KYCDocumentType.choices)
     id_number = serializers.CharField(max_length=64)
+    date_of_birth = serializers.DateField()
 
 
 class UserMiniSerializer(serializers.ModelSerializer):

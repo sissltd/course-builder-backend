@@ -45,6 +45,7 @@ class KYCOutboxEvent(UUIDPrimaryKeyModelMixin, SoftDeleteModelMixin, DateHistory
 
 
 class WebhookEvent(UUIDPrimaryKeyModelMixin, SoftDeleteModelMixin, DateHistoryModelMixin, models.Model):
+    """Outbox event for payment webhooks."""
     STATUS_CHOICES: ClassVar = [
         ("PENDING", "Pending"),
         ("PROCESSING", "Processing"),
@@ -118,4 +119,29 @@ class TransferOutboxEvent(
 
     class Meta:
         db_table = "transfer_outbox_events"
+        ordering = ["created_datetime"]
+
+
+class YouverifyWebhookOutboxEvent(UUIDPrimaryKeyModelMixin, SoftDeleteModelMixin, DateHistoryModelMixin, models.Model):
+    """Holds the webhook from YouVerify entity verification call"""
+
+    class Status(models.TextChoices):
+        PENDING = "PENDING", "Pending Background task processing"
+        PROCESSING = "PROCESSING", "Currently being processed"
+        FAILED = "FAILED", "Failed Locally"
+        PROCESSED = "PROCESSED", "Processed"
+
+    kyc_request_id = models.CharField(max_length=255, unique=True)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
+    event_type = models.CharField(
+        max_length=255, help_text="Type of the YouVerify webhook event, such as 'identity.completed'"
+    )
+    error_message = models.TextField(null=True, blank=True)
+    payload = models.JSONField()
+
+    def __str__(self):
+        return f"YouVerify Webhook - {self.status}"
+
+    class Meta:
+        db_table = "youverify_webhook_events"
         ordering = ["created_datetime"]

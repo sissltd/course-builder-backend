@@ -47,6 +47,8 @@ def submit_verification(
     id_number: str,
     first_name: str,
     last_name: str,
+    address: str,
+    date_of_birth: str,
 ) -> KYCVerification:
     """Create a new PENDING KYC submission for `user`, and alert Admins/Super
     Admins that a request is waiting for them.
@@ -67,10 +69,12 @@ def submit_verification(
             country_of_issue=country_of_issue,
             document_type=document_type,
             id_number=id_number,
+            date_of_birth=date_of_birth,
         )
         verification.user.first_name = first_name or verification.user.first_name
         verification.user.last_name = last_name or verification.user.last_name
-        verification.user.save(update_fields=["first_name", "last_name", "updated_datetime"])
+        verification.user.address = address or verification.user.address
+        verification.user.save(update_fields=["first_name", "last_name", "address", "updated_datetime"])
         _notify_admins_of_new_submission(verification)
 
         outbox_event = KYCOutboxEvent.objects.create(
@@ -113,9 +117,9 @@ def _enqueue_kyc_verification(event_id: uuid.UUID) -> None:
 
     match kyc_provider:
         case "SISSL":
-            call_sissl_kyc_verification.apply_async(event_id=event_id)  # type: ignore
+            call_sissl_kyc_verification.apply_async(kwargs={"event_id": event_id})  # type: ignore
         case "YOUVERIFY":
-            call_youverify_kyc_verification.apply_async(event_id=event_id)  # type: ignore
+            call_youverify_kyc_verification.apply_async(kwargs={"event_id": event_id})  # type: ignore
         case _:
             logger.warning(f"Unsupported KYC provider: {kyc_provider}. No verification task enqueued.")
 

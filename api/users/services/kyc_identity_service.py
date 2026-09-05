@@ -16,7 +16,10 @@ import base64
 import binascii
 import logging
 
+import requests
+from decouple import config
 from django.contrib.auth.models import User
+from rest_framework.exceptions import ValidationError
 
 from shared.services.storage_service import StorageError, StorageService
 
@@ -46,19 +49,19 @@ def _store_document_photo(image_value):
     try:
         data = base64.b64decode(payload, validate=True)
     except (binascii.Error, ValueError):
-        logger.warning("[<>KYCIdentity<>] SISSL image was not valid base64; skipping photo")
+        logger.warning("[<>KYCIdentity<>] KYC image was not valid base64; skipping photo")
         return ""
     try:
         return StorageService.upload_bytes(
             data, folder=_DOC_FOLDER, content_type="image/jpeg", acl="private"
         )
     except StorageError:
-        logger.exception("[<>KYCIdentity<>] Failed to store SISSL document photo")
+        logger.exception("[<>KYCIdentity<>] Failed to store KYC document photo")
         return ""
 
 
 def apply_kyc_document_photo(user_id, image_value):
-    """Upload the SISSL government photo and record its key on the user's profile.
+    """Upload the KYC government photo and record its key on the user's profile.
 
     Runs in a Celery worker off the request path — the Spaces upload is slow enough to threaten the synchronous NIN/BVN response's gateway-timeout budget.
     Non-raising and idempotent (a re-run just re-uploads and overwrites the key).
@@ -117,7 +120,7 @@ def persist_kyc_identity(user, raw):
         logger.exception("[<>KYCIdentity<>] persist_sissl_identity failed")
 
 
-def update_sissl_response(kyc_request, status, request_summary, response_summary):
+def update_kyc_response(kyc_request, status, request_summary=None, response_summary=None):
     """
     Updates the KYC request with the SISSL/YOUVERIFY response data.
     """
@@ -130,3 +133,136 @@ def update_sissl_response(kyc_request, status, request_summary, response_summary
         )
     except Exception:
         logger.exception("[<>KYCIdentity<>] update_kyc_response failed for KYC request %s", kyc_request.id)
+
+
+class YouVerifyService:
+    """Service class for interacting with the YouVerify KYC provider.
+    YouVerify Identitiy verification is a two-stage process involving entity creation and entity verification.
+    """
+
+    BASE_URL = config("YOUVERIFY_BASE_URL", default="")
+    API_KEY = config("YOUVERIFY_API_KEY", default="")
+
+    @classmethod
+    def _get_headers(cls):
+        secret_key = cls.API_KEY
+        if not secret_key:
+            logger.warning("YOUVERIFY_API_KEY is not set in environment variables.")
+        return {
+            "token": secret_key,
+            "Content-Type": "application/json",
+        }
+
+    @classmethod
+    def _parse_json_response(cls, response, context):
+        """Parse a YouVerify response body, raising a descriptive error instead of a bare JSONDecodeError on empty/non-JSON bodies."""
+        try:
+            return response.json()
+        except ValueError as exc:
+            logger.error(
+                "[YouVerifyService.%s] Non-JSON response (status %s): %s",
+                context,
+                response.status_code,
+                response.text[:500],
+            )
+            raise ValueError(
+                f"YouVerify {context} returned a non-JSON response (status {response.status_code})"
+            ) from exc
+
+    @classmethod
+    def create_entity(cls, identity_data):
+        """Create a YouVerify entity.
+
+        Args:
+            identity_data (dict): The identity information to be verified.
+            {
+                "entityType": "individual",
+                "isSubjectConsent": true,
+                "firstName": "John",
+                "lastName": "Doe",
+                "email": "john.doe@example.com",
+                "phone": "+2348012345678",
+                "gender": "male",
+                "dateOfBirth": "1990-01-01",
+                "nationality": "NG",
+            }
+
+
+        Returns:
+            dict: The response from the YouVerify API, reformatted.
+            {
+                "success": True,
+                "status_code": 201,
+                "message": "Entity created successfully.",
+                "entity_id": "ent_684f5cc5a47a3926763b83a7",
+            }
+        """
+        url = f"{cls.BASE_URL}/v2/api/entities"
+        headers = cls._get_headers()
+
+        response = requests.post(url, json=identity_data, headers=headers)
+        json_resp = cls._parse_json_response(response, context="create_entity")
+        if isinstance(json_resp, dict):
+            json_resp["entity_id"] = json_resp.pop("data", {}).get("id", None)
+            if not json_resp["entity_id"]:
+                logger.error("[YouVerifyService.create_entity] No entity id in response: %s", json_resp)
+        return json_resp
+
+    @classmethod
+    def verify_entity(
+        cls,
+        entity_id,
+        id_type,
+        id_number,
+        country_code="NG",
+        first_name=None,
+        last_name=None,
+        date_of_birth=None,
+        metadata_dict=None,
+    ):
+        """Verify the user's identity using YouVerify."""
+
+        url = f"{cls.BASE_URL}/v2/api/entities/identity?entityId={entity_id}"
+        headers = cls._get_headers()
+
+        payload = {
+            "entityType": "individual",
+            "isSubjectConsent": True,
+            "identity": {
+                "id": id_number,
+                "idType": id_type,
+                "countryCode": country_code,
+                "metadata": metadata_dict,
+            },
+        }
+
+        # Conditional parameter mapping
+        if id_type == "bvn":
+            payload["identity"]["fullDetails"] = True
+            payload["identity"]["premiumBVN"] = True
+
+        elif id_type in ["nin", "vnin"]:
+            payload["identity"]["premiumNin"] = True
+
+        elif id_type == "passport":
+            if not first_name or not last_name:
+                raise ValidationError("First name and Last name are strictly required for Passport verification.")
+
+            # Passports require explicit validation data to check against government files
+            payload["identity"]["lastName"] = last_name
+            payload["identity"]["validations"] = {
+                "data": {
+                    "firstName": first_name,
+                    "dateOfBirth": date_of_birth,  # Format: YYYY-MM-DD
+                }
+            }
+        else:
+            logger.error(f"[kyc_identity_service.verify_entity] Unsupported ID type: {id_type}")
+            raise ValueError(f"Unsupported ID type: {id_type}")
+        response = requests.post(url, json=payload, headers=headers)
+        # json_resp = cls._parse_json_response(response, context="verify_entity")
+        json_resp = response.json()
+        data = json_resp.pop("data", {})
+        if isinstance(data, dict):
+            json_resp["entity_id"] = data.get("id", None)
+        return json_resp

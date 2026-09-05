@@ -120,6 +120,10 @@ jobs:
       # SISSL
       SISSL_BASE_URL: https://dummy_url.com
       SISSL_API_TOKEN: dummy-sissl-api-token
+      #YouVerify
+      YOUVERIFY_WEBHOOK_SECRET: dummy-secret-key
+      YOUVERIFY_API_KEY: dummy-api-key
+      YOUVERIFY_BASE_URL: https://api.sandbox.youverify.co 
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

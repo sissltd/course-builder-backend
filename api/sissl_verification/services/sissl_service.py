@@ -32,7 +32,7 @@ from api.sissl_verification.exceptions import (
 )
 from api.sissl_verification.models import SISSLConfiguration, SISSLLog
 from api.sissl_verification.providers.sissl import SisslProvider
-from api.users.services.kyc_identity_service import update_sissl_response
+from api.users.services.kyc_identity_service import update_kyc_response
 from shared.constants.kyc import (
     SISSL_LIVENESS_HOURLY_CAP,
     SISSL_LIVENESS_THRESHOLD,
@@ -345,7 +345,7 @@ class SISSLServices:
         )
 
         if kyc_request:
-            update_sissl_response(kyc_request, status_value, {"bvn_present": bool(bvn)}, raw if isinstance(raw, dict) else {})
+            update_kyc_response(kyc_request, status_value, {"bvn_present": bool(bvn)}, raw if isinstance(raw, dict) else {})
 
         # SISSL returns status="found" on a hit. Anything else is a hard fail.
         if status_value != "found":
@@ -442,7 +442,7 @@ class SISSLServices:
         )
 
         if kyc_request:
-            update_sissl_response(kyc_request, status_value, {"nin_present": bool(nin)}, raw if isinstance(raw, dict) else {})
+            update_kyc_response(kyc_request, status_value, {"nin_present": bool(nin)}, raw if isinstance(raw, dict) else {})
         
         # SISSL returns status="found" on a hit (mirroring BVN). Anything else is a hard fail.
         if status_value != "found":
