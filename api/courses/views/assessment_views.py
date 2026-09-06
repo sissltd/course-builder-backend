@@ -177,9 +177,8 @@ class LessonAssessmentView(APIView):
             "`ESSAY` needs a top-level `explanation` instead and rejects "
             "`options`/`correct_index`. Explanations are required on every "
             "option and essay question (SCCS PRD Section 6.3). Only this "
-            "per-question shape is validated here - the 3-5 "
-            "questions-per-lesson count threshold is enforced separately at "
-            "submit time, not on every save."
+            "per-question shape is validated here. Lesson assessments are "
+            "optional and there is no question-count threshold."
         ),
         tags=["Creator — Assessments"],
         parameters=[
@@ -301,8 +300,8 @@ class ModuleAssessmentView(APIView):
             "`ESSAY` needs a top-level `explanation` instead and rejects "
             "`options`/`correct_index`. Explanations are required on every "
             "option and essay question (SCCS PRD Section 6.3). Only this "
-            "per-question shape is validated here; count-per-level "
-            "thresholds are enforced separately at submit time."
+            "per-question shape is validated here. A module assessment must "
+            "exist before submission, but its question count is not constrained."
         ),
         tags=["Creator — Assessments"],
         parameters=[

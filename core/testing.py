@@ -198,7 +198,6 @@ def reseed_reference_data() -> None:
         ("Version", "Version selected"),
         ("Thumbnail", "Thumbnail set"),
         ("Assessments", "Final assessment"),
-        ("Assessments", "Lesson quizzes"),
     ]
     for section, label in criteria:
         QualityCheckCriterion.objects.get_or_create(

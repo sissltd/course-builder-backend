@@ -83,10 +83,6 @@ class AICourseGenerationTaskTests(TestCase):
                             "Recognize data types",
                         ],
                         "duration_minutes": 30,
-                        "assessment": {
-                            "title": "Lesson quiz",
-                            "questions": [_question(1)],
-                        },
                     }
                 ],
                 "assessment": {
@@ -116,7 +112,8 @@ class AICourseGenerationTaskTests(TestCase):
         )
         lesson = self.job.course.modules.get().lessons.get()
         self.assertEqual(lesson.script, "Detailed lesson script")
-        self.assertTrue(hasattr(lesson, "assessment"))
+        self.assertFalse(hasattr(lesson, "assessment"))
+        self.assertTrue(hasattr(lesson.module, "assessment"))
         self.assertTrue(hasattr(self.job.course, "final_assessment"))
 
     @patch("api.courses.tasks.get_course_ai_provider")

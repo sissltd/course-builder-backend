@@ -14,8 +14,6 @@ UPDATABLE_FIELDS = {
     "course_description_word_max",
     "lesson_script_word_min",
     "lesson_script_word_max",
-    "lesson_quiz_questions_min",
-    "lesson_quiz_questions_max",
     "course_duration_min_minutes",
     "course_duration_max_minutes",
     "course_final_assessment_min_questions",

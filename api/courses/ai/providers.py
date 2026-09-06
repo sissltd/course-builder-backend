@@ -157,7 +157,6 @@ MODULE_CONTENT_SCHEMA = {
                     "script",
                     "learning_objectives",
                     "duration_minutes",
-                    "assessment",
                 ],
                 "properties": {
                     "script": {"type": "string"},
@@ -172,7 +171,6 @@ MODULE_CONTENT_SCHEMA = {
                         "minimum": 5,
                         "maximum": 90,
                     },
-                    "assessment": ASSESSMENT_SCHEMA,
                 },
             },
         },
@@ -287,7 +285,7 @@ Use 5-8 modules and 3-5 lessons per module. Return concise course, module, and l
 Course: {course.title}\nCourse description: {course.description}
 Module: {module.title}\nModule description: {module.description}
 Lessons, in this exact order: {lesson_outline}
-Return exactly one entry per supplied lesson. Each script must be 500-1500 words. Include 3-5 explained multiple-choice questions for every lesson and for the module."""
+Return exactly one entry per supplied lesson. Each script must be 500-1500 words. Do not create lesson assessments; creators may add those optionally. Include 3-5 explained multiple-choice questions for the module assessment."""
         return self._structured_response(
             name="module_content", schema=MODULE_CONTENT_SCHEMA, prompt=prompt
         )
