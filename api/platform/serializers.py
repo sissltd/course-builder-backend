@@ -24,8 +24,6 @@ class PlatformSettingsSerializer(serializers.ModelSerializer):
             "course_description_word_max",
             "lesson_script_word_min",
             "lesson_script_word_max",
-            "lesson_quiz_questions_min",
-            "lesson_quiz_questions_max",
             "course_duration_min_minutes",
             "course_duration_max_minutes",
             "course_final_assessment_min_questions",
@@ -111,16 +109,6 @@ class PlatformSettingsUpdateSerializer(serializers.Serializer):
         required=False,
         min_value=1,
         help_text="Most words allowed in a lesson script.",
-    )
-    lesson_quiz_questions_min = serializers.IntegerField(
-        required=False,
-        min_value=1,
-        help_text="Fewest questions a lesson quiz must contain.",
-    )
-    lesson_quiz_questions_max = serializers.IntegerField(
-        required=False,
-        min_value=1,
-        help_text="Most questions a lesson quiz may contain.",
     )
     course_duration_min_minutes = serializers.IntegerField(
         required=False,

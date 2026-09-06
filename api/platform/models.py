@@ -62,12 +62,6 @@ class PlatformSettings(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
     lesson_script_word_max = models.PositiveIntegerField(
         verbose_name=_("Lesson Script Word Max"), default=1500
     )
-    lesson_quiz_questions_min = models.PositiveIntegerField(
-        verbose_name=_("Lesson Quiz Questions Min"), default=3
-    )
-    lesson_quiz_questions_max = models.PositiveIntegerField(
-        verbose_name=_("Lesson Quiz Questions Max"), default=5
-    )
     course_duration_min_minutes = models.PositiveIntegerField(
         verbose_name=_("Course Duration Min Minutes"), default=120
     )

@@ -332,8 +332,7 @@ class LessonWriteSerializer(serializers.ModelSerializer):
         return normalized
 
     def validate(self, attrs):
-        """A VIDEO lesson should carry at least one media reference; a QUIZ
-        lesson is validated at submit time (assessment questions rule)."""
+        """A VIDEO lesson should carry at least one media reference."""
 
         if "lesson_requirement" in attrs:
             lesson_requirement = attrs.pop("lesson_requirement")
