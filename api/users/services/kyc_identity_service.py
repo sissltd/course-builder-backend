@@ -259,10 +259,10 @@ class YouVerifyService:
         else:
             logger.error(f"[kyc_identity_service.verify_entity] Unsupported ID type: {id_type}")
             raise ValueError(f"Unsupported ID type: {id_type}")
+
         response = requests.post(url, json=payload, headers=headers)
-        # json_resp = cls._parse_json_response(response, context="verify_entity")
         json_resp = response.json()
-        data = json_resp.pop("data", {})
+        data = json_resp.get("data", {})
         if isinstance(data, dict):
             json_resp["entity_id"] = data.get("id", None)
         return json_resp

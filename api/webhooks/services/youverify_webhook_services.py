@@ -6,7 +6,6 @@ from django.db import transaction as django_transaction
 
 from api.users.models.kyc_verification import KYCVerification
 from api.users.services.kyc_identity_service import (
-    apply_kyc_document_photo,
     persist_kyc_identity,
     update_kyc_response,
 )
@@ -82,6 +81,8 @@ class YouverifyWebhookServices:
             kyc_id = metadata.get('kyc_request_id')
             kyc_request = KYCVerification.objects.get(id=kyc_id)
             user = kyc_request.user
+
+            # `persist_kyc_identity` handles the cleaning and decoding of the binary image data, so we pass it as-is
             image =  data.pop('image', None)
             raw = {
                 "first_name": data.get("firstName") or data.get("first_name"),
@@ -90,9 +91,9 @@ class YouverifyWebhookServices:
                 "date_of_birth": data.get("dateOfBirth") or data.get("date_of_birth"),
                 "image": image,
             }
+            data["dateOfBirth"] = str(data.get("dateOfBirth"))
             update_kyc_response(kyc_request, "found", request_summary=None, response_summary=data)
             persist_kyc_identity(user, raw)
-            apply_kyc_document_photo(str(user.id), image)
         except Exception as e:
             logger.error(f"Error handling Youverify identity verification found: {e!s}")
             raise WebhookProcessingError(

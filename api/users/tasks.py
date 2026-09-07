@@ -10,7 +10,11 @@ from django.utils import timezone
 
 from api.sissl_verification.services.sissl_service import SISSLServices
 from api.users.enums import KYCDocumentType
-from api.users.services.kyc_identity_service import YouVerifyService, persist_kyc_identity, update_kyc_response
+from api.users.services.kyc_identity_service import (
+    YouVerifyService,
+    persist_kyc_identity,
+    update_kyc_response,
+)
 from core.models import KYCOutboxEvent
 
 logging.basicConfig(level=logging.INFO)
@@ -75,14 +79,14 @@ def call_sissl_kyc_verification(self, event_id):
         raise self.retry(exc=exc)
 
 
-def _handle_youverify_failure_response(data, kyc_request):
+def _handle_youverify_failed_entity_create(data, kyc_request):
     logger.error(f"[users.call_youverify_kyc_verification] YouVerify KYC verification failed: {data}")
     kyc_request.kyc_response_summary = data
     kyc_request.kyc_provider = "youverify"
     kyc_request.save()
 
 
-def _handle_youverify_success_response(data, kyc_request):
+def _handle_youverify_successful_entity_create(data, kyc_request):
     from celery.exceptions import CeleryError
 
     id_type_dict = {
@@ -110,16 +114,17 @@ def _handle_youverify_success_response(data, kyc_request):
         return
 
     try:
-        data = youverify_entity_verify_response = YouVerifyService.verify_entity(
-            entity_id=entity_id,
-            id_type=id_type,
-            id_number=id_number,
-            country_code=country_code,
-            first_name=first_name,
-            last_name=last_name,
-            date_of_birth=date_of_birth,
-            metadata_dict={"kyc_verification_id": str(kyc_request.id)},
-        )
+        payload = {
+            "entity_id": entity_id,
+            "id_type": id_type,
+            "id_number": id_number,
+            "country_code": country_code,
+            "first_name": first_name,
+            "last_name": last_name,
+            "date_of_birth": date_of_birth,
+            "metadata_dict": {"kyc_verification_id": str(kyc_request.id)},
+        }
+        resp_data = YouVerifyService.verify_entity(**payload)
 
     except CeleryError:
         # Let retries, ignores, and rejects bubble up to Celery safely
@@ -133,10 +138,29 @@ def _handle_youverify_success_response(data, kyc_request):
             kyc_request, "failed", request_summary={"id_type": id_type}, response_summary={"error": str(exc)}
         )
     else:
-        # Just log the successful verification response. Prefer the Webhook handling over direct response handling
-        logger.info(
-            f"[<><><><>users.call_youverify_kyc_verification] {id_type} lookup succeeded for user {kyc_request.user.id}: {youverify_entity_verify_response}"
-        )
+        # Reverting to handling the verification response directly since the webhook may not be reliable
+        request_summary = payload.copy()
+        request_summary["date_of_birth"] = str(request_summary.pop("date_of_birth", None))
+        if resp_data.get("success") is True:
+            entity_data = resp_data.get("data", {})
+            identity_data = entity_data.get("identityCheck", {})
+            user = kyc_request.user
+            raw = {
+                "first_name": identity_data.get("firstName") or identity_data.get("first_name"),
+                "last_name": identity_data.get("lastName") or identity_data.get("last_name"),
+                "gender": identity_data.get("gender"),
+                "date_of_birth": identity_data.get("dateOfBirth") or identity_data.get("date_of_birth"),
+                "image": identity_data.pop("image", None),
+            }
+            # Making the request_summary value json-serializable
+            identity_data["dateOfBirth"] = str(identity_data.get("dateOfBirth"))
+            update_kyc_response(kyc_request, "found", request_summary=request_summary, response_summary=identity_data)
+            persist_kyc_identity(user, raw)
+        else:
+            logger.error(
+                f"[users.call_youverify_kyc_verification] Verification failed for user {kyc_request.user.id}: {resp_data}"
+            )
+            update_kyc_response(kyc_request, "failed", request_summary=request_summary, response_summary=resp_data)
 
 
 @shared_task(
@@ -191,9 +215,9 @@ def call_youverify_kyc_verification(self, event_id):
 
         success = entity_creation_response.get("success", False)
         if not success:
-            _handle_youverify_failure_response(entity_creation_response, kyc_request)
+            _handle_youverify_failed_entity_create(entity_creation_response, kyc_request)
         else:
-            _handle_youverify_success_response(data=entity_creation_response, kyc_request=kyc_request)
+            _handle_youverify_successful_entity_create(data=entity_creation_response, kyc_request=kyc_request)
 
         KYCOutboxEvent.objects.filter(
             id=outbox_event.id,
