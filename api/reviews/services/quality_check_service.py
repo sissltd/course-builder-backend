@@ -112,21 +112,6 @@ def validate_structural_standards(course: Course) -> list[str]:
                     f"words (has {script_words})."
                 )
 
-            lesson_assessment = getattr(lesson, "assessment", None)
-            question_count = (
-                len(lesson_assessment.questions) if lesson_assessment else 0
-            )
-            if not (
-                platform_settings.lesson_quiz_questions_min
-                <= question_count
-                <= platform_settings.lesson_quiz_questions_max
-            ):
-                failures.append(
-                    f"Lesson '{lesson.title}' must have between "
-                    f"{platform_settings.lesson_quiz_questions_min} and {platform_settings.lesson_quiz_questions_max} "
-                    f"quiz questions (has {question_count})."
-                )
-
     description_words = _word_count(course.description)
     if not (
         platform_settings.course_description_word_min

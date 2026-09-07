@@ -57,7 +57,6 @@ _DEFAULT_CRITERIA = [
     ("Version", "Version selected"),
     ("Thumbnail", "Thumbnail set"),
     ("Assessments", "Final assessment"),
-    ("Assessments", "Lesson quizzes"),
 ]
 
 

@@ -126,10 +126,9 @@ class AssessmentWriteSerializer(serializers.ModelSerializer):
 
     `questions` is validated per-item by QuizQuestionSerializer (shape only:
     field presence, option count, correct_index range, required
-    explanations). Count-per-level thresholds (e.g. 3-5 questions per
-    lesson, >=15 for the final assessment) are intentionally centralized in
-    course_validation_service and enforced at submit time, not duplicated
-    here.
+    explanations). Lesson assessments are optional and have no question-count
+    threshold. Submission-time rules for module-assessment presence and the
+    final-assessment minimum remain centralized in quality_check_service.
     """
 
     questions = QuizQuestionSerializer(many=True)

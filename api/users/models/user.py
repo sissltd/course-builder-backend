@@ -142,6 +142,26 @@ class User(
         ),
     )
 
+    # >>>>>>>>>>>> SISSL-verified identity (authoritative, from NIMC/NIBSS) <<<<<<<<<<
+    # Populated from the SISSL NIN/BVN response at verification time — distinct from
+    # the self-entered name/gender above. Drives the admin verification dashboard's
+    # Identity tab.
+    kyc_first_name = models.CharField(max_length=150, blank=True, default="")
+    kyc_last_name = models.CharField(max_length=150, blank=True, default="")
+    kyc_date_of_birth = models.CharField(
+        max_length=50,
+        blank=True,
+        default="",
+        help_text="Date of birth exactly as returned by KYC provider (format varies by source).",
+    )
+    kyc_gender = models.CharField(max_length=20, blank=True, default="")
+    kyc_document_image = models.CharField(
+        max_length=500,
+        blank=True,
+        default="",
+        help_text="Private Spaces object key for the government ID photo; served via presigned GET.",
+    )
+
     objects = CustomUserManager()
 
     USERNAME_FIELD = "email"

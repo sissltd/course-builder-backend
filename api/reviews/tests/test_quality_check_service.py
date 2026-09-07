@@ -71,13 +71,28 @@ class ValidateStructuralStandardsTests(TestCase):
         failures = quality_check_service.validate_structural_standards(course)
         self.assertTrue(any("duration" in f for f in failures))
 
-    def test_fails_when_lesson_missing_quiz(self):
+    def test_allows_lessons_without_quizzes(self):
         course = build_compliant_course()
-        lesson = Lesson.objects.filter(module__course=course).first()
-        Assessment.objects.filter(lesson=lesson).delete()
+        Assessment.objects.filter(lesson__module__course=course).delete()
+        self.assertFalse(
+            Assessment.objects.filter(lesson__module__course=course).exists()
+        )
 
         failures = quality_check_service.validate_structural_standards(course)
-        self.assertTrue(any("quiz questions" in f for f in failures))
+        self.assertEqual(failures, [])
+
+    def test_allows_any_question_count_for_optional_lesson_quizzes(self):
+        course = build_compliant_course()
+        lesson_assessments = list(
+            Assessment.objects.filter(lesson__module__course=course)[:2]
+        )
+        lesson_assessments[0].questions = make_questions(1)
+        lesson_assessments[0].save(update_fields=["questions"])
+        lesson_assessments[1].questions = make_questions(6)
+        lesson_assessments[1].save(update_fields=["questions"])
+
+        failures = quality_check_service.validate_structural_standards(course)
+        self.assertEqual(failures, [])
 
     def test_fails_when_module_missing_assessment(self):
         course = build_compliant_course()

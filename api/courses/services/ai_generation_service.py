@@ -165,15 +165,6 @@ def materialize_module_content(*, job, module, generated):
                 "updated_datetime",
             ]
         )
-        assessment = lesson_data["assessment"]
-        Assessment.objects.create(
-            level=AssessmentLevel.LESSON,
-            lesson=lesson,
-            title=assessment["title"],
-            questions=assessment["questions"],
-            created_by=job.creator,
-            updated_by=job.creator,
-        )
     assessment = generated["assessment"]
     Assessment.objects.create(
         level=AssessmentLevel.MODULE,

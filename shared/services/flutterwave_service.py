@@ -301,3 +301,28 @@ class FlutterwaveService:
         except requests.exceptions.RequestException as e:
             logger.error(f"Error initiating Flutterwave transfer: {e}")
             return False, {"message": f"Error initiating Flutterwave transfer: {e}"}
+
+    @classmethod
+    def get_banks(cls):
+        from shared.redis.redis_service import RedisService
+
+        cached = RedisService.get_cached_banks()
+        if cached is not None:
+            return cached
+
+        url = f"{FlutterwaveService.BASE_URL}/banks?country=NG"
+        headers = {
+            "Authorization": f"Bearer {FlutterwaveAuth.get_access_token()}",
+            "Content-Type": "application/json",
+        }
+        response = requests.get(url, headers=headers, timeout=10)
+        if response.status_code >= 400:
+            error_message = response.json().get("message", "Unknown error")
+            logger.warning(f"Failed to fetch banks from Flutterwave: {error_message}")
+            raise ValueError(error_message)
+
+        result = response.json()
+        bank_list = result["data"]
+        data = [{"name": bnk["name"], "code": bnk["code"]} for bnk in bank_list]
+        RedisService.set_cached_banks(data)
+        return data

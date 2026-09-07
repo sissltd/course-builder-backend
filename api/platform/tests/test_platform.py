@@ -65,6 +65,18 @@ class PlatformSettingsApiTests(APITestCase):
         response = self.client.get("/api/v1/platform-settings/")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["course_module_count_min"], 4)
+        self.assertNotIn("lesson_quiz_questions_min", response.data)
+        self.assertNotIn("lesson_quiz_questions_max", response.data)
+
+    def test_lesson_quiz_thresholds_cannot_be_configured(self):
+        self._authenticate_mfa_verified(self.admin)
+
+        response = self.client.patch(
+            "/api/v1/platform-settings/",
+            {"lesson_quiz_questions_min": 3},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_creator_cannot_patch(self):
         self.client.force_authenticate(self.creator)

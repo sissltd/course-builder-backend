@@ -12,7 +12,11 @@ class QualityCheckTemplateApiTests(APITestCase):
         self.creator = make_user(role=UserRole.COURSE_CREATOR)
 
     def test_seeded_criteria_exist(self):
-        self.assertGreaterEqual(QualityCheckCriterion.objects.count(), 12)
+        self.assertGreaterEqual(QualityCheckCriterion.objects.count(), 11)
+        lesson_quizzes = QualityCheckCriterion.objects.get(
+            section="Assessments", label="Lesson quizzes"
+        )
+        self.assertFalse(lesson_quizzes.is_active)
 
     def test_creator_lists_only_active_criteria(self):
         retired = QualityCheckCriterion.objects.create(
@@ -23,6 +27,7 @@ class QualityCheckTemplateApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         labels = [c["label"] for c in response.data]
         self.assertIn("Course title", labels)
+        self.assertNotIn("Lesson quizzes", labels)
         self.assertNotIn(retired.label, labels)
 
     def test_admin_sees_retired_criteria_too(self):

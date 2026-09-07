@@ -793,7 +793,8 @@ Question shape (used identically at all three levels):
 ### Lesson Assessment
 `GET|PUT {{base_url}}/api/v1/courses/{{course_id}}/modules/{{module_id}}/lessons/{{lesson_id}}/assessment/`
 
-**PUT body** (3-5 questions required at submit time)
+**Optional PUT body** (lesson quizzes are not required for submission and have
+no question-count threshold)
 ```json
 {
   "title": "Lesson 1 Quiz",
@@ -1003,7 +1004,7 @@ persisted as a status (a rejection immediately reopens the course as `DRAFT`).
 | Learning objectives per course | 5 | `course_learning_objectives_min/max` |
 | Learning objectives per lesson | 2–5 | `lesson_learning_objectives_min/max` |
 | Lesson script length | 500–1500 words | `lesson_script_word_min/max` |
-| Quiz questions per lesson | 3–5 | `lesson_quiz_questions_min/max` |
+| Lesson-level assessment | optional | — |
 | Module-level assessment | required (1 per module) | — |
 | Course description length | 100–500 words | `course_description_word_min/max` |
 | Total course duration | 2–8 hours | `course_duration_min/max_minutes` |

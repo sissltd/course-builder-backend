@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from api.platform.enums import PaymentProcessors
+from api.platform.enums import KYCProvider, PaymentProcessors
 from api.platform.models import PlatformSettings
 
 
@@ -24,8 +24,6 @@ class PlatformSettingsSerializer(serializers.ModelSerializer):
             "course_description_word_max",
             "lesson_script_word_min",
             "lesson_script_word_max",
-            "lesson_quiz_questions_min",
-            "lesson_quiz_questions_max",
             "course_duration_min_minutes",
             "course_duration_max_minutes",
             "course_final_assessment_min_questions",
@@ -35,6 +33,7 @@ class PlatformSettingsSerializer(serializers.ModelSerializer):
             "mfa_enrollment_grace_period_days",
             "updated_datetime",
             "payment_processor",
+            "kyc_provider",
         ]
         read_only_fields = fields
 
@@ -112,16 +111,6 @@ class PlatformSettingsUpdateSerializer(serializers.Serializer):
         min_value=1,
         help_text="Most words allowed in a lesson script.",
     )
-    lesson_quiz_questions_min = serializers.IntegerField(
-        required=False,
-        min_value=1,
-        help_text="Fewest questions a lesson quiz must contain.",
-    )
-    lesson_quiz_questions_max = serializers.IntegerField(
-        required=False,
-        min_value=1,
-        help_text="Most questions a lesson quiz may contain.",
-    )
     course_duration_min_minutes = serializers.IntegerField(
         required=False,
         min_value=1,
@@ -154,6 +143,11 @@ class PlatformSettingsUpdateSerializer(serializers.Serializer):
         required=False,
         choices=PaymentProcessors.choices,
         help_text="Which payment processor to use for creator payouts.",
+    )
+    kyc_provider = serializers.ChoiceField(
+        required=False,
+        choices=KYCProvider.choices,
+        help_text="Which KYC service provider to use for identity verification.",
     )
 
     def validate(self, attrs):

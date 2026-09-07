@@ -5,7 +5,7 @@ from datetime import timedelta
 
 from api.collaborators.tests.factories import make_collaborator
 from api.courses.enums import CourseStatus, DistributionStatus
-from api.courses.models import Course, CourseDistribution, CourseVersion
+from api.courses.models import Assessment, Course, CourseDistribution, CourseVersion
 from api.courses.services import course_service
 from api.courses.tests.factories import (
     build_compliant_course,
@@ -331,10 +331,15 @@ class CourseApiTests(APITestCase):
 
     def test_submit_happy_path(self):
         course = build_compliant_course(creator=self.creator, category=self.category)
+        Assessment.objects.filter(lesson__module__course=course).delete()
+        self.assertFalse(
+            Assessment.objects.filter(lesson__module__course=course).exists()
+        )
         self.client.force_authenticate(self.creator)
 
         response = self.client.post(f"/api/v1/courses/{course.id}/submit/")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["status"], CourseStatus.SUBMITTED)
         course.refresh_from_db()
         self.assertEqual(course.status, CourseStatus.SUBMITTED)
 

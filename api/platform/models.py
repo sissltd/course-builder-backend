@@ -3,7 +3,7 @@ from decimal import Decimal
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
-from api.platform.enums import PaymentProcessors
+from api.platform.enums import KYCProvider, PaymentProcessors
 from core.mixins import DateHistoryModelMixin, UUIDPrimaryKeyModelMixin
 
 
@@ -62,12 +62,6 @@ class PlatformSettings(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
     lesson_script_word_max = models.PositiveIntegerField(
         verbose_name=_("Lesson Script Word Max"), default=1500
     )
-    lesson_quiz_questions_min = models.PositiveIntegerField(
-        verbose_name=_("Lesson Quiz Questions Min"), default=3
-    )
-    lesson_quiz_questions_max = models.PositiveIntegerField(
-        verbose_name=_("Lesson Quiz Questions Max"), default=5
-    )
     course_duration_min_minutes = models.PositiveIntegerField(
         verbose_name=_("Course Duration Min Minutes"), default=120
     )
@@ -116,6 +110,13 @@ class PlatformSettings(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
         choices=PaymentProcessors.choices,
         default=PaymentProcessors.FLUTTERWAVE,
         help_text=_("Which payment processor to use for creator payouts."),
+    )
+    kyc_provider = models.CharField(
+        verbose_name=_("KYC service provider"),
+        max_length=20,
+        choices=KYCProvider.choices,
+        default=KYCProvider.YOUVERIFY,
+        help_text=_("Which KYC service provider to use for identity verification."),
     )
 
     class Meta:

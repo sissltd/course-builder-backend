@@ -290,9 +290,9 @@ error shapes) is in `docs/postman_collection.md`'s **Modules**, **Lessons**,
 **Assessments**, and **Review Queue** folders. For a minimally submittable
 course you need (see that doc's "Course quality standards" table):
 
-- 4–12 Modules, each with a Module-level Assessment (≥3 questions)
+- 4–12 Modules, each with a Module-level Assessment
 - 3–8 Lessons per Module, each with `script` (500–1500 words),
-  `learning_objectives` (2–5 items), and a Lesson-level Assessment (3–5 questions)
+  `learning_objectives` (2–5 items); Lesson-level Assessments are optional
 - A Course-level final Assessment with ≥15 questions
 - `preview_video_url` set (done in step 5.1) and `terms_accepted` true (done at create)
 

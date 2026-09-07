@@ -6,3 +6,10 @@ class PaymentProcessors(models.TextChoices):
 
     FLUTTERWAVE = "FLUTTERWAVE", "Flutterwave"
     PAYSTACK = "PAYSTACK", "Paystack"
+
+
+class KYCProvider(models.TextChoices):
+    """KYC service providers available in the platform."""
+
+    SISSL = "SISSL", "SISSL"
+    YOUVERIFY = "YOUVERIFY", "YouVerify"

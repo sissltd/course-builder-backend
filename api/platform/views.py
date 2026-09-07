@@ -41,8 +41,6 @@ _SETTINGS_EXAMPLE = {
     "course_description_word_max": 500,
     "lesson_script_word_min": 500,
     "lesson_script_word_max": 1500,
-    "lesson_quiz_questions_min": 3,
-    "lesson_quiz_questions_max": 5,
     "course_duration_min_minutes": 120,
     "course_duration_max_minutes": 480,
     "course_final_assessment_min_questions": 15,

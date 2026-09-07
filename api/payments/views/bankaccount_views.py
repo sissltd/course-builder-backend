@@ -251,12 +251,23 @@ class BankListView(APIView):
     def get(self, request):
         """Returns a list of bank names and codes, as returned from Paystack. This uses Redis cache with a 24 hour expiry to minimize calls to Paystack API. The endpoint is public and requires no authentication."""
 
-        banks_result = PaystackService.get_banks()
-        bank_list = banks_result["data"]
-        data = [{"name": bnk["name"], "code": bnk["code"]} for bnk in bank_list]
+        provider = get_settings().payment_processor
+        from api.platform.enums import PaymentProcessors
+
+        match provider:
+            case PaymentProcessors.PAYSTACK:
+                banks_result = PaystackService.get_banks()
+            case PaymentProcessors.FLUTTERWAVE:
+                banks_result = FlutterwaveService.get_banks()
+            case _:
+                logger.error(f"Unsupported payment processor: {provider}")
+                return custom_error_response(
+                    message=f"Unsupported payment processor: {provider}",
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
 
         return custom_success_response(
             message="Processed successfully",
-            data=data,
+            data=banks_result,
             status=status.HTTP_200_OK,
         )
