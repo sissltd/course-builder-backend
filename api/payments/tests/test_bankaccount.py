@@ -4,6 +4,7 @@ The suite mirrors the category API test style: access rules first, then endpoint
 behaviour and edge-case handling.
 """
 
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from rest_framework import status
@@ -12,6 +13,7 @@ from rest_framework.test import APITestCase
 from api.courses.tests.factories import make_user
 from api.payments.models.bankaccount_models import BankAccount
 from api.payments.services.bankaccount_services import AccountDetailsError
+from api.platform.enums import PaymentProcessors
 from api.users.enums import UserRole
 from shared.utils.encryption import encrypt_field
 
@@ -342,14 +344,18 @@ class VerifyBankAccountViewTests(APITestCase):
 
 class BankListViewTests(APITestCase):
     def test_public_can_fetch_bank_names_and_codes(self):
-        with patch(
-            "api.payments.views.bankaccount_views.PaystackService.get_banks",
-            return_value={
-                "data": [
-                    {"name": "Access Bank", "code": "044", "active": True},
-                    {"name": "GTBank", "code": "058", "active": True},
-                ]
-            },
+        with (
+            patch(
+                "api.payments.views.bankaccount_views.get_settings",
+                return_value=SimpleNamespace(payment_processor=PaymentProcessors.PAYSTACK),
+            ),
+            patch(
+                "api.payments.views.bankaccount_views.PaystackService.get_banks",
+                return_value=[
+                    {"name": "Access Bank", "code": "044"},
+                    {"name": "GTBank", "code": "058"},
+                ],
+            ),
         ):
             response = self.client.get(BANKS_URL)
 

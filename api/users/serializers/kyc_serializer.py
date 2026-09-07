@@ -1,7 +1,17 @@
+from typing import ClassVar
+
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from api.users.enums import KYCDocumentType
 from api.users.models import KYCVerification, User
+
+
+class KYCUserDataSerializer(serializers.Serializer):
+    first_name = serializers.CharField(allow_null=True, read_only=True)
+    last_name = serializers.CharField(allow_null=True, read_only=True)
+    date_of_birth = serializers.DateField(allow_null=True, read_only=True)
+    sex = serializers.CharField(allow_null=True, read_only=True)
 
 
 class KYCVerificationSerializer(serializers.ModelSerializer):
@@ -9,6 +19,7 @@ class KYCVerificationSerializer(serializers.ModelSerializer):
 
     first_name = serializers.CharField(source="user.first_name", read_only=True)
     last_name = serializers.CharField(source="user.last_name", read_only=True)
+    kyc_user_data = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = KYCVerification
@@ -22,8 +33,21 @@ class KYCVerificationSerializer(serializers.ModelSerializer):
             "reviewed_at",
             "first_name",
             "last_name",
+            "kyc_user_data",
+            "kyc_request_status",
+            "kyc_response_summary",
         ]
         read_only_fields = fields
+
+    @extend_schema_field(KYCUserDataSerializer)
+    def get_kyc_user_data(self, obj):
+        """Return the user data returned from the KYC provider, if any."""
+        return {
+            "first_name": obj.user.kyc_first_name,
+            "last_name": obj.user.kyc_last_name,
+            "date_of_birth": obj.user.kyc_date_of_birth,
+            "sex": obj.user.kyc_gender,
+        }
 
 
 class KYCVerificationSubmitSerializer(serializers.Serializer):
@@ -35,9 +59,11 @@ class KYCVerificationSubmitSerializer(serializers.Serializer):
 
     first_name = serializers.CharField(max_length=64)
     last_name = serializers.CharField(max_length=64)
+    address = serializers.CharField(max_length=256)
     country_of_issue = serializers.CharField(max_length=2)
     document_type = serializers.ChoiceField(choices=KYCDocumentType.choices)
     id_number = serializers.CharField(max_length=64)
+    date_of_birth = serializers.DateField()
 
 
 class UserMiniSerializer(serializers.ModelSerializer):
@@ -57,10 +83,11 @@ class KYCVerificationAdminSerializer(serializers.ModelSerializer):
 
     user = UserMiniSerializer(read_only=True)
     reviewed_by = UserMiniSerializer(read_only=True)
+    kyc_user_data = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = KYCVerification
-        fields = [
+        fields: ClassVar = [
             "id",
             "user",
             "country_of_issue",
@@ -71,8 +98,21 @@ class KYCVerificationAdminSerializer(serializers.ModelSerializer):
             "reviewed_by",
             "reviewed_at",
             "created_datetime",
+            "kyc_user_data",
+            "kyc_request_status",
+            "kyc_response_summary",
         ]
         read_only_fields = fields
+
+    @extend_schema_field(KYCUserDataSerializer)
+    def get_kyc_user_data(self, obj):
+        """Return the user data returned from the KYC provider, if any."""
+        return {
+            "first_name": obj.user.kyc_first_name,
+            "last_name": obj.user.kyc_last_name,
+            "date_of_birth": obj.user.kyc_date_of_birth,
+            "sex": obj.user.kyc_gender,
+        }
 
 
 class KYCReviewApproveSerializer(serializers.Serializer):

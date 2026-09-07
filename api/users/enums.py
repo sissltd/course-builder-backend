@@ -178,6 +178,7 @@ class KYCDocumentType(models.TextChoices):
     DRIVERS_LICENSE = "DRIVERS_LICENSE", "Driver's License"
     INTERNATIONAL_PASSPORT = "INTERNATIONAL_PASSPORT", "International Passport"
     VOTERS_ID = "VOTERS_ID", "Voter's ID"
+    BVN = "BVN", "Bank Verification Number (BVN)"
 
 
 class KYCStatus(models.TextChoices):

@@ -424,6 +424,8 @@ class KYCServiceTests(TestCase):
             id_number="12345",
             first_name="John",
             last_name="Doe",
+            address="123 Main St",
+            date_of_birth="1990-01-01",
         )
         KYCVerification.objects.filter(user=user).update(status=KYCStatus.APPROVED)
 
@@ -436,6 +438,8 @@ class KYCServiceTests(TestCase):
             country_of_issue="NG",
             document_type="NATIONAL_ID",
             id_number="12345",
+            address="123 Main St",
+            date_of_birth="1990-01-01",
             first_name="John",
             last_name="Doe",
         )
@@ -446,6 +450,8 @@ class KYCServiceTests(TestCase):
                 country_of_issue="NG",
                 document_type="VOTERS_ID",
                 id_number="67890",
+                address="123 Main St",
+                date_of_birth="1990-01-01",
                 first_name="John",
                 last_name="Doe",
             )
@@ -457,6 +463,8 @@ class KYCServiceTests(TestCase):
             country_of_issue="NG",
             document_type="NATIONAL_ID",
             id_number="12345",
+            address="123 Main St",
+            date_of_birth="1990-01-01",
             first_name="John",
             last_name="Doe",
         )
@@ -467,6 +475,8 @@ class KYCServiceTests(TestCase):
             country_of_issue="NG",
             document_type="VOTERS_ID",
             id_number="67890",
+            address="123 Main St",
+            date_of_birth="1990-01-01",
             first_name="John",
             last_name="Doe",
         )
@@ -486,6 +496,8 @@ class KYCServiceTests(TestCase):
             country_of_issue="NG",
             document_type="NATIONAL_ID",
             id_number="12345",
+            address="123 Main St",
+            date_of_birth="1990-01-01",
             first_name="John",
             last_name="Doe",
         )
@@ -503,6 +515,8 @@ class KYCServiceTests(TestCase):
             country_of_issue="NG",
             document_type="NATIONAL_ID",
             id_number="12345",
+            address="123 Main St",
+            date_of_birth="1990-01-01",
             first_name="John",
             last_name="Doe",
         )
@@ -528,6 +542,8 @@ class KYCServiceTests(TestCase):
             country_of_issue="NG",
             document_type="NATIONAL_ID",
             id_number="12345",
+            address="123 Main St",
+            date_of_birth="1990-01-01",
             first_name="John",
             last_name="Doe",
         )
@@ -566,6 +582,8 @@ class KYCApiTests(APITestCase):
             {
                 "country_of_issue": "NG",
                 "document_type": "NATIONAL_ID",
+                "address": "123 Main St",
+                "date_of_birth": "1990-01-01",
                 "id_number": "12345",
                 "first_name": "John",
                 "last_name": "Doe",
@@ -591,6 +609,8 @@ class KYCApiTests(APITestCase):
                 "id_number": "12345",
                 "first_name": "John",
                 "last_name": "Doe",
+                "address": "123 Main St",
+                "date_of_birth": "1990-01-01"
             },
             format="json",
         )
@@ -603,6 +623,8 @@ class KYCApiTests(APITestCase):
                 "id_number": "67890",
                 "first_name": "John",
                 "last_name": "Doe",
+                "address": "123 Main St",
+                "date_of_birth": "1990-01-01"
             },
             format="json",
         )
@@ -622,6 +644,8 @@ class KYCApiTests(APITestCase):
                 "id_number": "12345",
                 "first_name": "John",
                 "last_name": "Doe",
+                "address": "123 Main St",
+                "date_of_birth": "1990-01-01"
             },
             format="json",
         )
