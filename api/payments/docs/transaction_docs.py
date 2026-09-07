@@ -43,7 +43,7 @@ TRANSACTION_LIST_DOCS = {
         "`?end_date=YYYY-MM-DD`, and `?ordering=created_datetime` or "
         "`?ordering=-created_datetime` to narrow the ledger."
     ),
-    "tags": ["Course Creator — Wallet Transactions"],
+    "tags": ["Creator — Wallet Transactions"],
     "parameters": [
         OpenApiParameter(
             name="type",
