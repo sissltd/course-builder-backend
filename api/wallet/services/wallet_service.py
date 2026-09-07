@@ -35,7 +35,6 @@ from api.wallet.enums import (
     WithdrawalRequestStatus,
 )
 from api.wallet.models import (
-    PayoutAccount,
     Wallet,
     WithdrawalRequest,
     _generate_reference,
@@ -187,12 +186,6 @@ def list_transactions(*, user: User) -> QuerySet[Transaction]:
     """Return the transaction history for `user`'s wallet, newest first."""
 
     return Transaction.objects.filter(wallet__user=user)
-
-
-def list_payout_accounts(*, user: User) -> QuerySet[PayoutAccount]:
-    """Return `user`'s payout accounts, newest first."""
-
-    return PayoutAccount.objects.filter(user=user)
 
 
 def list_all_wallets(*, actor: User) -> QuerySet[Wallet]:

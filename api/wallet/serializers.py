@@ -1,11 +1,12 @@
 from decimal import Decimal
+from typing import ClassVar
 
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
+from api.payments.models.bankaccount_models import BankAccount
 from api.payments.models.transaction_model import Transaction
-from api.wallet.enums import PayoutAccountType
-from api.wallet.models import PayoutAccount, Wallet, WithdrawalRequest
+from api.wallet.models import Wallet, WithdrawalRequest
 from api.wallet.services import wallet_service
 from shared.utils.encryption import decrypt_field
 
@@ -114,12 +115,14 @@ class TransactionSerializer(serializers.ModelSerializer):
         return representation
 
 
-class PayoutAccountSerializer(serializers.ModelSerializer):
+class WithdrawalAccountSerializer(serializers.ModelSerializer):
     """Read-only representation of a payout account."""
 
+    provider_name = serializers.ReadOnlyField(source="account_name")
+
     class Meta:
-        model = PayoutAccount
-        fields = [
+        model = BankAccount
+        fields: ClassVar[list[str]] = [
             "id",
             "account_type",
             "provider_name",
@@ -129,25 +132,6 @@ class PayoutAccountSerializer(serializers.ModelSerializer):
             "created_datetime",
         ]
         read_only_fields = fields
-
-
-class PayoutAccountCreateSerializer(serializers.Serializer):
-    """Request body for POST /wallet/payout-accounts/ (the "Add local/mobile
-    account" forms)."""
-
-    account_type = serializers.ChoiceField(choices=PayoutAccountType.choices)
-    provider_name = serializers.CharField(max_length=100)
-    account_number = serializers.CharField(max_length=34)
-    account_name = serializers.CharField(max_length=150)
-    is_default = serializers.BooleanField(required=False, default=False)
-
-    def create(self, validated_data):
-        return wallet_service.create_payout_account(
-            user=self.context["request"].user, **validated_data
-        )
-
-    def to_representation(self, instance):
-        return PayoutAccountSerializer(instance, context=self.context).data
 
 
 class WithdrawalRequestSerializer(serializers.ModelSerializer):
@@ -226,7 +210,7 @@ class AdminWithdrawalRequestSerializer(serializers.ModelSerializer):
     reference of the transaction it produced."""
 
     user = WalletOwnerMiniSerializer(read_only=True)
-    payout_account = PayoutAccountSerializer(read_only=True)
+    payout_account = WithdrawalAccountSerializer(read_only=True)
     transaction_reference = serializers.CharField(
         source="transaction.reference", read_only=True, default=None
     )

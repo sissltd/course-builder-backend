@@ -159,61 +159,6 @@ class ConcurrentCreditWalletTests(TransactionTestCase):
         wallet = wallet_service.get_or_create_wallet(user=user)
         self.assertEqual(wallet.balance, Decimal("20.00"))
 
-
-class PayoutAccountTests(TestCase):
-    def test_first_account_becomes_default_automatically(self):
-        user = make_user()
-
-        account = wallet_service.create_payout_account(
-            user=user,
-            account_type="LOCAL",
-            bank_name="Access Bank",
-            account_number="1234567890",
-            account_name="Test User",
-            bank_code="058"
-        )
-
-        self.assertTrue(account.is_default)
-
-    def test_second_default_account_demotes_the_first(self):
-        user = make_user()
-        first = wallet_service.create_payout_account(
-            user=user,
-            account_type="LOCAL",
-            bank_name="Access Bank",
-            account_number="1234567890",
-            account_name="Test User",
-            bank_code="058"
-        )
-
-        second = wallet_service.create_payout_account(
-            user=user,
-            account_type="MOBILE_MONEY",
-            bank_name="MTN",
-            account_number="0987654321",
-            account_name="Test User",
-            is_default=True,
-            bank_code="058"
-        )
-
-        first.refresh_from_db()
-        self.assertFalse(first.is_default)
-        self.assertTrue(second.is_default)
-
-    def test_wrong_role_cannot_create_payout_account(self):
-        reviewer = make_user(role=UserRole.CREATOR_REVIEWER)
-
-        with self.assertRaises(PermissionDenied):
-            wallet_service.create_payout_account(
-                user=reviewer,
-                account_type="LOCAL",
-                bank_name="Access Bank",
-                account_number="1234567890",
-                account_name="Test User",
-                bank_code="058"
-            )
-
-
 class RequestWithdrawalTests(TestCase):
     def setUp(self):
         self.user = make_user()
