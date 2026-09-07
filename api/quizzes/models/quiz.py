@@ -9,9 +9,7 @@ from core.mixins import (
 )
 
 
-class Quiz(
-    UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMixin
-):
+class Quiz(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMixin):
     """A relational quiz attached to exactly one of Lesson, Module, or Course.
 
     The relational counterpart of courses.Assessment: where Assessment stores
@@ -117,7 +115,7 @@ class Quiz(
         return f"{self.level}: {self.title}"
 
 
-class Question(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
+class Question(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMixin):
     """A single question within a Quiz."""
 
     class TypeChoices(models.TextChoices):
@@ -192,9 +190,7 @@ class QuestionOption(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
         verbose_name=_("Explanation"),
         blank=True,
         default="",
-        help_text=_(
-            "Why this option is right or wrong, shown after answering."
-        ),
+        help_text=_("Why this option is right or wrong, shown after answering."),
     )
     is_correct = models.BooleanField(
         verbose_name=_("Is Correct"),
@@ -204,7 +200,9 @@ class QuestionOption(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
     order = models.PositiveIntegerField(
         verbose_name=_("Order"),
         default=0,
-        help_text=_("Display position within the question; maps to the A/B/C/D letter."),
+        help_text=_(
+            "Display position within the question; maps to the A/B/C/D letter."
+        ),
     )
 
     class Meta:

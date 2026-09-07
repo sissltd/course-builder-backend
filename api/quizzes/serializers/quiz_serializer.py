@@ -1,10 +1,11 @@
+from django.db import transaction
 from rest_framework import serializers
 
 from api.quizzes.models import Question, QuestionOption, Quiz
 
 
 class QuestionOptionSerializer(serializers.ModelSerializer):
-    """Serialize one answer option; `is_correct` is staff-only on write."""
+    """Serialize one answer option nested under its question."""
 
     class Meta:
         model = QuestionOption
@@ -31,7 +32,10 @@ class QuestionSerializer(serializers.ModelSerializer):
         # Optional so questions can be nested inline under a quiz-create
         # payload, where the parent quiz does not exist yet; the standalone
         # questions endpoint enforces presence in perform_create.
-        extra_kwargs = {"quiz": {"required": False}}
+        extra_kwargs = {
+            "quiz": {"required": False},
+            "points": {"min_value": 1},
+        }
 
     def get_unique_together_validators(self):
         # The (quiz, order) DB constraint is checked explicitly in
@@ -44,11 +48,42 @@ class QuestionSerializer(serializers.ModelSerializer):
         """Enforce option requirements per question type and (quiz, order)
         uniqueness with a clean field-scoped error."""
 
-        question_type = attrs.get("question_type")
-        options = attrs.get("options")
+        question_type = attrs.get(
+            "question_type", getattr(self.instance, "question_type", None)
+        )
+        supplied_options = attrs.get("options")
+        if supplied_options is None:
+            options = (
+                list(self.instance.options.all()) if self.instance is not None else []
+            )
+            option_orders = [option.order for option in options]
+            correct_option_count = sum(option.is_correct for option in options)
+        else:
+            options = supplied_options
+            option_orders = [option.get("order", 0) for option in options]
+            correct_option_count = sum(
+                option.get("is_correct", False) for option in options
+            )
+
+        if len(option_orders) != len(set(option_orders)):
+            raise serializers.ValidationError(
+                {"options": "Option order values must be unique within a question."}
+            )
+
         if question_type == Question.TypeChoices.MULTIPLE_CHOICE and not options:
             raise serializers.ValidationError(
                 {"options": "MULTIPLE_CHOICE questions require at least one option."}
+            )
+        if (
+            question_type == Question.TypeChoices.MULTIPLE_CHOICE
+            and correct_option_count != 1
+        ):
+            raise serializers.ValidationError(
+                {
+                    "options": (
+                        "MULTIPLE_CHOICE questions require exactly one correct option."
+                    )
+                }
             )
         if question_type == Question.TypeChoices.ESSAY and options:
             raise serializers.ValidationError(
@@ -79,6 +114,7 @@ class QuestionSerializer(serializers.ModelSerializer):
             [QuestionOption(question=question, **option) for option in options_data]
         )
 
+    @transaction.atomic
     def create(self, validated_data):
         """Create the question plus any nested options."""
 
@@ -87,6 +123,7 @@ class QuestionSerializer(serializers.ModelSerializer):
         self._create_or_update_options(question, options_data)
         return question
 
+    @transaction.atomic
     def update(self, instance, validated_data):
         """Update the question, replacing options when supplied."""
 
@@ -121,6 +158,7 @@ class QuizSerializer(serializers.ModelSerializer):
             "randomize_options",
             "questions",
         ]
+        extra_kwargs = {"passing_score": {"max_value": 100}}
 
     def validate(self, attrs):
         """Require the parent FK to match the declared level (exactly one)."""
@@ -148,6 +186,18 @@ class QuizSerializer(serializers.ModelSerializer):
                         )
                     }
                 )
+
+        questions = attrs.get("questions")
+        if questions is not None:
+            question_orders = [question.get("order", 0) for question in questions]
+            if len(question_orders) != len(set(question_orders)):
+                raise serializers.ValidationError(
+                    {
+                        "questions": (
+                            "Question order values must be unique within a quiz."
+                        )
+                    }
+                )
         return attrs
 
     def _create_questions(self, quiz, questions_data):
@@ -155,14 +205,17 @@ class QuizSerializer(serializers.ModelSerializer):
 
         for question_data in questions_data:
             options_data = question_data.pop("options", [])
-            question = Question.objects.create(quiz=quiz, **question_data)
+            question = Question.objects.create(
+                quiz=quiz,
+                created_by=quiz.created_by,
+                updated_by=quiz.updated_by,
+                **question_data,
+            )
             QuestionOption.objects.bulk_create(
-                [
-                    QuestionOption(question=question, **option)
-                    for option in options_data
-                ]
+                [QuestionOption(question=question, **option) for option in options_data]
             )
 
+    @transaction.atomic
     def create(self, validated_data):
         """Create the quiz plus any nested questions/options."""
 
@@ -171,11 +224,12 @@ class QuizSerializer(serializers.ModelSerializer):
         self._create_questions(quiz, questions_data)
         return quiz
 
+    @transaction.atomic
     def update(self, instance, validated_data):
         """Update quiz fields; nested questions are managed via Question endpoints."""
 
         questions_data = validated_data.pop("questions", None)
-        if questions_data:
+        if questions_data is not None:
             raise serializers.ValidationError(
                 {"questions": "Update questions via the questions endpoints."}
             )

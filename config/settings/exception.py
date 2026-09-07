@@ -2,6 +2,8 @@
 DRF_STANDARDIZED_ERRORS = {
     "EXCEPTION_HANDLER_CLASS": "drf_standardized_errors.handler.ExceptionHandler",
     "EXCEPTION_FORMATTER_CLASS": "includes.helpers.TsesExceptionFormatter",
-    "ENABLE_IN_DEBUG_FOR_UNHANDLED_EXCEPTIONS": False,
+    # Keep API failures in the JSON error contract even when a non-production
+    # deployment has DEBUG enabled. Production must still run with DEBUG=False.
+    "ENABLE_IN_DEBUG_FOR_UNHANDLED_EXCEPTIONS": True,
     "NESTED_FIELD_SEPARATOR": ".",
 }
