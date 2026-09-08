@@ -272,6 +272,9 @@ generation failure.
 - `401`: refresh the access token or route to login.
 - `403`: the account is authenticated but is not a Course Creator.
 - `404` while polling: the job does not exist or belongs to another creator.
+- `429` when starting a generation, assist, or thumbnail: the creator already
+  has an active AI job. Continue polling that job and only start another after
+  it reaches `COMPLETED`, `FAILED`, or `CANCELLED`.
 - `FAILED` job: display `error_message`; starting again should use a new
   idempotency key because the old key intentionally resolves to the failed job.
 - Network timeout while polling: keep the same job ID and retry the GET. Never

@@ -12,6 +12,17 @@ CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
 CELERY_TIMEZONE = "UTC"
 
+# AI generation tasks are provider-bound and can run for many minutes, so they
+# are routed to a dedicated queue consumed by a single-slot worker (see the
+# worker-ai service in docker-compose.yaml / compose.prod.yaml). Isolation, not
+# timeout tuning, is the fix: a slow or hung generation must never starve the
+# shared worker everything else depends on (webhooks, email, health probes).
+CELERY_TASK_ROUTES = {
+    "api.courses.tasks.generate_ai_course": {"queue": "course_ai"},
+    "api.courses.tasks.generate_ai_assist": {"queue": "course_ai"},
+    "api.courses.tasks.generate_ai_thumbnail": {"queue": "course_ai"},
+}
+
 # One beat entry per recurring job. The MIE webhook sweep is deliberately a
 # single minute-cadence task (not a message per event): each pass drains
 # everything due in one indexed query + batched writes, so a missed run is

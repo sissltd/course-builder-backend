@@ -27,7 +27,28 @@ services:
       DJANGO_SETTINGS_MODULE: ${DJANGO_SETTINGS_MODULE:-config.settings}
       DJANGO_RUN_MIGRATIONS: 0
       DJANGO_COLLECTSTATIC: 0
-    command: ["celery", "-A", "config", "worker", "--loglevel=info"]
+    # Shared worker: everything except AI generation. AI tasks are routed to
+    # the course_ai queue (config/settings/celery.py) and consumed exclusively
+    # by worker-ai below, so a long generation cannot starve other work.
+    command: ["celery", "-A", "config", "worker", "--loglevel=info", "--queues=celery"]
+    networks:
+      - dependencies
+
+  # Dedicated AI worker: consumes only the course_ai queue, one task at a time
+  # (provider calls are slow and metered), and never hoards queued jobs.
+  worker-ai:
+    build:
+      context: .
+      dockerfile: .docker/Dockerfile
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    environment:
+      DJANGO_SETTINGS_MODULE: ${DJANGO_SETTINGS_MODULE:-config.settings}
+      DJANGO_RUN_MIGRATIONS: 0
+      DJANGO_COLLECTSTATIC: 0
+    command: ["celery", "-A", "config", "worker", "--loglevel=info", "--queues=course_ai", "--concurrency=1", "--prefetch-multiplier=1"]
     networks:
       - dependencies
 
