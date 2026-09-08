@@ -358,6 +358,22 @@ Simple JWT is configured in `config/settings/jwt.py` with:
 - refresh-token rotation enabled
 - token blacklisting enabled
 
+Google signup and login are available alongside the password flow for Course
+Creators and Creator Reviewers. The web or mobile client obtains a Google ID
+token and sends it to one of these public endpoints:
+
+- `POST /api/v1/auth/signup/google/`
+- `POST /api/v1/auth/reviewer/signup/google/`
+- `POST /api/v1/auth/login/google/`
+- `POST /api/v1/auth/reviewer/login/google/`
+
+Set `GOOGLE_OAUTH_CLIENT_IDS` to a comma-separated allowlist of every web or
+mobile OAuth client ID whose ID tokens the backend should accept. The backend
+verifies the token and then issues the same local JWT/session response as the
+password login flow; it never stores Google access or refresh tokens. New
+Google accounts have an unusable password and may establish one later through
+the existing forgot/reset-password flow.
+
 ### Authentication Extension Point
 
 The scaffold includes an abstract authentication contract in `api/authentication/utils/base_auth.py`:

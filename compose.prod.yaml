@@ -33,7 +33,34 @@ services:
       DJANGO_SETTINGS_MODULE: ${DJANGO_SETTINGS_MODULE:-config.settings}
       DJANGO_RUN_MIGRATIONS: "0"
       DJANGO_COLLECTSTATIC: "0"
-    command: ["celery", "-A", "config", "worker", "--loglevel=info", "--concurrency=${CELERY_WORKER_CONCURRENCY:-4}"]
+    # Shared worker: everything except AI generation (routed to course_ai).
+    command: ["celery", "-A", "config", "worker", "--loglevel=info", "--queues=celery", "--concurrency=${CELERY_WORKER_CONCURRENCY:-4}"]
+    depends_on:
+      - postgres
+      - redis
+      - api
+    restart: always
+    networks:
+      - backend
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "1.0"
+
+  # Dedicated AI worker: one provider call at a time, isolated from the
+  # shared worker so slow/hung generations never starve other work.
+  worker-ai:
+    build:
+      context: .
+      dockerfile: .docker/Dockerfile
+    env_file:
+      - .env
+    environment:
+      DJANGO_SETTINGS_MODULE: ${DJANGO_SETTINGS_MODULE:-config.settings}
+      DJANGO_RUN_MIGRATIONS: "0"
+      DJANGO_COLLECTSTATIC: "0"
+    command: ["celery", "-A", "config", "worker", "--loglevel=info", "--queues=course_ai", "--concurrency=1", "--prefetch-multiplier=1"]
     depends_on:
       - postgres
       - redis

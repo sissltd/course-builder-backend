@@ -96,6 +96,7 @@ class AICourseGenerationListCreateView(APIView):
             **STANDARD_ERROR_RESPONSES["validation"],
             **STANDARD_ERROR_RESPONSES["auth"],
             **STANDARD_ERROR_RESPONSES["forbidden"],
+            **STANDARD_ERROR_RESPONSES["rate_limited"],
             **STANDARD_ERROR_RESPONSES["server"],
         },
         tags=AI_TAG,
@@ -107,8 +108,8 @@ class AICourseGenerationListCreateView(APIView):
             creator=request.user, validated_data=serializer.validated_data
         )
         if created:
-            transaction = generate_ai_course.delay(str(job.id))
-            job.celery_task_id = transaction.id or ""
+            async_result = generate_ai_course.delay(str(job.id))
+            job.celery_task_id = async_result.id or ""
             job.save(update_fields=["celery_task_id", "updated_datetime"])
         return Response(
             AIGenerationJobSerializer(job).data,
@@ -241,6 +242,7 @@ class AIAssistListCreateView(APIView):
             **STANDARD_ERROR_RESPONSES["auth"],
             **STANDARD_ERROR_RESPONSES["forbidden"],
             **STANDARD_ERROR_RESPONSES["not_found"],
+            **STANDARD_ERROR_RESPONSES["rate_limited"],
             **STANDARD_ERROR_RESPONSES["server"],
         },
         tags=AI_TAG,
@@ -256,21 +258,12 @@ class AIAssistListCreateView(APIView):
         serializer = AIAssistCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
-        target = ai_generation_service.resolve_assist_target(
+        # Resolve (and 404 on) unknown or cross-course targets before the
+        # single-flight check so a bad request never burns the creator's slot.
+        ai_generation_service.resolve_assist_target(
             course, data["target_type"], data["target_id"]
         )
-        target_course_id = (
-            target.id
-            if data["target_type"] == "course"
-            else (
-                target.course_id
-                if data["target_type"] == "module"
-                else target.module.course_id
-            )
-        )
-        if target_course_id != course.id:
-            raise exceptions.PermissionDenied()
-        job = AIGenerationJob.objects.create(
+        job = ai_generation_service.create_short_job(
             creator=request.user,
             course=course,
             kind=AIGenerationKind.ASSIST,
@@ -413,6 +406,7 @@ class AIThumbnailCreateView(APIView):
             **STANDARD_ERROR_RESPONSES["auth"],
             **STANDARD_ERROR_RESPONSES["forbidden"],
             **STANDARD_ERROR_RESPONSES["not_found"],
+            **STANDARD_ERROR_RESPONSES["rate_limited"],
             **STANDARD_ERROR_RESPONSES["server"],
         },
         tags=AI_TAG,
@@ -425,7 +419,7 @@ class AIThumbnailCreateView(APIView):
             raise exceptions.NotFound()
         serializer = AIThumbnailCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        job = AIGenerationJob.objects.create(
+        job = ai_generation_service.create_short_job(
             creator=request.user,
             course=course,
             kind=AIGenerationKind.THUMBNAIL,

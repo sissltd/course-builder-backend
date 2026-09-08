@@ -1,4 +1,4 @@
-from decouple import config
+from decouple import Csv, config
 
 from shared.constants.environ import DJANGO_ENV
 
@@ -9,6 +9,11 @@ EMAIL_TOKEN_RESEND_COOLDOWN_SECONDS = config(
     "EMAIL_TOKEN_RESEND_COOLDOWN_SECONDS", default=60, cast=int
 )
 FRONTEND_URL = config("FRONTEND_URL", default="http://localhost:3000")
+GOOGLE_OAUTH_CLIENT_IDS = tuple(
+    value
+    for value in config("GOOGLE_OAUTH_CLIENT_IDS", default="", cast=Csv())
+    if value
+)
 
 WITHDRAWAL_OTP_LENGTH = config("WITHDRAWAL_OTP_LENGTH", default=6, cast=int)
 WITHDRAWAL_OTP_EXPIRY_MINUTES = config(

@@ -1,14 +1,45 @@
 import base64
+import math
+import time
 from abc import ABC, abstractmethod
 
 import httpx
 from django.conf import settings
+from django.core.cache import cache
 from rest_framework.exceptions import APIException
 
 
 class AIProviderError(APIException):
     status_code = 502
     default_detail = "The AI provider could not complete this request."
+
+    def __init__(self, *, retryable=False, detail=None):
+        self.retryable = retryable
+        super().__init__(detail=detail)
+
+
+class AIProviderRateLimited(AIProviderError):
+    """Raised when a call is refused by our own budget, not by the provider."""
+
+    status_code = 429
+    default_detail = "The AI service is busy right now. Please try again shortly."
+
+    def __init__(self, *, retry_after_seconds):
+        self.retry_after_seconds = retry_after_seconds
+        super().__init__()
+
+
+# Provider calls are metered over a rolling minute window and refused locally
+# once the budget is spent - the point is to hit our ceiling *before* the
+# provider's hard 429s (and the billing surprises that follow them).
+PROVIDER_RATE_WINDOW_SECONDS = 60
+PROVIDER_HTTP_TIMEOUT_SECONDS = 180
+PROVIDER_RETRY_ATTEMPTS = 3
+PROVIDER_RETRY_DELAYS_SECONDS = (2, 6)
+# Statuses worth a second attempt: request timeouts, early hints, throttling,
+# and gateway/provider 5xx. Everything else (4xx especially) is deterministic
+# and fails immediately.
+RETRYABLE_HTTP_STATUSES = {408, 425, 429, 500, 502, 503, 504}
 
 
 QUESTION_SCHEMA = {
@@ -190,6 +221,40 @@ FINAL_ASSESSMENT_SCHEMA = {
 }
 
 
+def _enforce_provider_rate_window():
+    """Count one outgoing provider call, refusing it once the minute is spent."""
+
+    limit = settings.COURSE_AI_CALLS_PER_MINUTE
+    if limit <= 0:
+        return
+    now = time.time()
+    window = int(now // PROVIDER_RATE_WINDOW_SECONDS)
+    key = f"course-ai:provider-calls:{window}"
+    try:
+        cache.add(key, 0, timeout=PROVIDER_RATE_WINDOW_SECONDS * 2)
+        if cache.incr(key) > limit:
+            window_ends_at = (window + 1) * PROVIDER_RATE_WINDOW_SECONDS
+            raise AIProviderRateLimited(
+                retry_after_seconds=max(1, math.ceil(window_ends_at - now))
+            )
+    except AIProviderRateLimited:
+        raise
+    except Exception:  # noqa: BLE001 - a limiter outage must not block generation
+        # Fail open: rate limiting is a protective budget, not correctness.
+        return
+
+
+def _retry_delay_seconds(attempt, response):
+    """Honor Retry-After when the provider sends one, else back off briefly."""
+
+    if response is not None:
+        retry_after = response.headers.get("Retry-After", "")
+        if retry_after.isdigit():
+            return min(60, int(retry_after))
+    delays = PROVIDER_RETRY_DELAYS_SECONDS
+    return delays[min(attempt, len(delays) - 1)]
+
+
 class CourseAIProvider(ABC):
     name = "unknown"
 
@@ -218,17 +283,43 @@ class OpenAIResponsesProvider(CourseAIProvider):
         self.image_model = settings.OPENAI_IMAGE_MODEL
 
     def _post(self, path, payload):
-        try:
-            response = httpx.post(
-                f"https://api.openai.com/v1/{path}",
-                headers={"Authorization": f"Bearer {self.api_key}"},
-                json=payload,
-                timeout=180,
-            )
-            response.raise_for_status()
-            return response.json()
-        except (httpx.HTTPError, ValueError) as exc:
-            raise AIProviderError() from exc
+        """One metered provider HTTP call with bounded transient retries.
+
+        Retries begin here because a failed HTTP attempt has no local side
+        effects. If those bounded retries are exhausted, the task performs its
+        own checkpointed retry without duplicating materialized course data.
+        """
+
+        last_failure = None
+        for attempt in range(PROVIDER_RETRY_ATTEMPTS):
+            _enforce_provider_rate_window()
+            response = None
+            try:
+                response = httpx.post(
+                    f"https://api.openai.com/v1/{path}",
+                    headers={"Authorization": f"Bearer {self.api_key}"},
+                    json=payload,
+                    timeout=PROVIDER_HTTP_TIMEOUT_SECONDS,
+                )
+            except httpx.TransportError as exc:
+                last_failure = exc  # timeouts, connection resets, DNS blips
+            else:
+                if response.status_code not in RETRYABLE_HTTP_STATUSES:
+                    if response.is_success:
+                        try:
+                            return response.json()
+                        except ValueError as exc:
+                            raise AIProviderError() from exc
+                    # Non-retryable client error (4xx): retrying cannot help.
+                    raise AIProviderError()
+                last_failure = httpx.HTTPStatusError(
+                    f"provider returned HTTP {response.status_code}",
+                    request=response.request,
+                    response=response,
+                )
+            if attempt + 1 < PROVIDER_RETRY_ATTEMPTS:
+                time.sleep(_retry_delay_seconds(attempt, response))
+        raise AIProviderError(retryable=True) from last_failure
 
     @staticmethod
     def _output_text(data):
@@ -262,7 +353,9 @@ class OpenAIResponsesProvider(CourseAIProvider):
         output_text = self._output_text(data)
         if output_text:
             return json.loads(output_text), data.get("usage", {})
-        raise AIProviderError("The AI provider returned no course content.")
+        raise AIProviderError(
+            detail="The AI provider returned no course content.", retryable=False
+        )
 
     def generate_course_outline(self, *, title, description, category, topic):
         prompt = f"""Create a professional course outline for the supplied intent.
@@ -329,5 +422,6 @@ def get_course_ai_provider():
     if settings.COURSE_AI_PROVIDER == "openai":
         return OpenAIResponsesProvider()
     raise AIProviderError(
-        f"Unsupported COURSE_AI_PROVIDER: {settings.COURSE_AI_PROVIDER}"
+        detail=f"Unsupported COURSE_AI_PROVIDER: {settings.COURSE_AI_PROVIDER}",
+        retryable=False,
     )

@@ -128,6 +128,10 @@ COURSE_AI_PROVIDER = config("COURSE_AI_PROVIDER", default="openai")
 OPENAI_API_KEY = config("OPENAI_API_KEY", default="")
 OPENAI_TEXT_MODEL = config("OPENAI_TEXT_MODEL", default="")
 OPENAI_IMAGE_MODEL = config("OPENAI_IMAGE_MODEL", default="")
+# Self-imposed ceiling on outgoing AI-provider calls per rolling minute. Calls
+# beyond the budget are refused locally (and retried by the worker) instead of
+# burning provider quota into hard 429s. Set to 0 to disable the limiter.
+COURSE_AI_CALLS_PER_MINUTE = config("COURSE_AI_CALLS_PER_MINUTE", default=20, cast=int)
 
 # Cache
 # Backs DRF's ScopedRateThrottle (see config/settings/drf.py) - a shared

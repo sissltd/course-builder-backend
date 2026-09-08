@@ -5,9 +5,19 @@ from api.authentication import views
 urlpatterns = [
     path("auth/signup/", views.SignupView.as_view(), name="auth-signup"),
     path(
+        "auth/signup/google/",
+        views.GoogleSignupView.as_view(),
+        name="auth-google-signup",
+    ),
+    path(
         "auth/reviewer/signup/",
         views.ReviewerSignupView.as_view(),
         name="auth-reviewer-signup",
+    ),
+    path(
+        "auth/reviewer/signup/google/",
+        views.GoogleReviewerSignupView.as_view(),
+        name="auth-reviewer-google-signup",
     ),
     path(
         "auth/verify-email/", views.VerifyEmailView.as_view(), name="auth-verify-email"
@@ -18,7 +28,17 @@ urlpatterns = [
         name="auth-resend-verification",
     ),
     path("auth/login/", views.LoginView.as_view(), name="auth-login"),
+    path(
+        "auth/login/google/",
+        views.GoogleLoginView.as_view(),
+        name="auth-google-login",
+    ),
     path("auth/reviewer/login/", views.LoginView.as_view(), name="auth-reviewer-login"),
+    path(
+        "auth/reviewer/login/google/",
+        views.GoogleLoginView.as_view(),
+        name="auth-reviewer-google-login",
+    ),
     path(
         "auth/token/refresh/",
         views.TokenRefreshView.as_view(),

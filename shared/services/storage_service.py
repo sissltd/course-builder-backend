@@ -16,7 +16,12 @@ from shared.constants.object_storage import (
 logger = logging.getLogger(__name__)
 
 
-def _storage_endpoint():
+def storage_endpoint():
+    """S3-compatible API endpoint, derived from BUCKET_URL.
+
+    Public so operational tooling (e.g. health probes) can build its own
+    boto3 client against the same bucket configuration.
+    """
     parsed = urlsplit(BUCKET_URL.rstrip("/"))
     bucket_prefix = f"{BUCKET_NAME}."
     if not parsed.scheme or not parsed.hostname:
@@ -31,7 +36,8 @@ def _public_base_url():
     return BUCKET_URL.rstrip("/")
 
 
-def _storage_region():
+def storage_region():
+    """Bucket region, inferred from BUCKET_URL's hostname."""
     hostname_parts = (urlsplit(BUCKET_URL).hostname or "").split(".")
     if hostname_parts and hostname_parts[0] == BUCKET_NAME:
         hostname_parts.pop(0)
@@ -165,8 +171,8 @@ def _get_s3_client():
     """
     return boto3.client(
         "s3",
-        region_name=_storage_region(),
-        endpoint_url=_storage_endpoint(),
+        region_name=storage_region(),
+        endpoint_url=storage_endpoint(),
         aws_access_key_id=ACCESS_KEY_ID,
         aws_secret_access_key=ACCESS_SECRET_KEY,
         config=Config(

@@ -58,15 +58,16 @@ SPECTACULAR_SETTINGS = {
         {
             "name": "Auth — Signup & Verification",
             "description": (
-                "Account creation (Course Creator and Reviewer signup), email "
-                "verification, and verification-email resend."
+                "Password or Google account creation (Course Creator and "
+                "Reviewer signup), email verification, and verification-email "
+                "resend."
             ),
         },
         {
             "name": "Auth — Session",
             "description": (
-                "Login, logout (one device or all), token refresh, and active-"
-                "session listing/revocation."
+                "Password or Google login, logout (one device or all), token "
+                "refresh, and active-session listing/revocation."
             ),
         },
         {
