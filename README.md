@@ -307,6 +307,84 @@ Example:
 - [ ] No secrets committed
 - [ ] API changes documented (Swagger updated)
 - [ ] Tests added or updated (where applicable)
+- [ ] PR carries **one** concern (see Engineering Standards below)
+- [ ] PR description filled in — all three sections
+- [ ] Reviewed by someone else before merge
+
+---
+
+## 📐 Engineering Standards
+
+The three rules below exist because each has already cost us something on
+this repo. They are cheap to follow and expensive to skip.
+
+### 1. One concern per PR
+
+**A PR does one thing. A `fix` never carries a `feat`.**
+
+If you find yourself writing "and" in the PR title, it is two PRs.
+
+Why it matters: a PR titled `fix/course-ai-reliability` shipped ~900 lines
+of Google OAuth — a new authentication method with its own model,
+migration and endpoints. The reviewer's attention was set by the title, so
+the part that most needed scrutiny (auth) arrived disguised as a reliability
+patch and went in unexamined.
+
+The cost is not tidiness. It is that **nobody reviews what they were not
+told to look at**, and that a bad `feat` cannot be reverted without also
+reverting the `fix` it rode in on.
+
+- Unrelated work → separate branch, separate PR.
+- Noticed something broken while working? Fix it in its own PR, or open an
+  issue. Do not smuggle it in.
+- A refactor that touches many files is still *one concern* — that is fine.
+  Two unrelated features in five files is not.
+
+### 2. The PR description is not optional
+
+**All three sections, every time. An empty PR body is a blocker, not a
+style nit.**
+
+The template is above. It is short on purpose:
+
+1. **What has changed?** — the summary, in plain language.
+2. **Where were the changes done?** — the files/areas, so a reviewer knows
+   where to look.
+3. **What should the reviewer know?** — breaking changes, edge cases,
+   anything you are unsure about, follow-up work.
+
+Section 3 is the one that earns its keep. If you changed a field every
+other app reads, removed an enum value, or wrote a data migration, that
+belongs there — not in your head, and not only in the diff.
+
+Six months from now the PR description is the only record of *why*. The
+diff shows what changed; it never shows what you decided against.
+
+### 3. Nobody merges their own PR unreviewed
+
+**At least one other engineer approves before merge.** No exceptions for
+"small", "urgent", or "only my own app".
+
+Self-merging is how an MFA bypass reaches `staging`. Not because the author
+was careless — the code was well written and well tested — but because
+**you cannot review your own assumptions**. The reviewer is not checking
+your syntax; they are checking the thing you were too close to see.
+
+If you are genuinely blocked on a reviewer, say so in the PR and tag
+someone. Merging unreviewed and moving on is not the answer.
+
+Also, before requesting review, run the pipeline locally:
+
+```bash
+ruff check .
+python manage.py check
+python manage.py makemigrations --check --dry-run
+python manage.py spectacular --file /tmp/openapi.yaml --validate
+python manage.py test
+```
+
+CI runs these anyway. Finding a failure yourself takes minutes; finding it
+after review costs the reviewer a round trip.
 
 ---
 
