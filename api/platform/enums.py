@@ -11,5 +11,6 @@ class PaymentProcessors(models.TextChoices):
 class KYCProvider(models.TextChoices):
     """KYC service providers available in the platform."""
 
-    SISSL = "SISSL", "SISSL"
+    #We'll keep SISSL out of the options until it becomes functional
+    # SISSL = "SISSL", "SISSL"
     YOUVERIFY = "YOUVERIFY", "YouVerify"
