@@ -78,20 +78,19 @@ def _probe_storage() -> int:
     import boto3
     from botocore.config import Config
 
-    from shared.constants.digital_ocean import (
-        DIGITAL_OCEAN_ACCESS_KEY,
-        DIGITAL_OCEAN_BUCKET,
-        DIGITAL_OCEAN_ENDPOINT,
-        DIGITAL_OCEAN_REGION,
-        DIGITAL_OCEAN_SECRET_KEY,
+    from shared.constants.object_storage import (
+        ACCESS_KEY_ID,
+        ACCESS_SECRET_KEY,
+        BUCKET_NAME,
     )
+    from shared.services.storage_service import storage_endpoint, storage_region
 
     client = boto3.client(
         "s3",
-        region_name=DIGITAL_OCEAN_REGION,
-        endpoint_url=DIGITAL_OCEAN_ENDPOINT,
-        aws_access_key_id=DIGITAL_OCEAN_ACCESS_KEY,
-        aws_secret_access_key=DIGITAL_OCEAN_SECRET_KEY,
+        region_name=storage_region(),
+        endpoint_url=storage_endpoint(),
+        aws_access_key_id=ACCESS_KEY_ID,
+        aws_secret_access_key=ACCESS_SECRET_KEY,
         config=Config(
             signature_version="s3v4",
             connect_timeout=STORAGE_PROBE_TIMEOUT_SECONDS,
@@ -101,7 +100,7 @@ def _probe_storage() -> int:
     )
 
     started = time.monotonic()
-    client.head_bucket(Bucket=DIGITAL_OCEAN_BUCKET)
+    client.head_bucket(Bucket=BUCKET_NAME)
     return _elapsed_ms(started)
 
 

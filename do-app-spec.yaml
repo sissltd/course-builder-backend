@@ -67,6 +67,9 @@ services:
       - key: FRONTEND_URL
         scope: RUN_TIME
         value: "${FRONTEND_URL}"
+      - key: GOOGLE_OAUTH_CLIENT_IDS
+        scope: RUN_TIME
+        value: "${GOOGLE_OAUTH_CLIENT_IDS}"
       - key: EMAIL_HOST
         scope: RUN_TIME
         value: "${EMAIL_HOST}"

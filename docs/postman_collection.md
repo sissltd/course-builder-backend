@@ -88,6 +88,32 @@ opt-in for every role — nothing backend-side forces it).
 
 **Body / response shapes**: identical to Signup, just `role: "CREATOR_REVIEWER"`.
 
+### Google Signup
+
+`POST {{base_url}}/api/v1/auth/signup/google/` (Course Creator) or
+`POST {{base_url}}/api/v1/auth/reviewer/signup/google/` (Creator Reviewer).
+Auth: AllowAny. The frontend obtains a Google ID token with Google Identity
+Services and sends it as `id_token`. The backend verifies its signature,
+issuer, expiry, audience, and verified email against `GOOGLE_OAUTH_CLIENT_IDS`.
+
+**Body**
+```json
+{
+  "id_token": "eyJhbGciOiJSUzI1NiIsImtpZCI6IjE2NzAyNyJ9...",
+  "first_name": "Ada",
+  "last_name": "Lovelace",
+  "country": "NG",
+  "terms_accepted": true
+}
+```
+
+New accounts are active immediately, receive the role forced by the URL, and
+return the normal JWT/session response with **201 Created**. No verification
+email or Google access/refresh token is involved. If the Google-verified email
+already belongs to a Course Creator or Creator Reviewer, the identity is linked,
+the existing role/profile is preserved, and the endpoint returns **200 OK**.
+Staff and privileged accounts cannot use this public Google flow.
+
 ### Verify Email
 `POST {{base_url}}/api/v1/auth/verify-email/`
 Auth: AllowAny. Consumes the link token, activates the account, and auto-issues tokens (login-on-verify) — no separate login call needed right after signup.
@@ -140,6 +166,18 @@ Auth: AllowAny. Standard email+password → JWT pair, for any active user
 regardless of role. Deliberately **not** anti-enumeration: unknown email,
 wrong password, and an unverified (`is_active=False`) account each return a
 distinct field-scoped `validation_error` rather than one generic message.
+
+Google login uses `POST {{base_url}}/api/v1/auth/login/google/` or the reviewer
+alias `POST {{base_url}}/api/v1/auth/reviewer/login/google/` with:
+
+```json
+{ "id_token": "eyJhbGciOiJSUzI1NiIsImtpZCI6IjE2NzAyNyJ9..." }
+```
+
+It returns the same `access`, `refresh`, `user`, `role`, and `workspace` fields
+as password login. A matching password account is linked automatically after
+Google verifies its email. An unknown account is not created by the login URL;
+send it through the corresponding Google signup URL instead.
 
 **Body**
 ```json

@@ -105,6 +105,7 @@ class UserActivityActionEnums(models.TextChoices):
 
     ACCOUNT_CREATED = "ACCOUNT_CREATED", "Account Created"
     LOGIN = "LOGIN", "Login"
+    GOOGLE_IDENTITY_LINKED = "GOOGLE_IDENTITY_LINKED", "Google Identity Linked"
     LOGOUT = "LOGOUT", "Logout"
     LOCKOUT_TRIGGERED = (
         "LOCKOUT_TRIGGERED",

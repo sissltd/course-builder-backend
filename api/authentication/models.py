@@ -1,7 +1,7 @@
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
-from api.authentication.enums import TokenPurpose
+from api.authentication.enums import ExternalIdentityProvider, TokenPurpose
 from core.mixins import DateHistoryModelMixin, UUIDPrimaryKeyModelMixin
 
 
@@ -78,6 +78,52 @@ class EmailVerificationToken(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
         """Summarize the token for admin/debugging readability without leaking it."""
 
         return f"{self.purpose} token for {self.user_id}"
+
+
+class ExternalIdentity(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
+    """Bind a local user to an immutable subject from an identity provider."""
+
+    user = models.ForeignKey(
+        "users.User",
+        verbose_name=_("User"),
+        on_delete=models.CASCADE,
+        related_name="external_identities",
+        help_text=_("Local user account authenticated by this external identity."),
+    )
+    provider = models.CharField(
+        verbose_name=_("Provider"),
+        max_length=20,
+        choices=ExternalIdentityProvider.choices,
+        help_text=_("External identity provider that issued the subject."),
+    )
+    subject = models.CharField(
+        verbose_name=_("Subject"),
+        max_length=255,
+        help_text=_("Immutable provider-specific subject identifier."),
+    )
+    email = models.EmailField(
+        verbose_name=_("Provider Email"),
+        help_text=_("Verified email reported when the identity was linked."),
+    )
+
+    class Meta:
+        verbose_name = _("External Identity")
+        verbose_name_plural = _("External Identities")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["provider", "subject"],
+                name="unique_external_provider_subject",
+            ),
+            models.UniqueConstraint(
+                fields=["user", "provider"],
+                name="unique_external_provider_per_user",
+            ),
+        ]
+
+    def __str__(self):
+        """Show the provider and owning user without exposing token material."""
+
+        return f"{self.provider} identity for {self.user_id}"
 
 
 class UserSession(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
