@@ -56,7 +56,9 @@ class SignupTests(TestCase):
             )
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn("new2@example.com", mail.outbox[0].to)
-        self.assertIn(f"{settings.FRONTEND_URL}/verify-email", mail.outbox[0].body)
+        self.assertIn(
+            f"{settings.FRONTEND_URL}/auth/verify-email", mail.outbox[0].body
+        )
         self.assertIn("token=", mail.outbox[0].body)
 
     @patch("api.notification.services.email_service.send_templated_email")
@@ -231,7 +233,9 @@ class ForgotPasswordTests(TestCase):
         service.forgot_password(email=user.email)
 
         self.assertEqual(len(mail.outbox), 1)
-        self.assertIn(f"{settings.FRONTEND_URL}/reset-password", mail.outbox[0].body)
+        self.assertIn(
+            f"{settings.FRONTEND_URL}/auth/reset-password", mail.outbox[0].body
+        )
         self.assertIn(f"email={user.email}", mail.outbox[0].body.replace("%40", "@"))
 
     def test_silent_and_no_email_for_nonexistent_user(self):
