@@ -1,0 +1,161 @@
+{% extends "admin/base.html" %}
+{% load i18n static %}
+
+{% block extrastyle %}
+{{ block.super }}
+<style>
+  :root {
+    --auth-bg: #f5f7fb;
+    --auth-panel: #fff;
+    --auth-border: #d9e0ea;
+    --auth-text: #172033;
+    --auth-muted: #657187;
+    --auth-accent: #2563eb;
+    --auth-accent-dark: #1d4ed8;
+    --auth-danger-bg: #fff1f2;
+    --auth-danger: #be123c;
+  }
+
+  html, body.login { min-height: 100%; }
+  body.login {
+    margin: 0;
+    background: var(--auth-bg);
+    color: var(--auth-text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  body.login #header,
+  body.login #nav-sidebar,
+  body.login .breadcrumbs,
+  body.login #toggle-nav-sidebar,
+  body.login .skip-to-content-link { display: none; }
+  body.login #container { min-height: 100vh; background: var(--auth-bg); }
+  body.login #content { width: 100%; max-width: none; padding: 0; }
+  body.login #content-main { float: none; width: auto; max-width: none; margin: 0; }
+
+  .auth-shell {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(360px, 460px);
+    gap: clamp(40px, 8vw, 128px);
+    align-items: center;
+    width: min(1080px, calc(100% - 48px));
+    min-height: 100vh;
+    margin: 0 auto;
+    padding: 48px 0;
+  }
+  .auth-intro { max-width: 500px; }
+  .auth-kicker {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 20px;
+    color: var(--auth-accent);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+  }
+  .auth-kicker::before { content: ""; width: 28px; height: 2px; background: var(--auth-accent); }
+  .auth-intro h1 {
+    margin: 0 0 16px;
+    color: var(--auth-text);
+    font-size: clamp(36px, 5vw, 58px);
+    font-weight: 750;
+    letter-spacing: -.045em;
+    line-height: 1.02;
+  }
+  .auth-intro p { max-width: 430px; margin: 0; color: var(--auth-muted); font-size: 17px; line-height: 1.65; }
+
+  .login-form {
+    width: 100%;
+    margin: 0;
+    padding: 36px;
+    background: var(--auth-panel);
+    border: 1px solid var(--auth-border);
+    border-radius: 16px;
+    box-shadow: 0 20px 55px rgba(23, 32, 51, .10);
+  }
+  .login-form h1 { margin: 0 0 8px; color: var(--auth-text); font-size: 26px; font-weight: 700; letter-spacing: -.02em; }
+  .auth-subtitle { margin: 0 0 28px; color: var(--auth-muted); font-size: 14px; line-height: 1.5; }
+  .login-form .form-row { margin: 0 0 18px; }
+  .login-form .form-row label { display: block; margin: 0 0 8px; color: var(--auth-text); font-size: 13px; font-weight: 650; }
+  .login-form .form-row input[type="text"],
+  .login-form .form-row input[type="password"],
+  .login-form .form-row input[type="email"] {
+    display: block;
+    width: 100%;
+    min-height: 46px;
+    padding: 11px 13px;
+    margin: 0;
+    box-sizing: border-box;
+    color: var(--auth-text);
+    background: #fff;
+    border: 1px solid var(--auth-border);
+    border-radius: 8px;
+    font: inherit;
+    font-size: 15px;
+  }
+  .login-form .form-row input:focus { border-color: var(--auth-accent); outline: 0; box-shadow: 0 0 0 3px rgba(37, 99, 235, .15); }
+  .errornote { padding: 11px 13px; margin: 0 0 20px; color: var(--auth-danger); background: var(--auth-danger-bg); border: 1px solid #fecdd3; border-radius: 8px; font-size: 13px; line-height: 1.45; }
+  .login-form .submit-row { padding: 0; margin: 28px 0 0; text-align: left; }
+  .login-form .submit-row input[type="submit"] {
+    width: 100%;
+    min-height: 46px;
+    padding: 11px 18px;
+    color: #fff;
+    background: var(--auth-accent);
+    border: 0;
+    border-radius: 8px;
+    font: inherit;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .login-form .submit-row input[type="submit"]:hover { background: var(--auth-accent-dark); }
+  .auth-footer { margin: 22px 0 0; color: var(--auth-muted); font-size: 12px; line-height: 1.5; text-align: center; }
+
+  @media (max-width: 760px) {
+    .auth-shell { display: block; width: min(460px, calc(100% - 32px)); padding: 32px 0; }
+    .auth-intro { margin: 0 0 28px; text-align: center; }
+    .auth-kicker { justify-content: center; }
+    .auth-intro p { margin: 0 auto; font-size: 15px; }
+    .login-form { padding: 28px 22px; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<main class="auth-shell">
+  <section class="auth-intro" aria-labelledby="auth-title">
+    <div class="auth-kicker">Internal documentation</div>
+    <h1 id="auth-title">A private space for the team.</h1>
+    <p>Sign in with your staff account to access the engineering documentation portal.</p>
+  </section>
+
+  <section class="login-form" aria-labelledby="login-title">
+    <h1 id="login-title">{% trans 'Log in' %}</h1>
+    <p class="auth-subtitle">Use your Django admin staff account to continue.</p>
+    <form method="post" action="{% url 'admin:login' %}">
+      {% csrf_token %}
+      {% if form.errors and not form.non_field_errors %}
+        <p class="errornote">{% blocktrans %}Please correct the error below.{% endblocktrans %}</p>
+      {% endif %}
+      {% if form.non_field_errors %}
+        {% for error in form.non_field_errors %}<p class="errornote">{{ error }}</p>{% endfor %}
+      {% endif %}
+
+      <div class="form-row">
+        {{ form.username.label_tag }}{{ form.username }}
+      </div>
+      <div class="form-row">
+        {{ form.password.label_tag }}{{ form.password }}
+        <input type="hidden" name="next" value="{{ next }}">
+      </div>
+      <div class="submit-row">
+        <input type="submit" value="{% trans 'Log in' %}">
+      </div>
+      {% if is_popup %}<input type="hidden" name="is_popup" value="{{ is_popup }}">{% endif %}
+    </form>
+    <p class="auth-footer">Access is limited to authorized staff members.</p>
+  </section>
+</main>
+{% endblock %}

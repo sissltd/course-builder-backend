@@ -33,6 +33,7 @@ CUSTOM_APPS = [
     "core",
     "api.webhooks",
     "api.sissl_verification",
+    "devdocs",
 ]
 
 THIRD_PARTY_APPS = [

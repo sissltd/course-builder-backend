@@ -414,7 +414,7 @@ const presign = await api.post("/api/v1/uploads/presign/", {
 
 ## 10. Related documentation
 
-- `docs/SCB_FRONTEND_GUIDE.md` — creator flow guide (uploads section + reorder,
+- `docs/frontend/SCB_FRONTEND_GUIDE.md` — creator flow guide (uploads section + reorder,
   lesson endpoints)
 - `README.md` → "Storage and S3" — bucket configuration and CORS requirements
 - `shared/services/storage_service.py` — `request_upload`,
