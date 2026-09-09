@@ -31,7 +31,7 @@ Signup/login/verify/refresh/logout are now real endpoints (see the **Authenticat
 folder below) — get an `access_token` by running Signup → Verify Email (or Login,
 for an already-verified user) and pasting the returned `access` value into the
 `access_token` Postman variable. Verification and password reset are **link-based**:
-the email contains a clickable URL (`{{FRONTEND_URL}}/verify-email?email=...&token=...`),
+the email contains a clickable URL (`{{FRONTEND_URL}}/auth/verify-email?email=...&token=...`),
 not a typed code — in Postman, copy the `token` query param out of the emailed link
 (or the console-backend log in local dev) into the request body below.
 
@@ -58,7 +58,7 @@ Then log in as that user via `POST /api/v1/auth/login/` normally.
 
 ### Signup
 `POST {{base_url}}/api/v1/auth/signup/`
-Auth: AllowAny. Creates an inactive user (role always forced to `COURSE_CREATOR`) and emails a verification **link** (`FRONTEND_URL` + `/verify-email?email=...&token=...`, 60 min expiry by default). No tokens are issued here — the account can't authenticate until verified (unverified accounts are rejected project-wide by `rest_framework_simplejwt`'s `USER_AUTHENTICATION_RULE`, so an inert token would be useless anyway).
+Auth: AllowAny. Creates an inactive user (role always forced to `COURSE_CREATOR`) and emails a verification **link** (`FRONTEND_URL` + `/auth/verify-email?email=...&token=...`, 60 min expiry by default). No tokens are issued here — the account can't authenticate until verified (unverified accounts are rejected project-wide by `rest_framework_simplejwt`'s `USER_AUTHENTICATION_RULE`, so an inert token would be useless anyway).
 
 **Body**
 ```json
@@ -244,7 +244,7 @@ Auth: **IsAuthenticated** (access token in header, *and* the refresh token to bl
 
 ### Forgot Password
 `POST {{base_url}}/api/v1/auth/forgot-password/`
-Auth: AllowAny. Always returns 200 regardless of whether the email exists (anti-enumeration) — only a real match actually gets an email, containing a `FRONTEND_URL` + `/reset-password?email=...&token=...` link.
+Auth: AllowAny. Always returns 200 regardless of whether the email exists (anti-enumeration) — only a real match actually gets an email, containing a `FRONTEND_URL` + `/auth/reset-password?email=...&token=...` link.
 
 **Body**
 ```json

@@ -356,7 +356,7 @@ class AuthenticationService(TsesAuthenticationInterface):
     @staticmethod
     def _send_signup_verification_email(*, user: User, raw_token: str) -> None:
         link = build_verification_link(
-            path="/verify-email", email=user.email, token=raw_token
+            path="/auth/verify-email", email=user.email, token=raw_token
         )
         _queue_auth_email(
             receivers=[user.email],
@@ -373,7 +373,7 @@ class AuthenticationService(TsesAuthenticationInterface):
     @staticmethod
     def _send_password_reset_email(*, user: User, raw_token: str) -> None:
         link = build_verification_link(
-            path="/reset-password", email=user.email, token=raw_token
+            path="/auth/reset-password", email=user.email, token=raw_token
         )
         _queue_auth_email(
             receivers=[user.email],

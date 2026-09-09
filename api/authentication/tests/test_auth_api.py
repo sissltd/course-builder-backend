@@ -49,7 +49,9 @@ class SignupApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertFalse(response.data["is_active"])
         self.assertEqual(len(mail.outbox), 1)
-        self.assertIn(f"{settings.FRONTEND_URL}/verify-email", mail.outbox[0].body)
+        self.assertIn(
+            f"{settings.FRONTEND_URL}/auth/verify-email", mail.outbox[0].body
+        )
         self.assertTrue(
             UserActivityLog.objects.filter(
                 user__email="creator@example.com", action="ACCOUNT_CREATED"
@@ -823,7 +825,9 @@ class ForgotPasswordApiTests(APITestCase):
         self.assertEqual(
             len(mail.outbox), 1
         )  # only the existing user actually gets an email
-        self.assertIn(f"{settings.FRONTEND_URL}/reset-password", mail.outbox[0].body)
+        self.assertIn(
+            f"{settings.FRONTEND_URL}/auth/reset-password", mail.outbox[0].body
+        )
 
 
 class ResetPasswordApiTests(APITestCase):

@@ -264,6 +264,8 @@ Verification/reset links are built by `api/authentication/utils/links.py`
 (`build_verification_link`, used in `authentication_service.py:20, :358-376`) against
 `FRONTEND_URL`. Token lifecycle is governed by the `EMAIL_TOKEN_*` settings (above) and the endpoints
 `POST /api/v1/auth/verification-token/`-style flows documented in `docs/postman_collection.md`.
+They target the frontend's public `/auth/verify-email` and `/auth/reset-password`
+pages, which then call the corresponding API endpoints.
 
 ---
 

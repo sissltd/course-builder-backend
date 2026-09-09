@@ -170,6 +170,7 @@ def _resolve_user(
     )
     if identity is not None:
         user = User.objects.select_for_update().get(pk=identity.user_id)
+        _ensure_google_account_is_eligible(user=user)
         _ensure_google_role(user=user)
         _record_terms_acceptance(
             user=user,
@@ -213,6 +214,7 @@ def _resolve_user(
             request=request,
         )
     else:
+        _ensure_google_account_is_eligible(user=user)
         _ensure_google_role(user=user)
         _record_terms_acceptance(
             user=user,
@@ -265,6 +267,17 @@ def _ensure_google_role(*, user: User) -> None:
         )
 
 
+def _ensure_google_account_is_eligible(*, user: User) -> None:
+    """Refuse blocked accounts before Google auth mutates local state."""
+
+    if user.status in (AccountStatus.SUSPENDED, AccountStatus.DEACTIVATED) or (
+        not user.is_active and user.status != AccountStatus.PENDING_VERIFICATION
+    ):
+        raise exceptions.ValidationError(
+            {"id_token": "This account is not active. Please contact support."}
+        )
+
+
 def _record_terms_acceptance(*, user: User, requested: bool) -> None:
     if requested and user.terms_accepted_at is None:
         user.terms_accepted_at = timezone.now()
@@ -272,10 +285,7 @@ def _record_terms_acceptance(*, user: User, requested: bool) -> None:
 
 
 def _prepare_for_google_login(*, user: User) -> None:
-    if user.status in (AccountStatus.SUSPENDED, AccountStatus.DEACTIVATED):
-        raise exceptions.ValidationError(
-            {"id_token": "This account is not active. Please contact support."}
-        )
+    _ensure_google_account_is_eligible(user=user)
 
     now = timezone.now()
     if user.locked_until and user.locked_until > now:
