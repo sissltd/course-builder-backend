@@ -357,6 +357,87 @@ class GoogleAuthenticationApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertFalse(ExternalIdentity.objects.filter(user=user).exists())
 
+    def test_inactive_non_pending_account_cannot_link_or_login_with_google(self):
+        for account_status in (AccountStatus.SUSPENDED, AccountStatus.DEACTIVATED):
+            for endpoint, payload in (
+                ("/api/v1/auth/login/google/", {"id_token": "signed-google-id-token"}),
+                ("/api/v1/auth/signup/google/", self.signup_payload()),
+            ):
+                with self.subTest(account_status=account_status, endpoint=endpoint):
+                    email = f"{account_status.lower()}-{len(User.objects.all())}@example.com"
+                    self.set_google_identity(
+                        subject=f"google-{account_status.lower()}-{endpoint}",
+                        email=email,
+                    )
+                    user = make_user(
+                        email=email,
+                        role=UserRole.COURSE_CREATOR,
+                        is_active=False,
+                        status=account_status,
+                        failed_login_attempts=3,
+                    )
+
+                    response = self.client.post(endpoint, payload, format="json")
+
+                    self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+                    user.refresh_from_db()
+                    self.assertFalse(user.is_active)
+                    self.assertEqual(user.status, account_status)
+                    self.assertEqual(user.failed_login_attempts, 3)
+                    self.assertIsNone(user.last_login)
+                    self.assertIsNone(user.terms_accepted_at)
+                    self.assertFalse(ExternalIdentity.objects.filter(user=user).exists())
+                    self.assertFalse(UserSession.objects.filter(user=user).exists())
+
+    def test_inactive_active_status_cannot_be_reactivated_with_google(self):
+        user = make_user(
+            email="creator@example.com",
+            role=UserRole.COURSE_CREATOR,
+            is_active=False,
+            status=AccountStatus.ACTIVE,
+        )
+
+        response = self.client.post(
+            "/api/v1/auth/login/google/",
+            {"id_token": "signed-google-id-token"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        user.refresh_from_db()
+        self.assertFalse(user.is_active)
+        self.assertEqual(user.status, AccountStatus.ACTIVE)
+        self.assertFalse(ExternalIdentity.objects.filter(user=user).exists())
+
+    def test_linked_inactive_account_is_rejected_before_signup_mutates_it(self):
+        user = make_user(
+            email="creator@example.com",
+            role=UserRole.COURSE_CREATOR,
+            is_active=False,
+            status=AccountStatus.SUSPENDED,
+            failed_login_attempts=3,
+        )
+        ExternalIdentity.objects.create(
+            user=user,
+            provider=ExternalIdentityProvider.GOOGLE,
+            subject="google-subject-1",
+            email=user.email,
+        )
+
+        response = self.client.post(
+            "/api/v1/auth/signup/google/", self.signup_payload(), format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        user.refresh_from_db()
+        self.assertFalse(user.is_active)
+        self.assertEqual(user.status, AccountStatus.SUSPENDED)
+        self.assertEqual(user.failed_login_attempts, 3)
+        self.assertIsNone(user.terms_accepted_at)
+        self.assertIsNone(user.last_login)
+        self.assertEqual(ExternalIdentity.objects.filter(user=user).count(), 1)
+        self.assertFalse(UserSession.objects.filter(user=user).exists())
+
     def test_current_account_lock_blocks_google_login(self):
         user = make_user(
             email="creator@example.com",
