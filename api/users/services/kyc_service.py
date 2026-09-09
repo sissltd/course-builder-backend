@@ -16,6 +16,7 @@ from api.users.models import KYCVerification, User
 from api.users.permissions import IsAdminOrSuperAdminRole, require_role
 from api.users.tasks import call_sissl_kyc_verification, call_youverify_kyc_verification
 from core.models import KYCOutboxEvent
+from shared.utils.encryption import encrypt_field
 
 logger = logging.getLogger(__name__)
 
@@ -68,9 +69,11 @@ def submit_verification(
             user=user,
             country_of_issue=country_of_issue,
             document_type=document_type,
-            id_number=id_number,
+            id_number=encrypt_field(id_number),
             date_of_birth=date_of_birth,
         )
+        
+        # update the user's personal information with the provided data
         verification.user.first_name = first_name or verification.user.first_name
         verification.user.last_name = last_name or verification.user.last_name
         verification.user.address = address or verification.user.address
@@ -81,7 +84,7 @@ def submit_verification(
             event_type=document_type,
             kyc_request=verification,
             payload={
-                "id_number": id_number,
+                "id_number": encrypt_field(id_number),
             },
         )
 

@@ -36,8 +36,8 @@ class KYCVerification(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
     )
     id_number = models.CharField(
         verbose_name=_("ID Number"),
-        max_length=64,
-        help_text=_("The identity document's number, as entered by the user."),
+        max_length=255,
+        help_text=_("The identity document's number, as entered by the user.--will be stored encrypted."),
     )
     date_of_birth = models.DateField(
         verbose_name=_("Date of Birth"),

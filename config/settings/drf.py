@@ -72,15 +72,11 @@ SPECTACULAR_SETTINGS = {
         },
         {
             "name": "Auth — Password",
-            "description": (
-                "Forgot-password, password reset, and authenticated password change."
-            ),
+            "description": ("Forgot-password, password reset, and authenticated password change."),
         },
         {
             "name": "Auth — Email Change",
-            "description": (
-                "Requesting and confirming a change of the account email address."
-            ),
+            "description": ("Requesting and confirming a change of the account email address."),
         },
         {
             "name": "Auth — MFA",
@@ -92,30 +88,20 @@ SPECTACULAR_SETTINGS = {
         {
             "name": "Auth — Super Admin Bootstrap",
             "description": (
-                "One-time claim of the platform's single Super Admin seat using "
-                "the deployment environment."
+                "One-time claim of the platform's single Super Admin seat using the deployment environment."
             ),
         },
         {
             "name": "Auth — Staff Invitation",
-            "description": (
-                "Accepting a staff invitation to set a password and activate "
-                "the invited staff account."
-            ),
+            "description": ("Accepting a staff invitation to set a password and activate the invited staff account."),
         },
         {
             "name": "Creator — Profile",
-            "description": (
-                "The signed-in user's own profile: retrieve and update "
-                "(excluding email)."
-            ),
+            "description": ("The signed-in user's own profile: retrieve and update (excluding email)."),
         },
         {
             "name": "Creator — Onboarding",
-            "description": (
-                "The multi-step onboarding profile for Course Creators, "
-                "resumable via partial updates."
-            ),
+            "description": ("The multi-step onboarding profile for Course Creators, resumable via partial updates."),
         },
         {
             "name": "Creator — Courses",
@@ -142,16 +128,11 @@ SPECTACULAR_SETTINGS = {
         },
         {
             "name": "Creator — Assessments",
-            "description": (
-                "Setting and editing the quiz attached to a lesson, module, or "
-                "course (final assessment)."
-            ),
+            "description": ("Setting and editing the quiz attached to a lesson, module, or course (final assessment)."),
         },
         {
             "name": "Creator — Topics",
-            "description": (
-                "Browsing the topic taxonomy to narrow a course during creation."
-            ),
+            "description": ("Browsing the topic taxonomy to narrow a course during creation."),
         },
         {
             "name": "Creator — Category Requests",
@@ -163,22 +144,19 @@ SPECTACULAR_SETTINGS = {
         {
             "name": "Creator — Topic Reservations",
             "description": (
-                "Requesting a brand-new topic: file, view, and manage the "
-                "caller's own reservation requests."
+                "Requesting a brand-new topic: file, view, and manage the caller's own reservation requests."
             ),
         },
         {
             "name": "Creator — Categories",
             "description": (
-                "Browsing the category taxonomy (with prices and status) to "
-                "pick where a new course belongs."
+                "Browsing the category taxonomy (with prices and status) to pick where a new course belongs."
             ),
         },
         {
             "name": "Creator — Collaborators",
             "description": (
-                "Course collaborators: invite, list, change role, and remove "
-                "people with access to a course."
+                "Course collaborators: invite, list, change role, and remove people with access to a course."
             ),
         },
         {
@@ -190,10 +168,7 @@ SPECTACULAR_SETTINGS = {
         },
         {
             "name": "Creator — KYC",
-            "description": (
-                "Submitting and reading the caller's own identity-verification "
-                "documents."
-            ),
+            "description": ("Submitting and reading the caller's own identity-verification documents."),
         },
         {
             "name": "Creator — Notifications",
@@ -201,9 +176,7 @@ SPECTACULAR_SETTINGS = {
         },
         {
             "name": "Creator — Activity Log",
-            "description": (
-                "The signed-in user's own activity history, including CSV export."
-            ),
+            "description": ("The signed-in user's own activity history, including CSV export."),
         },
         {
             "name": "Creator — Wallet",
@@ -213,28 +186,22 @@ SPECTACULAR_SETTINGS = {
             ),
         },
         {
-            "name": "Creator — Transactions",
+            "name": "Creator — Wallet Transactions",
             "description": "The creator's own wallet transaction history.",
         },
         {
             "name": "Creator — Bank Accounts",
             "description": (
-                "The creator's saved bank accounts for wallet payouts: list, "
-                "add, retrieve, delete, and set default."
+                "The creator's saved bank accounts for wallet payouts: list, add, retrieve, delete, and set default."
             ),
         },
         {
             "name": "Creator — Uploads",
-            "description": (
-                "Requesting a presigned URL to upload files directly to storage."
-            ),
+            "description": ("Requesting a presigned URL to upload files directly to storage."),
         },
         {
             "name": "Creator — Appeals",
-            "description": (
-                "Filing and tracking the caller's own appeals against a course "
-                "rejection."
-            ),
+            "description": ("Filing and tracking the caller's own appeals against a course rejection."),
         },
         {
             "name": "Reviewer — Dashboard",
@@ -242,15 +209,11 @@ SPECTACULAR_SETTINGS = {
         },
         {
             "name": "Reviewer — Pending Courses",
-            "description": (
-                "Submitted creator and AI courses awaiting a reviewer decision."
-            ),
+            "description": ("Submitted creator and AI courses awaiting a reviewer decision."),
         },
         {
             "name": "Reviewer — Approved Courses",
-            "description": (
-                "Approved courses, pricing review, channel selection, and publication."
-            ),
+            "description": ("Approved courses, pricing review, channel selection, and publication."),
         },
         {
             "name": "Reviewer — In Review",
@@ -258,69 +221,45 @@ SPECTACULAR_SETTINGS = {
         },
         {
             "name": "Reviewer — Published Courses",
-            "description": (
-                "Published courses with owner, approver, price, and channel information."
-            ),
+            "description": ("Published courses with owner, approver, price, and channel information."),
         },
         {
             "name": "Reviewer — Review Queue",
-            "description": (
-                "The course review queue: browse, claim, approve, and reject "
-                "submitted courses."
-            ),
+            "description": ("The course review queue: browse, claim, approve, and reject submitted courses."),
         },
         {
             "name": "Reviewer — Availability",
-            "description": (
-                "The reviewer's availability settings that gate whether they "
-                "can claim new courses."
-            ),
+            "description": ("The reviewer's availability settings that gate whether they can claim new courses."),
         },
         {
             "name": "Reviewer — Queue Preferences",
-            "description": (
-                "The reviewer's default queue sort order and track filter."
-            ),
+            "description": ("The reviewer's default queue sort order and track filter."),
         },
         {
             "name": "Reviewer — Topic Reservations",
             "description": (
-                "Deciding creators' brand-new-topic requests: approve (creates "
-                "the topic and reserves it) or reject."
+                "Deciding creators' brand-new-topic requests: approve (creates the topic and reserves it) or reject."
             ),
         },
         {
             "name": "Admin — MIE Recommendations",
-            "description": (
-                "Partner-submitted course ideas ranked by the demand "
-                "signals admins record on them."
-            ),
+            "description": ("Partner-submitted course ideas ranked by the demand signals admins record on them."),
         },
         {
             "name": "Admin — Analytics",
-            "description": (
-                "Catalogue, enrolment, production cost, channel "
-                "distribution and the KPI scorecard."
-            ),
+            "description": ("Catalogue, enrolment, production cost, channel distribution and the KPI scorecard."),
         },
         {
             "name": "Admin — System Health",
-            "description": (
-                "Uptime, latency and current status for every monitored " "dependency."
-            ),
+            "description": ("Uptime, latency and current status for every monitored dependency."),
         },
         {
             "name": "Admin — APE Pipeline",
-            "description": (
-                "The AI production funnel: job counts per stage and "
-                "external provider load."
-            ),
+            "description": ("The AI production funnel: job counts per stage and external provider load."),
         },
         {
             "name": "Admin — Overview",
-            "description": (
-                "Aggregate platform counts and wallet totals for the admin dashboard."
-            ),
+            "description": ("Aggregate platform counts and wallet totals for the admin dashboard."),
         },
         {
             "name": "Admin — Users",
@@ -328,62 +267,46 @@ SPECTACULAR_SETTINGS = {
         },
         {
             "name": "Admin — Staff",
-            "description": (
-                "Managing staff: invite, list, revoke, and reactivate staff accounts."
-            ),
+            "description": ("Managing staff: invite, list, revoke, and reactivate staff accounts."),
         },
         {
             "name": "Admin — Categories",
-            "description": (
-                "Managing the category taxonomy: create, reprice, activate, "
-                "and delete categories."
-            ),
+            "description": ("Managing the category taxonomy: create, reprice, activate, and delete categories."),
         },
         {
             "name": "Admin — Topics",
             "description": (
-                "Managing the topic taxonomy (including pricing) and manually "
-                "releasing topic reservations."
+                "Managing the topic taxonomy (including pricing) and manually releasing topic reservations."
             ),
         },
         {
             "name": "Admin — Wallets",
             "description": (
-                "Platform-wide finance: every creator wallet, the transaction "
-                "ledger, and all withdrawal requests."
+                "Platform-wide finance: every creator wallet, the transaction ledger, and all withdrawal requests."
             ),
         },
         {
             "name": "Admin — KYC Review",
             "description": (
-                "The KYC review queue: list, retrieve, approve, and reject "
-                "identity-verification submissions."
+                "The KYC review queue: list, retrieve, approve, and reject identity-verification submissions."
             ),
         },
         {
             "name": "Admin — Activity Log",
-            "description": (
-                "The platform-wide audit trail of user activity across every account."
-            ),
+            "description": ("The platform-wide audit trail of user activity across every account."),
         },
         {
             "name": "Admin — Platform Settings",
-            "description": (
-                "Updating the platform-wide thresholds that govern course "
-                "validation and withdrawals."
-            ),
+            "description": ("Updating the platform-wide thresholds that govern course validation and withdrawals."),
         },
         {
             "name": "Admin — Courses",
-            "description": (
-                "Admin-only course actions such as publishing an approved course."
-            ),
+            "description": ("Admin-only course actions such as publishing an approved course."),
         },
         {
             "name": "Admin — Appeals",
             "description": (
-                "Deciding creators' course-rejection appeals (approve reopens "
-                "the course for review; reject is final)."
+                "Deciding creators' course-rejection appeals (approve reopens the course for review; reject is final)."
             ),
         },
         {
@@ -392,10 +315,7 @@ SPECTACULAR_SETTINGS = {
         },
         {
             "name": "Admin — MFA",
-            "description": (
-                "Super-Admin lost-device recovery: resetting another user's "
-                "MFA enrollment."
-            ),
+            "description": ("Super-Admin lost-device recovery: resetting another user's MFA enrollment."),
         },
         {
             "name": "Admin — Audit",

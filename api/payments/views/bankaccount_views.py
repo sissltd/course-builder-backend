@@ -268,6 +268,6 @@ class BankListView(APIView):
 
         return custom_success_response(
             message="Processed successfully",
-            data=banks_result,
+            data=sorted(banks_result, key=lambda x: x["name"].strip()),
             status=status.HTTP_200_OK,
         )

@@ -13,9 +13,9 @@ from api.users.enums import KYCDocumentType
 from api.users.services.kyc_identity_service import (
     YouVerifyService,
     persist_kyc_identity,
-    update_kyc_response,
 )
 from core.models import KYCOutboxEvent
+from shared.utils.encryption import decrypt_field
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -39,10 +39,9 @@ def call_sissl_kyc_verification(self, event_id):
         return
 
     try:
-        payload = outbox_event.payload
         event_type = outbox_event.event_type
         kyc_request = outbox_event.kyc_request
-        id_number = payload.get("id_number")
+        id_number = decrypt_field(kyc_request.id_number)
         
         match event_type:
             case KYCDocumentType.NATIONAL_ID.value:
@@ -71,96 +70,13 @@ def call_sissl_kyc_verification(self, event_id):
         KYCOutboxEvent.objects.filter(
             id=outbox_event.id,
             is_deleted=False,
-            processed=False,
+            processed=True,
         ).update(processed=True, updated_datetime=timezone.now())
 
     except Exception as exc:
         logger.error(f"[users.call_sissl_kyc_verification] Failed: {exc}")
         raise self.retry(exc=exc)
 
-
-def _handle_youverify_failed_entity_create(data, kyc_request):
-    logger.error(f"[users.call_youverify_kyc_verification] YouVerify KYC verification failed: {data}")
-    kyc_request.kyc_response_summary = data
-    kyc_request.kyc_provider = "youverify"
-    kyc_request.save()
-
-
-def _handle_youverify_successful_entity_create(data, kyc_request):
-    from celery.exceptions import CeleryError
-
-    id_type_dict = {
-        KYCDocumentType.NATIONAL_ID.value: "nin",
-        KYCDocumentType.BVN.value: "bvn",
-        KYCDocumentType.INTERNATIONAL_PASSPORT.value: "passport",
-    }
-
-    first_name = kyc_request.user.first_name
-    last_name = kyc_request.user.last_name
-    date_of_birth = kyc_request.date_of_birth
-    id_number = kyc_request.id_number
-    country_code = kyc_request.country_of_issue
-    entity_id = data.get("entity_id")
-    id_type = id_type_dict.get(kyc_request.document_type)
-
-    kyc_request.kyc_provider = "youverify"
-    kyc_request.kyc_entity_id = entity_id
-    kyc_request.save()
-
-    if not entity_id:
-        logger.error(
-            f"[users.call_youverify_kyc_verification] No entity_id returned from create_entity for user {kyc_request.user.id}; response: {data}"
-        )
-        return
-
-    try:
-        payload = {
-            "entity_id": entity_id,
-            "id_type": id_type,
-            "id_number": id_number,
-            "country_code": country_code,
-            "first_name": first_name,
-            "last_name": last_name,
-            "date_of_birth": date_of_birth,
-            "metadata_dict": {"kyc_verification_id": str(kyc_request.id)},
-        }
-        resp_data = YouVerifyService.verify_entity(**payload)
-
-    except CeleryError:
-        # Let retries, ignores, and rejects bubble up to Celery safely
-        raise
-    except Exception as exc:
-        logger.error(
-            f"[users.call_youverify_kyc_verification] {id_type} lookup failed for user {kyc_request.user.id}: {exc}"
-        )
-        # No webhook will ever arrive for a verify_entity call that never succeeded, so record the failure now.
-        update_kyc_response(
-            kyc_request, "failed", request_summary={"id_type": id_type}, response_summary={"error": str(exc)}
-        )
-    else:
-        # Reverting to handling the verification response directly since the webhook may not be reliable
-        request_summary = payload.copy()
-        request_summary["date_of_birth"] = str(request_summary.pop("date_of_birth", None))
-        if resp_data.get("success") is True:
-            entity_data = resp_data.get("data", {})
-            identity_data = entity_data.get("identityCheck", {})
-            user = kyc_request.user
-            raw = {
-                "first_name": identity_data.get("firstName") or identity_data.get("first_name"),
-                "last_name": identity_data.get("lastName") or identity_data.get("last_name"),
-                "gender": identity_data.get("gender"),
-                "date_of_birth": identity_data.get("dateOfBirth") or identity_data.get("date_of_birth"),
-                "image": identity_data.pop("image", None),
-            }
-            # Making the request_summary value json-serializable
-            identity_data["dateOfBirth"] = str(identity_data.get("dateOfBirth"))
-            update_kyc_response(kyc_request, "found", request_summary=request_summary, response_summary=identity_data)
-            persist_kyc_identity(user, raw)
-        else:
-            logger.error(
-                f"[users.call_youverify_kyc_verification] Verification failed for user {kyc_request.user.id}: {resp_data}"
-            )
-            update_kyc_response(kyc_request, "failed", request_summary=request_summary, response_summary=resp_data)
 
 
 @shared_task(
@@ -215,14 +131,16 @@ def call_youverify_kyc_verification(self, event_id):
 
         success = entity_creation_response.get("success", False)
         if not success:
-            _handle_youverify_failed_entity_create(entity_creation_response, kyc_request)
+            YouVerifyService.handle_youverify_failed_entity_create(entity_creation_response, kyc_request)
         else:
-            _handle_youverify_successful_entity_create(data=entity_creation_response, kyc_request=kyc_request)
+            YouVerifyService.handle_youverify_successful_entity_create(
+                data=entity_creation_response, kyc_request=kyc_request
+            )
 
         KYCOutboxEvent.objects.filter(
             id=outbox_event.id,
             is_deleted=False,
-            processed=False,
+            processed=True,
         ).update(processed=True, updated_datetime=timezone.now())
 
     except Exception as exc:

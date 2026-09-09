@@ -103,7 +103,8 @@ class KYCVerificationView(APIView):
             "submissions (the actual queue), narrowable via the `status` "
             "query parameter.\n\n"
             "**Auth:** Admin or Super Admin.\n\n"
-            "**Prerequisites:** None."
+            "**Prerequisites:** Authenticated Admin or Super Admin.\n\n"
+            "**Important:** The `user` field captures the submitted user information while `kyc_user_data` captures the data returned from the KYC provider. `kyc_request_status` reflects the status of the request with the KYC provider — `found` or `not found`"
         ),
         tags=["Admin — KYC Review"],
         responses={
@@ -119,7 +120,8 @@ class KYCVerificationView(APIView):
             "Returns a single KYC submission, including the submitting "
             "user and raw `id_number`.\n\n"
             "**Auth:** Admin or Super Admin.\n\n"
-            "**Prerequisites:** The submission must exist."
+            "**Prerequisites:** Authenticated Admin or Super Admin.\n\n"
+            "**Important:** The `user` field captures the submitted user information while `kyc_user_data` captures the data returned from the KYC provider. `kyc_request_status` reflects the status of the request with the KYC provider — `found` or `not found`"
         ),
         tags=["Admin — KYC Review"],
         responses={
