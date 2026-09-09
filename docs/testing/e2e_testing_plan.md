@@ -6,7 +6,7 @@ response noted below it — run them in order, in a fresh shell, against a
 locally running server (`python manage.py runserver 0.0.0.0:8000`) with a
 migrated database.
 
-This complements `docs/postman_collection.md` (the per-resource API
+This complements `docs/testing/postman_collection.md` (the per-resource API
 reference) rather than replacing it — where a step's contract hasn't changed
 since that doc was written (Modules/Lessons/Assessments/Review Queue/Wallet),
 this plan links to it instead of repeating full detail. Everything that
@@ -286,7 +286,7 @@ curl -s -X PATCH $BASE_URL/api/v1/courses/$COURSE_ID/ \
 ## 6. Modules → Lessons → Assessments → Submit → Review
 
 These endpoints/contracts are unchanged — full detail (bodies, thresholds,
-error shapes) is in `docs/postman_collection.md`'s **Modules**, **Lessons**,
+error shapes) is in `docs/testing/postman_collection.md`'s **Modules**, **Lessons**,
 **Assessments**, and **Review Queue** folders. For a minimally submittable
 course you need (see that doc's "Course quality standards" table):
 
@@ -306,7 +306,7 @@ topic-price-wins-over-category-price rule from Piece 2; if you built the
 course *without* a topic, it should snapshot the category price instead.
 
 Then, as a Creator Reviewer or Admin, claim/approve/reject per the Review
-Queue folder in `docs/postman_collection.md`.
+Queue folder in `docs/testing/postman_collection.md`.
 
 ---
 
@@ -407,7 +407,7 @@ curl -s $BASE_URL/api/v1/courses/$COURSE_ID/ -H "Authorization: Bearer $BOB_TOKE
 
 ## 8. Wallet (unchanged)
 
-Full detail in `docs/postman_collection.md`'s **Wallet** folder — worth a
+Full detail in `docs/testing/postman_collection.md`'s **Wallet** folder — worth a
 quick sanity check after Section 6's approval step: `GET /api/v1/wallet/`
 should show the creator's balance credited by `creator_price_snapshot`.
 
