@@ -5,7 +5,7 @@ import logging
 from django.db import transaction as django_transaction
 
 from api.users.models.kyc_verification import KYCVerification
-from api.users.services.kyc_identity_service import (
+from api.users.services.kyc_services.utils import (
     persist_kyc_identity,
     update_kyc_response,
 )
@@ -91,8 +91,7 @@ class YouverifyWebhookServices:
                 "date_of_birth": data.get("dateOfBirth") or data.get("date_of_birth"),
                 "image": image,
             }
-            data["dateOfBirth"] = str(data.get("dateOfBirth"))
-            update_kyc_response(kyc_request, "found", request_summary=None, response_summary=data)
+            update_kyc_response(kyc_request, "found")
             persist_kyc_identity(user, raw)
         except Exception as e:
             logger.error(f"Error handling Youverify identity verification found: {e!s}")
@@ -108,7 +107,7 @@ class YouverifyWebhookServices:
             metadata = data.get('metadata', {})
             kyc_id = metadata.get('kyc_request_id')
             kyc_request = KYCVerification.objects.get(id=kyc_id)
-            update_kyc_response(kyc_request, "not_found", request_summary=None, response_summary=data)
+            update_kyc_response(kyc_request, "not_found")
         except Exception as e:
             logger.error(f"Error handling Youverify identity verification not found: {e!s}")
             raise WebhookProcessingError(

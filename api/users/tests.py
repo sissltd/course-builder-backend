@@ -7,6 +7,7 @@ from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.test import TestCase
 from django.utils import timezone
+from api.users.services.kyc_services import kyc_submission_service
 from rest_framework import status
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.test import APITestCase
@@ -22,7 +23,6 @@ from api.users.enums import (
 )
 from api.users.models import KYCVerification, ReviewerAvailability, UserActivityLog
 from api.users.services import (
-    kyc_service,
     reviewer_availability_service,
     user_admin_service,
 )
@@ -413,11 +413,11 @@ class KYCServiceTests(TestCase):
     def test_is_verified_false_with_no_submission(self):
         user = _make_user()
 
-        self.assertFalse(kyc_service.is_verified(user=user))
+        self.assertFalse(kyc_submission_service.is_verified(user=user))
 
     def test_is_verified_true_when_latest_is_approved(self):
         user = _make_user()
-        kyc_service.submit_verification(
+        kyc_submission_service.submit_verification(
             user=user,
             country_of_issue="NG",
             document_type="NATIONAL_ID",
@@ -429,11 +429,11 @@ class KYCServiceTests(TestCase):
         )
         KYCVerification.objects.filter(user=user).update(status=KYCStatus.APPROVED)
 
-        self.assertTrue(kyc_service.is_verified(user=user))
+        self.assertTrue(kyc_submission_service.is_verified(user=user))
 
     def test_cannot_submit_while_a_pending_submission_exists(self):
         user = _make_user()
-        kyc_service.submit_verification(
+        kyc_submission_service.submit_verification(
             user=user,
             country_of_issue="NG",
             document_type="NATIONAL_ID",
@@ -445,7 +445,7 @@ class KYCServiceTests(TestCase):
         )
 
         with self.assertRaises(ValidationError):
-            kyc_service.submit_verification(
+            kyc_submission_service.submit_verification(
                 user=user,
                 country_of_issue="NG",
                 document_type="VOTERS_ID",
@@ -458,7 +458,7 @@ class KYCServiceTests(TestCase):
 
     def test_can_resubmit_after_rejection(self):
         user = _make_user()
-        kyc_service.submit_verification(
+        kyc_submission_service.submit_verification(
             user=user,
             country_of_issue="NG",
             document_type="NATIONAL_ID",
@@ -470,7 +470,7 @@ class KYCServiceTests(TestCase):
         )
         KYCVerification.objects.filter(user=user).update(status=KYCStatus.REJECTED)
 
-        resubmission = kyc_service.submit_verification(
+        resubmission = kyc_submission_service.submit_verification(
             user=user,
             country_of_issue="NG",
             document_type="VOTERS_ID",
@@ -487,11 +487,11 @@ class KYCServiceTests(TestCase):
         user = _make_user()
 
         with self.assertRaises(ValidationError):
-            kyc_service.require_verified(user=user)
+            kyc_submission_service.require_verified(user=user)
 
     def test_wrong_role_cannot_approve(self):
         applicant = _make_user()
-        verification = kyc_service.submit_verification(
+        verification = kyc_submission_service.submit_verification(
             user=applicant,
             country_of_issue="NG",
             document_type="NATIONAL_ID",
@@ -504,13 +504,13 @@ class KYCServiceTests(TestCase):
         wrong_role_reviewer = _make_user(role=UserRole.COURSE_CREATOR)
 
         with self.assertRaises(PermissionDenied):
-            kyc_service.approve_verification(
+            kyc_submission_service.approve_verification(
                 verification=verification, reviewer=wrong_role_reviewer
             )
 
     def test_wrong_role_cannot_reject(self):
         applicant = _make_user()
-        verification = kyc_service.submit_verification(
+        verification = kyc_submission_service.submit_verification(
             user=applicant,
             country_of_issue="NG",
             document_type="NATIONAL_ID",
@@ -523,7 +523,7 @@ class KYCServiceTests(TestCase):
         wrong_role_reviewer = _make_user(role=UserRole.CREATOR_REVIEWER)
 
         with self.assertRaises(PermissionDenied):
-            kyc_service.reject_verification(
+            kyc_submission_service.reject_verification(
                 verification=verification,
                 reviewer=wrong_role_reviewer,
                 rejection_reason="Blurry document.",
@@ -537,7 +537,7 @@ class KYCServiceTests(TestCase):
         )
         user = _make_user()
 
-        kyc_service.submit_verification(
+        kyc_submission_service.submit_verification(
             user=user,
             country_of_issue="NG",
             document_type="NATIONAL_ID",

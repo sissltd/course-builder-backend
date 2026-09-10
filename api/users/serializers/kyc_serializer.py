@@ -37,8 +37,8 @@ class KYCVerificationSerializer(serializers.ModelSerializer):
             "first_name",
             "last_name",
             "kyc_user_data",
-            "kyc_request_status",
-            "kyc_response_summary",
+            "kyc_provider",
+            "kyc_entity_id",
         ]
         read_only_fields = fields
 
@@ -112,8 +112,7 @@ class KYCVerificationAdminSerializer(serializers.ModelSerializer):
             "reviewed_at",
             "created_datetime",
             "kyc_user_data",
-            "kyc_request_status",
-            "kyc_response_summary",
+            "kyc_request_status"
         ]
         read_only_fields = fields
 

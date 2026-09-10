@@ -24,7 +24,7 @@ from api.users.serializers import (
     KYCVerificationSerializer,
     KYCVerificationSubmitSerializer,
 )
-from api.users.services import kyc_service
+from api.users.services.kyc_services import kyc_submission_service
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 from shared.response.success import custom_success_response
 
@@ -56,7 +56,7 @@ class KYCVerificationView(APIView):
         },
     )
     def get(self, request):
-        latest = kyc_service.get_latest_verification(user=request.user)
+        latest = kyc_submission_service.get_latest_verification(user=request.user)
         return custom_success_response(
             message="Retrieved successfully",
             data=KYCVerificationSerializer(latest).data,
@@ -83,7 +83,7 @@ class KYCVerificationView(APIView):
     def post(self, request):
         serializer = KYCVerificationSubmitSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        submission = kyc_service.submit_verification(
+        submission = kyc_submission_service.submit_verification(
             user=request.user, **serializer.validated_data
         )
         activity_service.log_activity(
@@ -186,7 +186,7 @@ class KYCReviewViewSet(ReadOnlyModelViewSet):
     )
     @action(detail=True, methods=["post"])
     def approve(self, request, pk=None):
-        verification = kyc_service.approve_verification(
+        verification = kyc_submission_service.approve_verification(
             verification=self.get_object(), reviewer=request.user
         )
         return Response(KYCVerificationAdminSerializer(verification).data)
@@ -215,7 +215,7 @@ class KYCReviewViewSet(ReadOnlyModelViewSet):
     def reject(self, request, pk=None):
         serializer = KYCReviewRejectSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        verification = kyc_service.reject_verification(
+        verification = kyc_submission_service.reject_verification(
             verification=self.get_object(),
             reviewer=request.user,
             rejection_reason=serializer.validated_data["rejection_reason"],

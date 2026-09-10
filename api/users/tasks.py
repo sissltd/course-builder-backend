@@ -10,10 +10,8 @@ from django.utils import timezone
 
 from api.sissl_verification.services.sissl_service import SISSLServices
 from api.users.enums import KYCDocumentType
-from api.users.services.kyc_identity_service import (
-    YouVerifyService,
-    persist_kyc_identity,
-)
+from api.users.services.kyc_services.utils import persist_kyc_identity
+from api.users.services.kyc_services.youverify_services import YouVerifyService
 from core.models import KYCOutboxEvent
 from shared.utils.encryption import decrypt_field
 
