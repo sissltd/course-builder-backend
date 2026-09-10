@@ -37,14 +37,25 @@ _QUIZ_EXAMPLE = {
     "questions": [],
 }
 
+_FIGMA_ASSESSMENT_NOTE = (
+    "This is the relational quiz API. The Figma Course Builder quiz editor "
+    "should use the assessment endpoints instead: lesson "
+    "`/courses/{course}/modules/{module}/lessons/{lesson}/assessment/`, "
+    "module `/courses/{course}/modules/{module}/assessment/`, and final "
+    "`/courses/{course}/final-assessment/`. Those endpoints save the full "
+    "Figma question list in one PUT and support `SINGLE_CHOICE`, "
+    "`MULTIPLE_CHOICE`, and `ESSAY`."
+)
+
 
 @extend_schema_view(
     list=extend_schema(
         summary="List quizzes",
         description=(
             "Returns quizzes at every level (lesson, module, course) with "
-            "their questions nested. Backs the quiz picker used while "
-            "building courses and the admin Quizzes screen.\n\n"
+            "their questions nested. This supports relational quiz management "
+            "and admin quiz screens, not the Figma Course Builder assessment "
+            f"save flow.\n\n{_FIGMA_ASSESSMENT_NOTE}\n\n"
             "**Auth:** Course Creator/Writer with access to the parent course, "
             "or Admin.\n\n"
             "**Prerequisites:** None.\n\n"
@@ -67,7 +78,8 @@ _QUIZ_EXAMPLE = {
         summary="Retrieve a quiz",
         description=(
             "Returns a single quiz with its questions and options nested.\n\n"
-            "Use this when opening an existing quiz in the builder.\n\n"
+            "Use this when opening an existing relational quiz. For the Figma "
+            f"Course Builder quiz editor, use the assessment endpoints.\n\n{_FIGMA_ASSESSMENT_NOTE}\n\n"
             "**Auth:** Course Creator/Writer with access to the parent course, "
             "or Admin.\n\n"
             "**Prerequisites:** The quiz must exist in an accessible course.\n\n"
@@ -89,14 +101,18 @@ _QUIZ_EXAMPLE = {
             "Creates a quiz attached to exactly one parent (lesson, module, "
             "or course). The `level` must match the parent field supplied; "
             "questions may be nested inline in the same request.\n\n"
-            "Use this when the author first saves a quiz in the builder.\n\n"
+            "Use this only for relational quiz records. The Figma Course "
+            "Builder should save its complete quiz through the assessment "
+            f"PUT endpoints.\n\n{_FIGMA_ASSESSMENT_NOTE}\n\n"
             "**Auth:** Course Creator/Writer with access to the parent course, "
             "or Admin.\n\n"
             "**Prerequisites:** The selected lesson, module, or course must "
             "already exist and be accessible.\n\n"
             "**Important:** Nested questions and options are created atomically. "
             "Their order values must be unique within each parent, and each "
-            "multiple-choice question requires exactly one correct option."
+            "relational `MULTIPLE_CHOICE` question requires exactly one "
+            "correct option. Use course assessments for the Figma multi-answer "
+            "`MULTIPLE_CHOICE` shape with `correct_indices`."
         ),
         tags=["Creator — Quizzes"],
         request=QuizSerializer,
@@ -141,7 +157,8 @@ _QUIZ_EXAMPLE = {
         description=(
             "Overwrites a quiz's settings. Nested questions are managed via "
             "the question endpoints, not inline replacement.\n\n"
-            "Use this when saving the complete quiz settings form.\n\n"
+            "Use this when saving relational quiz settings. For the Figma "
+            f"Course Builder quiz editor, use assessment PUT endpoints.\n\n{_FIGMA_ASSESSMENT_NOTE}\n\n"
             "**Auth:** Course Creator/Writer with access to the parent course, "
             "or Admin.\n\n"
             "**Prerequisites:** The quiz and selected parent must be accessible.\n\n"
@@ -175,7 +192,9 @@ _QUIZ_EXAMPLE = {
         description=(
             "Updates only the supplied fields - the normal way to tune "
             "passing score, attempts, or shuffle settings.\n\n"
-            "Use this for small adjustments after initial quiz creation.\n\n"
+            "Use this for small relational quiz adjustments after creation. "
+            "For the Figma Course Builder quiz editor, use assessment PUT "
+            f"endpoints.\n\n{_FIGMA_ASSESSMENT_NOTE}\n\n"
             "**Auth:** Course Creator/Writer with access to the parent course, "
             "or Admin.\n\n"
             "**Prerequisites:** The quiz and any newly selected parent must be "
@@ -204,7 +223,9 @@ _QUIZ_EXAMPLE = {
         summary="Delete a quiz",
         description=(
             "Deletes a quiz and its questions/options (cascading).\n\n"
-            "Use this when removing an entire quiz from the course builder.\n\n"
+            "Use this when removing an entire relational quiz. Figma Course "
+            "Builder assessments are replaced by PUTting the desired "
+            f"assessment question list.\n\n{_FIGMA_ASSESSMENT_NOTE}\n\n"
             "**Auth:** Course Creator/Writer with access to the parent course, "
             "or Admin.\n\n"
             "**Prerequisites:** The quiz must exist in an accessible course.\n\n"
@@ -225,8 +246,8 @@ class QuizViewSet(ModelViewSet):
     """CRUD for relational Quizzes at lesson, module, and course level.
 
     Complements courses.Assessment: Assessment stores questions as a JSON
-    blob managed inline by the course builder; Quiz normalizes them into
-    Question/QuestionOption rows for per-option grading.
+    blob managed inline by the Figma Course Builder; Quiz normalizes legacy
+    records into Question/QuestionOption rows for per-option grading.
     """
 
     queryset = Quiz.objects.all()

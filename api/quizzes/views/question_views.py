@@ -28,6 +28,15 @@ _QUESTION_EXAMPLE = {
     ],
 }
 
+_FIGMA_ASSESSMENT_NOTE = (
+    "This is the relational question API for Quiz rows. The Figma Course "
+    "Builder quiz editor should use the assessment endpoints instead. "
+    "Assessment questions use `question`, `type`, `options[].text`, "
+    "`correct_index`, `correct_indices`, `expected_answer`, and `explanation`; "
+    "this endpoint uses `question_text`, `question_type`, "
+    "`options[].option_text`, `is_correct`, and `model_response_guide`."
+)
+
 
 @extend_schema_view(
     list=extend_schema(
@@ -36,12 +45,15 @@ _QUESTION_EXAMPLE = {
             "Returns questions across quizzes, ordered by their position "
             "within each quiz. Filter with `?quiz=<id>` to scope to one "
             "quiz.\n\n"
-            "Use this endpoint to populate question lists in the quiz builder.\n\n"
+            "Use this endpoint to populate relational quiz question lists. "
+            f"For the Figma Course Builder quiz editor, use the assessment endpoints.\n\n{_FIGMA_ASSESSMENT_NOTE}\n\n"
             "**Auth:** Course Creator/Writer with access to the parent course, "
             "or Admin.\n\n"
             "**Prerequisites:** None.\n\n"
             "**Important:** Results are paginated. `quiz` and `question_type` "
-            "filters may be combined."
+            "filters may be combined. Relational `MULTIPLE_CHOICE` means a "
+            "single-correct choice question; use course assessments for Figma "
+            "multi-answer questions with `correct_indices`."
         ),
         tags=["Creator — Quizzes"],
         parameters=[
@@ -56,7 +68,10 @@ _QUESTION_EXAMPLE = {
                 type=str,
                 location=OpenApiParameter.QUERY,
                 enum=["MULTIPLE_CHOICE", "ESSAY"],
-                description="Return questions of this answer type only.",
+                description=(
+                    "Return questions of this answer type only. This legacy "
+                    "enum does not include Figma assessment `SINGLE_CHOICE`."
+                ),
             ),
         ],
         responses={
@@ -70,7 +85,8 @@ _QUESTION_EXAMPLE = {
         summary="Retrieve a question",
         description=(
             "Returns a single question with its options nested.\n\n"
-            "Use this when opening a question in the quiz editor.\n\n"
+            "Use this when opening a question in the relational quiz editor. "
+            f"For Figma Course Builder quizzes, use the assessment endpoints.\n\n{_FIGMA_ASSESSMENT_NOTE}\n\n"
             "**Auth:** Course Creator/Writer with access to the parent course, "
             "or Admin.\n\n"
             "**Prerequisites:** The question must exist in an accessible quiz.\n\n"
@@ -89,13 +105,17 @@ _QUESTION_EXAMPLE = {
     create=extend_schema(
         summary="Create a question",
         description=(
-            "Adds a question to a quiz. MULTIPLE_CHOICE questions require "
-            "nested options; ESSAY questions must not have any.\n\n"
+            "Adds a relational question to a quiz. `MULTIPLE_CHOICE` questions "
+            "require nested options; `ESSAY` questions must not have any.\n\n"
             "Call this after the parent quiz has been created.\n\n"
+            f"{_FIGMA_ASSESSMENT_NOTE}\n\n"
             "**Auth:** Course Creator/Writer with access to the parent course, "
             "or Admin.\n\n"
             "**Prerequisites:** The referenced quiz must exist and be accessible.\n\n"
-            "**Important:** MULTIPLE_CHOICE requires exactly one correct option. "
+            "**Important:** Relational `MULTIPLE_CHOICE` requires exactly one "
+            "correct option. Do not send Figma assessment fields like "
+            "`type`, `question`, `correct_index`, `correct_indices`, "
+            "`expected_answer`, or `options[].text` to this endpoint. "
             "Question order must be unique within the quiz, and option orders "
             "must be unique within the question."
         ),
@@ -122,7 +142,8 @@ _QUESTION_EXAMPLE = {
         description=(
             "Overwrites a question; supplying `options` replaces the full "
             "option set.\n\n"
-            "Use this when saving the complete question editor form.\n\n"
+            "Use this when saving the complete relational question editor "
+            f"form. For Figma Course Builder quizzes, use the assessment endpoints.\n\n{_FIGMA_ASSESSMENT_NOTE}\n\n"
             "**Auth:** Course Creator/Writer with access to the parent course, "
             "or Admin.\n\n"
             "**Prerequisites:** The question and target quiz must be accessible.\n\n"
@@ -151,7 +172,8 @@ _QUESTION_EXAMPLE = {
         summary="Update a question",
         description=(
             "Updates only the supplied fields.\n\n"
-            "Use this for small edits such as changing text, points, or options.\n\n"
+            "Use this for small relational edits such as changing text, "
+            f"points, or options. For Figma Course Builder quizzes, use the assessment endpoints.\n\n{_FIGMA_ASSESSMENT_NOTE}\n\n"
             "**Auth:** Course Creator/Writer with access to the parent course, "
             "or Admin.\n\n"
             "**Prerequisites:** The question and target quiz must be accessible.\n\n"
@@ -180,7 +202,9 @@ _QUESTION_EXAMPLE = {
         summary="Delete a question",
         description=(
             "Deletes a question and its options (cascading).\n\n"
-            "Use this when removing a question from the quiz builder.\n\n"
+            "Use this when removing a question from a relational quiz. Figma "
+            "Course Builder assessments are replaced by PUTting the desired "
+            f"assessment question list.\n\n{_FIGMA_ASSESSMENT_NOTE}\n\n"
             "**Auth:** Course Creator/Writer with access to the parent course, "
             "or Admin.\n\n"
             "**Prerequisites:** The question must exist in an accessible quiz.\n\n"

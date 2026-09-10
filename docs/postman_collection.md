@@ -825,8 +825,28 @@ if none exists yet; `PUT` upserts (creates if absent, otherwise updates) —
 
 Question shape (used identically at all three levels):
 ```json
-{ "question": "What keyword defines a function in Python?", "options": ["func", "def", "function", "lambda"], "correct_index": 1 }
+{
+  "type": "SINGLE_CHOICE",
+  "question": "What keyword defines a function in Python?",
+  "points": 10,
+  "options": [
+    {"text": "func", "explanation": "Incorrect - this is not a Python keyword."},
+    {"text": "def", "explanation": "Correct - 'def' defines a function."},
+    {"text": "function", "explanation": "Incorrect - not a Python keyword."},
+    {"text": "lambda", "explanation": "Incorrect - lambda creates anonymous functions."}
+  ],
+  "correct_index": 1
+}
 ```
+
+**Question Types:**
+- `SINGLE_CHOICE`: The Figma **Question choice** control. Requires 2-6 `options` (each with `text` and `explanation`) and one `correct_index`.
+- `MULTIPLE_CHOICE`: The additional multi-answer control. Requires 2-6 `options` and non-empty, unique `correct_indices`.
+- `ESSAY`: Requires top-level `expected_answer` (reference response) and `explanation` (grading guidance); it must not send `options`, `correct_index`, or `correct_indices`.
+
+Existing saved `MULTIPLE_CHOICE` questions with a single `correct_index` remain
+supported for backwards compatibility. New single-answer questions should send
+`SINGLE_CHOICE`.
 
 ### Lesson Assessment
 `GET|PUT {{base_url}}/api/v1/courses/{{course_id}}/modules/{{module_id}}/lessons/{{lesson_id}}/assessment/`
@@ -837,16 +857,78 @@ no question-count threshold)
 {
   "title": "Lesson 1 Quiz",
   "questions": [
-    { "question": "What keyword defines a function in Python?", "options": ["func", "def", "function", "lambda"], "correct_index": 1 },
-    { "question": "Which symbol starts a comment?", "options": ["//", "#", "--", "<!--"], "correct_index": 1 },
-    { "question": "What does `len([1,2,3])` return?", "options": ["2", "3", "4", "Error"], "correct_index": 1 }
+    {
+      "type": "SINGLE_CHOICE",
+      "question": "What keyword defines a function in Python?",
+      "points": 10,
+      "options": [
+        {"text": "func", "explanation": "Incorrect - this is not a Python keyword."},
+        {"text": "def", "explanation": "Correct - 'def' defines a function."},
+        {"text": "function", "explanation": "Incorrect - not a Python keyword."},
+        {"text": "lambda", "explanation": "Incorrect - lambda creates anonymous functions."}
+      ],
+      "correct_index": 1
+    },
+    {
+      "type": "MULTIPLE_CHOICE",
+      "question": "Which values are Python collections?",
+      "points": 8,
+      "options": [
+        {"text": "list", "explanation": "A list is a collection."},
+        {"text": "tuple", "explanation": "A tuple is a collection."},
+        {"text": "function", "explanation": "A function is not a collection."}
+      ],
+      "correct_indices": [0, 1]
+    },
+    {
+      "type": "ESSAY",
+      "question": "Explain the difference between a list and a tuple.",
+      "points": 15,
+      "expected_answer": "Lists are mutable, tuples are immutable. Both are ordered sequences.",
+      "explanation": "Award credit for identifying mutability and the shared ordered nature."
+    }
   ]
 }
 ```
 
+**Question Types:**
+- `SINGLE_CHOICE`: One selected answer via `correct_index`.
+- `MULTIPLE_CHOICE`: One or more selected answers via `correct_indices`.
+- `ESSAY`: Top-level `expected_answer` and `explanation`; no options or correct-answer indexes.
+
 **200 OK**
 ```json
-{ "id": "a1...", "level": "LESSON", "title": "Lesson 1 Quiz", "questions": [ /* as submitted */ ] }
+{
+  "id": "a1...",
+  "level": "LESSON",
+  "title": "Lesson 1 Quiz",
+  "questions": [
+    {
+      "type": "SINGLE_CHOICE",
+      "question": "What keyword defines a function in Python?",
+      "points": 10,
+      "options": [
+        {"text": "func", "explanation": "Incorrect - this is not a Python keyword."},
+        {"text": "def", "explanation": "Correct - 'def' defines a function."}
+      ],
+      "correct_index": 1
+    },
+    {
+      "type": "ESSAY",
+      "question": "Explain the difference between a list and a tuple.",
+      "points": 15,
+      "expected_answer": "Lists are mutable, tuples are immutable.",
+      "explanation": "Award credit for identifying the mutability difference."
+    }
+  ],
+  "summary": {
+    "total_questions": 2,
+    "total_points": 25,
+    "single_choice_count": 1,
+    "multiple_choice_count": 0,
+    "essay_count": 1
+  }
+}
 ```
 
 **404 Not Found** (no assessment yet)
@@ -858,7 +940,16 @@ no question-count threshold)
 ```json
 {
   "errors": [
-    { "type": "validation_error", "code": "invalid", "message": "Question 0 must have at least 2 'options'.", "field_name": "questions" }
+    { "type": "validation_error", "code": "invalid", "message": "Choice questions need at least 2 options.", "field_name": "questions" }
+  ]
+}
+```
+
+**400 Bad Request** (essay question with options)
+```json
+{
+  "errors": [
+    { "type": "validation_error", "code": "invalid", "message": "Essay questions don't take options or correct-answer indexes.", "field_name": "options" }
   ]
 }
 ```
