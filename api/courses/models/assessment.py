@@ -14,8 +14,8 @@ class Assessment(
 ):
     """A quiz attached to exactly one of Lesson, Module, or Course.
 
-    `questions` holds a list of objects shaped as:
-    {"question": str, "options": [str, ...], "correct_index": int}
+    `questions` holds a list of choice or essay question objects. Essay
+    questions carry distinct `expected_answer` and `explanation` fields.
     """
 
     level = models.CharField(

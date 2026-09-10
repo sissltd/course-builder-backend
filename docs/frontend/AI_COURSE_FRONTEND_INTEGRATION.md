@@ -176,6 +176,10 @@ refresh:
 - `GET /courses/{course_id}/modules/{module_id}/assessment/`
 - `GET /courses/{course_id}/final-assessment/`
 
+For the complete Course Builder field map and the Figma-aligned lesson, module,
+and final quiz payloads, see
+[Course Builder Frontend Integration Guide](COURSE_BUILDER_FRONTEND_INTEGRATION.md).
+
 ## Recommended TypeScript types
 
 ```ts

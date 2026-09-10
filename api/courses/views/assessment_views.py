@@ -16,8 +16,8 @@ from api.users.permissions import IsCourseCreatorRole
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 
 
-_MULTIPLE_CHOICE_QUESTION = {
-    "type": "MULTIPLE_CHOICE",
+_SINGLE_CHOICE_QUESTION = {
+    "type": "SINGLE_CHOICE",
     "question": "Which of these is a valid Python variable name?",
     "points": 10,
     "options": [
@@ -31,13 +31,26 @@ _MULTIPLE_CHOICE_QUESTION = {
     "correct_index": 1,
 }
 
+_MULTIPLE_CHOICE_QUESTION = {
+    "type": "MULTIPLE_CHOICE",
+    "question": "Which of these are valid Python collection types?",
+    "points": 10,
+    "options": [
+        {"text": "list", "explanation": "Lists are ordered collections."},
+        {"text": "tuple", "explanation": "Tuples are ordered collections."},
+        {"text": "function", "explanation": "Functions are not collection types."},
+    ],
+    "correct_indices": [0, 1],
+}
+
 _ESSAY_QUESTION = {
     "type": "ESSAY",
     "question": "Explain the difference between a list and a tuple.",
     "points": 15,
+    "expected_answer": "Lists are mutable; tuples are immutable.",
     "explanation": (
-        "Model answer guidance: lists are mutable, tuples are immutable; "
-        "both are ordered sequences."
+        "Award full credit when the response identifies mutability as the key "
+        "difference and notes that both are ordered sequences."
     ),
 }
 
@@ -47,10 +60,15 @@ def _assessment_example(level: str) -> dict:
         "id": "d4e5f6a7-b8c9-4d0e-1f2a-3b4c5d6e7f8a",
         "level": level,
         "title": "Variables Quiz",
-        "questions": [_MULTIPLE_CHOICE_QUESTION, _ESSAY_QUESTION],
+        "questions": [
+            _SINGLE_CHOICE_QUESTION,
+            _MULTIPLE_CHOICE_QUESTION,
+            _ESSAY_QUESTION,
+        ],
         "summary": {
-            "total_questions": 2,
-            "total_points": 25,
+            "total_questions": 3,
+            "total_points": 35,
+            "single_choice_count": 1,
             "multiple_choice_count": 1,
             "essay_count": 1,
         },
@@ -59,7 +77,11 @@ def _assessment_example(level: str) -> dict:
 
 _QUESTIONS_SAMPLE = {
     "title": "Variables Quiz",
-    "questions": [_MULTIPLE_CHOICE_QUESTION, _ESSAY_QUESTION],
+    "questions": [
+        _SINGLE_CHOICE_QUESTION,
+        _MULTIPLE_CHOICE_QUESTION,
+        _ESSAY_QUESTION,
+    ],
 }
 
 _DRAFT_ONLY_400 = OpenApiResponse(
@@ -172,10 +194,11 @@ class LessonAssessmentView(APIView):
             "**Auth:** Course Creator/Writer with access to the course.\n\n"
             "**Prerequisites:** The parent course must be `DRAFT`.\n\n"
             "**Important:** Each question's `type` decides which fields "
-            "apply: `MULTIPLE_CHOICE` needs at least 2 `options` (each with "
-            "its own `explanation`) and a `correct_index` within range; "
-            "`ESSAY` needs a top-level `explanation` instead and rejects "
-            "`options`/`correct_index`. Explanations are required on every "
+            "apply: `SINGLE_CHOICE` needs 2-6 `options` (each with its own "
+            "`explanation`) and one `correct_index`; `MULTIPLE_CHOICE` "
+            "needs 2-6 options and one or more `correct_indices`; "
+            "`ESSAY` needs top-level `expected_answer` and `explanation` fields and rejects "
+            "`options`/correct-answer indexes. Explanations are required on every "
             "option and essay question (SCCS PRD Section 6.3). Only this "
             "per-question shape is validated here. Lesson assessments are "
             "optional and there is no question-count threshold."
@@ -295,10 +318,11 @@ class ModuleAssessmentView(APIView):
             "**Auth:** Course Creator/Writer with access to the course.\n\n"
             "**Prerequisites:** The parent course must be `DRAFT`.\n\n"
             "**Important:** Each question's `type` decides which fields "
-            "apply: `MULTIPLE_CHOICE` needs at least 2 `options` (each with "
-            "its own `explanation`) and a `correct_index` within range; "
-            "`ESSAY` needs a top-level `explanation` instead and rejects "
-            "`options`/`correct_index`. Explanations are required on every "
+            "apply: `SINGLE_CHOICE` needs 2-6 `options` (each with its own "
+            "`explanation`) and one `correct_index`; `MULTIPLE_CHOICE` "
+            "needs 2-6 options and one or more `correct_indices`; "
+            "`ESSAY` needs top-level `expected_answer` and `explanation` fields and rejects "
+            "`options`/correct-answer indexes. Explanations are required on every "
             "option and essay question (SCCS PRD Section 6.3). Only this "
             "per-question shape is validated here. A module assessment must "
             "exist before submission, but its question count is not constrained."
@@ -415,10 +439,11 @@ class CourseAssessmentView(APIView):
             "**Auth:** Course Creator/Writer with access to the course.\n\n"
             "**Prerequisites:** The course must be `DRAFT`.\n\n"
             "**Important:** Each question's `type` decides which fields "
-            "apply: `MULTIPLE_CHOICE` needs at least 2 `options` (each with "
-            "its own `explanation`) and a `correct_index` within range; "
-            "`ESSAY` needs a top-level `explanation` instead and rejects "
-            "`options`/`correct_index`. Explanations are required on every "
+            "apply: `SINGLE_CHOICE` needs 2-6 `options` (each with its own "
+            "`explanation`) and one `correct_index`; `MULTIPLE_CHOICE` "
+            "needs 2-6 options and one or more `correct_indices`; "
+            "`ESSAY` needs top-level `expected_answer` and `explanation` fields and rejects "
+            "`options`/correct-answer indexes. Explanations are required on every "
             "option and essay question (SCCS PRD Section 6.3). Only this "
             "per-question shape is validated here; the >=15 questions "
             "threshold is enforced separately at submit time, not on every "

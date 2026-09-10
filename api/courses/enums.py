@@ -32,7 +32,8 @@ class AssessmentLevel(models.TextChoices):
 class QuestionType(models.TextChoices):
     """A quiz question's answer format."""
 
-    MULTIPLE_CHOICE = "MULTIPLE_CHOICE", "Question Choice"
+    SINGLE_CHOICE = "SINGLE_CHOICE", "Single Choice"
+    MULTIPLE_CHOICE = "MULTIPLE_CHOICE", "Multiple Choice"
     ESSAY = "ESSAY", "Essay Question"
 
 
