@@ -1,0 +1,49 @@
+{% extends "devdocs/base.html" %}
+
+{% block content %}
+{% if content_html %}
+  <article class="markdown-body">
+    {{ content_html|safe }}
+  </article>
+
+  <nav class="doc-nav" aria-label="Document navigation">
+    {% if prev_doc %}
+      <a href="{% url 'devdocs-page' prev_doc.slug %}">
+        <span class="label">← Previous</span>
+        {{ prev_doc.title }}
+      </a>
+    {% endif %}
+    {% if next_doc %}
+      <a class="next" href="{% url 'devdocs-page' next_doc.slug %}">
+        <span class="label">Next →</span>
+        {{ next_doc.title }}
+      </a>
+    {% endif %}
+  </nav>
+{% else %}
+  <article class="markdown-body">
+    <h1>Developer Docs</h1>
+    <p>{{ doc_count }} document{{ doc_count|pluralize }}, rendered from <code>docs/</code>.</p>
+  </article>
+  <div class="landing-grid">
+    {% for doc in flat_docs %}
+      <a class="landing-card" href="{% url 'devdocs-page' doc.slug %}">{{ doc.title }}</a>
+    {% endfor %}
+  </div>
+{% endif %}
+{% endblock %}
+
+{% block rail %}
+{% if content_html %}
+  <a class="download-btn" href="{% url 'devdocs-download' active_slug %}">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+    Download .md
+  </a>
+  {% if toc_html %}
+    <div class="rail-toc">
+      <span class="rail-toc-title">On this page</span>
+      {{ toc_html|safe }}
+    </div>
+  {% endif %}
+{% endif %}
+{% endblock %}

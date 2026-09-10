@@ -24,6 +24,7 @@ from drf_spectacular.views import (
     SpectacularRedocView,
     SpectacularSwaggerView,
 )
+from shared.constants.environ import DJANGO_ENV
 
 
 def health_check(request):
@@ -63,3 +64,7 @@ urlpatterns = [
     path("api/v1/", include("shared.uploads.urls")),
     path("api/v1/", include("shared.audit.urls")),
 ]
+
+# Internal developer documentation is deliberately unavailable in production.
+if DJANGO_ENV.lower() in {"development", "staging"}:
+    urlpatterns += [path("docs/", include("devdocs.urls"))]

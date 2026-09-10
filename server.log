@@ -1,0 +1,165 @@
+Watching for file changes with StatReloader
+INFO:django.utils.autoreload:Watching for file changes with StatReloader
+INFO:daphne.server:HTTP/2 support not enabled (install the http2 and tls Twisted extras)
+INFO:daphne.server:Configuring endpoint tcp:port=8000:interface=127.0.0.1
+INFO:daphne.server:Listening on TCP address 127.0.0.1:8000
+HTTP GET /admin/login/?next=/docs/ 200 [0.60, 127.0.0.1:61850]
+INFO:django.channels.server:HTTP GET /admin/login/?next=/docs/ 200 [0.60, 127.0.0.1:61850]
+HTTP GET /admin/login/?next=/docs/ 200 [0.02, 127.0.0.1:61873]
+INFO:django.channels.server:HTTP GET /admin/login/?next=/docs/ 200 [0.02, 127.0.0.1:61873]
+HTTP GET /admin/login/?next=/docs/ 200 [0.02, 127.0.0.1:62539]
+INFO:django.channels.server:HTTP GET /admin/login/?next=/docs/ 200 [0.02, 127.0.0.1:62539]
+HTTP GET /static/admin/css/base.css 304 [0.02, 127.0.0.1:62539]
+INFO:django.channels.server:HTTP GET /static/admin/css/base.css 304 [0.02, 127.0.0.1:62539]
+HTTP GET /static/admin/css/dark_mode.css 304 [0.02, 127.0.0.1:62542]
+INFO:django.channels.server:HTTP GET /static/admin/css/dark_mode.css 304 [0.02, 127.0.0.1:62542]
+HTTP GET /static/admin/js/theme.js 304 [0.02, 127.0.0.1:62546]
+INFO:django.channels.server:HTTP GET /static/admin/js/theme.js 304 [0.02, 127.0.0.1:62546]
+HTTP GET /static/admin/css/nav_sidebar.css 304 [0.02, 127.0.0.1:62545]
+INFO:django.channels.server:HTTP GET /static/admin/css/nav_sidebar.css 304 [0.02, 127.0.0.1:62545]
+HTTP GET /static/admin/css/responsive.css 304 [0.02, 127.0.0.1:62548]
+INFO:django.channels.server:HTTP GET /static/admin/css/responsive.css 304 [0.02, 127.0.0.1:62548]
+HTTP GET /static/admin/js/nav_sidebar.js 304 [0.02, 127.0.0.1:62548]
+INFO:django.channels.server:HTTP GET /static/admin/js/nav_sidebar.js 304 [0.02, 127.0.0.1:62548]
+HTTP GET /admin/login/?next=/docs/ 200 [0.03, 127.0.0.1:62548]
+INFO:django.channels.server:HTTP GET /admin/login/?next=/docs/ 200 [0.03, 127.0.0.1:62548]
+HTTP GET /static/admin/js/theme.js 304 [0.02, 127.0.0.1:62546]
+INFO:django.channels.server:HTTP GET /static/admin/js/theme.js 304 [0.02, 127.0.0.1:62546]
+HTTP GET /static/admin/css/base.css 304 [0.02, 127.0.0.1:62548]
+INFO:django.channels.server:HTTP GET /static/admin/css/base.css 304 [0.02, 127.0.0.1:62548]
+HTTP GET /static/admin/css/dark_mode.css 304 [0.02, 127.0.0.1:62545]
+INFO:django.channels.server:HTTP GET /static/admin/css/dark_mode.css 304 [0.02, 127.0.0.1:62545]
+HTTP GET /static/admin/css/nav_sidebar.css 304 [0.02, 127.0.0.1:62542]
+INFO:django.channels.server:HTTP GET /static/admin/css/nav_sidebar.css 304 [0.02, 127.0.0.1:62542]
+HTTP GET /static/admin/css/responsive.css 304 [0.02, 127.0.0.1:62539]
+INFO:django.channels.server:HTTP GET /static/admin/css/responsive.css 304 [0.02, 127.0.0.1:62539]
+HTTP GET /static/admin/js/nav_sidebar.js 304 [0.01, 127.0.0.1:62539]
+INFO:django.channels.server:HTTP GET /static/admin/js/nav_sidebar.js 304 [0.01, 127.0.0.1:62539]
+HTTP GET /docs/ 302 [0.02, 127.0.0.1:62539]
+INFO:django.channels.server:HTTP GET /docs/ 302 [0.02, 127.0.0.1:62539]
+HTTP GET /admin/login/?next=/docs/ 200 [0.02, 127.0.0.1:62539]
+INFO:django.channels.server:HTTP GET /admin/login/?next=/docs/ 200 [0.02, 127.0.0.1:62539]
+HTTP GET /static/admin/css/base.css 304 [0.01, 127.0.0.1:62539]
+INFO:django.channels.server:HTTP GET /static/admin/css/base.css 304 [0.01, 127.0.0.1:62539]
+HTTP GET /static/admin/css/dark_mode.css 304 [0.01, 127.0.0.1:62542]
+INFO:django.channels.server:HTTP GET /static/admin/css/dark_mode.css 304 [0.01, 127.0.0.1:62542]
+HTTP GET /static/admin/js/theme.js 304 [0.01, 127.0.0.1:62545]
+INFO:django.channels.server:HTTP GET /static/admin/js/theme.js 304 [0.01, 127.0.0.1:62545]
+HTTP GET /static/admin/css/nav_sidebar.css 304 [0.01, 127.0.0.1:62545]
+INFO:django.channels.server:HTTP GET /static/admin/css/nav_sidebar.css 304 [0.01, 127.0.0.1:62545]
+HTTP GET /static/admin/css/responsive.css 304 [0.01, 127.0.0.1:62542]
+INFO:django.channels.server:HTTP GET /static/admin/css/responsive.css 304 [0.01, 127.0.0.1:62542]
+HTTP GET /static/admin/js/nav_sidebar.js 304 [0.01, 127.0.0.1:62539]
+INFO:django.channels.server:HTTP GET /static/admin/js/nav_sidebar.js 304 [0.01, 127.0.0.1:62539]
+HTTP GET /admin/login/?next=/docs/ 200 [0.03, 127.0.0.1:63107]
+INFO:django.channels.server:HTTP GET /admin/login/?next=/docs/ 200 [0.03, 127.0.0.1:63107]
+HTTP GET /static/admin/css/dark_mode.css 304 [0.02, 127.0.0.1:63107]
+INFO:django.channels.server:HTTP GET /static/admin/css/dark_mode.css 304 [0.02, 127.0.0.1:63107]
+HTTP GET /static/admin/css/base.css 304 [0.02, 127.0.0.1:63109]
+INFO:django.channels.server:HTTP GET /static/admin/css/base.css 304 [0.02, 127.0.0.1:63109]
+HTTP GET /static/admin/js/theme.js 304 [0.01, 127.0.0.1:63111]
+INFO:django.channels.server:HTTP GET /static/admin/js/theme.js 304 [0.01, 127.0.0.1:63111]
+HTTP GET /static/admin/css/nav_sidebar.css 304 [0.01, 127.0.0.1:63113]
+INFO:django.channels.server:HTTP GET /static/admin/css/nav_sidebar.css 304 [0.01, 127.0.0.1:63113]
+HTTP GET /static/admin/css/responsive.css 304 [0.01, 127.0.0.1:63115]
+INFO:django.channels.server:HTTP GET /static/admin/css/responsive.css 304 [0.01, 127.0.0.1:63115]
+HTTP GET /static/admin/js/nav_sidebar.js 304 [0.01, 127.0.0.1:63115]
+INFO:django.channels.server:HTTP GET /static/admin/js/nav_sidebar.js 304 [0.01, 127.0.0.1:63115]
+HTTP GET /admin/login/?next=/docs/ 200 [0.02, 127.0.0.1:63115]
+INFO:django.channels.server:HTTP GET /admin/login/?next=/docs/ 200 [0.02, 127.0.0.1:63115]
+HTTP GET /static/admin/css/dark_mode.css 304 [0.01, 127.0.0.1:63113]
+INFO:django.channels.server:HTTP GET /static/admin/css/dark_mode.css 304 [0.01, 127.0.0.1:63113]
+HTTP GET /static/admin/css/nav_sidebar.css 304 [0.01, 127.0.0.1:63109]
+INFO:django.channels.server:HTTP GET /static/admin/css/nav_sidebar.css 304 [0.01, 127.0.0.1:63109]
+HTTP GET /static/admin/js/theme.js 304 [0.01, 127.0.0.1:63111]
+INFO:django.channels.server:HTTP GET /static/admin/js/theme.js 304 [0.01, 127.0.0.1:63111]
+HTTP GET /static/admin/css/base.css 304 [0.02, 127.0.0.1:63115]
+INFO:django.channels.server:HTTP GET /static/admin/css/base.css 304 [0.02, 127.0.0.1:63115]
+HTTP GET /static/admin/css/responsive.css 304 [0.01, 127.0.0.1:63107]
+INFO:django.channels.server:HTTP GET /static/admin/css/responsive.css 304 [0.01, 127.0.0.1:63107]
+HTTP GET /static/admin/js/nav_sidebar.js 304 [0.01, 127.0.0.1:63115]
+INFO:django.channels.server:HTTP GET /static/admin/js/nav_sidebar.js 304 [0.01, 127.0.0.1:63115]
+/Users/mac/Desktop/work/course-builder-backend/config/urls.py changed, reloading.
+INFO:django.utils.autoreload:/Users/mac/Desktop/work/course-builder-backend/config/urls.py changed, reloading.
+Performing system checks...
+
+System check identified no issues (0 silenced).
+September 09, 2026 - 18:43:37
+Django version 5.2.14, using settings 'config.settings'
+Starting ASGI/Daphne version 4.2.3 development server at http://127.0.0.1:8000/
+Quit the server with CONTROL-C.
+Watching for file changes with StatReloader
+INFO:django.utils.autoreload:Watching for file changes with StatReloader
+INFO:daphne.server:HTTP/2 support not enabled (install the http2 and tls Twisted extras)
+INFO:daphne.server:Configuring endpoint tcp:port=8000:interface=127.0.0.1
+INFO:daphne.server:Listening on TCP address 127.0.0.1:8000
+/Users/mac/Desktop/work/course-builder-backend/devdocs/views.py changed, reloading.
+INFO:django.utils.autoreload:/Users/mac/Desktop/work/course-builder-backend/devdocs/views.py changed, reloading.
+Performing system checks...
+
+System check identified no issues (0 silenced).
+September 09, 2026 - 18:57:12
+Django version 5.2.14, using settings 'config.settings'
+Starting ASGI/Daphne version 4.2.3 development server at http://127.0.0.1:8000/
+Quit the server with CONTROL-C.
+Watching for file changes with StatReloader
+INFO:django.utils.autoreload:Watching for file changes with StatReloader
+INFO:daphne.server:HTTP/2 support not enabled (install the http2 and tls Twisted extras)
+INFO:daphne.server:Configuring endpoint tcp:port=8000:interface=127.0.0.1
+INFO:daphne.server:Listening on TCP address 127.0.0.1:8000
+HTTP GET /admin/login/?next=/docs/ 200 [0.65, 127.0.0.1:64295]
+INFO:django.channels.server:HTTP GET /admin/login/?next=/docs/ 200 [0.65, 127.0.0.1:64295]
+HTTP GET /static/admin/css/dark_mode.css 304 [0.04, 127.0.0.1:64295]
+INFO:django.channels.server:HTTP GET /static/admin/css/dark_mode.css 304 [0.04, 127.0.0.1:64295]
+HTTP GET /static/admin/css/base.css 304 [0.04, 127.0.0.1:64297]
+INFO:django.channels.server:HTTP GET /static/admin/css/base.css 304 [0.04, 127.0.0.1:64297]
+HTTP GET /static/admin/css/nav_sidebar.css 304 [0.03, 127.0.0.1:64302]
+INFO:django.channels.server:HTTP GET /static/admin/css/nav_sidebar.css 304 [0.03, 127.0.0.1:64302]
+HTTP GET /static/admin/css/responsive.css 304 [0.03, 127.0.0.1:64303]
+INFO:django.channels.server:HTTP GET /static/admin/css/responsive.css 304 [0.03, 127.0.0.1:64303]
+HTTP GET /static/admin/js/theme.js 304 [0.04, 127.0.0.1:64306]
+INFO:django.channels.server:HTTP GET /static/admin/js/theme.js 304 [0.04, 127.0.0.1:64306]
+HTTP GET /static/admin/js/nav_sidebar.js 304 [0.01, 127.0.0.1:64303]
+INFO:django.channels.server:HTTP GET /static/admin/js/nav_sidebar.js 304 [0.01, 127.0.0.1:64303]
+HTTP GET /admin/login/?next=/docs/ 200 [0.22, 127.0.0.1:65114]
+INFO:django.channels.server:HTTP GET /admin/login/?next=/docs/ 200 [0.22, 127.0.0.1:65114]
+HTTP GET /static/admin/css/base.css 304 [0.09, 127.0.0.1:65121]
+INFO:django.channels.server:HTTP GET /static/admin/css/base.css 304 [0.09, 127.0.0.1:65121]
+HTTP GET /static/admin/css/dark_mode.css 304 [0.16, 127.0.0.1:65114]
+INFO:django.channels.server:HTTP GET /static/admin/css/dark_mode.css 304 [0.16, 127.0.0.1:65114]
+HTTP GET /static/admin/js/theme.js 304 [0.15, 127.0.0.1:65116]
+INFO:django.channels.server:HTTP GET /static/admin/js/theme.js 304 [0.15, 127.0.0.1:65116]
+HTTP GET /static/admin/css/nav_sidebar.css 304 [0.06, 127.0.0.1:65123]
+INFO:django.channels.server:HTTP GET /static/admin/css/nav_sidebar.css 304 [0.06, 127.0.0.1:65123]
+HTTP GET /static/admin/css/responsive.css 304 [0.04, 127.0.0.1:65125]
+INFO:django.channels.server:HTTP GET /static/admin/css/responsive.css 304 [0.04, 127.0.0.1:65125]
+HTTP GET /static/admin/js/nav_sidebar.js 304 [0.01, 127.0.0.1:65125]
+INFO:django.channels.server:HTTP GET /static/admin/js/nav_sidebar.js 304 [0.01, 127.0.0.1:65125]
+HTTP POST /admin/login/ 200 [0.77, 127.0.0.1:65125]
+INFO:django.channels.server:HTTP POST /admin/login/ 200 [0.77, 127.0.0.1:65125]
+HTTP GET /static/admin/css/base.css 304 [0.02, 127.0.0.1:65125]
+INFO:django.channels.server:HTTP GET /static/admin/css/base.css 304 [0.02, 127.0.0.1:65125]
+HTTP GET /static/admin/css/dark_mode.css 304 [0.02, 127.0.0.1:65123]
+INFO:django.channels.server:HTTP GET /static/admin/css/dark_mode.css 304 [0.02, 127.0.0.1:65123]
+HTTP GET /static/admin/css/responsive.css 304 [0.01, 127.0.0.1:65121]
+INFO:django.channels.server:HTTP GET /static/admin/css/responsive.css 304 [0.01, 127.0.0.1:65121]
+HTTP GET /static/admin/js/theme.js 304 [0.02, 127.0.0.1:65116]
+INFO:django.channels.server:HTTP GET /static/admin/js/theme.js 304 [0.02, 127.0.0.1:65116]
+HTTP GET /static/admin/css/nav_sidebar.css 304 [0.02, 127.0.0.1:65114]
+INFO:django.channels.server:HTTP GET /static/admin/css/nav_sidebar.css 304 [0.02, 127.0.0.1:65114]
+HTTP GET /static/admin/js/nav_sidebar.js 304 [0.01, 127.0.0.1:65114]
+INFO:django.channels.server:HTTP GET /static/admin/js/nav_sidebar.js 304 [0.01, 127.0.0.1:65114]
+HTTP POST /admin/login/ 200 [0.53, 127.0.0.1:65114]
+INFO:django.channels.server:HTTP POST /admin/login/ 200 [0.53, 127.0.0.1:65114]
+HTTP GET /static/admin/css/base.css 304 [0.01, 127.0.0.1:65114]
+INFO:django.channels.server:HTTP GET /static/admin/css/base.css 304 [0.01, 127.0.0.1:65114]
+HTTP GET /static/admin/css/dark_mode.css 304 [0.01, 127.0.0.1:65116]
+INFO:django.channels.server:HTTP GET /static/admin/css/dark_mode.css 304 [0.01, 127.0.0.1:65116]
+HTTP GET /static/admin/css/nav_sidebar.css 304 [0.01, 127.0.0.1:65123]
+INFO:django.channels.server:HTTP GET /static/admin/css/nav_sidebar.css 304 [0.01, 127.0.0.1:65123]
+HTTP GET /static/admin/js/theme.js 304 [0.01, 127.0.0.1:65121]
+INFO:django.channels.server:HTTP GET /static/admin/js/theme.js 304 [0.01, 127.0.0.1:65121]
+HTTP GET /static/admin/css/responsive.css 304 [0.01, 127.0.0.1:65125]
+INFO:django.channels.server:HTTP GET /static/admin/css/responsive.css 304 [0.01, 127.0.0.1:65125]
+HTTP GET /static/admin/js/nav_sidebar.js 304 [0.01, 127.0.0.1:65125]
+INFO:django.channels.server:HTTP GET /static/admin/js/nav_sidebar.js 304 [0.01, 127.0.0.1:65125]

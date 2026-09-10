@@ -21,13 +21,6 @@ class TransactionStatus(models.TextChoices):
     FAILED = "FAILED", "Failed"
 
 
-class PayoutAccountType(models.TextChoices):
-    """How a creator's payout account receives funds."""
-
-    LOCAL = "LOCAL", "Local Account"
-    MOBILE_MONEY = "MOBILE_MONEY", "Mobile Money"
-
-
 class WithdrawalRequestStatus(models.TextChoices):
     """State of a withdrawal between "Request withdrawal" and OTP confirmation."""
 

@@ -5,6 +5,7 @@ from rest_framework import serializers
 
 from api.users.enums import KYCDocumentType
 from api.users.models import KYCVerification, User
+from shared.utils.encryption import decrypt_field
 
 
 class KYCUserDataSerializer(serializers.Serializer):
@@ -23,10 +24,12 @@ class KYCVerificationSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = KYCVerification
-        fields = [
+        fields: ClassVar = [
             "id",
             "country_of_issue",
             "document_type",
+            "id_number",
+            "kyc_request_status",
             "status",
             "rejection_reason",
             "created_datetime",
@@ -49,12 +52,21 @@ class KYCVerificationSerializer(serializers.ModelSerializer):
             "sex": obj.user.kyc_gender,
         }
 
+    def to_representation(self, instance):
+        """Customize the representation of the KYC verification object."""
+        representation = super().to_representation(instance)
+        representation["id_number"] = decrypt_field(instance.id_number)
+        return representation
+
 
 class KYCVerificationSubmitSerializer(serializers.Serializer):
     """Write serializer for POST /users/me/kyc/.
 
     Mirrors the "Document type" -> "Enter ID number" design flow: country of
     issue, one of the four supported document types, and the raw ID number.
+
+    Extra fields added based on demands from FE devs: first_name, last_name and address.
+    `date_of_birth`, though not strictly required by the FE, is required by a KYC service provider: YouVerify.
     """
 
     first_name = serializers.CharField(max_length=64)
@@ -93,6 +105,7 @@ class KYCVerificationAdminSerializer(serializers.ModelSerializer):
             "country_of_issue",
             "document_type",
             "id_number",
+            "kyc_request_status",
             "status",
             "rejection_reason",
             "reviewed_by",
@@ -113,6 +126,12 @@ class KYCVerificationAdminSerializer(serializers.ModelSerializer):
             "date_of_birth": obj.user.kyc_date_of_birth,
             "sex": obj.user.kyc_gender,
         }
+
+    def to_representation(self, instance):
+        """Customize the representation of the KYC verification object."""
+        representation = super().to_representation(instance)
+        representation["id_number"] = decrypt_field(instance.id_number)
+        return representation
 
 
 class KYCReviewApproveSerializer(serializers.Serializer):

@@ -9,9 +9,7 @@ from rest_framework import filters as drf_filters
 from rest_framework import status
 from rest_framework.generics import (
     CreateAPIView,
-    DestroyAPIView,
     ListAPIView,
-    ListCreateAPIView,
     RetrieveAPIView,
 )
 from rest_framework.views import APIView
@@ -22,13 +20,11 @@ from api.wallet.filters import (
     AdminTransactionFilter,
     AdminWithdrawalRequestFilter,
 )
-from api.wallet.models import PayoutAccount, Wallet, WithdrawalRequest
+from api.wallet.models import Wallet, WithdrawalRequest
 from api.wallet.serializers import (
     AdminTransactionSerializer,
     AdminWalletSerializer,
     AdminWithdrawalRequestSerializer,
-    PayoutAccountCreateSerializer,
-    PayoutAccountSerializer,
     TransactionSerializer,
     WalletSerializer,
     WithdrawalConfirmSerializer,
@@ -79,21 +75,6 @@ class WalletDetailView(RetrieveAPIView):
         tags=["Creator — Wallet"],
     ),
 )
-class PayoutAccountListCreateView(ListCreateAPIView):
-    """List the current user's payout accounts, or add a new one
-    (Settings -> Payment -> Add account)."""
-
-    permission_classes = [IsCourseCreatorRole]
-
-    def get_queryset(self):
-        if getattr(self, "swagger_fake_view", False):
-            return PayoutAccount.objects.none()
-        return wallet_service.list_payout_accounts(user=self.request.user)
-
-    def get_serializer_class(self):
-        if self.request.method == "POST":
-            return PayoutAccountCreateSerializer
-        return PayoutAccountSerializer
 
 
 @extend_schema_view(
@@ -102,15 +83,6 @@ class PayoutAccountListCreateView(ListCreateAPIView):
         tags=["Creator — Wallet"],
     ),
 )
-class PayoutAccountDestroyView(DestroyAPIView):
-    """Remove one of the current user's payout accounts."""
-
-    permission_classes = [IsCourseCreatorRole]
-    serializer_class = PayoutAccountSerializer
-
-    def get_queryset(self):
-        return wallet_service.list_payout_accounts(user=self.request.user)
-
 
 @extend_schema_view(
     post=extend_schema(

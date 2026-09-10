@@ -7,7 +7,6 @@ from django.db import models
 from django.utils.translation import gettext_lazy as _
 
 from api.wallet.enums import (
-    PayoutAccountType,
     WithdrawalRequestStatus,
 )
 from core.mixins import DateHistoryModelMixin, UUIDPrimaryKeyModelMixin
@@ -65,62 +64,6 @@ class Wallet(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, models.Model):
         """Use the owning user's email as the human-readable label."""
 
         return f"Wallet({self.user_id})"
-
-
-class PayoutAccount(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
-    """A bank or mobile-money account a creator can withdraw earnings to.
-
-    A creator can hold multiple (Settings -> Payment shows Local + Mobile
-    Money side by side); is_default controls which one is preselected on the
-    withdrawal screen.
-    """
-
-    user = models.ForeignKey(
-        "users.User",
-        verbose_name=_("User"),
-        on_delete=models.CASCADE,
-        related_name="payout_accounts",
-        help_text=_("User who owns this payout account."),
-    )
-    account_type = models.CharField(
-        verbose_name=_("Account Type"),
-        max_length=15,
-        choices=PayoutAccountType.choices,
-        help_text=_("Whether this is a local bank account or a mobile money account."),
-    )
-    provider_name = models.CharField(
-        verbose_name=_("Provider Name"),
-        max_length=100,
-        help_text=_("Bank name (LOCAL) or mobile money provider (MOBILE_MONEY)."),
-    )
-    account_number = models.CharField(
-        verbose_name=_("Account Number"),
-        max_length=34,
-        help_text=_("Bank account number or mobile money number."),
-    )
-    account_name = models.CharField(
-        verbose_name=_("Account Name"),
-        max_length=150,
-        help_text=_("Name on the account, as entered when adding it."),
-    )
-    is_default = models.BooleanField(
-        verbose_name=_("Is Default"),
-        default=False,
-        help_text=_("Preselected payout account on the withdrawal screen."),
-    )
-
-    class Meta:
-        verbose_name = _("Payout Account")
-        verbose_name_plural = _("Payout Accounts")
-        ordering = ["-created_datetime"]
-        indexes = [
-            models.Index(fields=["user"], name="payout_acct_user_idx"),
-        ]
-
-    def __str__(self):
-        """Summarize the payout account for admin/debugging readability."""
-
-        return f"{self.account_type} {self.account_number} ({self.user_id})"
 
 
 class WithdrawalRequest(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):

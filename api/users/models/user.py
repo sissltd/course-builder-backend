@@ -142,8 +142,8 @@ class User(
         ),
     )
 
-    # >>>>>>>>>>>> SISSL-verified identity (authoritative, from NIMC/NIBSS) <<<<<<<<<<
-    # Populated from the SISSL NIN/BVN response at verification time — distinct from
+    # >>>>>>>>>>>> KYC-verified identity (authoritative, from NIMC/NIBSS) <<<<<<<<<<
+    # Populated from the KYC NIN/BVN response at verification time — distinct from
     # the self-entered name/gender above. Drives the admin verification dashboard's
     # Identity tab.
     kyc_first_name = models.CharField(max_length=150, blank=True, default="")
