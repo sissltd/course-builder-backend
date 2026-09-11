@@ -26,6 +26,7 @@ from api.users.serializers import (
 )
 from api.users.services import kyc_service
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
+from shared.response.success import custom_success_response
 
 
 class KYCVerificationView(APIView):
@@ -56,9 +57,11 @@ class KYCVerificationView(APIView):
     )
     def get(self, request):
         latest = kyc_service.get_latest_verification(user=request.user)
-        if latest is None:
-            return Response(None)
-        return Response(KYCVerificationSerializer(latest).data)
+        return custom_success_response(
+            message="Retrieved successfully",
+            data=KYCVerificationSerializer(latest).data,
+            status=status.HTTP_200_OK,
+        )
 
     @extend_schema(
         summary="Submit KYC verification",
