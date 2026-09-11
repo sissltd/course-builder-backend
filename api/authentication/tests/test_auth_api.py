@@ -1165,6 +1165,30 @@ class MeApiTests(APITestCase):
         user.refresh_from_db()
         self.assertEqual(user.first_name, "Updated")
 
+    def test_patch_accepts_avatar_url_up_to_500_characters(self):
+        """avatar_url holds the presign flow's file_key or CDN URL, which the
+        backend itself generates and which can exceed the old 200-char
+        URLField default."""
+
+        user = make_user()
+        self.client.force_authenticate(user)
+        avatar_url = "https://cdn.example.com/avatars/{}".format("a" * 400)
+
+        response = self.client.patch(
+            "/api/v1/users/me/",
+            {"avatar_url": avatar_url},
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+            msg=f"Unexpected errors: {response.data}",
+        )
+        self.assertEqual(response.data["avatar_url"], avatar_url)
+        user.refresh_from_db()
+        self.assertEqual(user.avatar_url, avatar_url)
+
     def test_patch_cannot_change_email(self):
         user = make_user(email="original@example.com")
         self.client.force_authenticate(user)

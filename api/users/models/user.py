@@ -124,11 +124,16 @@ class User(
         default="",
         help_text=_("IANA timezone identifier, e.g. 'Africa/Lagos'."),
     )
-    avatar_url = models.URLField(
+    avatar_url = models.CharField(
         verbose_name=_("Avatar URL"),
+        max_length=500,
         blank=True,
         default="",
-        help_text=_("Profile picture URL."),
+        help_text=_(
+            "Profile picture reference. Holds the file_key (or full CDN URL) "
+            "returned by the upload presign endpoint; the value is "
+            "backend-generated, so it may exceed 200 characters."
+        ),
     )
     mfa_grace_period_ends_at = models.DateTimeField(
         verbose_name=_("MFA Grace Period Ends At"),
