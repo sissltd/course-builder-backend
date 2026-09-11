@@ -1,6 +1,7 @@
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
+from api.courses.constants import COURSE_MEDIA_URL_MAX_LENGTH
 from api.courses.enums import MediaSource
 from core.mixins import (
     DateHistoryModelMixin,
@@ -52,14 +53,14 @@ class CourseThumbnail(
         verbose_name=_("File"),
         blank=True,
         default="",
-        max_length=500,
+        max_length=COURSE_MEDIA_URL_MAX_LENGTH,
         help_text=_("Uploaded file path; populated only when source is UPLOAD."),
     )
     external_url = models.CharField(
         verbose_name=_("External URL"),
         blank=True,
         default="",
-        max_length=1000,
+        max_length=COURSE_MEDIA_URL_MAX_LENGTH,
         help_text=_(
             "External URL (Google Drive, YouTube, Dropbox, pasted link); "
             "populated only when source is not UPLOAD."

@@ -227,6 +227,33 @@ class LessonNewFieldsApiTests(APITestCase):
         self.assertEqual(lesson.content_type, LessonContentType.VIDEO)
         self.assertEqual(lesson.embedded_link, "https://vimeo.com/123456")
 
+    def test_create_video_lesson_accepts_long_uploaded_video_url(self):
+        long_video_url = (
+            "https://cdn.example.com/course-videos/"
+            f"{'signed-upload-token-' * 12}lesson-intro.mp4"
+        )
+        self.assertGreater(len(long_video_url), 200)
+        self.client.force_authenticate(self.creator)
+
+        response = self.client.post(
+            self.lesson_base,
+            {
+                "title": "Uploaded intro video",
+                "order": 1,
+                "lesson_type": "VIDEO",
+                "video_url": long_video_url,
+                "duration_minutes": 10,
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_201_CREATED,
+            msg=f"Unexpected errors: {response.data}",
+        )
+        self.assertEqual(response.data["video_url"], long_video_url)
+
     def test_figma_text_and_quiz_lesson_types_round_trip(self):
         self.client.force_authenticate(self.creator)
 

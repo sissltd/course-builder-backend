@@ -238,6 +238,12 @@ Course fields `thumbnail_url` and `preview_video_url` are writable on
 (Internally, `file_key` is the value that should be treated as durable —
 the backend can resolve a fresh URL from it at any time.)
 
+> **Notice:** Signed storage URLs are long because they include temporary query
+> parameters. Course media fields now accept up to 2000 characters, but the
+> frontend should still persist the durable `file_key` where possible and call
+> `/api/v1/uploads/access/` for a fresh playback URL when the old signed URL
+> expires or playback starts slowly after waiting.
+
 ---
 
 ## 6. Step 5 — Refresh the read URL before later playback

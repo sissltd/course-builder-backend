@@ -1,6 +1,7 @@
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
+from api.courses.constants import COURSE_MEDIA_URL_MAX_LENGTH
 from core.mixins import (
     DateHistoryModelMixin,
     UserHistoryModelMixin,
@@ -68,7 +69,7 @@ class LessonContentBlock(
         verbose_name=_("Media URL"),
         blank=True,
         default="",
-        max_length=500,
+        max_length=COURSE_MEDIA_URL_MAX_LENGTH,
         help_text=_(
             "Media payload for image/video/embed blocks - uploaded path or "
             "external URL."
