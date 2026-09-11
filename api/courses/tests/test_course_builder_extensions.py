@@ -387,6 +387,36 @@ class LessonNewFieldsApiTests(APITestCase):
         self.assertEqual(response.data["lesson_requirement"], "")
         self.assertFalse(lesson.requirements.exists())
 
+    def test_lesson_requirement_accepts_up_to_2000_characters(self):
+        lesson = self.module.lessons.create(title="Text lesson", order=1)
+        lesson_requirement = "x" * 2000
+        self.client.force_authenticate(self.creator)
+        response = self.client.patch(
+            f"{self.lesson_base}{lesson.id}/",
+            {"lesson_requirement": lesson_requirement},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["lesson_requirement"], lesson_requirement)
+
+    def test_lesson_requirement_over_limit_reports_character_count(self):
+        lesson = self.module.lessons.create(title="Text lesson", order=1)
+        lesson_requirement = "x" * 2001
+        self.client.force_authenticate(self.creator)
+        response = self.client.patch(
+            f"{self.lesson_base}{lesson.id}/",
+            {"lesson_requirement": lesson_requirement},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        errors = response.data["errors"]
+        self.assertEqual(errors[0]["code"], "max_length")
+        self.assertEqual(errors[0]["field_name"], "lesson_requirement")
+        self.assertIn("2001", errors[0]["message"])
+        self.assertIn("2000", errors[0]["message"])
+
     def test_learning_objective_commas_are_preserved_in_one_array_item(self):
         objective = "Compare variables, constants, and scope"
         self.client.force_authenticate(self.creator)
