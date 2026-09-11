@@ -8,7 +8,36 @@ from api.courses.models import (
     LessonImage,
     LessonRequirement,
 )
+from api.courses.models.lesson_requirement import LESSON_REQUIREMENT_MAX_LENGTH
 from api.courses.serializers.assessment_serializer import AssessmentSerializer
+
+
+_LESSON_REQUIREMENT_MAX_LENGTH_MESSAGE = (
+    "Lesson Requirement must not exceed "
+    f"{LESSON_REQUIREMENT_MAX_LENGTH} characters (it has {{length}})."
+)
+
+
+class LessonRequirementTextField(serializers.CharField):
+    """CharField that reports the offending length when max_length is exceeded.
+
+    DRF's default max_length failure cannot include the value's length, which
+    leaves creators guessing how far over the limit they are.
+    """
+
+    default_error_messages = {
+        "max_length": _LESSON_REQUIREMENT_MAX_LENGTH_MESSAGE,
+    }
+
+    def to_internal_value(self, data):
+        # Mirror DRF's own trim-then-measure order so the reported length
+        # matches the value DRF would store.
+        if isinstance(data, str) and self.trim_whitespace:
+            data = data.strip()
+        if self.max_length is not None and len(data) > self.max_length:
+            self.fail("max_length", max_length=self.max_length, length=len(data))
+        return super().to_internal_value(data)
+
 
 
 _LEARNING_OBJECTIVES_HELP_TEXT = (
@@ -109,8 +138,8 @@ class LessonImageSerializer(serializers.ModelSerializer):
 class LessonRequirementSerializer(serializers.ModelSerializer):
     """Representation of one requirement line on a lesson."""
 
-    text = serializers.CharField(
-        max_length=500,
+    text = LessonRequirementTextField(
+        max_length=LESSON_REQUIREMENT_MAX_LENGTH,
         help_text=(
             "Lesson requirement text shown in the Figma editor. Internal line "
             "breaks and punctuation are preserved."
@@ -243,10 +272,10 @@ class LessonWriteSerializer(serializers.ModelSerializer):
         required=False,
         help_text=_LEARNING_OBJECTIVES_HELP_TEXT,
     )
-    lesson_requirement = serializers.CharField(
+    lesson_requirement = LessonRequirementTextField(
         required=False,
         allow_blank=True,
-        max_length=500,
+        max_length=LESSON_REQUIREMENT_MAX_LENGTH,
         help_text=(
             "The single Lesson Requirement rich-text value shown in Figma. "
             "Internal line breaks, numbered-list text, and punctuation are "

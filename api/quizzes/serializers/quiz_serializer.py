@@ -3,6 +3,11 @@ from rest_framework import serializers
 
 from api.quizzes.models import Question, QuestionOption, Quiz
 
+CHOICE_QUESTION_TYPES = (
+    Question.TypeChoices.SINGLE_CHOICE,
+    Question.TypeChoices.MULTIPLE_CHOICE,
+)
+
 
 class QuestionOptionSerializer(serializers.ModelSerializer):
     """Serialize one answer option nested under its question."""
@@ -70,18 +75,15 @@ class QuestionSerializer(serializers.ModelSerializer):
                 {"options": "Option order values must be unique within a question."}
             )
 
-        if question_type == Question.TypeChoices.MULTIPLE_CHOICE and not options:
+        if question_type in CHOICE_QUESTION_TYPES and not options:
             raise serializers.ValidationError(
-                {"options": "MULTIPLE_CHOICE questions require at least one option."}
+                {"options": "Choice questions require at least one option."}
             )
-        if (
-            question_type == Question.TypeChoices.MULTIPLE_CHOICE
-            and correct_option_count != 1
-        ):
+        if question_type in CHOICE_QUESTION_TYPES and correct_option_count != 1:
             raise serializers.ValidationError(
                 {
                     "options": (
-                        "MULTIPLE_CHOICE questions require exactly one correct option."
+                        "Choice questions require exactly one correct option."
                     )
                 }
             )
@@ -165,18 +167,27 @@ class QuizSerializer(serializers.ModelSerializer):
 
         instance = self.instance
         level = attrs.get("level") or getattr(instance, "level", None)
-        resolved = {
-            "lesson": attrs.get("lesson", getattr(instance, "lesson", None)),
-            "module": attrs.get("module", getattr(instance, "module", None)),
-            "course": attrs.get("course", getattr(instance, "course", None)),
-        }
+        instance_level = getattr(instance, "level", None)
+        # Omitted parent fields mean "cleared" when the level is being set
+        # (full PUT or a PATCH level switch); otherwise a PATCH inherits the
+        # unchanged parents from the instance.
+        level_changing = level is not None and level != instance_level
+        resolved = {}
+        for field in ("lesson", "module", "course"):
+            if field in attrs:
+                resolved[field] = attrs[field]
+            elif self.partial and not level_changing and instance is not None:
+                resolved[field] = getattr(instance, field, None)
+            else:
+                resolved[field] = None
         if level is not None:
             expected = level.lower()
             provided = [field for field, value in resolved.items() if value]
             unexpected = [field for field in provided if field != expected]
             if unexpected:
                 raise serializers.ValidationError(
-                    f"A {level}-level quiz must set only the '{expected}' field."
+                    f"A {level}-level quiz must set only the '{expected}' field; "
+                    f"it also set '{', '.join(unexpected)}'."
                 )
             if expected not in provided:
                 raise serializers.ValidationError(
@@ -226,11 +237,21 @@ class QuizSerializer(serializers.ModelSerializer):
 
     @transaction.atomic
     def update(self, instance, validated_data):
-        """Update quiz fields; nested questions are managed via Question endpoints."""
+        """Update quiz fields; nested questions are managed via Question endpoints.
+
+        When the level is supplied, the non-matching parent FKs are cleared
+        explicitly so a level switch (e.g. COURSE -> LESSON) satisfies the
+        quiz_exactly_one_parent DB constraint instead of raising IntegrityError.
+        """
 
         questions_data = validated_data.pop("questions", None)
         if questions_data is not None:
             raise serializers.ValidationError(
                 {"questions": "Update questions via the questions endpoints."}
             )
+        if "level" in validated_data:
+            level_field = str(validated_data["level"]).lower()
+            for field in ("lesson", "module", "course"):
+                if field != level_field and field not in validated_data:
+                    validated_data[field] = None
         return super().update(instance, validated_data)

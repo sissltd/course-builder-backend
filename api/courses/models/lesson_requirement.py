@@ -8,6 +8,9 @@ from core.mixins import (
 )
 
 
+LESSON_REQUIREMENT_MAX_LENGTH = 2000
+
+
 class LessonRequirement(
     UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMixin
 ):
@@ -28,8 +31,11 @@ class LessonRequirement(
     )
     text = models.CharField(
         verbose_name=_("Text"),
-        max_length=500,
-        help_text=_("The requirement, e.g. 'Basic Python syntax knowledge'."),
+        max_length=LESSON_REQUIREMENT_MAX_LENGTH,
+        help_text=_(
+            "The requirement, e.g. 'Basic Python syntax knowledge'. "
+            f"Limited to {LESSON_REQUIREMENT_MAX_LENGTH} characters."
+        ),
     )
     order = models.PositiveIntegerField(
         verbose_name=_("Order"),

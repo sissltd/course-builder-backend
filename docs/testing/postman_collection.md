@@ -806,7 +806,9 @@ objective. A comma inside an item remains part of that objective; only a new
 array item creates another objective. `lesson_requirement` is the single
 rich-text Lesson Requirement input shown in Figma. Supplying it on PUT/PATCH
 replaces the current value, sending `""` clears it, and omitting the field leaves
-the value unchanged. Responses also include the underlying ordered
+the value unchanged. `lesson_requirement` (and each `requirements` row's `text`)
+is limited to 2000 characters; exceeding it returns 400 with a `max_length` error
+that reports the offending length. Responses also include the underlying ordered
 `requirements` rows, and the dedicated `/requirements/` endpoints remain
 available for editing those rows individually.
 

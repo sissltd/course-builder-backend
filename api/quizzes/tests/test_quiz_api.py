@@ -133,6 +133,42 @@ class QuizApiTests(APITestCase):
         self.assertEqual(question.created_by, self.creator)
         self.assertEqual(question.updated_by, self.creator)
 
+    def test_creator_can_create_single_choice_question(self):
+        quiz = self._create_quiz()
+        payload = self._question_payload(quiz, question_type="SINGLE_CHOICE")
+        self.client.force_authenticate(self.creator)
+
+        response = self.client.post("/api/v1/questions/", payload, format="json")
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_201_CREATED,
+            msg=f"Unexpected errors: {response.data}",
+        )
+        self.assertEqual(response.data["question_type"], "SINGLE_CHOICE")
+        self.assertEqual(len(response.data["options"]), 2)
+        self.assertTrue(
+            any(option["option_text"] == "def" for option in response.data["options"])
+        )
+
+    def test_creator_can_create_quiz_with_nested_single_choice_question(self):
+        payload = self._quiz_payload()
+        payload["questions"][0]["question_type"] = "SINGLE_CHOICE"
+        self.client.force_authenticate(self.creator)
+
+        response = self.client.post("/api/v1/quizzes/", payload, format="json")
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_201_CREATED,
+            msg=f"Unexpected errors: {response.data}",
+        )
+        self.assertTrue(
+            Question.objects.filter(
+                quiz=response.data["id"], question_type="SINGLE_CHOICE"
+            ).exists()
+        )
+
     def test_question_create_without_quiz_returns_structured_400(self):
         quiz = self._create_quiz()
         payload = self._question_payload(quiz)
@@ -203,7 +239,7 @@ class QuizApiTests(APITestCase):
         included = Question.objects.create(
             quiz=quiz,
             question_text="Included",
-            question_type="ESSAY",
+            question_type="SINGLE_CHOICE",
             order=1,
         )
         Question.objects.create(
@@ -215,14 +251,14 @@ class QuizApiTests(APITestCase):
         Question.objects.create(
             quiz=other_quiz,
             question_text="Wrong quiz",
-            question_type="ESSAY",
+            question_type="SINGLE_CHOICE",
             order=1,
         )
         self.client.force_authenticate(self.creator)
 
         response = self.client.get(
             "/api/v1/questions/",
-            {"quiz": str(quiz.id), "question_type": "ESSAY"},
+            {"quiz": str(quiz.id), "question_type": "SINGLE_CHOICE"},
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -326,6 +362,101 @@ class QuizApiTests(APITestCase):
         payload = self._quiz_payload(level="LESSON")
         response = self.client.post("/api/v1/quizzes/", payload, format="json")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_mismatch_error_names_conflicting_field(self):
+        self.client.force_authenticate(self.creator)
+        payload = self._quiz_payload(level="LESSON")
+        response = self.client.post("/api/v1/quizzes/", payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        message = str(response.data)
+        self.assertIn("course", message)
+        self.assertIn("lesson", message)
+
+    def test_full_put_on_lesson_quiz_without_cross_level_fields(self):
+        """A full PUT only needs the parent matching its level; omitted
+        cross-level FKs are cleared, not inherited from the instance."""
+
+        quiz = Quiz.objects.create(
+            level="LESSON",
+            title="Lorem 1 Quiz",
+            lesson=self.lesson,
+            created_by=self.creator,
+            updated_by=self.creator,
+        )
+        self.client.force_authenticate(self.creator)
+        payload = {
+            "level": "LESSON",
+            "title": "Lorem 1 Quiz",
+            "description": "",
+            "lesson": str(self.lesson.id),
+            "passing_score": 70,
+            "time_limit_minutes": 0,
+            "attempts_allowed": 3,
+            "shuffle_questions": False,
+            "randomize_options": False,
+        }
+
+        response = self.client.put(
+            f"/api/v1/quizzes/{quiz.id}/", payload, format="json"
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+            msg=f"Unexpected errors: {response.data}",
+        )
+        quiz.refresh_from_db()
+        self.assertEqual(quiz.lesson_id, self.lesson.id)
+        self.assertIsNone(quiz.course_id)
+        self.assertIsNone(quiz.module_id)
+        self.assertEqual(quiz.attempts_allowed, 3)
+        self.assertEqual(quiz.passing_score, 70)
+
+    def test_put_can_switch_quiz_level_from_course_to_lesson(self):
+        quiz = self._create_quiz(course=self.course)
+        self.client.force_authenticate(self.creator)
+        payload = self._quiz_payload(
+            level="LESSON",
+            title="Moved quiz",
+            lesson=str(self.lesson.id),
+        )
+        payload.pop("course")
+        payload.pop("questions")
+
+        response = self.client.put(
+            f"/api/v1/quizzes/{quiz.id}/", payload, format="json"
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+            msg=f"Unexpected errors: {response.data}",
+        )
+        quiz.refresh_from_db()
+        self.assertEqual(quiz.level, "LESSON")
+        self.assertEqual(quiz.lesson_id, self.lesson.id)
+        self.assertIsNone(quiz.course_id)
+
+    def test_patch_without_level_preserves_parent(self):
+        quiz = Quiz.objects.create(
+            level="LESSON",
+            title="Lorem 1 Quiz",
+            lesson=self.lesson,
+            created_by=self.creator,
+            updated_by=self.creator,
+        )
+        self.client.force_authenticate(self.creator)
+
+        response = self.client.patch(
+            f"/api/v1/quizzes/{quiz.id}/",
+            {"attempts_allowed": 5},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        quiz.refresh_from_db()
+        self.assertEqual(quiz.lesson_id, self.lesson.id)
+        self.assertEqual(quiz.attempts_allowed, 5)
 
     def test_multiple_choice_requires_options(self):
         self.client.force_authenticate(self.creator)
