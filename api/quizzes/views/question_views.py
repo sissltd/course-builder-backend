@@ -15,10 +15,10 @@ from api.quizzes.services import quiz_service
 from api.users.permissions import IsAdminRole, IsCourseCreatorRole
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 
-_QUESTION_EXAMPLE = {
+_SINGLE_CHOICE_QUESTION_EXAMPLE = {
     "quiz": "4fc7996d-0068-42f7-8f5f-5cf82600a49f",
     "question_text": "Which keyword defines a Python function?",
-    "question_type": "MULTIPLE_CHOICE",
+    "question_type": "SINGLE_CHOICE",
     "points": 5,
     "model_response_guide": "",
     "order": 1,
@@ -28,13 +28,34 @@ _QUESTION_EXAMPLE = {
     ],
 }
 
+_MULTIPLE_CHOICE_QUESTION_EXAMPLE = {
+    **_SINGLE_CHOICE_QUESTION_EXAMPLE,
+    "question_type": "MULTIPLE_CHOICE",
+}
+
 _FIGMA_ASSESSMENT_NOTE = (
     "This is the relational question API for Quiz rows. The Figma Course "
     "Builder quiz editor should use the assessment endpoints instead. "
     "Assessment questions use `question`, `type`, `options[].text`, "
     "`correct_index`, `correct_indices`, `expected_answer`, and `explanation`; "
     "this endpoint uses `question_text`, `question_type`, "
-    "`options[].option_text`, `is_correct`, and `model_response_guide`."
+    "`options[].option_text`, `is_correct`, and `model_response_guide`. "
+    "Relational `SINGLE_CHOICE` and `MULTIPLE_CHOICE` both currently require "
+    "exactly one correct option."
+)
+
+_QUESTION_TYPE_RULES = (
+    "**Rules:**\n"
+    "- `SINGLE_CHOICE` requires `options`; exactly one option must have "
+    "`is_correct: true`.\n"
+    "- `MULTIPLE_CHOICE` also requires `options`; in this relational API it "
+    "currently allows exactly one `is_correct: true` option.\n"
+    "- `ESSAY` must not send `options`; put the expected answer or grading "
+    "guide in `model_response_guide`.\n"
+    "- `order` must be unique within the quiz.\n"
+    "- Each option `order` must be unique within the question.\n"
+    "- Use the course Assessment endpoints for Figma multi-answer questions "
+    "with `correct_indices`."
 )
 
 
@@ -50,9 +71,11 @@ _FIGMA_ASSESSMENT_NOTE = (
             "**Auth:** Course Creator/Writer with access to the parent course, "
             "or Admin.\n\n"
             "**Prerequisites:** None.\n\n"
+            f"{_QUESTION_TYPE_RULES}\n\n"
             "**Important:** Results are paginated. `quiz` and `question_type` "
-            "filters may be combined. Relational `MULTIPLE_CHOICE` means a "
-            "single-correct choice question; use course assessments for Figma "
+            "filters may be combined. Relational `SINGLE_CHOICE` and "
+            "`MULTIPLE_CHOICE` both mean a single-correct choice question; "
+            "use course assessments for Figma "
             "multi-answer questions with `correct_indices`."
         ),
         tags=["Creator — Quizzes"],
@@ -67,10 +90,11 @@ _FIGMA_ASSESSMENT_NOTE = (
                 name="question_type",
                 type=str,
                 location=OpenApiParameter.QUERY,
-                enum=["MULTIPLE_CHOICE", "ESSAY"],
+                enum=["SINGLE_CHOICE", "MULTIPLE_CHOICE", "ESSAY"],
                 description=(
-                    "Return questions of this answer type only. This legacy "
-                    "enum does not include Figma assessment `SINGLE_CHOICE`."
+                    "Return questions of this answer type only. Use course "
+                    "assessments for Figma multi-answer questions with "
+                    "`correct_indices`."
                 ),
             ),
         ],
@@ -105,15 +129,18 @@ _FIGMA_ASSESSMENT_NOTE = (
     create=extend_schema(
         summary="Create a question",
         description=(
-            "Adds a relational question to a quiz. `MULTIPLE_CHOICE` questions "
-            "require nested options; `ESSAY` questions must not have any.\n\n"
+            "Adds a relational question to a quiz. `SINGLE_CHOICE` and "
+            "`MULTIPLE_CHOICE` questions require nested options; `ESSAY` "
+            "questions must not have any.\n\n"
             "Call this after the parent quiz has been created.\n\n"
             f"{_FIGMA_ASSESSMENT_NOTE}\n\n"
             "**Auth:** Course Creator/Writer with access to the parent course, "
             "or Admin.\n\n"
             "**Prerequisites:** The referenced quiz must exist and be accessible.\n\n"
-            "**Important:** Relational `MULTIPLE_CHOICE` requires exactly one "
-            "correct option. Do not send Figma assessment fields like "
+            f"{_QUESTION_TYPE_RULES}\n\n"
+            "**Important:** Relational `SINGLE_CHOICE` and `MULTIPLE_CHOICE` "
+            "require exactly one correct option via `options[].is_correct`. "
+            "Do not send Figma assessment fields like "
             "`type`, `question`, `correct_index`, `correct_indices`, "
             "`expected_answer`, or `options[].text` to this endpoint. "
             "Question order must be unique within the quiz, and option orders "
@@ -123,10 +150,15 @@ _FIGMA_ASSESSMENT_NOTE = (
         request=QuestionSerializer,
         examples=[
             OpenApiExample(
-                name="Multiple-choice question",
+                name="Single-choice question",
                 request_only=True,
-                value=_QUESTION_EXAMPLE,
-            )
+                value=_SINGLE_CHOICE_QUESTION_EXAMPLE,
+            ),
+            OpenApiExample(
+                name="Legacy multiple-choice question",
+                request_only=True,
+                value=_MULTIPLE_CHOICE_QUESTION_EXAMPLE,
+            ),
         ],
         responses={
             201: OpenApiResponse(response=QuestionSerializer),
@@ -147,6 +179,7 @@ _FIGMA_ASSESSMENT_NOTE = (
             "**Auth:** Course Creator/Writer with access to the parent course, "
             "or Admin.\n\n"
             "**Prerequisites:** The question and target quiz must be accessible.\n\n"
+            f"{_QUESTION_TYPE_RULES}\n\n"
             "**Important:** The same type, correct-option, and unique-order "
             "rules as creation apply."
         ),
@@ -156,7 +189,7 @@ _FIGMA_ASSESSMENT_NOTE = (
             OpenApiExample(
                 name="Replacement question",
                 request_only=True,
-                value=_QUESTION_EXAMPLE,
+                value=_SINGLE_CHOICE_QUESTION_EXAMPLE,
             )
         ],
         responses={
@@ -177,6 +210,7 @@ _FIGMA_ASSESSMENT_NOTE = (
             "**Auth:** Course Creator/Writer with access to the parent course, "
             "or Admin.\n\n"
             "**Prerequisites:** The question and target quiz must be accessible.\n\n"
+            f"{_QUESTION_TYPE_RULES}\n\n"
             "**Important:** If `options` is supplied, it replaces the entire "
             "option set. Changing to ESSAY requires an empty option set."
         ),

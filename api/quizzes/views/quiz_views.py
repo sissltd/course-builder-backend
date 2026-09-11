@@ -29,12 +29,29 @@ _QUIZ_EXAMPLE = {
     "level": "COURSE",
     "title": "Python foundations final quiz",
     "description": "Checks the learner's understanding of the complete course.",
+    "lesson": None,
+    "module": None,
     "course": "02374166-a14d-4930-a462-986d5755001f",
     "passing_score": 70,
+    "time_limit_minutes": None,
     "attempts_allowed": 2,
     "shuffle_questions": True,
     "randomize_options": True,
     "questions": [],
+}
+
+_LESSON_QUIZ_SETTINGS_EXAMPLE = {
+    "level": "LESSON",
+    "title": "Lorem 1 Quiz",
+    "description": "",
+    "lesson": "2b15fb9e-0854-44dc-a450-163e129d3ba1",
+    "module": None,
+    "course": None,
+    "passing_score": 70,
+    "time_limit_minutes": 0,
+    "attempts_allowed": 3,
+    "shuffle_questions": False,
+    "randomize_options": False,
 }
 
 _FIGMA_ASSESSMENT_NOTE = (
@@ -45,6 +62,18 @@ _FIGMA_ASSESSMENT_NOTE = (
     "`/courses/{course}/final-assessment/`. Those endpoints save the full "
     "Figma question list in one PUT and support `SINGLE_CHOICE`, "
     "`MULTIPLE_CHOICE`, and `ESSAY`."
+)
+
+_QUIZ_PARENT_RULES = (
+    "**Rules:**\n"
+    "- Set exactly one parent field.\n"
+    "- `LESSON` quizzes must send `lesson` and set `module`/`course` to `null`.\n"
+    "- `MODULE` quizzes must send `module` and set `lesson`/`course` to `null`.\n"
+    "- `COURSE` quizzes must send `course` and set `lesson`/`module` to `null`.\n"
+    "- On update, omitted parent fields keep their old value; send `null` to "
+    "clear an inactive parent.\n"
+    "- Do not send `questions` on quiz update; manage questions through "
+    "`/api/v1/questions/`."
 )
 
 
@@ -108,11 +137,16 @@ _FIGMA_ASSESSMENT_NOTE = (
             "or Admin.\n\n"
             "**Prerequisites:** The selected lesson, module, or course must "
             "already exist and be accessible.\n\n"
+            f"{_QUIZ_PARENT_RULES}\n\n"
             "**Important:** Nested questions and options are created atomically. "
+            "Send exactly one parent id and send the other two parent fields as "
+            "`null` (`LESSON` -> `lesson` set, `module`/`course` null; "
+            "`MODULE` -> `module` set, `lesson`/`course` null; `COURSE` -> "
+            "`course` set, `lesson`/`module` null). "
             "Their order values must be unique within each parent, and each "
-            "relational `MULTIPLE_CHOICE` question requires exactly one "
-            "correct option. Use course assessments for the Figma multi-answer "
-            "`MULTIPLE_CHOICE` shape with `correct_indices`."
+            "relational `SINGLE_CHOICE` or `MULTIPLE_CHOICE` question requires "
+            "exactly one correct option. Use course assessments for the Figma "
+            "multi-answer `MULTIPLE_CHOICE` shape with `correct_indices`."
         ),
         tags=["Creator — Quizzes"],
         request=QuizSerializer,
@@ -137,7 +171,7 @@ _FIGMA_ASSESSMENT_NOTE = (
                                     "code": "invalid",
                                     "message": (
                                         "A LESSON-level quiz must set only the "
-                                        "'lesson' field."
+                                        "'lesson' field; it also set 'course'."
                                     ),
                                     "field_name": None,
                                 }
@@ -162,21 +196,25 @@ _FIGMA_ASSESSMENT_NOTE = (
             "**Auth:** Course Creator/Writer with access to the parent course, "
             "or Admin.\n\n"
             "**Prerequisites:** The quiz and selected parent must be accessible.\n\n"
+            f"{_QUIZ_PARENT_RULES}\n\n"
             "**Important:** Supplying `questions`, including an empty list, is "
-            "rejected; manage questions through `/api/v1/questions/`."
+            "rejected; manage questions through `/api/v1/questions/`. If you "
+            "change the quiz level or parent, send the inactive parent fields "
+            "as `null`; omitted fields keep their current value during update."
         ),
         tags=["Creator — Quizzes"],
         request=QuizSerializer,
         examples=[
             OpenApiExample(
-                name="Replacement quiz settings",
+                name="Replace lesson quiz settings",
                 request_only=True,
-                value={
-                    key: value
-                    for key, value in _QUIZ_EXAMPLE.items()
-                    if key != "questions"
-                },
-            )
+                value=_LESSON_QUIZ_SETTINGS_EXAMPLE,
+            ),
+            OpenApiExample(
+                name="Replace course quiz settings",
+                request_only=True,
+                value={key: value for key, value in _QUIZ_EXAMPLE.items() if key != "questions"},
+            ),
         ],
         responses={
             200: OpenApiResponse(response=QuizSerializer),
@@ -199,7 +237,10 @@ _FIGMA_ASSESSMENT_NOTE = (
             "or Admin.\n\n"
             "**Prerequisites:** The quiz and any newly selected parent must be "
             "accessible.\n\n"
-            "**Important:** Nested questions cannot be updated here."
+            f"{_QUIZ_PARENT_RULES}\n\n"
+            "**Important:** Nested questions cannot be updated here. If you "
+            "change the quiz level or parent, send the inactive parent fields "
+            "as `null`; omitted fields keep their current value during update."
         ),
         tags=["Creator — Quizzes"],
         request=QuizSerializer,

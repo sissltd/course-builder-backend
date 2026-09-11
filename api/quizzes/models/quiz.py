@@ -119,6 +119,7 @@ class Question(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModel
     """A single question within a Quiz."""
 
     class TypeChoices(models.TextChoices):
+        SINGLE_CHOICE = "SINGLE_CHOICE", "Single Choice"
         MULTIPLE_CHOICE = "MULTIPLE_CHOICE", "Multiple Choice"
         ESSAY = "ESSAY", "Essay"
 
@@ -135,7 +136,9 @@ class Question(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModel
         verbose_name=_("Type"),
         max_length=20,
         choices=TypeChoices.choices,
-        help_text=_("Answer format; MULTIPLE_CHOICE requires options."),
+        help_text=_(
+            "Answer format; SINGLE_CHOICE and MULTIPLE_CHOICE require options."
+        ),
     )
     points = models.PositiveIntegerField(
         verbose_name=_("Points"),
@@ -174,7 +177,7 @@ class Question(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModel
 
 
 class QuestionOption(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
-    """One selectable answer for a MULTIPLE_CHOICE Question."""
+    """One selectable answer for a choice Question."""
 
     question = models.ForeignKey(
         "quizzes.Question",
