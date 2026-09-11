@@ -24,17 +24,12 @@ from decimal import Decimal
 from typing import Any
 
 from api.authentication.services.activity_service import log_activity
-from api.sissl_verification.exceptions import (
-    SISSLBVNNotFound,
-    SISSLError,
-    SISSLLivenessFailed,
-    SISSLNINNotFound,
-)
 from api.sissl_verification.models import SISSLConfiguration, SISSLLog
 from api.sissl_verification.providers.sissl import SisslProvider
-from shared.constants.kyc import (
-    SISSL_LIVENESS_HOURLY_CAP,
-    SISSL_LIVENESS_THRESHOLD,
+from api.users.exceptions import (
+    SISSLBVNNotFound,
+    SISSLError,
+    SISSLNINNotFound,
 )
 from shared.redis import RedisService
 
@@ -89,7 +84,7 @@ class SISSLServices:
         config = SISSLConfiguration.current()
         if config and config.liveness_threshold is not None:
             return int(config.liveness_threshold)
-        return int(SISSL_LIVENESS_THRESHOLD)
+        return 1
 
     @staticmethod
     def _enforce_liveness_rate_limit(user) -> None:
@@ -113,11 +108,8 @@ class SISSLServices:
         key = f"sissl:liveness:{user.id}"
         count, _ttl = RedisService._atomic_increment(key, 3600)  # 1-hour fixed window
 
-        if int(count) > SISSL_LIVENESS_HOURLY_CAP:
-            logger.warning(
-                f"[<!>SISSLService<!>] liveness rate-limit hit for {user.email} "
-                f"(count={count}, cap={SISSL_LIVENESS_HOURLY_CAP})"
-            )
+        if int(count) > 10:
+            logger.warning(f"[<!>SISSLService<!>] liveness rate-limit hit for {user.email} (count={count}, cap={10})")
             raise SISSLError(
                 "Too many liveness attempts. Please try again later."
             )
@@ -249,9 +241,7 @@ class SISSLServices:
                     "threshold": threshold,
                 },
             )
-            raise SISSLLivenessFailed(
-                "Liveness check failed — please retake your selfie in good lighting."
-            )
+            raise SISSLError("Liveness check failed — please retake your selfie in good lighting.")
 
         # [6] Happy path
         logger.info(

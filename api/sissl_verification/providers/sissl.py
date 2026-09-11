@@ -1,6 +1,6 @@
 """
 SISSL HTTP provider — the ONLY module in the codebase that talks to
-https://api.sissl.tech directly.
+https://app.sissl.me.
 
 Why this strict isolation?
 
@@ -24,7 +24,7 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-from api.sissl_verification.exceptions import SISSLError
+from api.users.exceptions import SISSLError
 from shared.constants.kyc import (
     SISSL_API_TOKEN,
     SISSL_BASE_URL,
@@ -97,20 +97,7 @@ class SisslProvider:
         self.api_token = api_token if api_token is not None else SISSL_API_TOKEN
         self._session = session or _build_session()
 
-
     # >>>>>>>>>>>>>>>>>>>> Endpoint Methods <<<<<<<<<<<<<<<<<<<<<<<<<<<<
-    def liveness(self, payload: dict[str, Any]) -> dict[str, Any]:
-        """
-        POST /api/verification/liveness
-
-        Body:   { "photo": <url or base64> }
-        Returns { "result": "real" | "fake", "score": 0 - 100 }
-        """
-        return self._post(
-            "/api/verification/liveness",
-            {"photo": payload["photo"]},
-            kind="liveness",
-        )
 
     def bvn_verification(self, payload: dict[str, Any]) -> dict[str, Any]:
         """

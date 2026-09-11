@@ -115,7 +115,7 @@ class PlatformSettings(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
         verbose_name=_("KYC service provider"),
         max_length=20,
         choices=KYCProvider.choices,
-        default=KYCProvider.YOUVERIFY,
+        default=KYCProvider.SISSL,
         help_text=_("Which KYC service provider to use for identity verification."),
     )
 

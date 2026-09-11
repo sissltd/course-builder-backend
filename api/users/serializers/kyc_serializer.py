@@ -13,6 +13,7 @@ class KYCUserDataSerializer(serializers.Serializer):
     last_name = serializers.CharField(allow_null=True, read_only=True)
     date_of_birth = serializers.DateField(allow_null=True, read_only=True)
     sex = serializers.CharField(allow_null=True, read_only=True)
+    document_image = serializers.CharField(allow_null=True, read_only=True)
 
 
 class KYCVerificationSerializer(serializers.ModelSerializer):
@@ -50,6 +51,7 @@ class KYCVerificationSerializer(serializers.ModelSerializer):
             "last_name": obj.user.kyc_last_name,
             "date_of_birth": obj.user.kyc_date_of_birth,
             "sex": obj.user.kyc_gender,
+            "document_image": obj.user.kyc_document_image,
         }
 
     def to_representation(self, instance):
@@ -124,6 +126,7 @@ class KYCVerificationAdminSerializer(serializers.ModelSerializer):
             "last_name": obj.user.kyc_last_name,
             "date_of_birth": obj.user.kyc_date_of_birth,
             "sex": obj.user.kyc_gender,
+            "document_image": obj.user.kyc_document_image,
         }
 
     def to_representation(self, instance):

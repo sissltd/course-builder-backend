@@ -62,7 +62,7 @@ def apply_kyc_document_photo(user_id, image_value):
         user = User.objects.filter(id=user_id).first()
         if user is None:
             return
-        user.kyc_document_image = image_key
+        user.kyc_document_image = image_key # type: ignore
         user.save(update_fields=["kyc_document_image", "updated_datetime"])
     except Exception:
         logger.exception("[<>KYCIdentity<>] apply_kyc_document_photo failed for user %s", user_id)
@@ -108,13 +108,22 @@ def persist_kyc_identity(user, raw):
         logger.exception("[<>KYCIdentity<>] persist_sissl_identity failed")
 
 
-def update_kyc_response(kyc_request, status, kyc_failure_message=""):
+def update_kyc_response(kyc_request, status, kyc_failure_message="", kyc_provider=None, kyc_entity_id=None):
     """
     Updates the KYC request with the SISSL/YOUVERIFY response data.
     """
     try:
+        update_fields = ["kyc_request_status", "updated_datetime"]
+        if kyc_failure_message:
+            kyc_request.kyc_failure_message = kyc_failure_message
+            update_fields.append("kyc_failure_message")
+        if kyc_provider is not None:
+            kyc_request.kyc_provider = kyc_provider
+            update_fields.append("kyc_provider")
+        if kyc_entity_id is not None:
+            kyc_request.kyc_entity_id = kyc_entity_id
+            update_fields.append("kyc_entity_id")
         kyc_request.kyc_request_status = status
-        kyc_request.kyc_failure_message = kyc_failure_message
-        kyc_request.save(update_fields=["kyc_request_status", "kyc_failure_message", "updated_datetime"])
+        kyc_request.save(update_fields=update_fields)
     except Exception:
         logger.exception("[<>KYCIdentity<>] update_kyc_response failed for KYC request %s", kyc_request.id)

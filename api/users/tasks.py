@@ -1,15 +1,12 @@
-"""Celery tasks for KYC image uploads.
-
-The SISSL government photo (NIN/BVN) and the liveness selfie are uploaded to DigitalOcean Spaces, which is slow enough to threaten the synchronous request's gateway-timeout budget. Both are best-effort background work, so they run here off the request path. The upload/persist logic lives in the service; these are thin wrappers that Celery can discover and dispatch.
-"""
+"""Celery tasks for KYC management: image uploads, API calls, and other background KYC-related operations."""
 
 import logging
 
 from celery import shared_task
 from django.utils import timezone
 
-from api.sissl_verification.services.sissl_service import SISSLServices
 from api.users.enums import KYCDocumentType
+from api.users.services.kyc_services.sissl_service import SISSLError, SISSLServices
 from api.users.services.kyc_services.utils import persist_kyc_identity
 from api.users.services.kyc_services.youverify_services import YouVerifyService
 from core.models import KYCOutboxEvent
@@ -21,7 +18,7 @@ logger = logging.getLogger(__name__)
 @shared_task(
     bind=True,
     max_retries=3,
-    default_retry_delay=10,
+    default_retry_delay=5,
     name="users.call_sissl_kyc_verification",
 )
 def call_sissl_kyc_verification(self, event_id):
@@ -46,6 +43,11 @@ def call_sissl_kyc_verification(self, event_id):
                 try:
                     data = SISSLServices.nin_lookup(kyc_request.user, id_number, kyc_request=kyc_request)
                     persist_kyc_identity(kyc_request.user, data)
+                except SISSLError as exc:
+                    logger.error(
+                        f"[users.call_sissl_kyc_verification] NIN lookup failed for user {kyc_request.user.id}: {exc}"
+                    )
+                    raise self.retry(exc=exc)
                 except Exception as exc:
                     logger.error(
                         f"[users.call_sissl_kyc_verification] NIN lookup failed for user {kyc_request.user.id}: {exc}"
@@ -55,6 +57,11 @@ def call_sissl_kyc_verification(self, event_id):
                 try:
                     data = SISSLServices.bvn_lookup(kyc_request.user, id_number)
                     persist_kyc_identity(kyc_request.user, data)
+                except SISSLError as exc:
+                    logger.error(
+                        f"[users.call_sissl_kyc_verification] BVN lookup failed for user {kyc_request.user.id}: {exc}"
+                    )
+                    raise self.retry(exc=exc)
                 except Exception as exc:
                     logger.error(
                         f"[users.call_sissl_kyc_verification] BVN lookup failed for user {kyc_request.user.id}: {exc}"
@@ -80,7 +87,7 @@ def call_sissl_kyc_verification(self, event_id):
 @shared_task(
     bind=True,
     max_retries=3,
-    default_retry_delay=10,
+    default_retry_delay=5,
     name="users.call_youverify_kyc_verification",
 )
 def call_youverify_kyc_verification(self, event_id):

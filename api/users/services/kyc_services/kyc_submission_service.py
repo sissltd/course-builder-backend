@@ -117,6 +117,7 @@ def _enqueue_kyc_verification(event_id: uuid.UUID) -> None:
     from api.platform.services.platform_settings_service import get_settings
 
     kyc_provider = get_settings().kyc_provider
+    print(f"******kyc provider: {kyc_provider}")
 
     match kyc_provider:
         case "SISSL":
