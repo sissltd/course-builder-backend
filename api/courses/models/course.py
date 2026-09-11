@@ -2,6 +2,7 @@ from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
+from api.courses.constants import COURSE_MEDIA_URL_MAX_LENGTH
 from api.courses.enums import (
     CourseSourceType,
     CourseStatus,
@@ -80,6 +81,7 @@ class Course(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMi
     )
     preview_video_url = models.URLField(
         verbose_name=_("Preview Video URL"),
+        max_length=COURSE_MEDIA_URL_MAX_LENGTH,
         blank=True,
         default="",
         help_text=_(
@@ -88,6 +90,7 @@ class Course(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMi
     )
     thumbnail_url = models.URLField(
         verbose_name=_("Thumbnail URL"),
+        max_length=COURSE_MEDIA_URL_MAX_LENGTH,
         blank=True,
         default="",
         help_text=_(

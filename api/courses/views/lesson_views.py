@@ -69,6 +69,15 @@ _TEXT_LESSON_REQUEST_EXAMPLE = {
     "lesson_requirement": "Basic computer literacy is recommended.",
 }
 
+_MEDIA_URL_NOTICE = (
+    "**Notice:** Uploaded video/read URLs can be long because object storage "
+    "adds signed query parameters. `video_url`, `embedded_link`, course media "
+    "URLs, and lesson media paths accept up to 2000 characters. Prefer storing "
+    "the durable `file_key` returned by `/api/v1/uploads/presign/`; if a signed "
+    "`file_url` expires or playback is slow after waiting, call "
+    "`/api/v1/uploads/access/` with that `file_key` to get a fresh playback URL."
+)
+
 _LESSON_WRITE_RESPONSE_EXAMPLE = {
     "id": "c3d4e5f6-a7b8-4c9d-0e1f-2a3b4c5d6e7f",
     **_VIDEO_LESSON_REQUEST_EXAMPLE,
@@ -223,6 +232,7 @@ _MODULE_LOCKED_423 = OpenApiResponse(
             "Called from the 'Add lesson' action in the course builder.\n\n"
             "**Auth:** Course Creator/Writer with access to the course.\n\n"
             "**Prerequisites:** The parent course must be `DRAFT`.\n\n"
+            f"{_MEDIA_URL_NOTICE}\n\n"
             "**Important:** Set `lesson_type` to `VIDEO`, `QUIZ`, or `TEXT`; "
             "older clients that omit it create a `TEXT` lesson. A `VIDEO` lesson "
             "requires either `video_url` or `embedded_link`. Create a `QUIZ` "
@@ -264,6 +274,7 @@ _MODULE_LOCKED_423 = OpenApiResponse(
             "Called from the lesson edit form.\n\n"
             "**Auth:** Course Creator/Writer with access to the course.\n\n"
             "**Prerequisites:** The parent course must be `DRAFT`.\n\n"
+            f"{_MEDIA_URL_NOTICE}\n\n"
             "**Important:** `lesson_type` must be `VIDEO`, `QUIZ`, or `TEXT`. "
             "A `VIDEO` lesson requires `video_url` or `embedded_link`. Returns "
             "423 if the parent module is currently locked by another user. "
@@ -300,6 +311,7 @@ _MODULE_LOCKED_423 = OpenApiResponse(
             "course builder.\n\n"
             "**Auth:** Course Creator/Writer with access to the course.\n\n"
             "**Prerequisites:** The parent course must be `DRAFT`.\n\n"
+            f"{_MEDIA_URL_NOTICE}\n\n"
             "**Important:** When changing `lesson_type` to `VIDEO`, also send "
             "a `video_url` or `embedded_link`. Returns 423 if the parent module "
             "is currently locked by another user. When `lesson_requirement` is "

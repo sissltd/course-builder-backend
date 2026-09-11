@@ -1,6 +1,7 @@
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
+from api.courses.constants import COURSE_MEDIA_URL_MAX_LENGTH
 from api.courses.enums import LessonContentType
 from core.mixins import (
     DateHistoryModelMixin,
@@ -48,6 +49,7 @@ class Lesson(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMi
     )
     video_url = models.URLField(
         verbose_name=_("Video URL"),
+        max_length=COURSE_MEDIA_URL_MAX_LENGTH,
         blank=True,
         default="",
         help_text=_(
@@ -56,6 +58,7 @@ class Lesson(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMi
     )
     embedded_link = models.URLField(
         verbose_name=_("Embedded Link"),
+        max_length=COURSE_MEDIA_URL_MAX_LENGTH,
         blank=True,
         default="",
         help_text=_(
