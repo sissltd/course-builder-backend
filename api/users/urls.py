@@ -56,6 +56,11 @@ urlpatterns = [
         name="kyc-review-reject",
     ),
     path(
+        "users/kyc-review/<uuid:pk>/flag/",
+        KYCReviewViewSet.as_view({"post": "flag"}),
+        name="kyc-review-flag",
+    ),
+    path(
         "users/admin/",
         UserAdminViewSet.as_view({"get": "list"}),
         name="user-admin-list",

@@ -221,6 +221,54 @@ def reject_verification(
     return verification
 
 
+def flag_verification(
+    *, verification: KYCVerification, reviewer: User, flag_reason: str
+) -> KYCVerification:
+    """Flag a PENDING KYC submission for review with an optional reason the user can act on.
+
+    Deliberately saving the `flag_reason` in the verification rejection_reason field to make it visible to the user for corrective action.
+    """
+
+    require_role(reviewer, IsAdminOrSuperAdminRole.allowed_roles)
+
+    if verification.status not in REVIEWABLE_STATUSES:
+        raise exceptions.ValidationError(
+            f"Submission cannot be flagged from status '{verification.status}'."
+        )
+
+    with transaction.atomic():
+        verification.status = KYCStatus.FLAGGED
+        verification.rejection_reason = flag_reason
+        verification.reviewed_by = reviewer
+        verification.reviewed_at = timezone.now()
+        verification.save(
+            update_fields=[
+                "status",
+                "rejection_reason",
+                "reviewed_by",
+                "reviewed_at",
+                "updated_datetime",
+            ]
+        )
+
+        Notification.emit_in_app_notification(
+            receivers=[verification.user],
+            title="KYC verification flagged",
+            content=f"Your identity verification was flagged: {flag_reason}",
+            metadata={"kyc_verification_id": verification.id},
+        )
+        activity_service.log_activity(
+            user=reviewer,
+            category=UserActivityCategoryEnums.KYC,
+            action=UserActivityActionEnums.KYC_FLAGGED,
+            summary=f"You flagged a KYC submission from {verification.user.email}.",
+            target=verification,
+        )
+
+    return verification
+
+
+
 def require_verified(*, user: User) -> None:
     """Raise ValidationError if `user` has not completed KYC verification."""
 

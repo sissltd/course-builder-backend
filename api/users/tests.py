@@ -7,7 +7,6 @@ from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.test import TestCase
 from django.utils import timezone
-from api.users.services.kyc_services import kyc_submission_service
 from rest_framework import status
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.test import APITestCase
@@ -26,6 +25,7 @@ from api.users.services import (
     reviewer_availability_service,
     user_admin_service,
 )
+from api.users.services.kyc_services import kyc_submission_service
 
 User = get_user_model()
 
@@ -529,6 +529,27 @@ class KYCServiceTests(TestCase):
                 rejection_reason="Blurry document.",
             )
 
+    def test_wrong_role_cannot_flag(self):
+        applicant = _make_user()
+        verification = kyc_submission_service.submit_verification(
+            user=applicant,
+            country_of_issue="NG",
+            document_type="NATIONAL_ID",
+            id_number="12345",
+            address="123 Main St",
+            date_of_birth="1990-01-01",
+            first_name="John",
+            last_name="Doe",
+        )
+        wrong_role_reviewer = _make_user(role=UserRole.COURSE_CREATOR)
+
+        with self.assertRaises(PermissionDenied):
+            kyc_submission_service.flag_verification(
+                verification=verification,
+                reviewer=wrong_role_reviewer,
+                flag_reason="Document needs clarification.",
+            )
+
     def test_admin_who_opted_out_is_not_notified(self):
         subscribed_admin = _make_user(role=UserRole.ADMIN)
         opted_out_admin = _make_user(role=UserRole.ADMIN)
@@ -653,6 +674,125 @@ class KYCApiTests(APITestCase):
         user.refresh_from_db()
         self.assertEqual(user.first_name, "John")
         self.assertEqual(user.last_name, "Doe")
+
+    def test_flag_requires_authentication(self):
+        user = _make_user()
+        verification = kyc_submission_service.submit_verification(
+            user=user,
+            country_of_issue="NG",
+            document_type="NATIONAL_ID",
+            id_number="12345",
+            address="123 Main St",
+            date_of_birth="1990-01-01",
+            first_name="John",
+            last_name="Doe",
+        )
+
+        response = self.client.post(
+            f"/api/v1/users/kyc-review/{verification.id}/flag/",
+            {"flag_reason": "Needs clarification."},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_flag_requires_admin_permission(self):
+        user = _make_user()
+        verification = kyc_submission_service.submit_verification(
+            user=user,
+            country_of_issue="NG",
+            document_type="NATIONAL_ID",
+            id_number="12345",
+            address="123 Main St",
+            date_of_birth="1990-01-01",
+            first_name="John",
+            last_name="Doe",
+        )
+        non_admin_user = _make_user(role=UserRole.COURSE_CREATOR)
+        self.client.force_authenticate(non_admin_user)
+
+        response = self.client.post(
+            f"/api/v1/users/kyc-review/{verification.id}/flag/",
+            {"flag_reason": "Needs clarification."},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_flag_updates_status_to_flagged(self):
+        user = _make_user()
+        verification = kyc_submission_service.submit_verification(
+            user=user,
+            country_of_issue="NG",
+            document_type="NATIONAL_ID",
+            id_number="12345",
+            address="123 Main St",
+            date_of_birth="1990-01-01",
+            first_name="John",
+            last_name="Doe",
+        )
+        admin = _make_user(role=UserRole.ADMIN)
+        self.client.force_authenticate(admin)
+
+        response = self.client.post(
+            f"/api/v1/users/kyc-review/{verification.id}/flag/",
+            {"flag_reason": "Document needs clarification."},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["status"], KYCStatus.FLAGGED)
+
+        verification.refresh_from_db()
+        self.assertEqual(verification.status, KYCStatus.FLAGGED)
+        self.assertEqual(verification.reviewed_by, admin)
+
+    def test_flag_saves_flag_reason(self):
+        user = _make_user()
+        verification = kyc_submission_service.submit_verification(
+            user=user,
+            country_of_issue="NG",
+            document_type="NATIONAL_ID",
+            id_number="12345",
+            address="123 Main St",
+            date_of_birth="1990-01-01",
+            first_name="John",
+            last_name="Doe",
+        )
+        admin = _make_user(role=UserRole.ADMIN)
+        self.client.force_authenticate(admin)
+        flag_reason = "Photo is unclear, please resubmit with better lighting."
+
+        response = self.client.post(
+            f"/api/v1/users/kyc-review/{verification.id}/flag/",
+            {"flag_reason": flag_reason},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["rejection_reason"], flag_reason)
+
+        verification.refresh_from_db()
+        self.assertEqual(verification.rejection_reason, flag_reason)
+
+    def test_flag_logs_activity(self):
+        user = _make_user()
+        verification = kyc_submission_service.submit_verification(
+            user=user,
+            country_of_issue="NG",
+            document_type="NATIONAL_ID",
+            id_number="12345",
+            address="123 Main St",
+            date_of_birth="1990-01-01",
+            first_name="John",
+            last_name="Doe",
+        )
+        admin = _make_user(role=UserRole.ADMIN)
+        self.client.force_authenticate(admin)
+
+        self.client.post(
+            f"/api/v1/users/kyc-review/{verification.id}/flag/",
+            {"flag_reason": "Needs clarification."},
+            format="json",
+        )
+
+        self.assertTrue(UserActivityLog.objects.filter(user=admin, action=UserActivityActionEnums.KYC_FLAGGED).exists())
 
 
 class UserAdminServiceTests(TestCase):

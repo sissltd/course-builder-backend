@@ -154,3 +154,14 @@ class KYCReviewRejectSerializer(serializers.Serializer):
         if not value.strip():
             raise serializers.ValidationError("rejection_reason must not be empty.")
         return value
+    
+
+class KYCReviewFlagSerializer(serializers.Serializer):
+    """Request body for the KYC review-queue flag action.
+
+    TTakes an optional flag_reason the submitting user can act on
+    when resubmitting.
+    """
+
+    flag_reason = serializers.CharField(required=False, allow_blank=True)
+

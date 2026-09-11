@@ -24,6 +24,7 @@ from api.users.serializers import (
     KYCVerificationSerializer,
     KYCVerificationSubmitSerializer,
 )
+from api.users.serializers.kyc_serializer import KYCReviewFlagSerializer
 from api.users.services.kyc_services import kyc_submission_service
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 from shared.response.success import custom_success_response
@@ -164,6 +165,8 @@ class KYCReviewViewSet(ReadOnlyModelViewSet):
             return KYCReviewApproveSerializer
         if self.action == "reject":
             return KYCReviewRejectSerializer
+        if self.action == "flag":
+            return KYCReviewFlagSerializer
         return KYCVerificationAdminSerializer
 
     @extend_schema(
@@ -219,5 +222,36 @@ class KYCReviewViewSet(ReadOnlyModelViewSet):
             verification=self.get_object(),
             reviewer=request.user,
             rejection_reason=serializer.validated_data["rejection_reason"],
+        )
+        return Response(KYCVerificationAdminSerializer(verification).data)
+
+    @extend_schema(
+        summary="Flag a KYC submission for review",
+        description=(
+            "Flags a KYC submission for review with an optional "
+            "`flag_reason` the submitter can act on when "
+            "resubmitting.\n\n"
+            "**Auth:** Admin or Super Admin.\n\n"
+            "**Prerequisites:** The submission must exist."
+        ),
+        tags=["Admin — KYC Review"],
+        request=KYCReviewFlagSerializer,
+        responses={
+            200: OpenApiResponse(response=KYCVerificationAdminSerializer),
+            **STANDARD_ERROR_RESPONSES["validation"],
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
+            **STANDARD_ERROR_RESPONSES["not_found"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
+    @action(detail=True, methods=["post"])
+    def flag(self, request, pk=None):
+        serializer = KYCReviewFlagSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        verification = kyc_submission_service.flag_verification(
+            verification=self.get_object(),
+            reviewer=request.user,
+            flag_reason=serializer.validated_data["flag_reason"],
         )
         return Response(KYCVerificationAdminSerializer(verification).data)
