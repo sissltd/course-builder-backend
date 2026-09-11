@@ -571,7 +571,7 @@ class KYCApiTests(APITestCase):
 
         response = self.client.get("/api/v1/users/me/kyc/")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIsNone(response.data)
+        self.assertEqual(response.data.get("message"), "Retrieved successfully")
 
     def test_submit_creates_pending_verification(self):
         user = _make_user()
