@@ -32,7 +32,6 @@ CUSTOM_APPS = [
     "api.operations",
     "core",
     "api.webhooks",
-    "api.sissl_verification",
     "devdocs",
 ]
 
