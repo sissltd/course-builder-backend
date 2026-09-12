@@ -5,6 +5,8 @@ import logging
 from typing import Any
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 from api.authentication.services.activity_service import log_activity
 from api.platform.enums import KYCProvider
@@ -14,11 +16,58 @@ from api.users.exceptions import (
     SISSLNINNotFound,
 )
 from api.users.services.kyc_services.utils import update_kyc_response
-from shared.constants.kyc import SISSL_API_TOKEN, SISSL_BASE_URL, SISSL_CONNECT_TIMEOUT, SISSL_HTTP_TIMEOUT
+from shared.constants.kyc import (
+    SISSL_API_TOKEN,
+    SISSL_BASE_URL,
+    SISSL_CONNECT_TIMEOUT,
+    SISSL_HTTP_TIMEOUT,
+    SISSL_MAX_RETRIES,
+)
 
 logger = logging.getLogger(__name__)
 
 
+
+
+# >>>>>>>>>>>>>>>>>>>>>>> Session Builder <<<<<<<<<<<<<<<<<<<<<<<<<<<<
+def _build_session() -> requests.Session:
+    """
+    Builds a requests.Session with tightly-bounded retries.
+
+    This call runs synchronously inside a request served behind a ~100s gateway
+    timeout (Cloudflare / App Platform), so total wall time is a hard budget —
+    a request that overruns it comes back to the client as a raw 504, not our
+    clean 503. Every retry spends that budget, so we only retry the cases that
+    fail FAST and are genuinely transient:
+
+      - `status_forcelist=(502, 503)` — a fast "vendor briefly unavailable"
+        response IS worth one more shot. 504 is deliberately excluded: a vendor
+        gateway timeout means NIMC/NIBSS behind SISSL is slow, and retrying just
+        waits out another full timeout for the same slow upstream.
+      - `read=0` — a read timeout is NOT a blip; it means the upstream is slow.
+        Retrying it would multiply SISSL_HTTP_TIMEOUT by the attempt count (the
+        exact cause of the 504s). So we fail fast on the first read timeout and
+        surface a 503 to the user instead of hanging.
+
+    We never retry 400/401/403/404 — those mean bad input (e.g. a malformed
+    BVN) and a retry just burns billable vendor budget.
+
+    `backoff_factor=0.5` -> waits 0.5s, 1.0s between attempts.
+    """
+    session = requests.Session()
+
+    retry = Retry(
+        total=SISSL_MAX_RETRIES,
+        read=0,
+        backoff_factor=0.5,
+        status_forcelist=(502, 503),
+        allowed_methods=("POST",),
+        raise_on_status=False,
+    )
+
+    session.mount("https://", HTTPAdapter(max_retries=retry))
+    session.mount("http://", HTTPAdapter(max_retries=retry))
+    return session
 
 
 class SisslProvider:
@@ -34,9 +83,11 @@ class SisslProvider:
         self,
         base_url: str | None = None,
         api_token: str | None = None,
+        session: requests.Session | None = None,
     ):
         self.base_url = base_url if base_url is not None else SISSL_BASE_URL
         self.api_token = api_token if api_token is not None else SISSL_API_TOKEN
+        self._session = session or _build_session()
 
     # >>>>>>>>>>>>>>>>>>>> Endpoint Methods <<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
@@ -98,7 +149,7 @@ class SisslProvider:
 
         # [2] Make the call — translate transport errors to SISSLError
         try:
-            response = requests.post(
+            response = self._session.post(
                 url,
                 json=body,
                 headers={
