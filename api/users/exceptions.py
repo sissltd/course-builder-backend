@@ -40,3 +40,16 @@ class SISSLNINNotFound(Exception):
 
     NIN equivalent of SISSLBVNNotFound. Views should translate this to HTTP 404.
     """
+
+
+class SISSLLivenessFailed(Exception):
+    """
+    The selfie was classified as not-real, or its score was below the
+    configured liveness threshold.
+
+    This is a CLEAN failure — SISSL responded successfully, the user's
+    photo just didn't pass. The user must retake the selfie and try again
+    (subject to the per-user hourly cap).
+
+    Views should translate this to HTTP 400 with the exception's message.
+    """

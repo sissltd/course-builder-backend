@@ -136,3 +136,11 @@ def call_youverify_kyc_verification(self, event_id):
     except Exception as exc:
         logger.error(f"[users.call_youverify_kyc_verification] Failed: {exc}")
         raise self.retry(exc=exc)
+
+
+@shared_task(name="authentication.store_liveness_avatar")
+def store_liveness_avatar(user_id, image_value):
+    """Upload a base64 liveness selfie and set it as the profile picture."""
+    from api.users.services.kyc_services.utils import save_liveness_avatar
+
+    save_liveness_avatar(user_id, image_value)

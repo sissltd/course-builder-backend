@@ -103,6 +103,12 @@ class User(
         default="",
         help_text=_("User's phone number."),
     )
+    date_of_birth = models.DateField(
+        verbose_name=_("Date of Birth"),
+        null=True,
+        blank=True,
+        help_text=_("User's date of birth."),
+    )
     sex = models.CharField(
         verbose_name=_("Sex"),
         max_length=20,
@@ -165,6 +171,32 @@ class User(
         blank=True,
         default="",
         help_text="Private Spaces object key for the government ID photo; served via presigned GET.",
+    )
+    kyc_phone = models.CharField(
+        max_length=20,
+        blank=True,
+        default="",
+        help_text="Phone number exactly as returned by KYC provider.",
+    )
+    kyc_address = models.JSONField(
+        blank=True,
+        default=dict,
+        help_text="Address exactly as returned by KYC provider.",
+    )
+    liveness_selfie = models.URLField(
+        max_length=500,
+        blank=True,
+        default="",
+        help_text="Public Spaces object key or full CDN URL for the liveness selfie",
+    )
+    liveness_score = models.FloatField(
+        null=True,
+        blank=True,
+        help_text="Liveness score returned by the KYC provider for the selfie.",
+    )
+    liveness_passes = models.BooleanField(
+        default=False,
+        help_text="Indicates whether the liveness selfie is confirmed as live human presence.",
     )
 
     objects = CustomUserManager()

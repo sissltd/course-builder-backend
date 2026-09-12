@@ -77,7 +77,10 @@ def submit_verification(
         verification.user.first_name = first_name or verification.user.first_name
         verification.user.last_name = last_name or verification.user.last_name
         verification.user.address = address or verification.user.address
-        verification.user.save(update_fields=["first_name", "last_name", "address", "updated_datetime"])
+        verification.user.date_of_birth = date_of_birth or verification.user.date_of_birth
+        verification.user.save(
+            update_fields=["first_name", "last_name", "address", "date_of_birth", "updated_datetime"]
+        )
         _notify_admins_of_new_submission(verification)
 
         outbox_event = KYCOutboxEvent.objects.create(

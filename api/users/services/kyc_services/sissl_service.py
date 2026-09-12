@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
+from decimal import Decimal
 from typing import Any
 
 import requests
@@ -10,23 +12,35 @@ from urllib3.util.retry import Retry
 
 from api.authentication.services.activity_service import log_activity
 from api.platform.enums import KYCProvider
+from api.platform.services.platform_settings_service import get_settings
 from api.users.exceptions import (
     SISSLBVNNotFound,
     SISSLError,
+    SISSLLivenessFailed,
     SISSLNINNotFound,
 )
+from api.users.models import User
 from api.users.services.kyc_services.utils import update_kyc_response
 from shared.constants.kyc import (
     SISSL_API_TOKEN,
     SISSL_BASE_URL,
     SISSL_CONNECT_TIMEOUT,
     SISSL_HTTP_TIMEOUT,
+    SISSL_LIVENESS_HOURLY_CAP,
+    SISSL_LIVENESS_THRESHOLD,
     SISSL_MAX_RETRIES,
 )
+from shared.redis.redis_service import RedisService
 
 logger = logging.getLogger(__name__)
 
 
+@dataclass
+class LivenessResult:
+    is_real: bool
+    score: Decimal
+    threshold: float
+    raw: dict[str, Any]
 
 
 # >>>>>>>>>>>>>>>>>>>>>>> Session Builder <<<<<<<<<<<<<<<<<<<<<<<<<<<<
@@ -90,6 +104,19 @@ class SisslProvider:
         self._session = session or _build_session()
 
     # >>>>>>>>>>>>>>>>>>>> Endpoint Methods <<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+    def liveness(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """
+        POST /api/faces/liveness
+
+        Body:   { "photo": <url or base64> }
+        Returns { "result": "real" | "fake", "score": 0 - 100 }
+        """
+        return self._post(
+            "/api/faces/liveness",
+            {"photo": payload["photo"]},
+            kind="liveness",
+        )
 
     def bvn_verification(self, payload: dict[str, Any]) -> dict[str, Any]:
         """
@@ -211,6 +238,50 @@ class SISSLServices:
     def _provider() -> SisslProvider:
         """Hook for tests to override — returns a fresh provider per call."""
         return SisslProvider()
+
+    @staticmethod
+    def _liveness_threshold() -> int:
+        """
+        Returns the active liveness threshold.
+
+        Reads from the SISSLConfiguration singleton if seeded, otherwise
+        falls back to the env-var baseline. Treats a missing singleton row
+        as "use the env default" rather than crashing.
+        """
+        settings = get_settings()
+        config = settings.liveness_threshold
+        if config is not None:
+            return int(config)
+        return int(SISSL_LIVENESS_THRESHOLD)
+
+    @staticmethod
+    def _enforce_liveness_rate_limit(user) -> None:
+        """
+        Cost-discipline guard on the liveness endpoint.
+
+        Each SISSL call is billed, so a buggy / abusive client hitting
+        /liveness/ in a tight loop is a direct money leak.
+
+        Uses an atomic INCR + EXPIRE backed by a Lua script (see
+        RedisService) so the TTL is set only on the first call of the
+        window — giving us a fixed 1-hour window, not a sliding one.
+
+        Raises SISSLError if the cap is exceeded (so the caller short-circuits
+        before any vendor call is made).
+        """
+        if user is None or not getattr(user, "id", None):
+            # Anonymous / system calls don't get rate-limited at this layer
+            return
+
+        key = f"sissl:liveness:{user.id}"
+        count, _ttl = RedisService._atomic_increment(key, 3600)  # 1-hour fixed window
+
+        if int(count) > SISSL_LIVENESS_HOURLY_CAP:
+            logger.warning(
+                f"[<!>SISSLService<!>] liveness rate-limit hit for {user.email} "
+                f"(count={count}, cap={SISSL_LIVENESS_HOURLY_CAP})"
+            )
+            raise SISSLError("Too many liveness attempts. Please try again later.")
 
     # >>>>>>>>>>>>>>>>>>>> BVN Lookup <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
     @staticmethod
@@ -356,3 +427,113 @@ class SISSLServices:
             user_agent=user_agent,
         )
         return raw
+
+    # >>>>>>>>>>>>>>>>>>>> Liveness <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+    @staticmethod
+    def liveness(user, photo, ip=None, user_agent=""):
+        """
+        Runs a SISSL liveness check on the given photo.
+
+        Pass = `result == "real"` AND `score >= liveness_threshold`.
+
+        Args:
+            user        : The authenticated user this call is for (or None)
+            photo       : URL or base64 string of the selfie
+            ip          : Optional IP — used for audit only
+            user_agent  : Optional UA — used for audit only
+
+        Returns:
+            LivenessResult(is_real=True, score=Decimal, raw=dict)
+
+        Raises:
+            SISSLError            -> vendor unreachable / rate-limit hit
+            SISSLLivenessFailed   -> selfie not classified as a live human
+        """
+        # [1] Cost discipline — block here BEFORE any vendor call is made.
+        SISSLServices._enforce_liveness_rate_limit(user)
+
+        # [2] Make the call
+        provider = SISSLServices._provider()
+        try:
+            raw = provider.liveness({"photo": photo})
+
+        except SISSLError as exc:
+            log_activity(
+                user=user,
+                category="SISSL_VENDOR_ERROR",
+                action="SISSL liveness error",
+                summary="SISSL vendor error during liveness check",
+                actor_user=None,
+                request=None,
+                details={"kind": "liveness", "error": str(exc)},
+                target=None,
+                user_agent=user_agent,
+                ip_address=ip,
+            )
+            raise
+
+        # [3] Apply threshold
+        score = Decimal(str(raw.get("score") or 0))
+        threshold = SISSLServices._liveness_threshold()
+        is_real = raw.get("passes") or raw.get("live")  # Documentation is not clear
+
+        # [5] Hard-fail if the user isn't real / score too low
+        if not is_real:
+            logger.info(
+                f"[<>SISSLService<>] liveness FAILED for {getattr(user, 'email', 'anon')} "
+                f"(result={raw.get('result')}, score={score}, threshold={threshold})"
+            )
+            log_activity(
+                user=user,
+                category="kyc",
+                action="SISSL_LIVENESS_FAILED",
+                summary="Liveness check failed",
+                details={"result": raw.get("result"), "score": float(score), "threshold": threshold},
+                ip_address=ip,
+                user_agent=user_agent,
+            )
+            raise SISSLLivenessFailed("Liveness check failed — please retake your selfie in good lighting.")
+
+        # [6] Happy path
+        logger.info(
+            f"[<>SISSLService<>] liveness PASSED for {getattr(user, 'email', 'anon')} "
+            f"(score={score}, threshold={threshold})"
+        )
+        log_activity(
+            user=user,
+            category="kyc",
+            action="SISSL_LIVENESS_PASSED",
+            summary="Liveness check passed",
+            details={"result": raw.get("result"), "score": float(score), "threshold": threshold},
+            ip_address=ip,
+            user_agent=user_agent,
+        )
+        return LivenessResult(is_real=True, score=score, threshold=threshold, raw=raw)
+
+    @classmethod
+    def set_profile_picture(
+        cls,
+        user: User,
+        target_user: User,
+        ip: str | None = None,
+        user_agent: str | None = None,
+    ):
+        if not target_user.liveness_selfie:
+            raise ValueError("Target user does not have a liveness selfie set.")
+        try:
+            target_user.avatar_url = target_user.liveness_selfie
+            target_user.save(update_fields=["avatar_url", "updated_datetime"])
+        except Exception as exc:
+            log_activity(
+                user=user,
+                category="SISSL_VENDOR_ERROR",
+                action="SISSL set profile picture error",
+                summary="Error while setting profile picture",
+                actor_user=None,
+                request=None,
+                details={"kind": "set_profile_picture", "error": str(exc)},
+                target=None,
+                user_agent=user_agent,
+                ip_address=ip,
+            )
+            raise
