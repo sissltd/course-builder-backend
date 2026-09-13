@@ -100,9 +100,9 @@ class MeSerializer(serializers.ModelSerializer):
     def get_is_verified(self, obj) -> bool:
         """Return the KYC verification state displayed by the profile UI."""
 
-        from api.users.services import kyc_service
+        from api.users.services.kyc_services import kyc_submission_service
 
-        return kyc_service.is_verified(user=obj)
+        return kyc_submission_service.is_verified(user=obj)
 
     @extend_schema_field(ProfileBadgeSerializer(many=True))
     def get_badges(self, obj) -> list:

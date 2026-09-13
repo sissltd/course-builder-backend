@@ -76,18 +76,6 @@ class KYCVerification(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
         default="",
         help_text=_("Status returned by the KYC request for this submission."),
     )
-    kyc_request_summary = models.JSONField(
-        verbose_name=_("KYC Request Summary"),
-        blank=True,
-        null=True,
-        help_text=_("Summary of the request sent to KYC provider for this submission."),
-    )
-    kyc_response_summary = models.JSONField(
-        verbose_name=_("KYC Response Summary"),
-        blank=True,
-        null=True,
-        help_text=_("Summary of the response received from the KYC provider for this submission."),
-    )
     kyc_provider = models.CharField(
         verbose_name=_("KYC Provider"),
         max_length=100,
@@ -101,8 +89,14 @@ class KYCVerification(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
         blank=True,
         default="",
         help_text=_(
-            "The entity ID returned by the KYC provider for this submission. Applies only to verification by YouVerify."
+            "The entity ID returned by the KYC provider for this submission. May be needed for future reference."
         ),
+    )
+    kyc_failure_message = models.TextField(
+        verbose_name=_("KYC Failure Message"),
+        blank=True,
+        default="",
+        help_text=_("Failure message returned by the KYC provider for this submission, if any."),
     )
 
     class Meta:

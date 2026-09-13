@@ -1,5 +1,6 @@
 from decimal import Decimal
 
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
@@ -115,8 +116,15 @@ class PlatformSettings(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
         verbose_name=_("KYC service provider"),
         max_length=20,
         choices=KYCProvider.choices,
-        default=KYCProvider.YOUVERIFY,
+        default=KYCProvider.SISSL,
         help_text=_("Which KYC service provider to use for identity verification."),
+    )
+    liveness_threshold = models.PositiveSmallIntegerField(
+        verbose_name=_("Liveness Threshold"),
+        help_text=_("Score (0 - 100) at or above which a 'real' liveness result passes"),
+        validators=[MinValueValidator(0), MaxValueValidator(100)],
+        blank=True,
+        default=80,
     )
 
     class Meta:
