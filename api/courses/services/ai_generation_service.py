@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 from django.db import transaction
 from django.utils import timezone
 from rest_framework import exceptions
@@ -27,6 +29,11 @@ IN_FLIGHT_JOB_STATUSES = (
     AIGenerationStatus.QUEUED,
     AIGenerationStatus.RUNNING,
     AIGenerationStatus.STRUCTURE_READY,
+)
+STALE_IN_FLIGHT_AFTER = timedelta(hours=6)
+STALE_JOB_ERROR_MESSAGE = (
+    "AI generation did not complete within the expected time. Please start a new "
+    "generation request."
 )
 
 PROGRESS_ITEMS = [
@@ -68,6 +75,7 @@ def create_course_job(*, creator, validated_data):
     """Create one course job while serializing all AI requests per creator."""
 
     creator = type(creator).objects.select_for_update().get(pk=creator.pk)
+    fail_stale_in_flight_jobs(creator=creator)
     key = validated_data.get("idempotency_key", "")
     if key:
         existing = AIGenerationJob.objects.filter(
@@ -104,6 +112,7 @@ def create_short_job(*, creator, course, kind, request_payload):
     """Create an assist or thumbnail job under the same single-flight lock."""
 
     creator = type(creator).objects.select_for_update().get(pk=creator.pk)
+    fail_stale_in_flight_jobs(creator=creator)
     reject_while_in_flight(creator=creator)
     return AIGenerationJob.objects.create(
         creator=creator,
@@ -128,6 +137,59 @@ def check_cancelled(job):
 
 def mark_item(job, key, status):
     job.items.filter(key=key).update(status=status)
+
+
+def fail_job(*, job, message):
+    """Record a terminal failure on a generation job."""
+
+    job.status = AIGenerationStatus.FAILED
+    job.stage = "Generation failed"
+    job.error_message = str(message)[:4000]
+    job.completed_at = timezone.now()
+    job.save(
+        update_fields=[
+            "status",
+            "stage",
+            "error_message",
+            "completed_at",
+            "updated_datetime",
+        ]
+    )
+    job.items.filter(
+        status__in=[AIGenerationItemStatus.PENDING, AIGenerationItemStatus.RUNNING]
+    ).update(status=AIGenerationItemStatus.FAILED, error_message=str(message)[:4000])
+
+
+def fail_stale_in_flight_jobs(*, creator):
+    """Release creator-owned AI jobs that can no longer be completed."""
+
+    stale_before = timezone.now() - STALE_IN_FLIGHT_AFTER
+    stale_jobs = AIGenerationJob.objects.filter(
+        creator=creator,
+        status__in=IN_FLIGHT_JOB_STATUSES,
+        updated_datetime__lt=stale_before,
+    )
+    for job in stale_jobs.prefetch_related("items"):
+        if job.cancel_requested:
+            job.status = AIGenerationStatus.CANCELLED
+            job.stage = "Generation cancelled"
+            job.completed_at = timezone.now()
+            job.save(
+                update_fields=[
+                    "status",
+                    "stage",
+                    "completed_at",
+                    "updated_datetime",
+                ]
+            )
+            job.items.filter(
+                status__in=[
+                    AIGenerationItemStatus.PENDING,
+                    AIGenerationItemStatus.RUNNING,
+                ]
+            ).update(status=AIGenerationItemStatus.CANCELLED)
+        else:
+            fail_job(job=job, message=STALE_JOB_ERROR_MESSAGE)
 
 
 @transaction.atomic

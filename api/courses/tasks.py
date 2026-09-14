@@ -24,22 +24,7 @@ AI_TASK_MAX_RETRIES = 3
 def _fail_job(*, job, exc):
     """Record a terminal failure on the job and its in-flight progress items."""
 
-    job.status = AIGenerationStatus.FAILED
-    job.stage = "Generation failed"
-    job.error_message = str(exc)[:4000]
-    job.completed_at = timezone.now()
-    job.save(
-        update_fields=[
-            "status",
-            "stage",
-            "error_message",
-            "completed_at",
-            "updated_datetime",
-        ]
-    )
-    job.items.filter(status=AIGenerationItemStatus.RUNNING).update(
-        status=AIGenerationItemStatus.FAILED, error_message=str(exc)[:4000]
-    )
+    ai_generation_service.fail_job(job=job, message=str(exc))
 
 
 def _start_job(*, job, task_id, stage):

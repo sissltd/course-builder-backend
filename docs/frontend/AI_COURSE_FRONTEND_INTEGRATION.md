@@ -60,6 +60,43 @@ The frontend still tracks a single job.
 
 ## 1. Start generation
 
+Before creating a new job, call:
+
+`GET /api/v1/course-ai-generations/`
+
+By default this returns the caller's in-progress jobs: `QUEUED`, `RUNNING`,
+and `STRUCTURE_READY`. Use this on page load to resume a previous loading
+screen even when local storage was cleared or the user navigated away.
+
+```json
+{
+  "status": true,
+  "message": "Successfully retrieved data",
+  "data": {
+    "paginator": {
+      "count": 1,
+      "page": 1,
+      "page_size": 10,
+      "total_pages": 1,
+      "next": null,
+      "next_page_number": null,
+      "previous": null,
+      "previous_page_number": null
+    },
+    "results": [
+      {
+        "id": "<job-uuid>",
+        "status": "RUNNING",
+        "current_phase": "CREATING_CONTENT"
+      }
+    ]
+  }
+}
+```
+
+`GET /api/v1/course-ai-generations/?status=FAILED` lists failed jobs; replace
+`FAILED` with any concrete generation status when a history view needs it.
+
 `POST /api/v1/course-ai-generations/`
 
 ```json
@@ -277,10 +314,16 @@ generation failure.
 - `403`: the account is authenticated but is not a Course Creator.
 - `404` while polling: the job does not exist or belongs to another creator.
 - `429` when starting a generation, assist, or thumbnail: the creator already
-  has an active AI job. Continue polling that job and only start another after
-  it reaches `COMPLETED`, `FAILED`, or `CANCELLED`.
+  has an active AI job. Call `GET /course-ai-generations/`, continue polling
+  the returned job, and only start another after it reaches `COMPLETED`,
+  `FAILED`, or `CANCELLED`.
+- `503` when starting a generation: the backend could not hand the job to
+  Celery. The job is marked `FAILED`; show the error and allow a fresh retry.
 - `FAILED` job: display `error_message`; starting again should use a new
   idempotency key because the old key intentionally resolves to the failed job.
+- Stale in-progress jobs are marked `FAILED` by the backend before list or
+  poll responses are returned, so the UI should stop polling when it sees that
+  terminal state.
 - Network timeout while polling: keep the same job ID and retry the GET. Never
   create a second job merely because a poll failed.
 
@@ -289,7 +332,8 @@ generation failure.
 - The form sends `title`, not the deprecated `course_title` alias.
 - Category selection clears an incompatible topic selection.
 - One idempotency key is stable for one form submission.
-- Refreshing either loading screen resumes from the stored job ID.
+- Refreshing either loading screen first calls `GET /course-ai-generations/`,
+  then falls back to the stored job ID if needed.
 - Only the three items for `current_phase` are rendered.
 - Checklist icons are derived from item status.
 - The stop button calls DELETE once and waits for `CANCELLED`.

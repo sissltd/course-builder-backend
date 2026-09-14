@@ -10,3 +10,11 @@ class ModuleLocked(exceptions.APIException):
     status_code = status.HTTP_423_LOCKED
     default_detail = "This module is currently being edited by another user."
     default_code = "locked"
+
+
+class AIDispatchUnavailable(exceptions.APIException):
+    """Raised when a generation job cannot be handed to Celery."""
+
+    status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    default_detail = "AI generation could not be queued. Please try again."
+    default_code = "ai_dispatch_unavailable"
