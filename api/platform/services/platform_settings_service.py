@@ -23,6 +23,7 @@ UPDATABLE_FIELDS = {
     "mfa_enrollment_grace_period_days",
     "payment_processor",
     "kyc_provider",
+    "liveness_threshold",
 }
 
 

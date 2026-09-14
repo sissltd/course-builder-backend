@@ -37,13 +37,6 @@ SISSL_CONNECT_TIMEOUT = config("SISSL_CONNECT_TIMEOUT", default=5, cast=int)
 SISSL_MAX_RETRIES = config("SISSL_MAX_RETRIES", default=2, cast=int)
 
 
-# >>>>>>>>>>>>>>>>>>>>>>>>> KYC Review SLA <<<<<<<<<<<<<<<<<<<<<<<<<<<<
-# Target turnaround (in hours) for an admin to action a KYC submission. Drives
-# the "SLA Audit Rate" stat on the verification dashboard — the % of submissions
-# reviewed within this window.
-KYC_SLA_HOURS = config("KYC_SLA_HOURS", default=48, cast=int)
-
-
 # >>>>>>>>>>>>>>>>>>>>>>> Cost Discipline <<<<<<<<<<<<<<<<<<<<<<<<<<<<
 """
 Per-user hourly cap on liveness calls.

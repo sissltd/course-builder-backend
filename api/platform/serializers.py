@@ -34,6 +34,7 @@ class PlatformSettingsSerializer(serializers.ModelSerializer):
             "updated_datetime",
             "payment_processor",
             "kyc_provider",
+            "liveness_threshold",
         ]
         read_only_fields = fields
 
@@ -148,6 +149,12 @@ class PlatformSettingsUpdateSerializer(serializers.Serializer):
         required=False,
         choices=KYCProvider.choices,
         help_text="Which KYC service provider to use for identity verification.",
+    )
+    liveness_threshold = serializers.IntegerField(
+        required=False,
+        min_value=0,
+        max_value=100,
+        help_text="Score (0 - 100) at or above which a 'real' liveness result passes.",
     )
 
     def validate(self, attrs):

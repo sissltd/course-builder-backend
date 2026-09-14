@@ -5,7 +5,13 @@ from rest_framework import serializers
 
 from api.users.enums import KYCDocumentType
 from api.users.models import KYCVerification, User
+from api.users.services.kyc_services.sissl_service import SISSLServices
 from shared.utils.encryption import decrypt_field
+
+
+class AddressShapeSerializer(serializers.Serializer):
+    state = serializers.CharField(help_text="eg., Kaduna")
+    address = serializers.CharField(help_text="eg., 123 Main St")
 
 
 class KYCUserDataSerializer(serializers.Serializer):
@@ -13,6 +19,9 @@ class KYCUserDataSerializer(serializers.Serializer):
     last_name = serializers.CharField(allow_null=True, read_only=True)
     date_of_birth = serializers.DateField(allow_null=True, read_only=True)
     sex = serializers.CharField(allow_null=True, read_only=True)
+    document_image = serializers.CharField(allow_null=True, read_only=True)
+    address = AddressShapeSerializer(allow_null=True, read_only=True)
+    phone = serializers.CharField(allow_null=True, read_only=True)
 
 
 class KYCVerificationSerializer(serializers.ModelSerializer):
@@ -37,8 +46,8 @@ class KYCVerificationSerializer(serializers.ModelSerializer):
             "first_name",
             "last_name",
             "kyc_user_data",
-            "kyc_request_status",
-            "kyc_response_summary",
+            "kyc_provider",
+            "kyc_entity_id",
         ]
         read_only_fields = fields
 
@@ -50,6 +59,7 @@ class KYCVerificationSerializer(serializers.ModelSerializer):
             "last_name": obj.user.kyc_last_name,
             "date_of_birth": obj.user.kyc_date_of_birth,
             "sex": obj.user.kyc_gender,
+            "document_image": obj.user.kyc_document_image,
         }
 
     def to_representation(self, instance):
@@ -93,15 +103,22 @@ class KYCVerificationAdminSerializer(serializers.ModelSerializer):
     Super Admin needs to actually verify the document, unlike the
     submitter-facing KYCVerificationSerializer."""
 
-    user = UserMiniSerializer(read_only=True)
+    user_provided_data = serializers.SerializerMethodField(read_only=True)
     reviewed_by = UserMiniSerializer(read_only=True)
-    kyc_user_data = serializers.SerializerMethodField(read_only=True)
+    api_data = serializers.SerializerMethodField(read_only=True)
+    liveness_score = serializers.ReadOnlyField(source="user.liveness_score")
+    liveness_passes = serializers.ReadOnlyField(source="user.liveness_passes")
+    liveness_avatar_url = serializers.ReadOnlyField(source="user.liveness_selfie")
+    liveness_threshold = serializers.SerializerMethodField()
 
     class Meta:
         model = KYCVerification
         fields: ClassVar = [
+            "liveness_score",
+            "liveness_passes",
+            "liveness_avatar_url",
+            "liveness_threshold",
             "id",
-            "user",
             "country_of_issue",
             "document_type",
             "id_number",
@@ -111,20 +128,42 @@ class KYCVerificationAdminSerializer(serializers.ModelSerializer):
             "reviewed_by",
             "reviewed_at",
             "created_datetime",
-            "kyc_user_data",
-            "kyc_request_status",
-            "kyc_response_summary",
+            "api_data",
+            "user_provided_data",
         ]
         read_only_fields = fields
 
+    def get_liveness_threshold(self, obj):
+        """Return the liveness threshold for the KYC verification."""
+        return SISSLServices._liveness_threshold()
+
     @extend_schema_field(KYCUserDataSerializer)
-    def get_kyc_user_data(self, obj):
+    def get_api_data(self, obj):
         """Return the user data returned from the KYC provider, if any."""
         return {
             "first_name": obj.user.kyc_first_name,
             "last_name": obj.user.kyc_last_name,
             "date_of_birth": obj.user.kyc_date_of_birth,
             "sex": obj.user.kyc_gender,
+            "document_image": obj.user.kyc_document_image,
+            "address": {
+                "address": f"{obj.user.kyc_address.get('addressLine', '')} {obj.user.kyc_address.get('town', '')} {obj.user.kyc_address.get('lga', '')}",
+                "state": f"{obj.user.kyc_address.get('state', '')}",
+            },
+            "phone": obj.user.kyc_phone,
+        }
+
+    @extend_schema_field(KYCUserDataSerializer)
+    def get_user_provided_data(self, obj):
+        """Return the user data provided by the user during the KYC submission."""
+        return {
+            "first_name": obj.user.first_name,
+            "last_name": obj.user.last_name,
+            "date_of_birth": obj.user.date_of_birth,
+            "sex": obj.user.sex,
+            "image": obj.user.avatar_url,
+            "address": {"address": obj.user.address, "state": obj.user.state},
+            "phone": obj.user.phone_number,
         }
 
     def to_representation(self, instance):
@@ -152,3 +191,46 @@ class KYCReviewRejectSerializer(serializers.Serializer):
         if not value.strip():
             raise serializers.ValidationError("rejection_reason must not be empty.")
         return value
+    
+
+class KYCReviewFlagSerializer(serializers.Serializer):
+    """Request body for the KYC review-queue flag action.
+
+    TTakes an optional flag_reason the submitting user can act on
+    when resubmitting.
+    """
+
+    flag_reason = serializers.CharField(required=False, allow_blank=True)
+
+
+class LivenessSerializer(serializers.Serializer):
+    """
+    Validates the body for the liveness endpoint.
+
+    The `photo` field accepts EITHER a publicly fetchable URL OR a base64-
+    encoded image string — both are passed through to SISSL as-is, and the
+    vendor figures out which is which.
+    """
+
+    photo = serializers.CharField(
+        required=True,
+        allow_blank=False,
+        trim_whitespace=True,
+        help_text="The selfie to verify — a URL to a hosted image OR a base64-encoded image string.",
+    )
+
+    def validate_photo(self, value):
+        """
+        Light sanity check — we don't want to spend a billed SISSL call on
+        an obviously empty or absurdly small payload.
+        """
+        stripped = (value or "").strip()
+        if not stripped:
+            raise serializers.ValidationError("Please provide a selfie to verify.")
+
+        # Reject anything implausibly short — neither a URL nor a real base64 image
+        # would be < 16 chars in practice.
+        if len(stripped) < 16:
+            raise serializers.ValidationError("The provided photo is not a valid URL or base64 image.")
+
+        return stripped
