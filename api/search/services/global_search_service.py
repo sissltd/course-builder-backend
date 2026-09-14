@@ -92,7 +92,7 @@ def _search_courses(*, actor: User, query: str, limit: int) -> list[dict]:
     return [
         {
             "type": "course",
-            "id": course.id,
+            "id": str(course.id),
             "title": course.title,
             "subtitle": _course_subtitle(course),
             "status": course.status,
@@ -121,7 +121,7 @@ def _search_categories(*, query: str, limit: int) -> list[dict]:
     return [
         {
             "type": "category",
-            "id": category.id,
+            "id": str(category.id),
             "title": category.name,
             "subtitle": category.description,
             "status": category.status,
@@ -144,7 +144,7 @@ def _search_topics(*, query: str, limit: int) -> list[dict]:
     return [
         {
             "type": "topic",
-            "id": topic.id,
+            "id": str(topic.id),
             "title": topic.name,
             "subtitle": topic.category.name,
             "status": topic.status,
@@ -169,7 +169,7 @@ def _search_users(*, query: str, limit: int) -> list[dict]:
     return [
         {
             "type": "user",
-            "id": user.id,
+            "id": str(user.id),
             "title": user.get_full_name() or user.email,
             "subtitle": user.email,
             "status": user.status,
