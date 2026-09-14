@@ -7,8 +7,7 @@ import base64
 import binascii
 import logging
 
-from django.contrib.auth.models import User
-
+from api.users.models import User
 from shared.services.storage_service import StorageError, StorageService
 
 logger = logging.getLogger(__name__)
@@ -183,15 +182,15 @@ def save_liveness_avatar(user_id, image_value):
     the document-photo task avoids in the request. Non-raising and idempotent.
     """
     try:
-        url = _upload_avatar_photo(image_value)
-        if not url:
+        file_key = _upload_avatar_photo(image_value)
+        if not file_key:
             return
         from api.users.models import User
 
         user = User.objects.filter(id=user_id).first()
         if user is None:
             return
-        user.liveness_selfie = url
+        user.liveness_selfie = StorageService.public_url(file_key)
         user.save(update_fields=["liveness_selfie", "updated_datetime"])
     except Exception:
         logger.exception("[<>KYCIdentity<>] save_liveness_avatar failed for user %s", user_id)

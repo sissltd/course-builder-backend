@@ -218,7 +218,6 @@ class YouVerifyService:
                 # Making the request_summary value json-serializable
                 identity_data["dateOfBirth"] = str(identity_data.get("dateOfBirth"))
                 _ = identity_data.pop("signature", None)
-                print("entity_data:", identity_data.get("signature"), identity_data)
                 update_kyc_response(kyc_request, "found")
                 persist_kyc_identity(user, raw)
             else:
