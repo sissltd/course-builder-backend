@@ -88,6 +88,30 @@ class UploadPresignApiTests(APITestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
+    @patch("shared.services.storage_service._get_s3_client")
+    def test_course_document_import_presign_accepts_csv(self, mock_get_client):
+        mock_get_client.return_value.generate_presigned_url.return_value = (
+            "https://bucket.example.com/uploads/course-imports/abc123.csv?signature=xyz"
+        )
+        user = make_user()
+        self.client.force_authenticate(user)
+
+        response = self.client.post(
+            "/api/v1/uploads/presign/",
+            {
+                "filename": "outline.csv",
+                "content_type": "text/csv",
+                "folder": "course-imports",
+                "size": 1024,
+                "purpose": "COURSE_DOCUMENT_IMPORT",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data["file_key"].startswith("uploads/course-imports/"))
+        self.assertEqual(response.data["upload_headers"]["Content-Type"], "text/csv")
+
 
 class UploadAccessApiTests(APITestCase):
     @patch("shared.uploads.views.StorageService.generate_presigned_get")

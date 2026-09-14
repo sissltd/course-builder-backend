@@ -203,7 +203,7 @@ extension, size, dimensions, codec and duration from this table:
 | --- | --- | --- |
 | Image | `image/*` | 10 MB |
 | Video | `video/*` | 500 MB |
-| Documents / text | `application/pdf`, `text/*` | 20 MB |
+| Documents / text | `application/pdf`, `application/vnd.openxmlformats-officedocument.wordprocessingml.document`, `text/plain`, `text/csv` | 20 MB |
 
 Note: `video/quicktime` (`.mov`) and `video/webm` are allowed *only* as
 generic uploads (no `purpose`); all course purposes require H.264 MP4.

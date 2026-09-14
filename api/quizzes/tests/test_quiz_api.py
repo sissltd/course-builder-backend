@@ -49,6 +49,7 @@ class QuizApiTests(APITestCase):
                     "question_type": "MULTIPLE_CHOICE",
                     "points": 5,
                     "order": 1,
+                    "explanation": "Four is the sum of two and two.",
                     "options": [
                         {"option_text": "3", "is_correct": False, "order": 1},
                         {"option_text": "4", "is_correct": True, "order": 2},
@@ -82,6 +83,7 @@ class QuizApiTests(APITestCase):
             "question_type": "MULTIPLE_CHOICE",
             "points": 5,
             "order": 1,
+            "explanation": "`def` starts a Python function definition.",
             "options": [
                 {"option_text": "func", "is_correct": False, "order": 1},
                 {"option_text": "def", "is_correct": True, "order": 2},
@@ -128,10 +130,36 @@ class QuizApiTests(APITestCase):
             msg=f"Unexpected errors: {response.data}",
         )
         self.assertEqual(str(response.data["quiz"]), str(quiz.id))
+        self.assertEqual(
+            response.data["explanation"], "`def` starts a Python function definition."
+        )
         self.assertEqual(response.data["options"][1]["option_text"], "def")
+        self.assertNotIn("explanation", response.data["options"][1])
         question = Question.objects.get(pk=response.data["id"])
+        self.assertEqual(
+            question.explanation, "`def` starts a Python function definition."
+        )
         self.assertEqual(question.created_by, self.creator)
         self.assertEqual(question.updated_by, self.creator)
+
+    def test_question_option_explanation_is_ignored_for_backward_compatibility(self):
+        quiz = self._create_quiz()
+        payload = self._question_payload(quiz, explanation="Top-level explanation.")
+        payload["options"][0]["explanation"] = "Deprecated option explanation."
+        self.client.force_authenticate(self.creator)
+
+        response = self.client.post("/api/v1/questions/", payload, format="json")
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_201_CREATED,
+            msg=f"Unexpected errors: {response.data}",
+        )
+        self.assertEqual(response.data["explanation"], "Top-level explanation.")
+        self.assertNotIn("explanation", response.data["options"][0])
+        question = Question.objects.get(pk=response.data["id"])
+        self.assertEqual(question.explanation, "Top-level explanation.")
+        self.assertEqual(question.options.get(order=1).explanation, "")
 
     def test_creator_can_create_single_choice_question(self):
         quiz = self._create_quiz()

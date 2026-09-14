@@ -30,6 +30,7 @@ class UploadLimitTests(SimpleTestCase):
         self.assertEqual(max_size_for("video/mp4"), 500 * MB)
         self.assertEqual(max_size_for("image/png"), 10 * MB)
         self.assertEqual(max_size_for("application/pdf"), 20 * MB)
+        self.assertEqual(max_size_for("text/csv"), 20 * MB)
         self.assertIsNone(max_size_for("audio/mpeg"))
 
     def test_oversized_video_is_refused_before_presigning(self):
@@ -137,6 +138,72 @@ class UploadLimitTests(SimpleTestCase):
             result["upload_headers"]["Content-Type"], "application/x-subrip"
         )
 
+    def test_csv_documents_are_supported_as_generic_uploads(self):
+        with patch("shared.services.storage_service._get_s3_client") as get_client:
+            get_client.return_value.generate_presigned_url.return_value = (
+                "https://storage.example/signed"
+            )
+            result = StorageService.request_upload(
+                filename="course-outline.csv",
+                content_type="text/csv",
+                folder="general",
+                size=1024,
+            )
+
+        self.assertTrue(result["file_key"].endswith(".csv"))
+        self.assertEqual(result["upload_headers"]["Content-Type"], "text/csv")
+
+    def test_course_document_import_accepts_pdf_docx_txt_and_csv(self):
+        content_types = {
+            "outline.pdf": "application/pdf",
+            "outline.docx": (
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            ),
+            "outline.txt": "text/plain",
+            "outline.csv": "text/csv",
+        }
+        with patch("shared.services.storage_service._get_s3_client") as get_client:
+            get_client.return_value.generate_presigned_url.return_value = (
+                "https://storage.example/signed"
+            )
+            for filename, content_type in content_types.items():
+                with self.subTest(filename=filename):
+                    result = StorageService.request_upload(
+                        filename=filename,
+                        content_type=content_type,
+                        folder="course-imports",
+                        size=1024,
+                        purpose="COURSE_DOCUMENT_IMPORT",
+                    )
+                    self.assertTrue(result["file_key"].startswith("uploads/course-imports/"))
+                    self.assertEqual(result["upload_headers"]["Content-Type"], content_type)
+
+    def test_course_document_import_rejects_wrong_folder_and_oversize(self):
+        with self.assertRaises(InvalidUploadMetadata):
+            StorageService.request_upload(
+                filename="outline.csv",
+                content_type="text/csv",
+                folder="general",
+                size=1024,
+                purpose="COURSE_DOCUMENT_IMPORT",
+            )
+        with self.assertRaises(InvalidUploadMetadata):
+            StorageService.request_upload(
+                filename="outline.pdf",
+                content_type="text/csv",
+                folder="course-imports",
+                size=1024,
+                purpose="COURSE_DOCUMENT_IMPORT",
+            )
+        with self.assertRaises(FileTooLarge):
+            StorageService.request_upload(
+                filename="outline.csv",
+                content_type="text/csv",
+                folder="course-imports",
+                size=21 * MB,
+                purpose="COURSE_DOCUMENT_IMPORT",
+            )
+
     def test_course_folder_requires_a_purpose(self):
         with self.assertRaises(InvalidUploadMetadata):
             StorageService.request_upload(
@@ -144,6 +211,15 @@ class UploadLimitTests(SimpleTestCase):
                 content_type="video/mp4",
                 folder="courses",
                 size=20 * MB,
+            )
+
+    def test_course_import_folder_requires_a_purpose(self):
+        with self.assertRaises(InvalidUploadMetadata):
+            StorageService.request_upload(
+                filename="outline.csv",
+                content_type="text/csv",
+                folder="course-imports",
+                size=1024,
             )
 
 
@@ -161,6 +237,19 @@ class UploadSerializerTests(SimpleTestCase):
                 "codec": "h264",
             }
         )
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+
+    def test_course_document_import_metadata_is_accepted(self):
+        serializer = UploadRequestSerializer(
+            data={
+                "filename": "outline.csv",
+                "content_type": "text/csv",
+                "folder": "course-imports",
+                "size": 1000,
+                "purpose": "COURSE_DOCUMENT_IMPORT",
+            }
+        )
+
         self.assertTrue(serializer.is_valid(), serializer.errors)
 
     def test_unknown_folder_is_refused(self):

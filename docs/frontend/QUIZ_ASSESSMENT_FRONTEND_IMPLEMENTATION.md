@@ -305,6 +305,7 @@ Legacy `/api/v1/questions/` shape:
   "question_type": "ESSAY",
   "points": 10,
   "model_response_guide": "A good answer mentions accuracy, consistency, missing values, and better decisions.",
+  "explanation": "Use this as the learner-facing feedback or review explanation.",
   "order": 1
 }
 ```
@@ -318,6 +319,7 @@ Legacy field mapping:
 | `options[].text` | `options[].option_text` |
 | `correct_index` / `correct_indices` | `options[].is_correct` |
 | `expected_answer` | `model_response_guide` |
+| `explanation` | `explanation` |
 
 Legacy `/api/v1/questions/` supports only:
 
@@ -325,6 +327,8 @@ Legacy `/api/v1/questions/` supports only:
 - `MULTIPLE_CHOICE` with exactly one `is_correct: true` option, retained for
   existing relational records.
 - `ESSAY` with no options.
+- Question-level `explanation`; do not send explanations inside
+  `options[]`.
 
 It does not support the Figma multi-answer `correct_indices` shape.
 
@@ -343,4 +347,5 @@ Common validation mistakes:
 - Sending choice questions with fewer than 2 options.
 - Sending `correct_index` for `MULTIPLE_CHOICE`.
 - Sending `correct_indices` for `SINGLE_CHOICE`.
-- Sending top-level `explanation` on choice questions.
+- Sending `options[].explanation` to `/api/v1/questions/`; use top-level
+  `explanation` instead.

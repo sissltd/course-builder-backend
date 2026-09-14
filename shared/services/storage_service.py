@@ -71,6 +71,9 @@ ALLOWED_CONTENT_TYPES = {
     "video/webm",
     # Documents
     "application/pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "text/csv",
+    "application/csv",
     # Subtitles
     "application/x-subrip",
     "text/plain",
@@ -122,6 +125,27 @@ COURSE_UPLOAD_RULES = {
         "folder": "courses",
         "content_types": {"application/x-subrip", "text/plain"},
         "extensions": {"srt"},
+        "max_size": 20 * MB,
+    },
+    "COURSE_DOCUMENT_IMPORT": {
+        "folder": "course-imports",
+        "content_types": {
+            "application/pdf",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "text/plain",
+            "text/csv",
+            "application/csv",
+        },
+        "extensions": {"pdf", "docx", "txt", "csv"},
+        "mime_extensions": {
+            "application/pdf": {"pdf"},
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document": {
+                "docx"
+            },
+            "text/plain": {"txt"},
+            "text/csv": {"csv"},
+            "application/csv": {"csv"},
+        },
         "max_size": 20 * MB,
     },
 }
@@ -262,9 +286,9 @@ class StorageService:
 
         # Creator course uploads must declare their purpose so preview videos,
         # lesson videos, thumbnails and subtitles receive different rules.
-        if folder in {"courses", "thumbnails"} and not purpose:
+        if folder in {"courses", "thumbnails", "course-imports"} and not purpose:
             raise InvalidUploadMetadata(
-                "purpose is required for course and thumbnail uploads."
+                "purpose is required for course, thumbnail, and course-import uploads."
             )
 
         rule = COURSE_UPLOAD_RULES.get(purpose) if purpose else None
@@ -282,6 +306,13 @@ class StorageService:
                 allowed = ", ".join(sorted(rule["extensions"]))
                 raise InvalidFileType(
                     f"{purpose} requires one of these file extensions: {allowed}."
+                )
+            mime_extensions = rule.get("mime_extensions", {})
+            if mime_extensions and extension not in mime_extensions.get(
+                content_type, set()
+            ):
+                raise InvalidUploadMetadata(
+                    "Filename extension does not match the uploaded document type."
                 )
             if size is None:
                 raise InvalidUploadMetadata(f"size is required for {purpose} uploads.")
@@ -430,6 +461,10 @@ class StorageService:
             "image/webp": "webp",
             "image/gif": "gif",
             "application/pdf": "pdf",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+            "text/plain": "txt",
+            "text/csv": "csv",
+            "application/csv": "csv",
         }.get(content_type, "bin")
         file_key = f"uploads/{folder}/{uuid.uuid4().hex}.{extension}"
 
@@ -450,6 +485,18 @@ class StorageService:
             f"[<>Storage<>] Bytes uploaded: {file_key} ({content_type}, acl={acl})"
         )
         return file_key
+
+    @staticmethod
+    def download_bytes(file_key):
+        """Download a private object's bytes for backend processing."""
+
+        file_key = _file_key_from_value(file_key)
+        try:
+            response = _get_s3_client().get_object(Bucket=BUCKET_NAME, Key=file_key)
+            return response["Body"].read()
+        except ClientError as e:
+            logger.error(f"[<>Storage<>] download_bytes failed for {file_key}: {e}")
+            raise StorageError("Failed to read the uploaded file. Please try again.")
 
     @staticmethod
     def generate_presigned_get(file_key, expires_in=PRESIGN_EXPIRY):

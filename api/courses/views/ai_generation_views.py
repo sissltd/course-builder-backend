@@ -1,10 +1,16 @@
 from datetime import datetime
 
-from drf_spectacular.utils import OpenApiExample, OpenApiResponse, extend_schema
+from drf_spectacular.utils import (
+    OpenApiExample,
+    OpenApiParameter,
+    OpenApiResponse,
+    extend_schema,
+)
 from rest_framework import exceptions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from api.courses.exceptions import AIDispatchUnavailable
 from api.courses.enums import (
     AIGenerationKind,
     AIGenerationStatus,
@@ -27,7 +33,8 @@ from api.courses.tasks import (
     generate_ai_thumbnail,
 )
 from api.users.permissions import IsCourseCreatorRole
-from shared.spectacular.responses import STANDARD_ERROR_RESPONSES
+from includes.helpers.pagination import PageNumberAPIPagination
+from shared.spectacular.responses import STANDARD_ERROR_RESPONSES, inline_error_response
 
 
 AI_TAG = ["Creator — AI"]
@@ -46,12 +53,152 @@ JOB_EXAMPLE = {
     "created_datetime": "2026-09-03T20:00:00Z",
     "updated_datetime": "2026-09-03T20:00:00Z",
 }
+AI_DISPATCH_UNAVAILABLE_RESPONSE = inline_error_response(
+    description="The job was created but could not be handed to Celery.",
+    examples=[
+        OpenApiExample(
+            name="AI dispatch unavailable",
+            value={
+                "errors": [
+                    {
+                        "type": "server_error",
+                        "code": "ai_dispatch_unavailable",
+                        "message": "AI generation could not be queued. Please try again.",
+                        "field_name": None,
+                    }
+                ]
+            },
+        )
+    ],
+)
+IN_PROGRESS_STATUS_PARAM = "in_progress"
+LIST_STATUS_VALUES = [
+    IN_PROGRESS_STATUS_PARAM,
+    AIGenerationStatus.QUEUED.value,
+    AIGenerationStatus.RUNNING.value,
+    AIGenerationStatus.STRUCTURE_READY.value,
+    AIGenerationStatus.COMPLETED.value,
+    AIGenerationStatus.FAILED.value,
+    AIGenerationStatus.CANCELLED.value,
+]
+
+
+def _dispatch_generation_task(*, task, job):
+    try:
+        async_result = task.delay(str(job.id))
+    except Exception as exc:
+        ai_generation_service.fail_job(
+            job=job,
+            message="AI generation could not be queued. Please try again.",
+        )
+        raise AIDispatchUnavailable() from exc
+    job.celery_task_id = async_result.id or ""
+    job.save(update_fields=["celery_task_id", "updated_datetime"])
+    return job
 
 
 class AICourseGenerationListCreateView(APIView):
     permission_classes = [IsCourseCreatorRole]
+    pagination_class = PageNumberAPIPagination
 
     @extend_schema(
+        operation_id="course_ai_generations_list",
+        summary="List AI generation jobs",
+        description=(
+            "Returns creator-owned AI generation jobs so the frontend can resume "
+            "a loading screen after navigation, refresh, or reconnect.\n\n"
+            "Call this when the creator opens the Create with AI experience before "
+            "starting a new request.\n\n"
+            "**Auth:** Course Creator or invited Staff Writer with a valid Bearer token.\n\n"
+            "**Prerequisites:** None.\n\n"
+            "**Important:** Defaults to `status=in_progress`, which returns `QUEUED`, "
+            "`RUNNING`, and `STRUCTURE_READY` jobs. Stale in-flight jobs are marked "
+            "`FAILED` before the list is returned, so the frontend can stop polling "
+            "jobs that can no longer complete."
+        ),
+        request=None,
+        parameters=[
+            OpenApiParameter(
+                name="status",
+                location=OpenApiParameter.QUERY,
+                required=False,
+                type=str,
+                enum=LIST_STATUS_VALUES,
+                description=(
+                    "Filter jobs by status. Defaults to `in_progress` for QUEUED, "
+                    "RUNNING, and STRUCTURE_READY."
+                ),
+            ),
+            OpenApiParameter(
+                name="page",
+                location=OpenApiParameter.QUERY,
+                required=False,
+                type=int,
+                description="One-based results page. Defaults to 1.",
+            ),
+            OpenApiParameter(
+                name="size",
+                location=OpenApiParameter.QUERY,
+                required=False,
+                type=int,
+                description="Rows per page. Defaults to 10.",
+            ),
+        ],
+        responses={
+            200: OpenApiResponse(
+                response=AIGenerationJobSerializer(many=True),
+                description="Generation jobs matching the selected status.",
+                examples=[
+                    OpenApiExample(
+                        name="In-progress jobs",
+                        value={
+                            "status": True,
+                            "message": "Successfully retrieved data",
+                            "data": {
+                                "paginator": {
+                                    "count": 1,
+                                    "page": 1,
+                                    "page_size": 10,
+                                    "total_pages": 1,
+                                    "next": None,
+                                    "next_page_number": None,
+                                    "previous": None,
+                                    "previous_page_number": None,
+                                },
+                                "results": [JOB_EXAMPLE],
+                            },
+                        },
+                    )
+                ],
+            ),
+            **STANDARD_ERROR_RESPONSES["validation"],
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["forbidden"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+        tags=AI_TAG,
+    )
+    def get(self, request):
+        ai_generation_service.fail_stale_in_flight_jobs(creator=request.user)
+        status_filter = request.query_params.get("status", IN_PROGRESS_STATUS_PARAM)
+        if status_filter not in LIST_STATUS_VALUES:
+            raise exceptions.ValidationError({"status": "Unsupported status filter."})
+        queryset = AIGenerationJob.objects.prefetch_related("items").filter(
+            creator=request.user
+        )
+        if status_filter == IN_PROGRESS_STATUS_PARAM:
+            queryset = queryset.filter(
+                status__in=ai_generation_service.IN_FLIGHT_JOB_STATUSES
+            )
+        else:
+            queryset = queryset.filter(status=status_filter)
+        paginator = self.pagination_class()
+        page = paginator.paginate_queryset(queryset, request, self)
+        serializer = AIGenerationJobSerializer(page, many=True)
+        return paginator.get_paginated_response(serializer.data)
+
+    @extend_schema(
+        operation_id="course_ai_generations_create",
         summary="Start AI course generation",
         description=(
             "Starts an asynchronous, two-phase AI workflow that creates a Draft "
@@ -97,6 +244,7 @@ class AICourseGenerationListCreateView(APIView):
             **STANDARD_ERROR_RESPONSES["auth"],
             **STANDARD_ERROR_RESPONSES["forbidden"],
             **STANDARD_ERROR_RESPONSES["rate_limited"],
+            503: AI_DISPATCH_UNAVAILABLE_RESPONSE,
             **STANDARD_ERROR_RESPONSES["server"],
         },
         tags=AI_TAG,
@@ -108,9 +256,7 @@ class AICourseGenerationListCreateView(APIView):
             creator=request.user, validated_data=serializer.validated_data
         )
         if created:
-            async_result = generate_ai_course.delay(str(job.id))
-            job.celery_task_id = async_result.id or ""
-            job.save(update_fields=["celery_task_id", "updated_datetime"])
+            job = _dispatch_generation_task(task=generate_ai_course, job=job)
         return Response(
             AIGenerationJobSerializer(job).data,
             status=status.HTTP_202_ACCEPTED if created else status.HTTP_200_OK,
@@ -121,11 +267,13 @@ class AIGenerationDetailView(APIView):
     permission_classes = [IsCourseCreatorRole]
 
     def get_object(self, request, pk):
+        ai_generation_service.fail_stale_in_flight_jobs(creator=request.user)
         return AIGenerationJob.objects.prefetch_related("items").filter(
             pk=pk, creator=request.user
         ).first() or (_ for _ in ()).throw(exceptions.NotFound())
 
     @extend_schema(
+        operation_id="course_ai_generations_retrieve",
         summary="Retrieve AI course generation progress",
         description=(
             "Returns the latest state of a creator-owned AI generation job, including "
@@ -157,6 +305,7 @@ class AIGenerationDetailView(APIView):
         return Response(AIGenerationJobSerializer(self.get_object(request, pk)).data)
 
     @extend_schema(
+        operation_id="course_ai_generations_cancel",
         summary="Cancel AI course generation",
         description=(
             "Requests cancellation of a creator-owned AI generation job. The worker "
@@ -243,6 +392,7 @@ class AIAssistListCreateView(APIView):
             **STANDARD_ERROR_RESPONSES["forbidden"],
             **STANDARD_ERROR_RESPONSES["not_found"],
             **STANDARD_ERROR_RESPONSES["rate_limited"],
+            503: AI_DISPATCH_UNAVAILABLE_RESPONSE,
             **STANDARD_ERROR_RESPONSES["server"],
         },
         tags=AI_TAG,
@@ -273,7 +423,7 @@ class AIAssistListCreateView(APIView):
                 "target_updated_at": data["target_updated_at"].isoformat(),
             },
         )
-        generate_ai_assist.delay(str(job.id))
+        job = _dispatch_generation_task(task=generate_ai_assist, job=job)
         return Response(
             AIGenerationJobSerializer(job).data, status=status.HTTP_202_ACCEPTED
         )
@@ -407,6 +557,7 @@ class AIThumbnailCreateView(APIView):
             **STANDARD_ERROR_RESPONSES["forbidden"],
             **STANDARD_ERROR_RESPONSES["not_found"],
             **STANDARD_ERROR_RESPONSES["rate_limited"],
+            503: AI_DISPATCH_UNAVAILABLE_RESPONSE,
             **STANDARD_ERROR_RESPONSES["server"],
         },
         tags=AI_TAG,
@@ -425,7 +576,7 @@ class AIThumbnailCreateView(APIView):
             kind=AIGenerationKind.THUMBNAIL,
             request_payload=serializer.validated_data,
         )
-        generate_ai_thumbnail.delay(str(job.id))
+        job = _dispatch_generation_task(task=generate_ai_thumbnail, job=job)
         return Response(
             AIGenerationJobSerializer(job).data, status=status.HTTP_202_ACCEPTED
         )

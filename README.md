@@ -935,6 +935,9 @@ item's `phase` field. `CREATING_CONTENT` generates one compact course outline;
 creates the final assessment separately. This keeps individual responses
 bounded while the creator polls one job and can cancel between requests.
 
+- `GET /api/v1/course-ai-generations/` lists the creator's in-progress jobs
+  for page-refresh recovery; pass `?status=FAILED` or another concrete status
+  to inspect older terminal jobs.
 - `POST /api/v1/course-ai-generations/` starts a course draft.
 - `GET` or `DELETE /api/v1/course-ai-generations/{id}/` polls or cancels it.
 - `POST /api/v1/courses/{id}/ai-assists/` drafts a contextual field rewrite;

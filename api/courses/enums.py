@@ -53,7 +53,21 @@ class CourseSourceType(models.TextChoices):
 
     CREATOR_UPLOADED = "CREATOR_UPLOADED", "Creator Uploaded"
     AI_GENERATED = "AI_GENERATED", "AI Generated"
+    DOCUMENT_IMPORTED = "DOCUMENT_IMPORTED", "Document Imported"
     DEVELOPER_API = "DEVELOPER_API", "Developer API"
+
+
+class CourseImportStatus(models.TextChoices):
+    """Lifecycle status for document-import jobs."""
+
+    QUEUED = "QUEUED", "Queued"
+    PARSING = "PARSING", "Parsing"
+    MAPPING = "MAPPING", "Mapping"
+    READY_FOR_REVIEW = "READY_FOR_REVIEW", "Ready for Review"
+    CONFIRMING = "CONFIRMING", "Confirming"
+    COMPLETED = "COMPLETED", "Completed"
+    FAILED = "FAILED", "Failed"
+    CANCELLED = "CANCELLED", "Cancelled"
 
 
 class DistributionChannel(models.TextChoices):

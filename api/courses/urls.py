@@ -5,6 +5,7 @@ from api.courses.views import (
     assessment_views,
     ai_generation_views,
     course_appeal_views,
+    course_import_views,
     course_thumbnail_views,
     course_version_views,
     course_views,
@@ -35,6 +36,21 @@ urlpatterns = router.urls + [
         "course-ai-generations/",
         ai_generation_views.AICourseGenerationListCreateView.as_view(),
         name="course-ai-generation-list",
+    ),
+    path(
+        "course-imports/",
+        course_import_views.CourseImportListCreateView.as_view(),
+        name="course-import-list",
+    ),
+    path(
+        "course-imports/<uuid:pk>/",
+        course_import_views.CourseImportDetailView.as_view(),
+        name="course-import-detail",
+    ),
+    path(
+        "course-imports/<uuid:pk>/confirm/",
+        course_import_views.CourseImportConfirmView.as_view(),
+        name="course-import-confirm",
     ),
     path(
         "course-ai-generations/<uuid:pk>/",

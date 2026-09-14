@@ -3,6 +3,7 @@ from .ai_generation import AIGenerationItem, AIGenerationJob
 from .course import Course
 from .course_distribution import CourseDistribution
 from .course_appeal import CourseAppeal
+from .course_import import CourseImportJob
 from .course_thumbnail import CourseThumbnail
 from .course_version import CourseVersion
 from .lesson import Lesson
@@ -19,6 +20,7 @@ __all__ = [
     "Course",
     "CourseDistribution",
     "CourseAppeal",
+    "CourseImportJob",
     "CourseThumbnail",
     "CourseVersion",
     "Lesson",
