@@ -89,7 +89,7 @@ await api.patch(`/api/v1/courses/${courseId}/`, {
 | `LESSON_VIDEO` | 500 MB | H.264 MP4, minimum 1280×720 |
 | `COURSE_PREVIEW_VIDEO` | 100 MB | H.264 MP4, minimum 1280×720, 60–120 seconds |
 | `SUBTITLE` | 20 MB | `.srt` as `application/x-subrip` or `text/plain` |
-| Generic document | 20 MB | `application/pdf` |
+| Generic document | 20 MB | `application/pdf`, `application/vnd.openxmlformats-officedocument.wordprocessingml.document`, `text/plain`, `text/csv` |
 
 Folders now include `courses` (lesson media) and `thumbnails` (cover
 images) alongside the existing ones.

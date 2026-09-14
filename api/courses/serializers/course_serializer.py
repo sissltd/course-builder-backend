@@ -22,6 +22,7 @@ from api.reviews.serializers import ReviewActionSerializer  # noqa: F401 (re-exp
 _SOURCE_LABELS = {
     CourseSourceType.CREATOR_UPLOADED: "Creator",
     CourseSourceType.AI_GENERATED: "AI Created",
+    CourseSourceType.DOCUMENT_IMPORTED: "Document Imported",
     CourseSourceType.DEVELOPER_API: "Developer API",
 }
 _CHANNEL_ORDER = (
