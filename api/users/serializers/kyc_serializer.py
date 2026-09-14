@@ -6,6 +6,7 @@ from rest_framework import serializers
 from api.users.enums import KYCDocumentType
 from api.users.models import KYCVerification, User
 from api.users.services.kyc_services.sissl_service import SISSLServices
+from shared.services.storage_service import StorageService
 from shared.utils.encryption import decrypt_field
 
 
@@ -59,7 +60,7 @@ class KYCVerificationSerializer(serializers.ModelSerializer):
             "last_name": obj.user.kyc_last_name,
             "date_of_birth": obj.user.kyc_date_of_birth,
             "sex": obj.user.kyc_gender,
-            "document_image": obj.user.kyc_document_image,
+            "document_image": StorageService.generate_presigned_get(obj.user.kyc_document_image),
         }
 
     def to_representation(self, instance):
@@ -145,7 +146,7 @@ class KYCVerificationAdminSerializer(serializers.ModelSerializer):
             "last_name": obj.user.kyc_last_name,
             "date_of_birth": obj.user.kyc_date_of_birth,
             "sex": obj.user.kyc_gender,
-            "document_image": obj.user.kyc_document_image,
+            "document_image": StorageService.generate_presigned_get(obj.user.kyc_document_image),
             "address": {
                 "address": f"{obj.user.kyc_address.get('addressLine', '')} {obj.user.kyc_address.get('town', '')} {obj.user.kyc_address.get('lga', '')}",
                 "state": f"{obj.user.kyc_address.get('state', '')}",
