@@ -150,6 +150,12 @@ class Question(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModel
         blank=True,
         help_text=_("Reference answer used when grading ESSAY questions."),
     )
+    explanation = models.TextField(
+        verbose_name=_("Explanation"),
+        blank=True,
+        default="",
+        help_text=_("Question-level feedback or explanation shown after answering."),
+    )
     order = models.PositiveIntegerField(
         verbose_name=_("Order"),
         default=0,
@@ -193,7 +199,10 @@ class QuestionOption(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
         verbose_name=_("Explanation"),
         blank=True,
         default="",
-        help_text=_("Why this option is right or wrong, shown after answering."),
+        help_text=_(
+            "Deprecated. Explanations now live on Question.explanation so the "
+            "feedback belongs to the whole question, not one option."
+        ),
     )
     is_correct = models.BooleanField(
         verbose_name=_("Is Correct"),

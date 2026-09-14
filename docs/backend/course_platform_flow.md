@@ -148,8 +148,8 @@ Per question:
 | `question_text` | `Question.question_text` |
 | `point` | `Question.point` |
 | `question_type` | `Question.question_type` (`multiple_choice` / `essay`) |
-| Options (if multiple_choice) | `QuestionOption.text`, `.explanation`, `.is_correct` |
-| Explanation (if essay) | `Question.explanation` |
+| Options (if multiple_choice) | `QuestionOption.text`, `.is_correct` |
+| Explanation | `Question.explanation` |
 
 Two things I'd enforce at the DB layer, not just in the serializer, because quiz correctness matters:
 - Exactly one `is_correct=True` option per question — partial unique index, not app-level validation alone.

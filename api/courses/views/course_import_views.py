@@ -3,7 +3,6 @@ from rest_framework import exceptions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from api.courses.enums import CourseImportStatus
 from api.courses.models import CourseImportJob
 from api.courses.serializers.course_import_serializer import (
     CourseImportConfirmResponseSerializer,

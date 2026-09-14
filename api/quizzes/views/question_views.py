@@ -21,6 +21,7 @@ _SINGLE_CHOICE_QUESTION_EXAMPLE = {
     "question_type": "SINGLE_CHOICE",
     "points": 5,
     "model_response_guide": "",
+    "explanation": "`def` is the Python keyword used to declare a function.",
     "order": 1,
     "options": [
         {"option_text": "func", "is_correct": False, "order": 1},
@@ -39,7 +40,8 @@ _FIGMA_ASSESSMENT_NOTE = (
     "Assessment questions use `question`, `type`, `options[].text`, "
     "`correct_index`, `correct_indices`, `expected_answer`, and `explanation`; "
     "this endpoint uses `question_text`, `question_type`, "
-    "`options[].option_text`, `is_correct`, and `model_response_guide`. "
+    "`options[].option_text`, `is_correct`, `model_response_guide`, and "
+    "top-level `explanation`. "
     "Relational `SINGLE_CHOICE` and `MULTIPLE_CHOICE` both currently require "
     "exactly one correct option."
 )
@@ -52,6 +54,8 @@ _QUESTION_TYPE_RULES = (
     "currently allows exactly one `is_correct: true` option.\n"
     "- `ESSAY` must not send `options`; put the expected answer or grading "
     "guide in `model_response_guide`.\n"
+    "- `explanation` is question-level feedback; do not put explanations "
+    "inside options.\n"
     "- `order` must be unique within the quiz.\n"
     "- Each option `order` must be unique within the question.\n"
     "- Use the course Assessment endpoints for Figma multi-answer questions "
@@ -140,6 +144,8 @@ _QUESTION_TYPE_RULES = (
             f"{_QUESTION_TYPE_RULES}\n\n"
             "**Important:** Relational `SINGLE_CHOICE` and `MULTIPLE_CHOICE` "
             "require exactly one correct option via `options[].is_correct`. "
+            "Put feedback in the question-level `explanation` field; "
+            "`options[].explanation` is deprecated and ignored. "
             "Do not send Figma assessment fields like "
             "`type`, `question`, `correct_index`, `correct_indices`, "
             "`expected_answer`, or `options[].text` to this endpoint. "

@@ -14,7 +14,19 @@ class QuestionOptionSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = QuestionOption
-        fields = ["id", "option_text", "is_correct", "explanation", "order"]
+        fields = ["id", "option_text", "is_correct", "order"]
+
+    def to_internal_value(self, data):
+        """Accept old clients that still send option-level explanations.
+
+        Explanations are now question-level, so this field is intentionally
+        ignored instead of stored on the option row or exposed in Swagger.
+        """
+
+        if isinstance(data, dict) and "explanation" in data:
+            data = data.copy()
+            data.pop("explanation")
+        return super().to_internal_value(data)
 
 
 class QuestionSerializer(serializers.ModelSerializer):
@@ -31,6 +43,7 @@ class QuestionSerializer(serializers.ModelSerializer):
             "question_type",
             "points",
             "model_response_guide",
+            "explanation",
             "order",
             "options",
         ]
