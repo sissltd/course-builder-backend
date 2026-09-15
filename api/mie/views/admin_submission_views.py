@@ -10,6 +10,7 @@ from rest_framework import exceptions, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
+from api.mie.enums import MieSourceType
 from api.mie.filters import AdminSubmissionFilterSet
 from api.mie.models import CourseSubmission, SubmissionRejectionReason
 from api.mie.serializers.admin_submission_serializer import (
@@ -36,6 +37,17 @@ ADMIN_QUEUE_PARAMETERS = [
         type=str,
         required=False,
         description="Filter to one developer account by exact email.",
+    ),
+    OpenApiParameter(
+        name="source_type",
+        type=str,
+        enum=MieSourceType.values,
+        required=False,
+        description=(
+            "Filter by who stands behind the submitting account: EXTERNAL "
+            "for third-party developers, SYSTEM for platform-owned "
+            "integrations (the MIE crawler). Any other value returns 400."
+        ),
     ),
     OpenApiParameter(
         name="status",
@@ -126,8 +138,13 @@ class MieSubmissionAdminViewSet(viewsets.ReadOnlyModelViewSet):
                                     ),
                                     "target_audience": "intermediate",
                                 },
+                                "confidence_note": (
+                                    "620 backend job postings asked for Rust "
+                                    "this month, up 28% on last month."
+                                ),
                                 "developer_id": "a1b2c3d4-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
                                 "developer_email": "ada@rustdev.io",
+                                "source_type": "EXTERNAL",
                                 "payout_bypass": False,
                                 "demand_score": 87,
                                 "estimated_monthly_earnings": "4200.00",
@@ -188,8 +205,13 @@ class MieSubmissionAdminViewSet(viewsets.ReadOnlyModelViewSet):
                                 ),
                                 "target_audience": "intermediate",
                             },
+                            "confidence_note": (
+                                "620 backend job postings asked for Rust this "
+                                "month, up 28% on last month."
+                            ),
                             "developer_id": "a1b2c3d4-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
                             "developer_email": "ada@rustdev.io",
+                            "source_type": "EXTERNAL",
                             "payout_bypass": False,
                             "demand_score": 87,
                             "estimated_monthly_earnings": "4200.00",
@@ -259,8 +281,13 @@ class MieSubmissionAdminViewSet(viewsets.ReadOnlyModelViewSet):
                                     ),
                                     "target_audience": "intermediate",
                                 },
+                                "confidence_note": (
+                                    "620 backend job postings asked for Rust "
+                                    "this month, up 28% on last month."
+                                ),
                                 "developer_id": "a1b2c3d4-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
                                 "developer_email": "ada@rustdev.io",
+                                "source_type": "EXTERNAL",
                                 "payout_bypass": False,
                                 "demand_score": 87,
                                 "estimated_monthly_earnings": "4200.00",
@@ -333,8 +360,13 @@ class MieSubmissionAdminViewSet(viewsets.ReadOnlyModelViewSet):
                                     ),
                                     "target_audience": "intermediate",
                                 },
+                                "confidence_note": (
+                                    "620 backend job postings asked for Rust "
+                                    "this month, up 28% on last month."
+                                ),
                                 "developer_id": "a1b2c3d4-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
                                 "developer_email": "ada@rustdev.io",
+                                "source_type": "EXTERNAL",
                                 "payout_bypass": False,
                                 "demand_score": 87,
                                 "estimated_monthly_earnings": "4200.00",
@@ -433,8 +465,13 @@ class MieSubmissionAdminViewSet(viewsets.ReadOnlyModelViewSet):
                                 ),
                                 "target_audience": "intermediate",
                             },
+                            "confidence_note": (
+                                "620 backend job postings asked for Rust this "
+                                "month, up 28% on last month."
+                            ),
                             "developer_id": "a1b2c3d4-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
                             "developer_email": "ada@rustdev.io",
+                            "source_type": "EXTERNAL",
                             "payout_bypass": False,
                             "demand_score": 87,
                             "estimated_monthly_earnings": "4200.00",
@@ -487,9 +524,9 @@ class MieSubmissionAdminViewSet(viewsets.ReadOnlyModelViewSet):
             "**Prerequisites:** The submission must exist and be "
             "accessible.\n\n"
             "**Important:** Fires a SUBMISSION_PAYOUT_BYPASS_UPDATED "
-            "webhook to the developer immediately. Rejects silently if "
-            "the bypass is already in the requested state (returns the "
-            "current submission without changing it). This is a soft "
+            "webhook to the developer immediately. Returns 400 if the "
+            "bypass is already in the requested state, so a no-op toggle "
+            "changes nothing and fires no webhook. This is a soft "
             "toggle — it has no effect on approval status or rejection "
             "metadata."
         ),
@@ -514,8 +551,13 @@ class MieSubmissionAdminViewSet(viewsets.ReadOnlyModelViewSet):
                                 ),
                                 "target_audience": "intermediate",
                             },
+                            "confidence_note": (
+                                "620 backend job postings asked for Rust this "
+                                "month, up 28% on last month."
+                            ),
                             "developer_id": "a1b2c3d4-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
                             "developer_email": "ada@rustdev.io",
+                            "source_type": "EXTERNAL",
                             "payout_bypass": True,
                             "demand_score": 87,
                             "estimated_monthly_earnings": "4200.00",

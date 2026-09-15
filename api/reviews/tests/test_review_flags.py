@@ -25,6 +25,7 @@ class ReviewFlagApiTests(APITestCase):
         lesson = module.lessons.first()
 
         self.client.force_authenticate(self.reviewer)
+        self.client.post(f"/api/v1/review-queue/{course.id}/claim/")
         response = self.client.post(
             f"/api/v1/review-queue/{course.id}/reject/",
             {
@@ -62,6 +63,7 @@ class ReviewFlagApiTests(APITestCase):
     def test_reject_without_flags_still_works(self):
         course = self._submitted_course()
         self.client.force_authenticate(self.reviewer)
+        self.client.post(f"/api/v1/review-queue/{course.id}/claim/")
         response = self.client.post(
             f"/api/v1/review-queue/{course.id}/reject/",
             {"feedback": {"summary": "Not ready."}},
@@ -75,6 +77,9 @@ class ReviewFlagApiTests(APITestCase):
     def test_flag_missing_title_rejected(self):
         course = self._submitted_course()
         self.client.force_authenticate(self.reviewer)
+        # Claim first, so the 400 below is the flag's missing title rather
+        # than an unclaimed seat.
+        self.client.post(f"/api/v1/review-queue/{course.id}/claim/")
         response = self.client.post(
             f"/api/v1/review-queue/{course.id}/reject/",
             {
@@ -112,6 +117,7 @@ class ReviewFlagApiTests(APITestCase):
 
     def test_service_level_flags_via_review_service(self):
         course = self._submitted_course()
+        course = course_service.claim_for_review(course=course, reviewer=self.reviewer)
         review_action = review_service.reject_course(
             course=course,
             reviewer=self.reviewer,

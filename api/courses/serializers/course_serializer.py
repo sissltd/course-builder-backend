@@ -3,7 +3,7 @@ from rest_framework import serializers
 
 from api.catalog.serializers.category_serializer import CategoryMiniSerializer
 from api.catalog.serializers.topic_serializer import TopicMiniSerializer
-from api.courses.enums import CourseSourceType, DistributionChannel
+from api.courses.enums import CourseSourceType, CourseStatus, DistributionChannel
 from api.courses.models import Course, CourseDistribution, CourseVersion
 from api.courses.serializers.assessment_serializer import AssessmentSerializer
 from api.courses.serializers.module_serializer import ModuleSerializer
@@ -15,7 +15,7 @@ from api.reviews.serializers import (
     ReviewCommentSerializer,
 )
 from api.courses.services import course_service
-from api.reviews.enums import ReviewActionType
+from api.reviews.enums import ReviewActionType, ReviewStage
 from api.reviews.serializers import ReviewActionSerializer  # noqa: F401 (re-export)
 
 
@@ -72,8 +72,28 @@ def _latest_review_action(course, *, action=None):
     )
 
 
+_REVIEW_STAGE_HELP_TEXT = (
+    "Review seat the course is at: CONTENT (First Review), SECOND_REVIEW or "
+    "VERIFICATION while Submitted/In Review, QA during QA verification. "
+    "Courses outside review report CONTENT."
+)
+
+
+def _review_stage(course) -> str:
+    """The review seat shown for `course`.
+
+    Courses outside review fall back to CONTENT, the value every row showed
+    before the chain existed, so screens reading it for Draft, Approved or
+    Published courses see no change.
+    """
+
+    if course.status == CourseStatus.QA_VERIFICATION:
+        return ReviewStage.QA
+    return course.review_stage or ReviewStage.CONTENT
+
+
 def _current_review_assignment(course):
-    stage = "QA" if course.status == "QA_VERIFICATION" else "CONTENT"
+    stage = _review_stage(course)
     return next(
         (item for item in course.review_assignments.all() if item.stage == stage),
         None,
@@ -774,6 +794,14 @@ class ReviewerCourseDetailSerializer(CourseDetailSerializer):
     channel_summary = serializers.SerializerMethodField(
         help_text="Human-readable channel list shown in the Published table."
     )
+    review_stage = serializers.SerializerMethodField(
+        help_text=(
+            "Content review seat this course is waiting at or held in: "
+            "CONTENT (First Review), SECOND_REVIEW, VERIFICATION, or QA once "
+            "it reaches QA verification. Tells the reviewer which decision "
+            "they are about to make."
+        )
+    )
 
     class Meta(CourseDetailSerializer.Meta):
         fields = CourseDetailSerializer.Meta.fields + [
@@ -787,6 +815,7 @@ class ReviewerCourseDetailSerializer(CourseDetailSerializer):
             "price",
             "channels",
             "channel_summary",
+            "review_stage",
         ]
         read_only_fields = fields
 
@@ -796,6 +825,9 @@ class ReviewerCourseDetailSerializer(CourseDetailSerializer):
 
     def get_source_label(self, obj) -> str:
         return _SOURCE_LABELS.get(obj.source_type, obj.get_source_type_display())
+
+    def get_review_stage(self, obj) -> str:
+        return _review_stage(obj)
 
     @extend_schema_field(ReviewerInformationSerializer())
     def get_review_information(self, obj) -> dict:

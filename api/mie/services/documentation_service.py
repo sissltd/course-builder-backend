@@ -38,6 +38,7 @@ from api.mie.enums import (
     WebhookDeliveryStatus,
     WebhookEventType,
 )
+from api.mie.models.course_submission import CONFIDENCE_NOTE_MAX_LENGTH
 from api.mie.services import webhook_dispatcher
 from api.mie.services.key_service import API_KEY_PREFIX
 from api.mie.services.reference import REFERENCE_SUFFIXES
@@ -277,8 +278,8 @@ def _meta() -> dict:
             "code, not maintained by hand."
         ),
         "audience": (
-            "External developers integrating with the MIE (Massive Idea "
-            "Engine) course-idea pipeline."
+            "External developers integrating with the MIE (Market "
+            "Intelligence Engine) course-idea pipeline."
         ),
         "read_this_if": (
             "You want to submit course ideas programmatically and react to "
@@ -880,6 +881,15 @@ def _endpoints(base_url: str) -> list[dict]:
                     "string, required, 1-255 characters after trimming. The "
                     "sole dedup key."
                 ),
+                "confidence_note": (
+                    "string, optional, up to "
+                    f"{CONFIDENCE_NOTE_MAX_LENGTH} characters after "
+                    "trimming. Your evidence that the idea has demand - "
+                    "job-posting counts, search volume, community "
+                    "questions. The one other key we read out of the body "
+                    "into its own field, so reviewers see it beside the "
+                    "title instead of hunting through the payload."
+                ),
                 "<anything else>": (
                     "Optional. The entire JSON body is stored verbatim and "
                     "shown to reviewers - description, audience, outline, "
@@ -890,6 +900,10 @@ def _endpoints(base_url: str) -> list[dict]:
                 "title": SAMPLE_TITLE,
                 "description": "Systems programming for backend engineers",
                 "audience": "mid-level backend developers",
+                "confidence_note": (
+                    "620 backend job postings asked for Rust this month, up "
+                    "28% on last month."
+                ),
                 "your_internal_id": "idea-4417",
             },
             "success_status": 201,
@@ -909,9 +923,9 @@ def _endpoints(base_url: str) -> list[dict]:
                 "created_datetime": "When we received it.",
             },
             "errors": [
-                {"status": 400, "when": "Missing title, empty title, title over 255 characters, or a non-object body."},
+                {"status": 400, "when": "Missing title, empty title, title over 255 characters, a non-string or over-long confidence_note, or a non-object body."},
                 {"status": 401, "when": "Missing, invalid, suspended, or inactive credentials."},
-                {"status": 429, "when": "Ingest rate limit exceeded."},
+                {"status": 429, "when": "Ingest rate limit exceeded, or - for platform-owned accounts only - the rolling 24-hour submission cap. Either way, wait the seconds in Retry-After."},
             ],
             "notes": [
                 "201 means 'received and classified', NOT 'queued'. Always branch on `status`.",
@@ -1461,6 +1475,24 @@ def _rate_limits() -> dict:
                     "For bulk imports, pace yourself under this ceiling "
                     "rather than bursting into 429s. There is no batch "
                     "endpoint - one idea per request."
+                ),
+            },
+            {
+                "endpoint": f"POST {API_ROOT}/mie/v1/submissions/",
+                "limit": (
+                    f"{settings.MIE_SYSTEM_DAILY_SUBMISSION_CAP} per rolling "
+                    "24 hours - platform-owned accounts only"
+                ),
+                "why": (
+                    "A daily ceiling on the platform's own crawler, so a "
+                    "broken run cannot bury the review queue. Third-party "
+                    "developer accounts are never subject to it."
+                ),
+                "advice": (
+                    "Counted in the database over every outcome, dedup "
+                    "short-circuits included, so resubmitting duplicates "
+                    "spends the allowance too. Retry-After says when the "
+                    "oldest counted submission leaves the window."
                 ),
             },
         ],

@@ -9,9 +9,17 @@ class ReviewActionType(models.TextChoices):
 
 
 class ReviewStage(models.TextChoices):
-    """The two mandatory quality gates for new course submissions."""
+    """The review seats a new course submission passes through, in order.
 
-    CONTENT = "CONTENT", "Content Review"
+    The first three are content seats, each held by a different person;
+    QA is the media gate that follows them. CONTENT keeps the value it had
+    when content review was a single seat, so existing rows need no
+    rename - only its label moved to "First Review".
+    """
+
+    CONTENT = "CONTENT", "First Review"
+    SECOND_REVIEW = "SECOND_REVIEW", "Second Review"
+    VERIFICATION = "VERIFICATION", "Verification"
     QA = "QA", "QA Verification"
 
 

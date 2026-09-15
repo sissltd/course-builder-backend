@@ -2,7 +2,7 @@ import django_filters
 from django.db.models import Q
 
 from api.catalog.enums import TrackPreference
-from api.courses.enums import CourseSourceType
+from api.courses.enums import CourseSourceType, CourseStatus
 from api.courses.models import Course
 from api.reviews.enums import ReviewStage
 from api.reviews.enums import ReviewActionType
@@ -123,7 +123,13 @@ class AdminCourseFilter(CourseFilter):
         field_name="review_assignments__reviewer_id", distinct=True
     )
     review_stage = django_filters.ChoiceFilter(
-        choices=ReviewStage.choices, method="filter_review_stage"
+        choices=ReviewStage.choices,
+        method="filter_review_stage",
+        label=(
+            "Review seat. CONTENT, SECOND_REVIEW or VERIFICATION match "
+            "Submitted/In Review courses at that seat; QA matches courses in "
+            "QA verification."
+        ),
     )
 
     class Meta(CourseFilter.Meta):
@@ -142,6 +148,13 @@ class AdminCourseFilter(CourseFilter):
         )
 
     def filter_review_stage(self, queryset, name, value):
+        """A content seat means a course at that seat right now, so only
+        Submitted/In Review courses match it. QA has no seat on the course
+        and is matched by status."""
+
         if value == ReviewStage.QA:
-            return queryset.filter(status="QA_VERIFICATION")
-        return queryset.exclude(status="QA_VERIFICATION")
+            return queryset.filter(status=CourseStatus.QA_VERIFICATION)
+        return queryset.filter(
+            status__in=(CourseStatus.SUBMITTED, CourseStatus.IN_REVIEW),
+            review_stage=value,
+        )

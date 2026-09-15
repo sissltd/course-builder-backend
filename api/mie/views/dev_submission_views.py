@@ -5,7 +5,7 @@ from drf_spectacular.utils import (
     OpenApiResponse,
     extend_schema,
 )
-from rest_framework import status
+from rest_framework import exceptions, status
 from rest_framework.filters import OrderingFilter, SearchFilter
 from rest_framework.generics import ListAPIView
 from rest_framework.response import Response
@@ -15,6 +15,7 @@ from rest_framework.views import APIView
 from api.mie.authentication import MieDeveloperAuthentication
 from api.mie.enums import SubmissionStatus
 from api.mie.models import CourseSubmission
+from api.mie.models.course_submission import CONFIDENCE_NOTE_MAX_LENGTH
 from api.mie.permissions import IsMieDeveloper
 from api.mie.serializers.dev_submission_serializer import DevSubmissionSerializer
 from api.mie.serializers.submission_serializer import (
@@ -40,6 +41,43 @@ QUEUE_FILTER_PARAMETERS = [
     ),
 ]
 
+DAILY_CAP_DETAIL = "Daily submission cap reached for this system account."
+
+# Two limits answer 429 on ingest, so the shared rate_limited bucket is
+# extended with the daily-cap case rather than replaced by a hand-written one.
+INGEST_RATE_LIMITED_RESPONSES = {
+    status.HTTP_429_TOO_MANY_REQUESTS: OpenApiResponse(
+        description=(
+            "Too many submissions. Two limits answer 429: the per-minute "
+            "ingest rate limit, which applies to every caller, and - for "
+            "platform-owned SYSTEM accounts only - the rolling 24-hour "
+            "submission cap. Either way the `Retry-After` header carries "
+            "the number of seconds to wait."
+        ),
+        examples=[
+            *STANDARD_ERROR_RESPONSES["rate_limited"][
+                status.HTTP_429_TOO_MANY_REQUESTS
+            ].examples,
+            OpenApiExample(
+                name="Daily submission cap reached",
+                value={
+                    "errors": [
+                        {
+                            "type": "client_error",
+                            "code": "throttled",
+                            "message": (
+                                f"{DAILY_CAP_DETAIL} Expected available in "
+                                "5400 seconds."
+                            ),
+                            "field_name": None,
+                        }
+                    ]
+                },
+            ),
+        ],
+    ),
+}
+
 
 @extend_schema(tags=["Developer — MIE Submissions"])
 class MieSubmissionIngestView(APIView):
@@ -58,20 +96,29 @@ class MieSubmissionIngestView(APIView):
             "whether to queue it for admin review. The response status indicates "
             "which outcome applied: new submission queued, duplicate already in "
             "queue, duplicate matching an existing course, or previously "
-            "rejected.\n\n"
+            "rejected. An optional `confidence_note` is lifted out alongside "
+            "the title so reviewers see the evidence as its own field.\n\n"
 
             "Called by a developer integration whenever it has a new course "
             "idea to submit into the MIE pipeline.\n\n"
 
             "**Auth:** Requires a valid MIE developer API key.\n\n"
 
-            "**Prerequisites:** The developer account must be in ACTIVE "
+            "**Prerequisites:** The developer account must be in APPROVED "
             "status (approved by a superadmin).\n\n"
 
             "**Important:** A signed webhook event is fired immediately for "
             "every outcome, including short-circuits. The dedup checks are "
             "sequential and non-idempotent — resubmitting the same title may "
-            "produce a different result if queue contents have changed."
+            "produce a different result if queue contents have changed. "
+            "`confidence_note`, when sent, must be a string of at most "
+            f"{CONFIDENCE_NOTE_MAX_LENGTH} characters. Platform-owned SYSTEM "
+            "accounts (the MIE crawler) are also held to a rolling 24-hour "
+            "submission cap that counts every outcome, dedup short-circuits "
+            "included: past it nothing is stored and the endpoint returns "
+            "429 with Retry-After set to when the oldest counted submission "
+            "leaves the window. External developer accounts are never "
+            "subject to that cap."
         ),
         request=SubmissionIngestSerializer,
         examples=[
@@ -80,6 +127,21 @@ class MieSubmissionIngestView(APIView):
                 request_only=True,
                 value={
                     "title": "Introduction to Machine Learning with Python",
+                },
+            ),
+            OpenApiExample(
+                name="Idea with a confidence note",
+                request_only=True,
+                value={
+                    "title": "Kubernetes Cost Optimisation for Startups",
+                    "description": (
+                        "Right-sizing clusters, spot capacity and autoscaling "
+                        "for teams without a platform engineer."
+                    ),
+                    "confidence_note": (
+                        "940 job postings mention Kubernetes cost work this "
+                        "month, up 34% on last month."
+                    ),
                 },
             ),
         ],
@@ -93,7 +155,7 @@ class MieSubmissionIngestView(APIView):
             ),
             **STANDARD_ERROR_RESPONSES["validation"],
             **STANDARD_ERROR_RESPONSES["auth"],
-            **STANDARD_ERROR_RESPONSES["rate_limited"],
+            **INGEST_RATE_LIMITED_RESPONSES,
             **STANDARD_ERROR_RESPONSES["server"],
         },
     )
@@ -105,9 +167,16 @@ class MieSubmissionIngestView(APIView):
             )
         serializer = SubmissionIngestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        submission, _queued = submission_service.submit_idea(
-            developer=request.auth, payload=dict(request.data)
-        )
+        try:
+            submission, _queued = submission_service.submit_idea(
+                developer=request.auth, payload=dict(request.data)
+            )
+        except submission_service.DailySubmissionCapReached as exc:
+            # The same 429 + Retry-After the per-minute throttle answers
+            # with, so a client that already honours one honours both.
+            raise exceptions.Throttled(
+                wait=exc.retry_after_seconds, detail=DAILY_CAP_DETAIL
+            ) from exc
         return Response(
             SubmissionIngestResponseSerializer(
                 submission, context={"request": request}
@@ -145,7 +214,7 @@ class MieSubmissionQueueView(ListAPIView):
 
             "**Auth:** Requires a valid MIE developer API key.\n\n"
 
-            "**Prerequisites:** The developer account must be in ACTIVE "
+            "**Prerequisites:** The developer account must be in APPROVED "
             "status (approved by a superadmin).\n\n"
 
             "**Important:** Results are scoped server-side to the "

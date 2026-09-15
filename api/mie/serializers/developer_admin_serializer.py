@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from api.mie.enums import MiePlanType
+from api.mie.enums import MiePlanType, MieSourceType
 from api.mie.models import DeveloperAccount
 
 
@@ -37,6 +37,18 @@ class DeveloperAccountAdminSerializer(serializers.ModelSerializer):
     api_key_preview = serializers.SerializerMethodField(
         help_text="Masked prefix of the current API key, or null before issuance."
     )
+    # Declared rather than inferred: the model field is editable=False, so a
+    # ModelSerializer would fall back to a bare read-only string and the
+    # documented value set would disappear from the schema.
+    source_type = serializers.ChoiceField(
+        choices=MieSourceType.choices,
+        read_only=True,
+        help_text=(
+            "EXTERNAL for a third-party developer, SYSTEM for a platform-"
+            "owned integration (the MIE crawler). Set only by the "
+            "provisioning command; no registration path can change it."
+        ),
+    )
 
     class Meta:
         model = DeveloperAccount
@@ -46,6 +58,7 @@ class DeveloperAccountAdminSerializer(serializers.ModelSerializer):
             "webhook_url",
             "status",
             "plan_type",
+            "source_type",
             "api_key_preview",
             "api_key_issued_at",
             "api_key_last_used_at",

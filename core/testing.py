@@ -143,12 +143,13 @@ def reseed_reference_data() -> None:
     from api.reviews.models import QualityCheckCriterion
 
     categories = {}
-    for name, description, price, track in SEED_CATEGORIES:
+    # Category no longer carries a description; the seed tuples keep theirs
+    # as documentation of what each category covers.
+    for name, _description, price, track in SEED_CATEGORIES:
         category, _ = Category.objects.get_or_create(
             name=name,
             defaults={
                 "slug": slugify(name)[:160],
-                "description": description,
                 # Seed every tier at the same rate; differentiating them is
                 # a deliberate admin edit, not a fixture concern.
                 "creator_price_beginner": price,

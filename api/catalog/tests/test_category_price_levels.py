@@ -173,8 +173,11 @@ class CategoryStatsTests(APITestCase):
 
 
 class CategoryListShapeTests(APITestCase):
+    """The full list (per-tier pricing, ARCHIVED filter) is an Admin Writer
+    surface; creators never see it - only the picker payload."""
+
     def setUp(self):
-        self.client.force_authenticate(make_user(role=UserRole.COURSE_CREATOR))
+        self.client.force_authenticate(make_user(role=UserRole.STAFF_WRITER))
 
     def test_list_exposes_the_three_tiers_and_icon(self):
         category = make_category(icon="rocket")

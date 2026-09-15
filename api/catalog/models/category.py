@@ -9,12 +9,18 @@ from django.utils.text import slugify
 from api.catalog.enums import CategoryStatus, TrackPreference
 from core.mixins import (
     DateHistoryModelMixin,
+    SoftDeleteModelMixin,
     UserHistoryModelMixin,
     UUIDPrimaryKeyModelMixin,
 )
 
 
-class Category(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMixin):
+class Category(
+    UUIDPrimaryKeyModelMixin,
+    DateHistoryModelMixin,
+    SoftDeleteModelMixin,
+    UserHistoryModelMixin,
+):
     """A staff-managed course category with fixed creator pricing.
 
     Price changes are not retroactive: Course.creator_price_snapshot captures
@@ -37,12 +43,6 @@ class Category(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModel
             "URL-safe identifier derived from the name when omitted. Used for "
             "lookups and discovery."
         ),
-    )
-    description = models.TextField(
-        verbose_name=_("Description"),
-        blank=True,
-        default="",
-        help_text=_("Description of the category shown to creators."),
     )
     creator_price_beginner = models.DecimalField(
         verbose_name=_("Creator Price - Beginner"),

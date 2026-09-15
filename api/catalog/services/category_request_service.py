@@ -22,7 +22,7 @@ from api.catalog.services import category_service
 from api.notification.models import Notification
 from api.notification.services.email_service import send_templated_email
 from api.users.models import User
-from api.users.permissions import IsAdminRole
+from api.users.permissions import CanManageCategories, IsAdminRole
 
 
 def submit_request(
@@ -69,7 +69,6 @@ def approve_request(
     fields = {
         "name": request.name,
         "slug": slugify(request.name),
-        "description": request.description,
         # The approving admin supplies one rate; every tier starts there
         # and can be differentiated afterwards through the category editor.
         "creator_price_beginner": creator_price,
@@ -141,7 +140,7 @@ def require_admin(actor: User) -> None:
 
     from api.users.permissions import require_role
 
-    require_role(actor, IsAdminRole.allowed_roles)
+    require_role(actor, CanManageCategories.allowed_roles)
 
 
 def _notify_approved(request: CategoryRequest) -> None:

@@ -4,6 +4,8 @@ from api.users.views import (
     AdminUserActivityLogListView,
     KYCReviewViewSet,
     KYCVerificationView,
+    LivenessAvatarSettingView,
+    LivenessVerificationView,
     MeView,
     QueueBehaviourPreferenceView,
     ReviewerAvailabilityView,
@@ -35,6 +37,12 @@ urlpatterns = [
         name="user-activity-log-export",
     ),
     path("users/me/kyc/", KYCVerificationView.as_view(), name="user-kyc"),
+    path("users/me/kyc/liveness/", LivenessVerificationView.as_view(), name="user-me-liveness"),
+    path(
+        "users/kyc/set-avatar/<uuid:user_id>/",
+        LivenessAvatarSettingView.as_view(),
+        name="user-me-set-avatar",
+    ),
     path(
         "users/kyc-review/",
         KYCReviewViewSet.as_view({"get": "list"}),
@@ -54,6 +62,11 @@ urlpatterns = [
         "users/kyc-review/<uuid:pk>/reject/",
         KYCReviewViewSet.as_view({"post": "reject"}),
         name="kyc-review-reject",
+    ),
+    path(
+        "users/kyc-review/<uuid:pk>/flag/",
+        KYCReviewViewSet.as_view({"post": "flag"}),
+        name="kyc-review-flag",
     ),
     path(
         "users/admin/",

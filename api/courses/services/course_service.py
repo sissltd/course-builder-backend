@@ -7,6 +7,7 @@ from django.db.models import (
     ExpressionWrapper,
     F,
     IntegerField,
+    Q,
     QuerySet,
     Value,
     When,
@@ -34,6 +35,7 @@ from api.reviews.models import ReviewAssignment
 from api.reviews.services import (
     quality_check_service,
     quality_review_service,
+    review_service,
 )
 from api.notification.models import Notification
 from api.notification.services import sla_threshold_service
@@ -239,18 +241,17 @@ def submit_course(*, course: Course, actor: User) -> Course:
                 else course.category.price_for(course.difficulty_level)
             )
         )
-        course.status = CourseStatus.SUBMITTED
         course.submitted_at = timezone.now()
         course.updated_by = actor
         course.save(
             update_fields=[
                 "creator_price_snapshot",
-                "status",
                 "submitted_at",
                 "updated_by",
                 "updated_datetime",
             ]
         )
+        start_review_cycle(course=course)
         # Persist a reviewer-visible baseline score when the course enters the
         # queue. More specialised scanners can append their own runs later.
         quality_review_service.run_baseline_checks(course=course)
@@ -271,10 +272,40 @@ def submit_course(*, course: Course, actor: User) -> Course:
     return course
 
 
-def claim_for_review(*, course: Course, reviewer: User) -> Course:
-    """Transition a Submitted course to In Review.
+def start_review_cycle(*, course: Course) -> Course:
+    """Send `course` to the pending queue at First Review, every seat empty.
 
-    Idempotent for the assigned reviewer. A row lock makes simultaneous claims
+    Both ways into review call this - submit_course and an approved appeal
+    (course_appeal_service.approve_appeal) - so no cycle inherits the last
+    one's claimants or completion stamps. Four eyes depends on that: it
+    reads every completed seat it finds as part of the current cycle. QA's
+    row is cleared too, otherwise a resubmitted course would still be
+    "assigned to another QA reviewer" from its previous pass.
+    """
+
+    with transaction.atomic():
+        course.status = CourseStatus.SUBMITTED
+        course.review_stage = ReviewStage.CONTENT
+        course.save(update_fields=["status", "review_stage", "updated_datetime"])
+        ReviewAssignment.objects.filter(course=course).update(
+            reviewer=None,
+            claimed_at=None,
+            completed_at=None,
+            updated_datetime=timezone.now(),
+        )
+    return course
+
+
+def claim_for_review(*, course: Course, reviewer: User) -> Course:
+    """Claim the content seat a Submitted course is waiting at.
+
+    The seat decides who may claim it (review_service.SEAT_ROLES): First
+    and Second Review take a Creator Reviewer, Verification takes a
+    Verifier, and the Admin tier may take any seat. Four eyes applies too -
+    whoever decided an earlier seat of this cycle cannot claim a later one.
+    Both refusals are PermissionDenied.
+
+    Idempotent for the seat's holder. A row lock makes simultaneous claims
     exclusive; a different reviewer receives a validation error.
     Raises ValidationError for any other status. A reviewer marked
     Unavailable cannot make a *new* claim (checked after the idempotent
@@ -287,34 +318,33 @@ def claim_for_review(*, course: Course, reviewer: User) -> Course:
     )
     with transaction.atomic():
         course = Course.objects.select_for_update().get(pk=course.pk)
-        assignment = ReviewAssignment.objects.filter(
-            course=course, stage=ReviewStage.CONTENT
-        ).first()
+        seat = review_service.open_seat(course=course, verb="claimed")
+        review_service.require_seat_access(course=course, seat=seat, user=reviewer)
+        assignment = ReviewAssignment.objects.filter(course=course, stage=seat).first()
         if course.status == CourseStatus.IN_REVIEW:
             if assignment and assignment.reviewer_id == reviewer.id:
                 return course
             raise exceptions.ValidationError(
                 "This course is already assigned to another reviewer."
             )
-        if course.status != CourseStatus.SUBMITTED:
-            raise exceptions.ValidationError(
-                f"Course cannot be claimed from status '{course.status}'."
-            )
         reviewer_availability_service.require_reviewer_available(user=reviewer)
 
         course.status = CourseStatus.IN_REVIEW
         course.save(update_fields=["status", "updated_datetime"])
-        assignment, _ = ReviewAssignment.objects.get_or_create(
-            course=course, stage=ReviewStage.CONTENT
-        )
+        assignment = assignment or ReviewAssignment(course=course, stage=seat)
         assignment.reviewer = reviewer
-        assignment.claimed_at = assignment.claimed_at or timezone.now()
-        assignment.save(update_fields=["reviewer", "claimed_at", "updated_datetime"])
+        # A Submitted seat is never held (start_review_cycle clears it), so
+        # this is always a fresh claim.
+        assignment.claimed_at = timezone.now()
+        assignment.save()
     activity_service.log_activity(
         user=reviewer,
         category=UserActivityCategoryEnums.COURSE,
         action=UserActivityActionEnums.COURSE_ASSIGNED,
-        summary=f"Course '{course.title}' assigned to you.",
+        summary=(
+            f"Course '{course.title}' assigned to you for "
+            f"{ReviewStage(seat).label}."
+        ),
         target=course,
     )
     return course
@@ -485,6 +515,7 @@ def get_review_queue(
     sort_order: str | None = None,
     track_filter: str | None = None,
     sla_user: User | None = None,
+    seats_for: User | None = None,
 ) -> QuerySet[Course]:
     """Return courses awaiting review.
 
@@ -499,6 +530,13 @@ def get_review_queue(
 
     `track_filter` accepts a QueueTrackFilter value and narrows to courses
     whose category matches; NONE returns an empty queue by design.
+
+    `seats_for` narrows to the content seats that user can take right now:
+    the seats their role holds (review_service.SEAT_ROLES), minus courses
+    where four eyes locks them out because they decided an earlier seat of
+    the current cycle. The Admin tier may take any seat, so it isn't
+    narrowed. The Pending screen passes it; the other screens list every
+    course in their status.
     """
 
     statuses = status_in or [CourseStatus.SUBMITTED, CourseStatus.IN_REVIEW]
@@ -513,6 +551,21 @@ def get_review_queue(
             "distribution_channels",
         )
     )
+
+    # Both conditions ride in the same SQL (the lockout is a subquery), so
+    # the queue's query count doesn't grow with the rows it returns.
+    if seats_for is not None and not review_service.is_admin_tier(seats_for):
+        seats = review_service.claimable_seats(user=seats_for)
+        at_a_claimable_seat = Q(review_stage__in=seats)
+        if ReviewStage.CONTENT in seats:
+            # A course sitting in review with no seat recorded has not started
+            # the chain. It belongs at First Review rather than nowhere -
+            # without this it would be invisible to every reviewer, which is
+            # also the fallback the course serializer reports for it.
+            at_a_claimable_seat |= Q(review_stage="")
+        queryset = queryset.filter(at_a_claimable_seat).exclude(
+            pk__in=review_service.decided_seats(user=seats_for).values("course_id")
+        )
 
     # A reviewer who turned every track off asked for an empty queue;
     # honour it rather than quietly showing them everything.

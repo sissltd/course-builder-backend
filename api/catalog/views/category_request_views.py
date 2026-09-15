@@ -26,6 +26,22 @@ _REQUEST_EXAMPLE = {
     "created_datetime": "2026-09-01T10:00:00Z",
 }
 
+_APPROVED_EXAMPLE = {
+    **_REQUEST_EXAMPLE,
+    "status": "APPROVED",
+    "resulting_category": {
+        "id": "5f4d3c2b-1a09-48e7-b6a5-9c8d7e6f5a4b",
+        "name": "Data Science",
+    },
+    "reviewed_at": "2026-09-02T14:30:00Z",
+}
+
+_REJECTED_EXAMPLE = {
+    **_REQUEST_EXAMPLE,
+    "status": "REJECTED",
+    "reviewed_at": "2026-09-02T09:15:00Z",
+}
+
 
 @extend_schema(tags=["Creator — Category Requests"])
 class CategoryRequestViewSet(ModelViewSet):
@@ -67,15 +83,15 @@ class CategoryRequestViewSet(ModelViewSet):
         summary="Request a new category",
         description=(
             "Files a Pending request for a category that does not exist "
-            "yet, and notifies admins in-app.\\n\\n"
-            "Call this from the \\u201ccan't find your preferred category?\\u201d "
+            "yet, and notifies admins in-app.\n\n"
+            "Call this from the \u201ccan't find your preferred category?\u201d "
             "link on course creation. The category is **not** usable until "
-            "an admin approves it \\u2014 the creator is emailed when that "
-            "happens.\\n\\n"
-            "**Auth:** Course Creator or Admin.\\n\\n"
-            "**Prerequisites:** None.\\n\\n"
+            "an admin approves it \u2014 the creator is emailed when that "
+            "happens.\n\n"
+            "**Auth:** Course Creator or Admin.\n\n"
+            "**Prerequisites:** None.\n\n"
             "**Important:** A name matching an existing category is not "
-            "rejected automatically \\u2014 whether it is a real duplicate "
+            "rejected automatically \u2014 whether it is a real duplicate "
             "is left to the reviewing admin. Nothing is created in the "
             "catalog at this point."
         ),
@@ -109,12 +125,12 @@ class CategoryRequestViewSet(ModelViewSet):
         summary="List category requests",
         description=(
             "Returns category requests, newest first. A Course Creator sees "
-            "only their own; an Admin sees every request.\\n\\n"
+            "only their own; an Admin sees every request.\n\n"
             "Call this to show a creator the state of what they asked for, "
-            "or to populate the admin review queue.\\n\\n"
-            "**Auth:** Course Creator or Admin.\\n\\n"
-            "**Prerequisites:** None.\\n\\n"
-            "**Important:** Scoping is server-side \\u2014 no query "
+            "or to populate the admin review queue.\n\n"
+            "**Auth:** Course Creator or Admin.\n\n"
+            "**Prerequisites:** None.\n\n"
+            "**Important:** Scoping is server-side \u2014 no query "
             "parameter lets a creator see another creator's requests."
         ),
         responses={
@@ -134,12 +150,12 @@ class CategoryRequestViewSet(ModelViewSet):
     @extend_schema(
         summary="Retrieve a category request",
         description=(
-            "Returns one category request.\\n\\n"
-            "**Auth:** Course Creator (own requests only) or Admin.\\n\\n"
+            "Returns one category request.\n\n"
+            "**Auth:** Course Creator (own requests only) or Admin.\n\n"
             "**Prerequisites:** The request must exist and be visible to "
-            "the caller.\\n\\n"
+            "the caller.\n\n"
             "**Important:** A creator requesting another creator's request "
-            "gets 404, not 403 \\u2014 existence is not leaked."
+            "gets 404, not 403 \u2014 existence is not leaked."
         ),
         responses={
             200: OpenApiResponse(
@@ -159,16 +175,21 @@ class CategoryRequestViewSet(ModelViewSet):
         summary="Approve a category request",
         description=(
             "Approves a Pending request: creates the real Category with the "
-            "supplied creator price, links it to the request, and emails "
-            "the requester.\\n\\n"
-            "**Auth:** Admin.\\n\\n"
-            "**Prerequisites:** The request must be Pending.\\n\\n"
+            "supplied rate, links it to the request, and emails the "
+            "requester.\n\n"
+            "Call this from the admin review queue once the request has "
+            "been checked and the payout decided.\n\n"
+            "**Auth:** Admin.\n\n"
+            "**Prerequisites:** The request must be Pending.\n\n"
             "**Important:** `creator_price` is required and is set by you, "
-            "not the requester \\u2014 it is what the platform pays per "
-            "approved course in this category. A name or slug colliding "
-            "with an existing category returns 400 and nothing is created. "
-            "If the notification email fails the approval still stands."
+            "not the requester \u2014 it is what the platform pays per "
+            "approved course in this category, and it seeds all three "
+            "difficulty tiers until they are differentiated in the category "
+            "editor. A name or slug colliding with an existing category "
+            "returns 400 and nothing is created. If the notification email "
+            "fails the approval still stands."
         ),
+        tags=["Admin — Category Requests"],
         request=CategoryRequestApproveSerializer,
         examples=[
             OpenApiExample(
@@ -179,6 +200,7 @@ class CategoryRequestViewSet(ModelViewSet):
             200: OpenApiResponse(
                 response=CategoryRequestSerializer,
                 description="The approved request, with the new category attached.",
+                examples=[OpenApiExample(name="Approved", value=_APPROVED_EXAMPLE)],
             ),
             **STANDARD_ERROR_RESPONSES["validation"],
             **STANDARD_ERROR_RESPONSES["auth"],
@@ -201,17 +223,21 @@ class CategoryRequestViewSet(ModelViewSet):
     @extend_schema(
         summary="Reject a category request",
         description=(
-            "Closes a Pending request without creating a Category.\\n\\n"
-            "**Auth:** Admin.\\n\\n"
-            "**Prerequisites:** The request must be Pending.\\n\\n"
-            "**Important:** No email is sent \\u2014 there is no "
+            "Closes a Pending request without creating a Category.\n\n"
+            "Call this from the admin review queue to decline a request that "
+            "should not become a category.\n\n"
+            "**Auth:** Admin.\n\n"
+            "**Prerequisites:** The request must be Pending.\n\n"
+            "**Important:** No email is sent \u2014 there is no "
             "rejection-notice screen. The request is retained for history."
         ),
+        tags=["Admin — Category Requests"],
         request=None,
         responses={
             200: OpenApiResponse(
                 response=CategoryRequestSerializer,
                 description="The rejected request.",
+                examples=[OpenApiExample(name="Rejected", value=_REJECTED_EXAMPLE)],
             ),
             **STANDARD_ERROR_RESPONSES["validation"],
             **STANDARD_ERROR_RESPONSES["auth"],

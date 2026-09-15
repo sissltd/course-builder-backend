@@ -30,6 +30,10 @@ class ReviewQueueApiTests(APITestCase):
     def setUp(self):
         self.creator = make_user(role=UserRole.COURSE_CREATOR)
         self.reviewer = make_user(role=UserRole.CREATOR_REVIEWER)
+        # Content review runs over three seats held by three different
+        # people, so reaching QA needs a second reviewer and a verifier.
+        self.second_reviewer = make_user(role=UserRole.CREATOR_REVIEWER)
+        self.verifier = make_user(role=UserRole.STAFF_VERIFIER)
         self.qa_reviewer = make_user(role=UserRole.QA_REVIEWER)
         self.admin = make_user(role=UserRole.ADMIN)
         self.category = make_category(
@@ -44,6 +48,18 @@ class ReviewQueueApiTests(APITestCase):
             creator=self.creator, category=category or self.category
         )
         return course_service.submit_course(course=course, actor=self.creator)
+
+    def _pass_content_review(self, course):
+        """Claim and approve all three content seats, leaving the course in QA."""
+
+        for reviewer in (self.reviewer, self.second_reviewer, self.verifier):
+            self.client.force_authenticate(reviewer)
+            self.client.post(f"/api/v1/review-queue/{course.id}/claim/")
+            response = self.client.post(
+                f"/api/v1/review-queue/{course.id}/approve/", {}, format="json"
+            )
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+        return response
 
     def test_queue_lists_submitted_and_in_review_ordered_by_submitted_at(self):
         course1 = self._submitted_course()
@@ -168,12 +184,8 @@ class ReviewQueueApiTests(APITestCase):
 
     def test_content_approval_moves_course_to_qa_without_wallet_credit(self):
         course = self._submitted_course()
-        self.client.force_authenticate(self.reviewer)
 
-        response = self.client.post(
-            f"/api/v1/review-queue/{course.id}/approve/", {}, format="json"
-        )
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self._pass_content_review(course)
 
         course.refresh_from_db()
         self.assertEqual(course.status, CourseStatus.QA_VERIFICATION)
@@ -186,10 +198,7 @@ class ReviewQueueApiTests(APITestCase):
 
     def test_qa_approval_credits_wallet_after_required_media_is_registered(self):
         course = self._submitted_course()
-        self.client.force_authenticate(self.reviewer)
-        self.client.post(
-            f"/api/v1/review-queue/{course.id}/approve/", {}, format="json"
-        )
+        self._pass_content_review(course)
 
         self.client.force_authenticate(self.creator)
         for module in course.modules.all():
@@ -280,6 +289,7 @@ class ReviewQueueApiTests(APITestCase):
     def test_reject_reverts_course_to_draft(self):
         course = self._submitted_course()
         self.client.force_authenticate(self.reviewer)
+        self.client.post(f"/api/v1/review-queue/{course.id}/claim/")
 
         response = self.client.post(
             f"/api/v1/review-queue/{course.id}/reject/",
@@ -389,6 +399,7 @@ class ReviewQueueApiTests(APITestCase):
         )
 
         course2 = self._submitted_course()
+        self.client.post(f"/api/v1/review-queue/{course2.id}/claim/")
         self.client.post(
             f"/api/v1/review-queue/{course2.id}/reject/",
             {"feedback": {"summary": "Needs work"}},

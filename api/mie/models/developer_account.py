@@ -2,7 +2,7 @@ from django.conf import settings
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
-from api.mie.enums import DeveloperAccountStatus, MiePlanType
+from api.mie.enums import DeveloperAccountStatus, MiePlanType, MieSourceType
 from core.mixins import DateHistoryModelMixin, UUIDPrimaryKeyModelMixin
 
 
@@ -53,6 +53,19 @@ class DeveloperAccount(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
             "superadmin at any time."
         ),
     )
+    source_type = models.CharField(
+        verbose_name=_("Source Type"),
+        max_length=10,
+        choices=MieSourceType.choices,
+        default=MieSourceType.EXTERNAL,
+        editable=False,
+        help_text=_(
+            "EXTERNAL for third-party developers, SYSTEM for platform-owned "
+            "integrations. Not editable: only the provisioning command sets "
+            "SYSTEM, so no registration path can opt into or out of the "
+            "system-account guardrails."
+        ),
+    )
     api_key_prefix = models.CharField(
         verbose_name=_("API Key Prefix"),
         max_length=16,
@@ -68,7 +81,11 @@ class DeveloperAccount(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
         max_length=64,
         blank=True,
         editable=False,
-        help_text=_("SHA-256 hex digest of the full key. Raw key is never stored."),
+        db_index=True,
+        help_text=_(
+            "SHA-256 hex digest of the full key. Raw key is never stored. "
+            "Indexed: it is the lookup column every authentication uses."
+        ),
     )
     api_key_issued_at = models.DateTimeField(
         verbose_name=_("API Key Issued At"),

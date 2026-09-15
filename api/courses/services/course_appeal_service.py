@@ -5,6 +5,7 @@ from rest_framework import exceptions
 from api.authentication.services import activity_service
 from api.courses.enums import AppealStatus, CourseStatus
 from api.courses.models import Course, CourseAppeal
+from api.courses.services import course_service
 from api.notification.models import Notification
 from api.users.enums import UserActivityActionEnums, UserActivityCategoryEnums
 from api.users.models import User
@@ -76,9 +77,11 @@ def submit_appeal(
 def approve_appeal(
     *, appeal: CourseAppeal, actor: User, notes: str = ""
 ) -> CourseAppeal:
-    """Approve a Pending appeal: reopen the course for review (status ->
-    SUBMITTED) and notify the creator. Decision is final per the PRD - once
-    decided, this appeal can't be re-decided."""
+    """Approve a Pending appeal: reopen the course for review and notify the
+    creator. The course restarts the review chain at First Review with every
+    seat cleared (course_service.start_review_cycle), exactly as a fresh
+    submission does. Decision is final per the PRD - once decided, this
+    appeal can't be re-decided."""
 
     require_role(actor, IsAdminOrSuperAdminRole.allowed_roles)
     if appeal.status != AppealStatus.PENDING:
@@ -102,9 +105,9 @@ def approve_appeal(
         )
 
         course = appeal.course
-        course.status = CourseStatus.SUBMITTED
         course.updated_by = actor
-        course.save(update_fields=["status", "updated_by", "updated_datetime"])
+        course.save(update_fields=["updated_by", "updated_datetime"])
+        course_service.start_review_cycle(course=course)
 
         Notification.emit_in_app_notification(
             receivers=[appeal.submitted_by],

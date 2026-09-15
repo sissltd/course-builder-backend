@@ -4,7 +4,7 @@ from .activity_log_views import (
     UserActivityLogExportView,
     UserActivityLogListView,
 )
-from .kyc_views import KYCReviewViewSet, KYCVerificationView
+from .kyc_views import KYCReviewViewSet, KYCVerificationView, LivenessAvatarSettingView, LivenessVerificationView
 from .user_admin_views import UserAdminViewSet
 from .user_views import MeView, QueueBehaviourPreferenceView, ReviewerAvailabilityView
 
@@ -12,6 +12,8 @@ __all__ = [
     "AdminUserActivityLogListView",
     "KYCReviewViewSet",
     "KYCVerificationView",
+    "LivenessAvatarSettingView",
+    "LivenessVerificationView",
     "MeView",
     "QueueBehaviourPreferenceView",
     "ReviewerAvailabilityView",

@@ -28,7 +28,7 @@ from api.users.permissions import (
     IsCourseCreatorRole,
     require_role,
 )
-from api.users.services import kyc_service
+from api.users.services.kyc_services import kyc_submission_service
 from api.wallet.enums import (
     TransactionStatus,
     TransactionType,
@@ -293,7 +293,7 @@ def request_withdrawal(
     """
 
     require_role(user, IsCourseCreatorRole.allowed_roles)
-    kyc_service.require_verified(user=user)
+    kyc_submission_service.require_verified(user=user)
 
     minimum_withdrawal_threshold = (
         platform_settings_service.get_settings().minimum_withdrawal_threshold

@@ -45,6 +45,7 @@ def get_recommendations(*, limit: int = DEFAULT_LIMIT) -> dict:
             "reference": row.public_reference,
             "title": row.title,
             "developer_email": row.developer.email,
+            "source_type": row.developer.source_type,
             "demand_score": row.demand_score,
             "estimated_monthly_earnings": (
                 str(row.estimated_monthly_earnings)

@@ -10,6 +10,7 @@ from django.utils import timezone
 from api.mie.enums import (
     DeveloperAccountStatus,
     MiePlanType,
+    MieSourceType,
     SubmissionStatus,
     WebhookEventType,
 )
@@ -60,6 +61,16 @@ def make_approved_developer(**kwargs):
     }
     defaults.update(kwargs)
     return make_developer_account(**defaults), raw
+
+
+def make_system_developer(**kwargs):
+    """Platform-owned SYSTEM account (the crawler), approved and carrying
+    key material the way provision_mie_system_account leaves it. Returns
+    (account, raw_key)."""
+
+    kwargs.setdefault("source_type", MieSourceType.SYSTEM)
+    kwargs.setdefault("plan_type", MiePlanType.BYPASS_ACCOUNT)
+    return make_approved_developer(**kwargs)
 
 
 def make_rejection_reason(*, label=None, is_active=True, **kwargs):

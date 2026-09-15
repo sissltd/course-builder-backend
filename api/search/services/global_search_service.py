@@ -113,17 +113,19 @@ def _course_scope(*, actor: User) -> QuerySet[Course] | None:
 
 
 def _search_categories(*, query: str, limit: int) -> list[dict]:
+    # Category lost its description column, so name and slug are all there is
+    # left to match on.
     categories = Category.objects.filter(
-        Q(name__icontains=query)
-        | Q(slug__icontains=query)
-        | Q(description__icontains=query)
+        Q(name__icontains=query) | Q(slug__icontains=query)
     ).order_by("name")[:limit]
     return [
         {
             "type": "category",
             "id": str(category.id),
             "title": category.name,
-            "subtitle": category.description,
+            # Category lost its description, so the name carries the row on
+            # its own; the key stays so the payload shape is unchanged.
+            "subtitle": category.name,
             "status": category.status,
             "api_path": f"/api/v1/categories/{category.id}/",
         }

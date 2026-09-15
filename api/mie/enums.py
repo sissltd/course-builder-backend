@@ -36,6 +36,22 @@ class MiePlanType(models.TextChoices):
     BYPASS_ACCOUNT = "BYPASS_ACCOUNT", "Account Bypass"
 
 
+class MieSourceType(models.TextChoices):
+    """Who stands behind a developer account.
+
+    EXTERNAL - a third-party developer, self-registered or onboarded by a
+               superadmin. Every account that predates this field is one.
+    SYSTEM   - a platform-owned integration (the MIE crawler). Only the
+               provision_mie_system_account command creates one. It uses
+               the same public API as any developer, but it is a bot, so
+               the daily cap and the rejection circuit breaker bind it -
+               and never an EXTERNAL account.
+    """
+
+    EXTERNAL = "EXTERNAL", "External"
+    SYSTEM = "SYSTEM", "System"
+
+
 class SubmissionStatus(models.TextChoices):
     """Every state a course idea submission can sit in.
 

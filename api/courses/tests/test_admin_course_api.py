@@ -3,6 +3,7 @@ from rest_framework.test import APITestCase
 
 from api.courses.enums import CourseStatus
 from api.courses.tests.factories import make_category, make_draft_course, make_user
+from api.reviews.enums import ReviewStage
 from api.users.enums import UserRole
 
 
@@ -60,6 +61,7 @@ class AdminCourseApiTests(APITestCase):
 
     def test_reviewer_can_approve_content_through_admin_route(self):
         self.client.force_authenticate(self.reviewer)
+        self.client.post(f"/api/v1/admin/courses/{self.submitted.id}/claim/")
 
         response = self.client.post(
             f"/api/v1/admin/courses/{self.submitted.id}/approve/",
@@ -67,9 +69,12 @@ class AdminCourseApiTests(APITestCase):
             format="json",
         )
 
+        # Content review now takes three seats, so one approval hands the
+        # course to the next reviewer rather than straight to QA.
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.submitted.refresh_from_db()
-        self.assertEqual(self.submitted.status, CourseStatus.QA_VERIFICATION)
+        self.assertEqual(self.submitted.status, CourseStatus.SUBMITTED)
+        self.assertEqual(self.submitted.review_stage, ReviewStage.SECOND_REVIEW)
 
     def test_creator_cannot_access_admin_courses(self):
         self.client.force_authenticate(self.creator)

@@ -8,6 +8,7 @@ from api.courses.enums import (
     CourseStatus,
     DifficultyLevel,
 )
+from api.reviews.enums import ReviewStage
 from core.mixins import (
     DateHistoryModelMixin,
     UserHistoryModelMixin,
@@ -68,6 +69,18 @@ class Course(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMi
         choices=CourseStatus.choices,
         default=CourseStatus.DRAFT,
         help_text=_("Current lifecycle status of the course."),
+    )
+    review_stage = models.CharField(
+        verbose_name=_("Review Stage"),
+        max_length=20,
+        choices=ReviewStage.choices,
+        blank=True,
+        default="",
+        help_text=_(
+            "Content review seat the course is waiting at (Submitted) or held "
+            "in (In Review). Blank outside content review - QA verification "
+            "is tracked by status alone."
+        ),
     )
     creator_price_snapshot = models.DecimalField(
         verbose_name=_("Creator Price Snapshot"),
@@ -195,6 +208,12 @@ class Course(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMi
             ),
             models.Index(
                 fields=["creator", "status"], name="course_creator_status_idx"
+            ),
+            # The Pending screen narrows Submitted courses to the seats the
+            # caller can take, oldest first.
+            models.Index(
+                fields=["status", "review_stage", "submitted_at"],
+                name="course_status_stage_sub_idx",
             ),
         ]
 

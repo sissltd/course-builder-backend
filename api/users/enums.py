@@ -151,6 +151,7 @@ class UserActivityActionEnums(models.TextChoices):
     KYC_SUBMITTED = "KYC_SUBMITTED", "KYC Submitted"
     KYC_APPROVED = "KYC_APPROVED", "KYC Approved"
     KYC_REJECTED = "KYC_REJECTED", "KYC Rejected"
+    KYC_FLAGGED = "KYC_FLAGGED", "KYC Flagged"
     WITHDRAWAL_REQUESTED = "WITHDRAWAL_REQUESTED", "Withdrawal Requested"
     WITHDRAWAL_CONFIRMED = "WITHDRAWAL_CONFIRMED", "Withdrawal Confirmed"
     WITHDRAWAL_FAILED = "WITHDRAWAL_FAILED", "Withdrawal Failed"
@@ -188,6 +189,7 @@ class KYCStatus(models.TextChoices):
     PENDING = "PENDING", "Pending"
     APPROVED = "APPROVED", "Approved"
     REJECTED = "REJECTED", "Rejected"
+    FLAGGED = "FLAGGED", "Flagged"
 
 
 class QueueSortOrder(models.TextChoices):

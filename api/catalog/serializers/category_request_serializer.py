@@ -45,8 +45,8 @@ class CategoryRequestCreateSerializer(serializers.ModelSerializer):
             "description": {
                 "required": False,
                 "help_text": (
-                    "Why it is needed and what belongs in it. Carried onto "
-                    "the Category if the request is approved."
+                    "Why it is needed and what belongs in the requested "
+                    "category. It is retained on the request only."
                 ),
             },
         }
@@ -61,6 +61,30 @@ class CategoryRequestCreateSerializer(serializers.ModelSerializer):
 
     def to_representation(self, instance):
         return CategoryRequestSerializer(instance, context=self.context).data
+
+
+class CategoryRequestUserSerializer(serializers.Serializer):
+    """Minimal requester/reviewer identity for the admin queue."""
+
+    id = serializers.UUIDField(read_only=True, help_text="User identifier.")
+    first_name = serializers.CharField(read_only=True, help_text="User first name.")
+    last_name = serializers.CharField(read_only=True, help_text="User last name.")
+    email = serializers.EmailField(read_only=True, help_text="User email address.")
+
+
+class AdminCategoryRequestSerializer(CategoryRequestSerializer):
+    """Category request representation for the Admin Writer queue."""
+
+    requested_by = CategoryRequestUserSerializer(read_only=True)
+    reviewed_by = CategoryRequestUserSerializer(read_only=True)
+
+    class Meta(CategoryRequestSerializer.Meta):
+        fields = [
+            *CategoryRequestSerializer.Meta.fields,
+            "requested_by",
+            "reviewed_by",
+        ]
+        read_only_fields = fields
 
 
 class CategoryRequestApproveSerializer(serializers.Serializer):
