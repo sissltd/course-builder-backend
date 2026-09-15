@@ -1,5 +1,4 @@
 import hashlib
-import hmac
 import secrets
 
 from django.utils import timezone
@@ -9,7 +8,7 @@ from api.mie.models import DeveloperAccount
 
 API_KEY_PREFIX = "scb_live_"
 API_KEY_RANDOM_BYTES = 32
-KEY_LOOKUP_PREFIX_LENGTH = 16
+KEY_DISPLAY_PREFIX_LENGTH = 16
 
 
 class ApiKeyRejected(Exception):
@@ -52,7 +51,7 @@ def issue_credentials(account: DeveloperAccount) -> str:
     """
 
     raw_key = generate_raw_key()
-    account.api_key_prefix = raw_key[:KEY_LOOKUP_PREFIX_LENGTH]
+    account.api_key_prefix = raw_key[:KEY_DISPLAY_PREFIX_LENGTH]
     account.api_key_hash = hash_raw_key(raw_key)
     account.api_key_issued_at = timezone.now()
     account.signing_secret = generate_signing_secret()
@@ -85,24 +84,31 @@ def revoke_key(account: DeveloperAccount) -> None:
 
 
 def authenticate_key(raw_key: str) -> DeveloperAccount:
-    """Resolve an presented key to an active DeveloperAccount.
+    """Resolve a presented key to an active DeveloperAccount.
 
-    Lookup goes through the non-secret prefix so at most one row is ever
-    hashed per request; the final comparison is constant-time. Raises
-    ApiKeyRejected with a stable machine code for every failure mode.
+    The key is hashed once and the digest is matched against the indexed
+    api_key_hash column, so verification costs exactly one indexed lookup
+    and there is no candidate set to disambiguate. Matching on the digest
+    rather than the display prefix is what makes that true: the prefix is
+    only 7 random characters wide once "scb_live_" is removed, so two
+    accounts can legitimately share one.
+
+    A revoked account fails closed for free - revoke_key blanks the hash,
+    and "" can never equal a 64-character digest.
+
+    Raises ApiKeyRejected with a stable machine code for every failure
+    mode.
     """
 
+    # Cheap shape check first: a key for some other service never reaches
+    # the database.
     if not raw_key or not raw_key.startswith(API_KEY_PREFIX):
         raise ApiKeyRejected("invalid_api_key", "Invalid API key.")
 
     candidate = DeveloperAccount.objects.filter(
-        api_key_prefix=raw_key[:KEY_LOOKUP_PREFIX_LENGTH]
+        api_key_hash=hash_raw_key(raw_key)
     ).first()
-    if (
-        candidate is None
-        or not candidate.api_key_hash
-        or not hmac.compare_digest(candidate.api_key_hash, hash_raw_key(raw_key))
-    ):
+    if candidate is None:
         raise ApiKeyRejected("invalid_api_key", "Invalid API key.")
 
     _enforce_active_status(candidate)

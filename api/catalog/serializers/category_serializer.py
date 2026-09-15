@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from api.catalog.enums import CategoryDeletionStrategy
+from api.catalog.enums import CategoryDeletionStrategy, CategoryStatus
 from api.catalog.models import Category
 from api.catalog.services import category_service
 
@@ -12,6 +12,29 @@ class CategoryMiniSerializer(serializers.ModelSerializer):
         model = Category
         fields = ["id", "name"]
         read_only_fields = fields
+
+
+class CategoryPickerSerializer(serializers.ModelSerializer):
+    """Minimal Category representation for the creator course-creation picker.
+
+    Creators get only what they need to choose: the name and whether the
+    category is accepting submissions. Every
+    row returned by the picker view is ACTIVE, so ``is_active`` is always
+    true in practice; it is carried so the client has one representation of
+    the on/off state the admin toggles.
+    """
+
+    is_active = serializers.SerializerMethodField(
+        help_text="True when the category accepts new course submissions."
+    )
+
+    class Meta:
+        model = Category
+        fields = ["id", "name", "is_active"]
+        read_only_fields = fields
+
+    def get_is_active(self, obj) -> bool:
+        return obj.status == CategoryStatus.ACTIVE
 
 
 class CategorySerializer(serializers.ModelSerializer):
@@ -33,7 +56,6 @@ class CategorySerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "name",
-            "description",
             "creator_price_beginner",
             "creator_price_intermediate",
             "creator_price_advanced",
@@ -64,7 +86,6 @@ class CategoryWriteSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "name",
-            "description",
             "creator_price_beginner",
             "creator_price_intermediate",
             "creator_price_advanced",
@@ -78,12 +99,6 @@ class CategoryWriteSerializer(serializers.ModelSerializer):
                 "help_text": (
                     "Display name shown to creators when picking a category. "
                     "Must be unique across all categories."
-                )
-            },
-            "description": {
-                "help_text": (
-                    "Explains to creators what belongs in this category. "
-                    "Optional - omit or send an empty string for none."
                 )
             },
             "creator_price_beginner": {
@@ -179,8 +194,8 @@ class CategoryDeletionImpactSerializer(serializers.Serializer):
         read_only=True,
         help_text=(
             "Onboarding profiles naming this as their primary expertise. These "
-            "never block deletion and are never deleted - they simply lose the "
-            "value, under either strategy."
+            "never block deletion and are never deleted. The category row is "
+            "retained, so the reference remains intact after soft deletion."
         ),
     )
     requires_strategy = serializers.BooleanField(
@@ -208,7 +223,7 @@ class CategoryDeletionSerializer(serializers.Serializer):
         ),
     )
     replacement_category = serializers.PrimaryKeyRelatedField(
-        queryset=Category.objects.all(),
+        queryset=Category.objects.filter(is_deleted=False),
         required=False,
         allow_null=True,
         help_text=(
@@ -222,7 +237,9 @@ class CategoryDeletionSerializer(serializers.Serializer):
 class CategoryStatsSerializer(serializers.Serializer):
     """Header tiles above the categories table."""
 
-    total = serializers.IntegerField(help_text="Every category, whatever its status.")
+    total = serializers.IntegerField(
+        help_text="Every non-deleted category, whatever its status."
+    )
     active = serializers.IntegerField(help_text="Accepting new course submissions.")
     inactive = serializers.IntegerField(help_text="Temporarily paused.")
     archived = serializers.IntegerField(help_text="Retired from the creator picker.")

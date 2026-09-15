@@ -9,6 +9,7 @@ from rest_framework.test import APIRequestFactory
 
 from api.mie.authentication import MieDeveloperAuthentication
 from api.mie.enums import DeveloperAccountStatus
+from api.mie.models import DeveloperAccount
 from api.mie.permissions import IsMieDeveloper
 from api.mie.services import dev_token_service, key_service as key_service_module
 from api.mie.services.key_service import (
@@ -82,6 +83,24 @@ class KeyLifecycleTests(TestCase):
         tampered = raw[:-1] + ("A" if raw[-1] != "A" else "B")
         with self.assertRaises(ApiKeyRejected):
             authenticate_key(tampered)
+
+    def test_shared_display_prefix_still_resolves_each_account(self):
+        """Once "scb_live_" is stripped, only 7 random characters remain in
+        the 16-char display prefix, so two accounts can legitimately share
+        one. Authentication matches on the hash, so each key resolves to its
+        own account rather than to whichever row was returned first."""
+
+        first = make_approved_account()
+        second = make_approved_account()
+        first_raw = issue_credentials(first)
+        second_raw = issue_credentials(second)
+
+        DeveloperAccount.objects.filter(id=second.id).update(
+            api_key_prefix=first.api_key_prefix
+        )
+
+        self.assertEqual(authenticate_key(first_raw).id, first.id)
+        self.assertEqual(authenticate_key(second_raw).id, second.id)
 
     def test_wrong_prefix_rejected_without_lookup(self):
         with self.assertRaises(ApiKeyRejected) as ctx:

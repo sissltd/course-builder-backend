@@ -1,7 +1,7 @@
 import django_filters
 from django.db.models import Q
 
-from api.catalog.models import Category, Topic, TopicReservationRequest
+from api.catalog.models import Category, CategoryRequest, Topic, TopicReservationRequest
 
 
 class CategoryFilter(django_filters.FilterSet):
@@ -39,6 +39,30 @@ class AdminReservationRequestFilter(django_filters.FilterSet):
     def filter_search(self, queryset, name, value):
         return queryset.filter(
             Q(name__icontains=value)
+            | Q(requested_by__first_name__icontains=value)
+            | Q(requested_by__last_name__icontains=value)
+            | Q(requested_by__email__icontains=value)
+        )
+
+
+class AdminCategoryRequestFilter(django_filters.FilterSet):
+    search = django_filters.CharFilter(method="filter_search")
+    requested_by = django_filters.UUIDFilter(field_name="requested_by_id")
+    date_from = django_filters.DateFilter(
+        field_name="created_datetime", lookup_expr="date__gte"
+    )
+    date_to = django_filters.DateFilter(
+        field_name="created_datetime", lookup_expr="date__lte"
+    )
+
+    class Meta:
+        model = CategoryRequest
+        fields = {"status": ["exact"]}
+
+    def filter_search(self, queryset, name, value):
+        return queryset.filter(
+            Q(name__icontains=value)
+            | Q(description__icontains=value)
             | Q(requested_by__first_name__icontains=value)
             | Q(requested_by__last_name__icontains=value)
             | Q(requested_by__email__icontains=value)

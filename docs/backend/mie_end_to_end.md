@@ -164,7 +164,10 @@ Both call the same function: `webhook_dispatcher.dispatch_due_events()`.
 
 **File**: `api/mie/models/developer_account.py`
 
-Represents an external developer registered into the MIE pipeline.
+Represents a developer registered into the MIE pipeline: a third-party
+developer (`source_type=EXTERNAL`), or a platform-owned integration such
+as the MIE crawler (`source_type=SYSTEM`, see
+[Section 5.5](#55-system-accounts-the-mie-crawler)).
 
 | Field | Type | Notes |
 |---|---|---|
@@ -173,6 +176,7 @@ Represents an external developer registered into the MIE pipeline.
 | `webhook_url` | URLField | HTTPS endpoint receiving signed POSTs. |
 | `status` | CharField(10) | `PENDING` / `APPROVED` / `REJECTED` / `SUSPENDED` |
 | `plan_type` | CharField(25) | `PAID_PER_SUBMISSION` / `BYPASS_PER_SUBMISSION` / `BYPASS_ACCOUNT` |
+| `source_type` | CharField(10) | `EXTERNAL` (default) / `SYSTEM`. `editable=False`: only the `provision_mie_system_account` command sets `SYSTEM`, so no registration path can opt into or out of the system-account guardrails. |
 | `api_key_prefix` | CharField(16) | First 16 chars of the raw key (`scb_live_...`). Non-secret. |
 | `api_key_hash` | CharField(64) | SHA-256 hex digest of the full key. Raw key never stored. |
 | `api_key_issued_at` | DateTimeField | When the current key was generated. |
@@ -210,6 +214,7 @@ A course idea submitted by an external developer.
 | `developer` | FK → DeveloperAccount | Cascading delete. `related_name="submissions"`. |
 | `payload` | JSONField | The submission body **verbatim** — never rewritten. |
 | `title` | CharField(255) | Extracted from payload. Key for all three dedup checks. |
+| `confidence_note` | TextField (blank) | Optional demand evidence, extracted from the payload like the title so reviewers see it as its own field. The payload keeps its copy. Capped at `CONFIDENCE_NOTE_MAX_LENGTH` (2000) at ingestion. |
 | `status` | CharField(25) | See `SubmissionStatus` enum below. |
 | `rejection_reason` | FK → SubmissionRejectionReason | Nullable. SET_NULL on delete. |
 | `rejection_note` | TextField | Free-text detail accompanying rejection. |
@@ -239,6 +244,7 @@ CHECK (NOT (status IN ('APPROVED','REJECTED')) OR decided_at IS NOT NULL)
 |---|---|---|
 | `mie_sub_status_idx` | `status`, `-created_datetime` | Admin queue ordering + filter |
 | `mie_sub_dev_status_idx` | `developer`, `status` | Developer queue scoping |
+| `mie_sub_dev_created_idx` | `developer`, `-created_datetime` | System-account daily cap count + developer queue ordering |
 
 ### 3.3 SubmissionRejectionReason
 
@@ -423,6 +429,56 @@ Freezes an APPROVED account:
 5. Only APPROVED accounts can be suspended; attempting to suspend a
    PENDING, REJECTED, or SUSPENDED account returns 400.
 
+### 5.5 System accounts (the MIE crawler)
+
+**Command**: `manage.py provision_mie_system_account --email --webhook-url --actor-email`
+**Service**: `developer_service.provision_system_account()`
+
+The MIE crawler lives in its own repository and submits through the same
+public API as any developer. What separates it here is one column:
+`source_type=SYSTEM`. It is `editable=False` and no registration path
+touches it, so an account can only become a system account through the
+command above — and a third-party developer can neither opt into the
+guardrails below nor out of them.
+
+Provisioning creates the account PENDING and hands it straight to
+`approve_developer()`, so the same key/status DB constraints apply as for
+any developer. `plan_type` is `BYPASS_ACCOUNT`: the platform does not pay
+itself for ideas. The raw API key is printed once, to the operator's
+terminal — a command rather than an endpoint precisely so the key never
+travels through an HTTP response or anything that logs request bodies.
+Re-running it against an existing system account changes nothing and
+issues no second key; against an email already held by an EXTERNAL
+developer it refuses, rather than silently converting a third party onto
+a no-payout plan. Provisioning is audited via `log_activity` under
+`CONFIGURATION`.
+
+**Guardrails.** Both apply to SYSTEM accounts only; an EXTERNAL developer
+never meets either. Their thresholds live in `config/settings/mie.py`
+(env-backed, so an incident can tighten them without a release).
+
+| Guardrail | Where | Behaviour |
+|---|---|---|
+| Rolling daily cap | `submission_service._enforce_daily_cap()` | `MIE_SYSTEM_DAILY_SUBMISSION_CAP` (default 20) submissions per rolling 24 hours, counted in the database over every outcome. Over it, nothing is stored — see [6.6](#66-throttling). |
+| Rejection circuit breaker | `guardrail_service.evaluate_rejection_breaker()` | Once the account has at least `MIE_BREAKER_MIN_DECISIONS` (10) admin decisions inside `MIE_BREAKER_WINDOW_DAYS` (7), a rejected share at or above `MIE_BREAKER_REJECTION_RATE` (0.8) suspends it. |
+
+The breaker runs from `decide_submission()` on SYSTEM **rejections** only
+— never on approvals, never on an EXTERNAL account — and inside that same
+transaction, so a decision that rolls back takes its suspension with it.
+The window never reaches back past the account's own `decided_at`, so an
+account a superadmin has just re-approved starts clean instead of
+immediately re-tripping on the rejections that suspended it.
+
+Tripping calls the ordinary `suspend_developer()` (see [5.4](#54-suspension)),
+so the key and queue history survive and pending webhooks are held rather
+than dropped; the crawler starts getting 401 `account_suspended`.
+Recovery is the existing approve action — no special path. The trip is
+audited via `log_activity` under `ALERT`, and every superadmin gets an
+in-app notification and an email
+(`templates/emails/mie_circuit_breaker_tripped.{html,txt}`), both fired
+`on_commit` and both swallowing their own failures: an alerting problem
+must not surface as an error on the admin's rejection.
+
 ---
 
 ## 6. Ingest + Dedup Engine (Endpoint 1)
@@ -437,14 +493,24 @@ Freezes an APPROVED account:
 {
   "title": "Build a Production-Grade Rust Course",
   "description": "optional extra context",
-  "audience": "mid-level backend developers"
+  "audience": "mid-level backend developers",
+  "confidence_note": "620 backend job postings asked for Rust this month, up 28% on last month."
 }
 ```
 
 Only `title` is required. The body is stored **verbatim** in the
 `payload` JSONField — no fields are extracted or rewritten beyond the
-title. This means the admin review surfaces see exactly what the
-developer submitted.
+title and the optional `confidence_note`. Both are copied out into their
+own columns so reviewers can read them without digging through the
+payload; the payload keeps its own copy either way, so the admin review
+surfaces still see exactly what the developer submitted.
+
+`confidence_note`, when present, must be a string of at most
+`CONFIDENCE_NOTE_MAX_LENGTH` (2000) characters after trimming — checked
+in `submission_service._extract_confidence_note()` for the same reason
+the title is checked there rather than only in the serializer: the
+serializer would coerce a number to a string, leaving the stored payload
+and the extracted column disagreeing about what was sent.
 
 ### 6.2 Title validation
 
@@ -493,6 +559,20 @@ ingestion and delivery.
 ### 6.6 Throttling
 
 Scoped throttle `mie_ingest`: 30 requests per minute per API key.
+
+**System accounts only** — a second, slower limit sits behind it: the
+rolling 24-hour cap of [5.5](#55-system-accounts-the-mie-crawler). It is
+counted from the database rather than the cache, so unlike the throttle
+it survives a Redis flush, and it counts every row whatever its outcome:
+a crawler stuck resubmitting duplicates is exactly what the cap exists to
+stop. Over the cap nothing is stored — the count and the insert share one
+transaction behind `SELECT … FOR UPDATE` on the account row, so two
+concurrent requests cannot both read "19 of 20" and both get in.
+`DailySubmissionCapReached` carries the seconds until the oldest counted
+submission leaves the window, and the view maps it to the same
+`Throttled` 429 + `Retry-After` the per-minute throttle already returns,
+so a client that honours one honours both. EXTERNAL accounts never reach
+this check.
 
 ### 6.7 Response
 
@@ -754,6 +834,7 @@ POST   /api/v1/mie/admin/submissions/{id}/payout_bypass/  # Toggle bypass
 |---|---|---|
 | `?developer=` | UUID | Filter to one developer account id. |
 | `?email=` | string | Filter to one developer by exact email. |
+| `?source_type=` | string | `EXTERNAL` / `SYSTEM`, matched on the owning account (`developer__source_type`). Separates the crawler's ideas from partners'. Any other value returns 400. |
 | `?status=` | string | One pipeline state. |
 | `?payout_bypass=` | bool | Filter to bypassed or paying ideas. |
 | `?created_after=` | ISO-8601 | Lower bound on arrival time. |
@@ -880,6 +961,7 @@ No retry logic is needed on the client side.
 | Endpoint | Throttle scope | Limit |
 |---|---|---|
 | `POST /api/v1/mie/v1/submissions/` | `mie_ingest` | 30/min/key |
+| `POST /api/v1/mie/v1/submissions/` | — (database-counted) | `MIE_SYSTEM_DAILY_SUBMISSION_CAP` per rolling 24h, **SYSTEM accounts only** — see [5.5](#55-system-accounts-the-mie-crawler) |
 | `POST /api/v1/mie/v1/register/` | `mie_register` | 5/hour/IP |
 
 ### 12.4 Webhook delivery retries
@@ -938,6 +1020,7 @@ Standard DRF 400 responses for:
 | `submission_service.py` | Ingestion, payload validation, event recording, race handling |
 | `submission_admin_service.py` | Approve/reject, demand signals, payout bypass |
 | `dedup_service.py` | Three-stage title dedup engine |
+| `guardrail_service.py` | Rejection circuit breaker for SYSTEM accounts + its superadmin alerts |
 | `webhook_dispatcher.py` | Record-then-sweep delivery, signing, retry, partitioning |
 | `documentation_service.py` | Machine-readable docs from live constants |
 | `reference.py` | `REFERENCE_SUFFIXES` mapping status → suffix letter |
@@ -972,11 +1055,18 @@ Standard DRF 400 responses for:
 | `authentication.py` | `MieDeveloperAuthentication` — dual-path DRF auth class + drf-spectacular extension |
 | `permissions.py` | `IsMieDeveloper` — APPROVED status gate |
 | `filters.py` | `AdminSubmissionFilterSet` — django-filters for admin queue |
-| `enums.py` | `DeveloperAccountStatus`, `MiePlanType`, `SubmissionStatus`, `WebhookEventType`, `WebhookDeliveryStatus` |
+| `enums.py` | `DeveloperAccountStatus`, `MiePlanType`, `MieSourceType`, `SubmissionStatus`, `WebhookEventType`, `WebhookDeliveryStatus` |
 | `urls.py` | Route registration: DefaultRouter for admin viewsets + explicit paths for developer endpoints |
 | `admin.py` | Django admin registrations for all 4 models |
 | `apps.py` | `MieConfig` AppConfig |
 | `tasks.py` | `dispatch_due_webhooks_task` — Celery shared_task wrapper |
 | `management/commands/dispatch_mie_webhooks.py` | `python manage.py dispatch_mie_webhooks` |
+| `management/commands/provision_mie_system_account.py` | `python manage.py provision_mie_system_account` — the only path that creates a SYSTEM account |
 | `migrations/0001_initial.py` | All 4 tables + constraints + indexes |
 | `migrations/0002_alter_webhookevent_event_type.py` | Adds `SUBMISSION_PAYOUT_BYPASS_UPDATED` to event_type choices |
+| `migrations/0003_alter_developeraccount_api_key_hash_and_more.py` | Indexes `api_key_hash` — the column authentication looks up |
+| `migrations/0004_system_account_guardrails.py` | `source_type`, `confidence_note`, `mie_sub_dev_created_idx` |
+
+Outside `api/mie/`: `config/settings/mie.py` holds the guardrail
+thresholds, and `templates/emails/mie_circuit_breaker_tripped.{html,txt}`
+is the breaker's superadmin alert.

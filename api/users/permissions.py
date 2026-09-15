@@ -81,8 +81,11 @@ class IsAiReviewerRole(HasRole):
 class IsQaReviewerRole(HasRole):
     """Grants access to users who QA production media output (SCCS Track B).
 
-    Same rationale as IsAiReviewerRole: no consuming view yet, added for
-    enforceability ahead of the QA review pipeline.
+    Gates the QA leg of the review queue: CourseReviewViewSet (and the
+    AdminCourseViewSet built on it) admits QA Reviewers alongside content
+    reviewers, its qa-claim / qa-approve / qa-reject actions require this
+    role or the Admin tier, and review_service re-checks it on those three
+    decisions.
     """
 
     allowed_roles = (UserRole.QA_REVIEWER,)

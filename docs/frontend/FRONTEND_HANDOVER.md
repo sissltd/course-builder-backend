@@ -530,7 +530,6 @@ One row:
 {
   "id": "uuid",
   "name": "Software Engineering",
-  "description": "...",
   "creator_price_beginner": "300.00",
   "creator_price_intermediate": "400.00",
   "creator_price_advanced": "500.00",
@@ -573,7 +572,6 @@ Create/edit body:
 ```json
 {
   "name": "Software Engineering",
-  "description": "",
   "track_preference": "CREATOR_PREFERRED",
   "creator_price_beginner": "300.00",
   "creator_price_intermediate": "400.00",

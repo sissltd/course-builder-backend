@@ -1,22 +1,27 @@
 import json
 
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from rest_framework import status
 from rest_framework.test import APITestCase
 
 from api.courses.enums import CourseStatus
 from api.courses.tests.factories import make_draft_course, make_user
 from api.mie.enums import (
+    MieSourceType,
     SubmissionStatus,
     WebhookEventType,
 )
-from api.mie.models import WebhookEvent
+from api.mie.models import CourseSubmission, WebhookEvent
 from api.mie.services import submission_service
+from api.mie.services.submission_admin_service import decide_submission
 from api.mie.services.webhook_dispatcher import render_body
 from api.mie.tests.factories import (
     make_approved_developer,
     make_decided_submission,
     make_rejection_reason,
     make_submission,
+    make_system_developer,
 )
 from api.users.enums import UserRole
 
@@ -96,6 +101,86 @@ class AdminQueueFilterTests(APITestCase):
         self.assertEqual(response.data["developer_email"], "a@studio.io")
 
 
+class AdminQueueSourceTypeFilterTests(APITestCase):
+    """`?source_type` separates the crawler's ideas from partners'.
+
+    It matches on the owning account (`developer__source_type`) rather than
+    on a column of its own, so a submission can never disagree with its
+    account about who sent it.
+    """
+
+    def setUp(self):
+        self.superadmin = make_user(role=UserRole.SUPER_ADMIN)
+        self.client.force_authenticate(self.superadmin)
+        self.partner, _partner_key = make_approved_developer(email="partner@studio.io")
+        self.crawler, _crawler_key = make_system_developer(email="crawler@soludesks.com")
+        self.partner_idea = make_submission(developer=self.partner, title="Partner Idea")
+        self.crawler_idea = make_submission(developer=self.crawler, title="Crawler Idea")
+
+    def _ids(self, query=""):
+        response = self.client.get(f"{QUEUE_URL}{query}")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        return [r["id"] for r in response.data["data"]["results"]]
+
+    def test_filter_narrows_to_each_source_type(self):
+        self.assertEqual(self._ids("?source_type=SYSTEM"), [str(self.crawler_idea.id)])
+        self.assertEqual(self._ids("?source_type=EXTERNAL"), [str(self.partner_idea.id)])
+
+    def test_rows_carry_the_source_type_they_are_filtered_by(self):
+        detail = self.client.get(_detail(self.crawler_idea.id))
+        self.assertEqual(detail.data["source_type"], MieSourceType.SYSTEM)
+        self.assertEqual(
+            self.client.get(_detail(self.partner_idea.id)).data["source_type"],
+            MieSourceType.EXTERNAL,
+        )
+
+    def test_unknown_source_type_is_rejected_rather_than_ignored(self):
+        """A filter that silently matched everything on a typo would show an
+        admin the whole queue while they believed they were looking at only
+        the crawler's slice of it."""
+
+        response = self.client.get(f"{QUEUE_URL}?source_type=ROBOT")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_filter_is_unreachable_below_superadmin(self):
+        self.client.force_authenticate(make_user(role=UserRole.ADMIN))
+
+        response = self.client.get(f"{QUEUE_URL}?source_type=SYSTEM")
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+
+class AdminQueueQueryCostTests(APITestCase):
+    """Every row now reports its account's source_type, so the queue reads
+    the developer for each one. That has to come out of the existing
+    select_related join: without it the list costs one extra query per row
+    and quietly gets slower the busier the marketplace is - the one kind of
+    regression no status-code assertion can catch."""
+
+    def setUp(self):
+        self.client.force_authenticate(make_user(role=UserRole.SUPER_ADMIN))
+        self.account, _raw = make_approved_developer()
+        # Warm up anything cached on first use (content types, prepared
+        # statements), so the first measurement is not the expensive one.
+        make_submission(developer=self.account, title="Warm Up Idea")
+        self.client.get(QUEUE_URL)
+
+    def _query_count(self, rows):
+        CourseSubmission.objects.all().delete()
+        for index in range(rows):
+            make_submission(developer=self.account, title=f"Queue Idea {index}")
+
+        with CaptureQueriesContext(connection) as captured:
+            response = self.client.get(QUEUE_URL)
+
+        self.assertEqual(len(response.data["data"]["results"]), rows)
+        return len(captured)
+
+    def test_listing_five_rows_costs_the_same_as_listing_one(self):
+        self.assertEqual(self._query_count(rows=5), self._query_count(rows=1))
+
+
 class DecisionTests(APITestCase):
     def setUp(self):
         self.superadmin = make_user(role=UserRole.SUPER_ADMIN)
@@ -132,6 +217,30 @@ class DecisionTests(APITestCase):
         self.assertEqual(good.status_code, status.HTTP_200_OK)
         submission.refresh_from_db()
         self.assertEqual(submission.rejection_reason, self.reason)
+
+    def test_re_rejecting_without_a_reason_preserves_the_existing_one(self):
+        """Re-rejecting an already-REJECTED idea with no fresh reason must
+        preserve what is stored rather than null it - matching how the note
+        beside it behaves. Driven through the service because the view
+        requires a reason label before the service is ever reached."""
+
+        submission = make_submission(developer=self.account)
+        decide_submission(
+            actor=self.superadmin,
+            submission=submission,
+            approve=False,
+            rejection_reason=self.reason,
+            rejection_note="off-topic",
+        )
+
+        decide_submission(
+            actor=self.superadmin, submission=submission, approve=False
+        )
+
+        submission.refresh_from_db()
+        self.assertEqual(submission.status, SubmissionStatus.REJECTED)
+        self.assertEqual(submission.rejection_reason, self.reason)
+        self.assertEqual(submission.rejection_note, "off-topic")
 
     def test_full_reversal_cycle_a_r_a_with_clean_metadata(self):
         submission = make_submission(developer=self.account)

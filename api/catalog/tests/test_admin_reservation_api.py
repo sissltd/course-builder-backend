@@ -42,6 +42,25 @@ class AdminReservationApiTests(APITestCase):
         self.assertEqual(result["requested_by"]["id"], str(self.creator.id))
         self.assertIsNone(result["reviewed_by"])
 
+    def test_writer_can_list_topic_requests_from_admin_writer_queue(self):
+        writer = make_user(role=UserRole.STAFF_WRITER)
+        self.client.force_authenticate(writer)
+
+        response = self.client.get(
+            "/api/v1/admin/topic-requests/", {"search": "AWS"}
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        results = response.data["data"]["results"]
+        self.assertEqual([row["name"] for row in results], ["AWS Cloud Practitioner"])
+
+    def test_creator_cannot_access_admin_writer_topic_queue(self):
+        self.client.force_authenticate(self.creator)
+
+        response = self.client.get("/api/v1/admin/topic-requests/")
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
     def test_admin_can_reject_request(self):
         self.client.force_authenticate(self.admin)
 

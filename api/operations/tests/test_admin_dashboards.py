@@ -456,3 +456,21 @@ class MieRecommendationsTests(APITestCase):
         self.assertEqual(
             len(self.client.get(f"{self.URL}?limit=99999").data["results"]), 3
         )
+
+    def test_rows_carry_the_submitting_account_source_type(self):
+        """The screen tells the crawler's ideas apart from partners' by this
+        field. The row serializer has to declare it: a key the service adds
+        but the serializer omits is silently dropped from the response."""
+
+        from api.mie.enums import MieSourceType
+        from api.mie.tests.factories import make_submission, make_system_developer
+
+        self._submission(title="Partner idea", score=20)
+        crawler, _key = make_system_developer()
+        make_submission(developer=crawler, title="Crawler idea", demand_score=10)
+
+        results = self.client.get(self.URL).data["results"]
+        rows = {row["title"]: row for row in results}
+
+        self.assertEqual(rows["Partner idea"]["source_type"], MieSourceType.EXTERNAL)
+        self.assertEqual(rows["Crawler idea"]["source_type"], MieSourceType.SYSTEM)

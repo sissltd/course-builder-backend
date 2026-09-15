@@ -54,7 +54,12 @@ class TopicReservationRejectSerializer(serializers.Serializer):
     """Request body for the reject action - an optional free-text reason,
     e.g. the proposed name already matches an existing topic."""
 
-    reason = serializers.CharField(required=False, allow_blank=True, default="")
+    reason = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        default="",
+        help_text="Optional explanation retained with the rejected topic request.",
+    )
 
 
 class ReservationUserSerializer(serializers.Serializer):

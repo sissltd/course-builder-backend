@@ -1,5 +1,5 @@
 from django.db import transaction
-from django.db.models import Count, ProtectedError
+from django.db.models import Count
 from django.utils import timezone
 from rest_framework import exceptions
 
@@ -29,7 +29,6 @@ def update_category(*, category: Category, actor: User, data: dict) -> Category:
 
     editable_fields = {
         "name",
-        "description",
         "creator_price_beginner",
         "creator_price_intermediate",
         "creator_price_advanced",
@@ -65,9 +64,8 @@ def get_deletion_impact(*, category: Category) -> dict:
     }
     course_count = sum(status_counts.values())
 
-    # Counted separately because these are SET_NULL, not PROTECT: they never
-    # block the delete and are never deleted by it - they just quietly lose
-    # their stated expertise, which is worth warning about.
+    # Counted separately because they continue to reference the retained,
+    # soft-deleted category and may need follow-up in the admin UI.
     profile_count = _creator_profile_count(category)
 
     return {
@@ -89,8 +87,8 @@ def delete_category(
 ) -> dict:
     """Delete `category`, handling the courses that belong to it.
 
-    With no courses, `strategy` is unnecessary and the category is simply
-    removed. With courses, a strategy is required - omitting it raises 409
+    With no courses, `strategy` is unnecessary and the category is soft-deleted.
+    With courses, a strategy is required - omitting it raises 409
     rather than guessing, because the two options have very different
     consequences:
 
@@ -103,8 +101,9 @@ def delete_category(
       with them. It is not limited to drafts, so published work can be removed
       this way.
 
-    Runs in a single transaction: courses are never left reassigned or deleted
-    while the category itself survives.
+    The category row is always retained and marked deleted. Course handling is
+    still explicit so an admin cannot accidentally leave courses attached to a
+    category that no longer appears in the catalog.
 
     Returns the impact summary describing what actually happened, so the caller
     can report it back to the admin.
@@ -115,7 +114,7 @@ def delete_category(
     impact = get_deletion_impact(category=category)
 
     if not impact["requires_strategy"]:
-        _delete_or_explain(category)
+        _soft_delete(category, actor)
         return {
             **impact,
             "strategy_applied": None,
@@ -154,7 +153,7 @@ def delete_category(
                 {"strategy": f"'{strategy}' is not a valid deletion strategy."}
             )
 
-        _delete_or_explain(category)
+        _soft_delete(category, actor)
 
     return {
         **impact,
@@ -193,31 +192,27 @@ def _creator_profile_count(category: Category) -> int:
     return CreatorProfile.objects.filter(primary_expertise_category=category).count()
 
 
-def _delete_or_explain(category: Category) -> None:
-    """Delete `category`, converting a PROTECT violation into a 400.
+def _soft_delete(category: Category, actor: User) -> None:
+    """Hide a category while retaining its audit record and foreign keys."""
 
-    Course.category is on_delete=PROTECT. The strategies above clear that
-    dependency first, so reaching the ProtectedError here means something else
-    gained a protected reference to categories - a new model, or a course
-    created concurrently between the impact count and the delete. Either way a
-    500 would be the wrong answer.
-    """
-
-    try:
-        category.delete()
-    except ProtectedError as exc:
-        raise exceptions.ValidationError(
-            "This category cannot be deleted because something still "
-            "references it. Refresh and try again, or set its status to "
-            "'INACTIVE' to stop new submissions."
-        ) from exc
+    category.deleted_datetime = timezone.now()
+    category.is_deleted = True
+    category.updated_by = actor
+    category.save(
+        update_fields=[
+            "deleted_datetime",
+            "is_deleted",
+            "updated_by",
+            "updated_datetime",
+        ]
+    )
 
 
 def archive_category(*, category, actor: User):
     """Retire a category from the creator picker without deleting it.
 
-    Distinct from deletion, which needs a strategy for the courses left
-    behind: archiving keeps every course, every payout and every
+    Distinct from deletion, which soft-deletes the category and may need a
+    course strategy: archiving keeps every course, every payout and every
     historical reference exactly as they are, and is reversible. Already
     archived is a validation error rather than a silent no-op so the UI
     cannot report success for an action that did nothing.
@@ -253,7 +248,7 @@ def get_category_stats() -> dict:
 
     counted = {
         row["status"]: row["count"]
-        for row in Category.objects.values("status").annotate(count=Count("id"))
+        for row in Category.objects.filter(is_deleted=False).values("status").annotate(count=Count("id"))
     }
     return {
         "total": sum(counted.values()),

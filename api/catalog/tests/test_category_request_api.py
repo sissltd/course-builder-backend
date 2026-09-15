@@ -58,6 +58,41 @@ class CategoryRequestFlowTests(APITestCase):
         names = {row["name"] for row in response.data["data"]["results"]}
         self.assertEqual(names, {"Data Science", "Cybersecurity"})
 
+    def test_writer_can_list_every_request_from_admin_queue(self):
+        self._file()
+        self._file(user=self.other, name="Cybersecurity")
+
+        writer = make_user(role=UserRole.STAFF_WRITER)
+        self.client.force_authenticate(writer)
+        response = self.client.get(
+            "/api/v1/admin/category-requests/", {"search": "Cyber"}
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        results = response.data["data"]["results"]
+        self.assertEqual([row["name"] for row in results], ["Cybersecurity"])
+        self.assertEqual(results[0]["requested_by"]["email"], self.other.email)
+
+    def test_creator_cannot_access_admin_category_queue(self):
+        self.client.force_authenticate(self.creator)
+
+        response = self.client.get("/api/v1/admin/category-requests/")
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_writer_can_reject_from_admin_category_queue(self):
+        request_id = self._file().data["id"]
+        writer = make_user(role=UserRole.STAFF_WRITER)
+        self.client.force_authenticate(writer)
+
+        response = self.client.post(
+            f"/api/v1/admin/category-requests/{request_id}/reject/"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["status"], CategoryRequestStatus.REJECTED)
+        self.assertEqual(response.data["reviewed_by"]["id"], str(writer.id))
+
     @patch("api.catalog.services.category_request_service.send_templated_email")
     def test_approval_creates_the_category_and_emails_the_requester(self, mail):
         request_id = self._file().data["id"]
@@ -77,7 +112,7 @@ class CategoryRequestFlowTests(APITestCase):
         self.assertEqual(category.creator_price_beginner, Decimal("150000.00"))
         self.assertEqual(category.creator_price_intermediate, Decimal("150000.00"))
         self.assertEqual(category.creator_price_advanced, Decimal("150000.00"))
-        self.assertEqual(category.description, "Analysis and ML courses.")
+        self.assertFalse(hasattr(category, "description"))
         self.assertEqual(category.slug, "data-science")
 
         row = CategoryRequest.objects.get(id=request_id)

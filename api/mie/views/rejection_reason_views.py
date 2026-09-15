@@ -38,9 +38,11 @@ class RejectionReasonAdminViewSet(viewsets.ModelViewSet):
 
             "**Prerequisites:** None.\n\n"
 
-            "**Important:** Deactivated reasons (is_active=false) stop "
-            "matching new ideas but remain on historical submissions. They "
-            "are never hard-deleted."
+            "**Important:** Deactivating a reason (is_active=false) only "
+            "removes it from the set an admin can attach when rejecting. "
+            "Dedup matches on title, not on reason, so a deactivated "
+            "reason is still inherited by new ideas that duplicate a past "
+            "rejection. Reasons are never hard-deleted."
         ),
         responses={
             status.HTTP_200_OK: RejectionReasonSerializer(many=True),
@@ -108,9 +110,11 @@ class RejectionReasonAdminViewSet(viewsets.ModelViewSet):
             "**Prerequisites:** The rejection reason with the given id must "
             "exist.\n\n"
 
-            "**Important:** Deactivated reasons stop matching new ideas but "
-            "stay on historical rows. This is a partial update — only send "
-            "the fields you want to change."
+            "**Important:** Deactivating a reason only removes it from the "
+            "set an admin can attach when rejecting; dedup matches on "
+            "title, so it can still be inherited by new ideas, and it "
+            "stays on historical rows. This is a partial update — only "
+            "send the fields you want to change."
         ),
         request=RejectionReasonSerializer,
         responses={

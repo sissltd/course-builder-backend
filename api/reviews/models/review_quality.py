@@ -17,7 +17,7 @@ class ReviewAssignment(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
     course = models.ForeignKey(
         "courses.Course", on_delete=models.CASCADE, related_name="review_assignments"
     )
-    stage = models.CharField(max_length=10, choices=ReviewStage.choices)
+    stage = models.CharField(max_length=20, choices=ReviewStage.choices)
     reviewer = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         null=True,
@@ -128,7 +128,7 @@ class ReviewComment(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
         null=True,
         related_name="course_review_comments",
     )
-    stage = models.CharField(max_length=10, choices=ReviewStage.choices)
+    stage = models.CharField(max_length=20, choices=ReviewStage.choices)
     module = models.ForeignKey(
         "courses.Module",
         null=True,

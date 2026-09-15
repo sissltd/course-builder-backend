@@ -44,10 +44,11 @@ class MieDeveloperRegistrationView(APIView):
             "**Prerequisites:** None.\n\n"
 
             "**Important:** The email address must be unique across all "
-            "registrations. This endpoint is rate-limited per client IP; "
-            "exceeding the limit returns 429 with a Retry-After header. "
-            "Registration is idempotent for the same email — a duplicate "
-            "request returns the existing pending account."
+            "registrations; a duplicate email returns 400. Registration "
+            "is not idempotent — re-sending the same email does not "
+            "return the existing pending account. This endpoint is "
+            "rate-limited per client IP; exceeding the limit returns 429 "
+            "with a Retry-After header."
         ),
         request=DeveloperRegisterSerializer,
         responses={
