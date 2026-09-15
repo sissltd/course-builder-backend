@@ -1,7 +1,6 @@
 from .assessment_serializer import (
     AssessmentSerializer,
     AssessmentWriteSerializer,
-    QuizOptionSerializer,
     QuizQuestionSerializer,
 )
 from .course_appeal_serializer import (
@@ -71,7 +70,6 @@ __all__ = [
     "ModuleMiniSerializer",
     "ModuleSerializer",
     "ModuleWriteSerializer",
-    "QuizOptionSerializer",
     "QuizQuestionSerializer",
     "ReviewActionSerializer",
     "ReviewApproveSerializer",

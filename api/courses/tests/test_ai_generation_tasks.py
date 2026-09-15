@@ -15,10 +15,7 @@ def _question(number):
         "type": "MULTIPLE_CHOICE",
         "question": f"Question {number}",
         "points": 1,
-        "options": [
-            {"text": f"Option {index}", "explanation": "Explanation"}
-            for index in range(4)
-        ],
+        "options": [f"Option {index}" for index in range(4)],
         "correct_index": 0,
     }
 

@@ -33,36 +33,14 @@ not the learner attempt.
       "type": "SINGLE_CHOICE",
       "question": "Which variable name is valid?",
       "points": 10,
-      "options": [
-        {
-          "text": "2value",
-          "explanation": "It starts with a digit."
-        },
-        {
-          "text": "user_name",
-          "explanation": "Underscores are valid."
-        }
-      ],
+      "options": ["2value", "user_name"],
       "correct_index": 1
     },
     {
       "type": "MULTIPLE_CHOICE",
       "question": "Which values are Python collections?",
       "points": 8,
-      "options": [
-        {
-          "text": "list",
-          "explanation": "Lists are collections."
-        },
-        {
-          "text": "tuple",
-          "explanation": "Tuples are collections."
-        },
-        {
-          "text": "function",
-          "explanation": "Functions are not collections."
-        }
-      ],
+      "options": ["list", "tuple", "function"],
       "correct_indices": [0, 1]
     },
     {
@@ -88,7 +66,7 @@ type SingleChoiceQuestion = {
   type: "SINGLE_CHOICE";
   question: string;
   points: number;
-  options: { text: string; explanation: string }[];
+  options: string[];
   correct_index: number;
 };
 ```
@@ -100,7 +78,7 @@ Rules:
 - Exactly one answer is correct.
 - Do not send `correct_indices`.
 - Do not send top-level `expected_answer`.
-- Do not send top-level `explanation`; explanations live inside each option.
+- Do not send top-level `explanation`.
 
 Learner answer shape:
 
@@ -123,7 +101,7 @@ type MultipleChoiceQuestion = {
   type: "MULTIPLE_CHOICE";
   question: string;
   points: number;
-  options: { text: string; explanation: string }[];
+  options: string[];
   correct_indices: number[];
 };
 ```
@@ -135,7 +113,7 @@ Rules:
 - `correct_indices` must contain one or more unique indexes.
 - Do not send `correct_index`.
 - Do not send top-level `expected_answer`.
-- Do not send top-level `explanation`; explanations live inside each option.
+- Do not send top-level `explanation`.
 
 Learner answer shape:
 
@@ -316,7 +294,7 @@ Legacy field mapping:
 | --- | --- |
 | `question` | `question_text` |
 | `type` | `question_type` |
-| `options[].text` | `options[].option_text` |
+| `options[]` | `options[].option_text` |
 | `correct_index` / `correct_indices` | `options[].is_correct` |
 | `expected_answer` | `model_response_guide` |
 | `explanation` | `explanation` |

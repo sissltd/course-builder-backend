@@ -20,14 +20,7 @@ _SINGLE_CHOICE_QUESTION = {
     "type": "SINGLE_CHOICE",
     "question": "Which of these is a valid Python variable name?",
     "points": 10,
-    "options": [
-        {"text": "2var", "explanation": "Identifiers can't start with a digit."},
-        {
-            "text": "var_2",
-            "explanation": "Correct - letters, digits, underscores are fine.",
-        },
-        {"text": "var-2", "explanation": "Hyphens aren't allowed in identifiers."},
-    ],
+    "options": ["2var", "var_2", "var-2"],
     "correct_index": 1,
 }
 
@@ -35,11 +28,7 @@ _MULTIPLE_CHOICE_QUESTION = {
     "type": "MULTIPLE_CHOICE",
     "question": "Which of these are valid Python collection types?",
     "points": 10,
-    "options": [
-        {"text": "list", "explanation": "Lists are ordered collections."},
-        {"text": "tuple", "explanation": "Tuples are ordered collections."},
-        {"text": "function", "explanation": "Functions are not collection types."},
-    ],
+    "options": ["list", "tuple", "function"],
     "correct_indices": [0, 1],
 }
 
@@ -194,12 +183,12 @@ class LessonAssessmentView(APIView):
             "**Auth:** Course Creator/Writer with access to the course.\n\n"
             "**Prerequisites:** The parent course must be `DRAFT`.\n\n"
             "**Important:** Each question's `type` decides which fields "
-            "apply: `SINGLE_CHOICE` needs 2-6 `options` (each with its own "
-            "`explanation`) and one `correct_index`; `MULTIPLE_CHOICE` "
+            "apply: `SINGLE_CHOICE` needs 2-6 string `options` and one "
+            "`correct_index`; `MULTIPLE_CHOICE` "
             "needs 2-6 options and one or more `correct_indices`; "
             "`ESSAY` needs top-level `expected_answer` and `explanation` fields and rejects "
-            "`options`/correct-answer indexes. Explanations are required on every "
-            "option and essay question (SCCS PRD Section 6.3). Only this "
+            "`options`/correct-answer indexes. Essay questions require top-level "
+            "`expected_answer` and `explanation`. Only this "
             "per-question shape is validated here. Lesson assessments are "
             "optional and there is no question-count threshold."
         ),
@@ -318,12 +307,12 @@ class ModuleAssessmentView(APIView):
             "**Auth:** Course Creator/Writer with access to the course.\n\n"
             "**Prerequisites:** The parent course must be `DRAFT`.\n\n"
             "**Important:** Each question's `type` decides which fields "
-            "apply: `SINGLE_CHOICE` needs 2-6 `options` (each with its own "
-            "`explanation`) and one `correct_index`; `MULTIPLE_CHOICE` "
+            "apply: `SINGLE_CHOICE` needs 2-6 string `options` and one "
+            "`correct_index`; `MULTIPLE_CHOICE` "
             "needs 2-6 options and one or more `correct_indices`; "
             "`ESSAY` needs top-level `expected_answer` and `explanation` fields and rejects "
-            "`options`/correct-answer indexes. Explanations are required on every "
-            "option and essay question (SCCS PRD Section 6.3). Only this "
+            "`options`/correct-answer indexes. Essay questions require top-level "
+            "`expected_answer` and `explanation`. Only this "
             "per-question shape is validated here. A module assessment must "
             "exist before submission, but its question count is not constrained."
         ),
@@ -439,12 +428,12 @@ class CourseAssessmentView(APIView):
             "**Auth:** Course Creator/Writer with access to the course.\n\n"
             "**Prerequisites:** The course must be `DRAFT`.\n\n"
             "**Important:** Each question's `type` decides which fields "
-            "apply: `SINGLE_CHOICE` needs 2-6 `options` (each with its own "
-            "`explanation`) and one `correct_index`; `MULTIPLE_CHOICE` "
+            "apply: `SINGLE_CHOICE` needs 2-6 string `options` and one "
+            "`correct_index`; `MULTIPLE_CHOICE` "
             "needs 2-6 options and one or more `correct_indices`; "
             "`ESSAY` needs top-level `expected_answer` and `explanation` fields and rejects "
-            "`options`/correct-answer indexes. Explanations are required on every "
-            "option and essay question (SCCS PRD Section 6.3). Only this "
+            "`options`/correct-answer indexes. Essay questions require top-level "
+            "`expected_answer` and `explanation`. Only this "
             "per-question shape is validated here; the >=15 questions "
             "threshold is enforced separately at submit time, not on every "
             "save."

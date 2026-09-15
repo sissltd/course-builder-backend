@@ -36,13 +36,11 @@ builder hydration; use the focused endpoint to save or refresh one quiz.
 The backend returns the same shape from all three endpoints:
 
 ```ts
-type ChoiceOption = { text: string; explanation: string };
-
 type SingleChoiceQuestion = {
   type: "SINGLE_CHOICE";
   question: string;
   points: number;
-  options: ChoiceOption[];
+  options: string[];
   correct_index: number;
 };
 
@@ -50,7 +48,7 @@ type MultipleChoiceQuestion = {
   type: "MULTIPLE_CHOICE";
   question: string;
   points: number;
-  options: ChoiceOption[];
+  options: string[];
   correct_indices: number[];
 };
 
@@ -87,10 +85,8 @@ type Assessment = {
 - **Essay** has `question`, `points`, `expected_answer`, and `explanation`.
   The expected answer is the reference response; the explanation gives grading
   guidance. Do not render or send options or correct indexes.
-- Choice questions require 2–6 options. Every option requires both its answer
-  `text` and its own `explanation`, exactly as shown under each option in the
-  Figma. `points` is an integer of zero or more; total points are computed by
-  the backend.
+- Choice questions require 2–6 non-empty string options. `points` is an integer
+  of zero or more; total points are computed by the backend.
 - When a creator changes type, clear fields that no longer apply: remove
   options and indexes for essay; clear `correct_indices` for single choice;
   clear `correct_index` for multiple choice.
@@ -103,21 +99,14 @@ type Assessment = {
       "type": "SINGLE_CHOICE",
       "question": "Which variable name is valid?",
       "points": 10,
-      "options": [
-        {"text": "2value", "explanation": "It starts with a digit."},
-        {"text": "user_name", "explanation": "Underscores are valid."}
-      ],
+      "options": ["2value", "user_name"],
       "correct_index": 1
     },
     {
       "type": "MULTIPLE_CHOICE",
       "question": "Which values are collections?",
       "points": 8,
-      "options": [
-        {"text": "list", "explanation": "Lists are collections."},
-        {"text": "tuple", "explanation": "Tuples are collections."},
-        {"text": "function", "explanation": "Functions are not collections."}
-      ],
+      "options": ["list", "tuple", "function"],
       "correct_indices": [0, 1]
     },
     {
