@@ -831,18 +831,13 @@ Question shape (used identically at all three levels):
   "type": "SINGLE_CHOICE",
   "question": "What keyword defines a function in Python?",
   "points": 10,
-  "options": [
-    {"text": "func", "explanation": "Incorrect - this is not a Python keyword."},
-    {"text": "def", "explanation": "Correct - 'def' defines a function."},
-    {"text": "function", "explanation": "Incorrect - not a Python keyword."},
-    {"text": "lambda", "explanation": "Incorrect - lambda creates anonymous functions."}
-  ],
+  "options": ["func", "def", "function", "lambda"],
   "correct_index": 1
 }
 ```
 
 **Question Types:**
-- `SINGLE_CHOICE`: The Figma **Question choice** control. Requires 2-6 `options` (each with `text` and `explanation`) and one `correct_index`.
+- `SINGLE_CHOICE`: The Figma **Question choice** control. Requires 2-6 string `options` and one `correct_index`.
 - `MULTIPLE_CHOICE`: The additional multi-answer control. Requires 2-6 `options` and non-empty, unique `correct_indices`.
 - `ESSAY`: Requires top-level `expected_answer` (reference response) and `explanation` (grading guidance); it must not send `options`, `correct_index`, or `correct_indices`.
 
@@ -863,23 +858,14 @@ no question-count threshold)
       "type": "SINGLE_CHOICE",
       "question": "What keyword defines a function in Python?",
       "points": 10,
-      "options": [
-        {"text": "func", "explanation": "Incorrect - this is not a Python keyword."},
-        {"text": "def", "explanation": "Correct - 'def' defines a function."},
-        {"text": "function", "explanation": "Incorrect - not a Python keyword."},
-        {"text": "lambda", "explanation": "Incorrect - lambda creates anonymous functions."}
-      ],
+      "options": ["func", "def", "function", "lambda"],
       "correct_index": 1
     },
     {
       "type": "MULTIPLE_CHOICE",
       "question": "Which values are Python collections?",
       "points": 8,
-      "options": [
-        {"text": "list", "explanation": "A list is a collection."},
-        {"text": "tuple", "explanation": "A tuple is a collection."},
-        {"text": "function", "explanation": "A function is not a collection."}
-      ],
+      "options": ["list", "tuple", "function"],
       "correct_indices": [0, 1]
     },
     {
@@ -909,10 +895,7 @@ no question-count threshold)
       "type": "SINGLE_CHOICE",
       "question": "What keyword defines a function in Python?",
       "points": 10,
-      "options": [
-        {"text": "func", "explanation": "Incorrect - this is not a Python keyword."},
-        {"text": "def", "explanation": "Correct - 'def' defines a function."}
-      ],
+      "options": ["func", "def"],
       "correct_index": 1
     },
     {

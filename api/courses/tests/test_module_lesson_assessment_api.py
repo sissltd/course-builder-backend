@@ -206,10 +206,7 @@ class ModuleLessonAssessmentApiTests(APITestCase):
                     "type": "MULTIPLE_CHOICE",
                     "question": "Q1?",
                     "points": 10,
-                    "options": [
-                        {"text": "A", "explanation": "A is wrong because..."},
-                        {"text": "B", "explanation": "B is correct because..."},
-                    ],
+                    "options": ["A", "B"],
                     "correct_index": 1,
                 }
             ],
@@ -238,7 +235,7 @@ class ModuleLessonAssessmentApiTests(APITestCase):
                 {
                     "type": "MULTIPLE_CHOICE",
                     "question": "Q1?",
-                    "options": [{"text": "only one", "explanation": "n/a"}],
+                    "options": ["only one"],
                     "correct_index": 0,
                 }
             ],
@@ -276,10 +273,7 @@ class ModuleLessonAssessmentApiTests(APITestCase):
                     "type": "MULTIPLE_CHOICE",
                     "question": "Which is a valid variable name?",
                     "points": 10,
-                    "options": [
-                        {"text": "2var", "explanation": "Can't start with a digit."},
-                        {"text": "var_2", "explanation": "Correct."},
-                    ],
+                    "options": ["2var", "var_2"],
                     "correct_index": 1,
                 },
                 {
@@ -315,7 +309,7 @@ class ModuleLessonAssessmentApiTests(APITestCase):
         self.assertEqual(summary["multiple_choice_count"], 1)
         self.assertEqual(summary["essay_count"], 1)
 
-    def test_multiple_choice_option_missing_explanation_rejected(self):
+    def test_choice_question_rejects_object_options(self):
         self.client.force_authenticate(self.creator)
         url = self._assessment_url()
 
@@ -330,6 +324,24 @@ class ModuleLessonAssessmentApiTests(APITestCase):
                 }
             ],
         }
+        response = self.client.put(url, payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_choice_question_rejects_blank_options(self):
+        self.client.force_authenticate(self.creator)
+        url = self._assessment_url()
+        payload = {
+            "title": "Quiz",
+            "questions": [
+                {
+                    "type": "SINGLE_CHOICE",
+                    "question": "Q1?",
+                    "options": ["A", ""],
+                    "correct_index": 0,
+                }
+            ],
+        }
+
         response = self.client.put(url, payload, format="json")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
@@ -360,10 +372,7 @@ class ModuleLessonAssessmentApiTests(APITestCase):
                     "question": "Explain X.",
                     "expected_answer": "A model answer.",
                     "explanation": "Model answer.",
-                    "options": [
-                        {"text": "A", "explanation": "n/a"},
-                        {"text": "B", "explanation": "n/a"},
-                    ],
+                    "options": ["A", "B"],
                 }
             ],
         }
@@ -401,12 +410,7 @@ class ModuleLessonAssessmentApiTests(APITestCase):
                 "type": "SINGLE_CHOICE",
                 "question": "Which variable name is valid?",
                 "points": 10,
-                "options": [
-                    {"text": "2value", "explanation": "It starts with a digit."},
-                    {"text": "user-name", "explanation": "Hyphens are not valid."},
-                    {"text": "user_name", "explanation": "Underscores are valid."},
-                    {"text": "class", "explanation": "It is a reserved keyword."},
-                ],
+                "options": ["2value", "user-name", "user_name", "class"],
                 "correct_index": 2,
             },
             {
@@ -433,7 +437,7 @@ class ModuleLessonAssessmentApiTests(APITestCase):
             self.assertEqual(response.data["questions"][0]["correct_index"], 2)
             self.assertEqual(len(response.data["questions"][0]["options"]), 4)
             self.assertEqual(
-                response.data["questions"][0]["options"][2]["text"], "user_name"
+                response.data["questions"][0]["options"][2], "user_name"
             )
             self.assertEqual(
                 response.data["summary"],
@@ -476,14 +480,7 @@ class ModuleLessonAssessmentApiTests(APITestCase):
                     "type": "MULTIPLE_CHOICE",
                     "question": "Which are Python collection types?",
                     "points": 8,
-                    "options": [
-                        {"text": "list", "explanation": "A list is a collection."},
-                        {"text": "tuple", "explanation": "A tuple is a collection."},
-                        {
-                            "text": "function",
-                            "explanation": "A function is callable, not a collection.",
-                        },
-                    ],
+                    "options": ["list", "tuple", "function"],
                     "correct_indices": [0, 1],
                 },
                 {
@@ -491,10 +488,7 @@ class ModuleLessonAssessmentApiTests(APITestCase):
                     "type": "MULTIPLE_CHOICE",
                     "question": "Which keyword defines a function?",
                     "points": 2,
-                    "options": [
-                        {"text": "function", "explanation": "Not a keyword."},
-                        {"text": "def", "explanation": "Correct."},
-                    ],
+                    "options": ["function", "def"],
                     "correct_index": 1,
                 },
             ],
@@ -524,10 +518,7 @@ class ModuleLessonAssessmentApiTests(APITestCase):
                 {
                     "type": "MULTIPLE_CHOICE",
                     "question": "Which are valid?",
-                    "options": [
-                        {"text": "A", "explanation": "Explanation A."},
-                        {"text": "B", "explanation": "Explanation B."},
-                    ],
+                    "options": ["A", "B"],
                     "correct_indices": [0, 0],
                 }
             ],
@@ -549,13 +540,7 @@ class ModuleLessonAssessmentApiTests(APITestCase):
                 {
                     "type": "SINGLE_CHOICE",
                     "question": "Select one.",
-                    "options": [
-                        {
-                            "text": f"Option {index}",
-                            "explanation": f"Explanation {index}.",
-                        }
-                        for index in range(7)
-                    ],
+                    "options": [f"Option {index}" for index in range(7)],
                     "correct_index": 0,
                 }
             ],

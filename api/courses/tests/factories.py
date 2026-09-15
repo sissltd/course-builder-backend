@@ -122,12 +122,7 @@ def make_questions(count_):
             "type": "MULTIPLE_CHOICE",
             "question": f"Question {i}?",
             "points": 10,
-            "options": [
-                {"text": "A", "explanation": "Why A is right or wrong."},
-                {"text": "B", "explanation": "Why B is right or wrong."},
-                {"text": "C", "explanation": "Why C is right or wrong."},
-                {"text": "D", "explanation": "Why D is right or wrong."},
-            ],
+            "options": ["A", "B", "C", "D"],
             "correct_index": 0,
         }
         for i in range(count_)

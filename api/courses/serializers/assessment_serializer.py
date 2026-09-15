@@ -7,26 +7,13 @@ MINIMUM_CHOICE_OPTIONS = 2
 MAXIMUM_CHOICE_OPTIONS = 6
 
 
-class QuizOptionSerializer(serializers.Serializer):
-    """One answer option on a choice question.
-
-    `explanation` is required on every option (SCCS PRD Section 6.3: "every
-    question must have explanations for both correct and incorrect
-    answers") - not just the correct one.
-    """
-
-    text = serializers.CharField(allow_blank=False)
-    explanation = serializers.CharField(allow_blank=False)
-
-
 class QuizQuestionSerializer(serializers.Serializer):
     """One quiz question, shaped differently depending on `type`.
 
     SINGLE_CHOICE has one correct option; MULTIPLE_CHOICE has one or more.
-    Both have 2-6 options and an explanation for each option. ESSAY has
-    distinct top-level expected_answer and explanation fields, and no options.
-    The legacy
-    MULTIPLE_CHOICE + correct_index shape remains valid for existing clients.
+    Both have 2-6 string options. ESSAY has distinct top-level expected_answer
+    and explanation fields, and no options. The legacy MULTIPLE_CHOICE +
+    correct_index shape remains valid for existing clients.
     """
 
     type = serializers.ChoiceField(
@@ -34,7 +21,9 @@ class QuizQuestionSerializer(serializers.Serializer):
     )
     question = serializers.CharField(allow_blank=False)
     points = serializers.IntegerField(min_value=0, default=0)
-    options = QuizOptionSerializer(many=True, required=False)
+    options = serializers.ListField(
+        child=serializers.CharField(allow_blank=False), required=False
+    )
     correct_index = serializers.IntegerField(required=False)
     correct_indices = serializers.ListField(
         child=serializers.IntegerField(), required=False, allow_empty=False
@@ -53,9 +42,8 @@ class QuizQuestionSerializer(serializers.Serializer):
                 raise serializers.ValidationError(
                     {
                         "expected_answer": (
-                            "Choice questions carry per-option "
-                            "explanations, not top-level expected answers or "
-                            "explanations."
+                            "Choice questions do not accept top-level expected "
+                            "answers or explanations."
                         )
                     }
                 )
@@ -206,10 +194,10 @@ class AssessmentWriteSerializer(serializers.ModelSerializer):
     """Create/update serializer for an Assessment.
 
     `questions` is validated per-item by QuizQuestionSerializer (shape only:
-    field presence, option count, correct_index range, required
-    explanations). Lesson assessments are optional and have no question-count
-    threshold. Submission-time rules for module-assessment presence and the
-    final-assessment minimum remain centralized in quality_check_service.
+    field presence, option count, correct-index range). Lesson assessments are
+    optional and have no question-count threshold. Submission-time rules for
+    module-assessment presence and the final-assessment minimum remain
+    centralized in quality_check_service.
     """
 
     questions = QuizQuestionSerializer(many=True)

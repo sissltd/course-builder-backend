@@ -54,15 +54,7 @@ QUESTION_SCHEMA = {
             "type": "array",
             "minItems": 4,
             "maxItems": 4,
-            "items": {
-                "type": "object",
-                "additionalProperties": False,
-                "required": ["text", "explanation"],
-                "properties": {
-                    "text": {"type": "string"},
-                    "explanation": {"type": "string"},
-                },
-            },
+            "items": {"type": "string"},
         },
         "correct_index": {"type": "integer", "minimum": 0, "maximum": 3},
     },
