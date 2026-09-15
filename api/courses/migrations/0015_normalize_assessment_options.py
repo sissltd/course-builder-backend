@@ -27,7 +27,7 @@ def normalize_assessment_options(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
-    dependencies = [("courses", "0012_course_import_job_document_source")]
+    dependencies = [("courses", "0014_start_in_flight_courses_at_first_review")]
 
     operations = [
         migrations.RunPython(
