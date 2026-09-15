@@ -14,8 +14,9 @@ from django.db import transaction
 from django.utils import timezone
 from rest_framework import exceptions
 
-from api.mie.enums import SubmissionStatus, WebhookEventType
+from api.mie.enums import MieSourceType, SubmissionStatus, WebhookEventType
 from api.mie.models import CourseSubmission, SubmissionRejectionReason, WebhookEvent
+from api.mie.services import guardrail_service
 from api.users.enums import UserRole
 from api.users.permissions import require_role
 
@@ -43,14 +44,24 @@ def decide_submission(
     require_role(actor, (UserRole.SUPER_ADMIN,))
     new_status = SubmissionStatus.APPROVED if approve else SubmissionStatus.REJECTED
 
-    if not approve:
-        if rejection_reason is None and submission.status != SubmissionStatus.REJECTED:
-            raise exceptions.ValidationError(
-                {"rejection_reason": ["A rejection reason is required to reject."]}
-            )
-        _flag_resulting_course_if_any(submission)
+    # An already-rejected row may be re-rejected without a fresh reason;
+    # any other rejection must carry one.
+    if (
+        not approve
+        and rejection_reason is None
+        and submission.status != SubmissionStatus.REJECTED
+    ):
+        raise exceptions.ValidationError(
+            {"rejection_reason": ["A rejection reason is required to reject."]}
+        )
 
     with transaction.atomic():
+        # Inside the transaction: a decision that fails after this point
+        # must not leave the produced course unpublished with no matching
+        # rejection behind it.
+        if not approve:
+            _flag_resulting_course_if_any(submission)
+
         submission.status = new_status
         submission.decided_at = timezone.now()
         submission.decided_by = actor
@@ -58,7 +69,10 @@ def decide_submission(
             submission.rejection_reason = None
             submission.rejection_note = ""
         else:
-            submission.rejection_reason = rejection_reason
+            # Both fall back to what is already stored, so re-rejecting an
+            # already-rejected idea without fresh detail preserves rather
+            # than wipes it.
+            submission.rejection_reason = rejection_reason or submission.rejection_reason
             submission.rejection_note = rejection_note or submission.rejection_note
         submission.save()
 
@@ -69,6 +83,14 @@ def decide_submission(
             else WebhookEventType.SUBMISSION_REJECTED,
             payload=_decision_payload(submission),
         )
+
+        # Same transaction as the rejection that feeds it: if this decision
+        # rolls back, so does any suspension it caused. Approvals and
+        # external developers never reach the breaker.
+        if not approve and submission.developer.source_type == MieSourceType.SYSTEM:
+            guardrail_service.evaluate_rejection_breaker(
+                account=submission.developer, actor=actor
+            )
     return submission
 
 

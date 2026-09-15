@@ -154,6 +154,22 @@ def run_capture(cmd: list[str]) -> tuple[int, str, str]:
     return proc.returncode, proc.stdout, proc.stderr
 
 
+def project_python() -> str:
+    """The interpreter every gate runs under.
+
+    Each gate imports Django, so it has to run inside the project's
+    virtualenv. Using sys.executable tied the gates to whichever Python
+    launched this script: `python3 devscripts/gc.py` from a plain shell ran
+    them under an interpreter with no Django, and every Django gate failed.
+    Prefer the repo's own .venv; fall back to sys.executable when there is
+    none (an activated environment, or CI).
+    """
+    for candidate in (Path(".venv/bin/python"), Path(".venv/Scripts/python.exe")):
+        if candidate.is_file():
+            return str(candidate)
+    return sys.executable
+
+
 def repo_root() -> Path:
     """The repository root, so this works from any working directory.
 
@@ -253,25 +269,29 @@ def run_ci(with_tests: bool = False) -> None:
     """
     header("🔍  CI checks")
 
+    python = project_python()
+    info("python:", python)
+    print()
+
     schema_out = Path(tempfile.gettempdir()) / "openapi-schema.yaml"
 
     checks: list[tuple[str, list[str], bool]] = [
-        ("Linter (ruff)", [sys.executable, "-m", "ruff", "check", "."], True),
+        ("Linter (ruff)", [python, "-m", "ruff", "check", "."], True),
         (
             "Formatter (ruff)",
-            [sys.executable, "-m", "ruff", "format", "--check", "."],
+            [python, "-m", "ruff", "format", "--check", "."],
             False,
         ),
-        ("Django system check", [sys.executable, "manage.py", "check"], True),
+        ("Django system check", [python, "manage.py", "check"], True),
         (
             "Migration consistency",
-            [sys.executable, "manage.py", "makemigrations", "--check", "--dry-run"],
+            [python, "manage.py", "makemigrations", "--check", "--dry-run"],
             True,
         ),
         (
             "OpenAPI schema",
             [
-                sys.executable,
+                python,
                 "manage.py",
                 "spectacular",
                 "--file",
@@ -283,7 +303,7 @@ def run_ci(with_tests: bool = False) -> None:
     ]
 
     if with_tests:
-        checks.append(("Test suite", [sys.executable, "manage.py", "test"], True))
+        checks.append(("Test suite", [python, "manage.py", "test"], True))
 
     failures: list[tuple[str, str]] = []
     for name, cmd, blocking in checks:
@@ -293,7 +313,10 @@ def run_ci(with_tests: bool = False) -> None:
             # silent terminal that long is indistinguishable from a hang.
             code, out = run(cmd)
         else:
-            code, out = run_quiet(cmd)
+            # stderr too: Django's check, makemigrations and spectacular all
+            # report their failures there, so stdout alone came back empty.
+            code, stdout, stderr = run_capture(cmd)
+            out = stdout + stderr
         if code != 0:
             if blocking:
                 failures.append((name, out))

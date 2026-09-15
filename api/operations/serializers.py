@@ -1,5 +1,7 @@
 from rest_framework import serializers
 
+from api.mie.enums import MieSourceType
+
 
 # ── System Health ────────────────────────────────────────────────────
 
@@ -225,6 +227,15 @@ class MieRecommendationRowSerializer(serializers.Serializer):
     )
     title = serializers.CharField()
     developer_email = serializers.EmailField(help_text="Submitting partner.")
+    source_type = serializers.ChoiceField(
+        choices=MieSourceType.choices,
+        help_text=(
+            "Who stands behind the submitting account: EXTERNAL for a "
+            "third-party developer, SYSTEM for a platform-owned integration "
+            "(the MIE crawler). Lets the screen weigh a partner's idea "
+            "differently from one the platform generated for itself."
+        ),
+    )
     demand_score = serializers.IntegerField(
         allow_null=True, help_text="Admin-entered 0-100 signal. Null when unscored."
     )

@@ -1,7 +1,7 @@
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from api.mie.enums import DeveloperAccountStatus
+from api.mie.enums import DeveloperAccountStatus, MieSourceType
 from api.mie.models import DeveloperAccount
 from api.mie.services.key_service import hash_raw_key
 from api.mie.tests.factories import make_developer_account
@@ -57,6 +57,28 @@ class MieDeveloperRegistrationTests(APITestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_registration_cannot_claim_to_be_a_system_account(self):
+        """source_type is editable=False precisely so this payload cannot
+        work: a developer who could register as SYSTEM would land on a
+        no-payout plan and under the crawler's guardrails, and a SYSTEM
+        account is supposed to come only from the provisioning command."""
+
+        response = self.client.post(
+            DEVELOPERS_URL,
+            {
+                "email": "impostor@studio.io",
+                "webhook_url": "https://x.io/h",
+                "source_type": MieSourceType.SYSTEM,
+            },
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["source_type"], MieSourceType.EXTERNAL)
+        self.assertEqual(
+            DeveloperAccount.objects.get(email="impostor@studio.io").source_type,
+            MieSourceType.EXTERNAL,
+        )
 
     def test_list_and_filter_by_status(self):
         make_developer_account()

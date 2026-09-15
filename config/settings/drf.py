@@ -365,8 +365,8 @@ SPECTACULAR_SETTINGS = {
             "name": "Admin — MIE Submissions",
             "description": (
                 "STEP 5 — Superadmin works the pipeline: the cross-"
-                "developer queue (filters: developer, status, date, "
-                "search), reversible approve/reject with immediate "
+                "developer queue (filters: developer, source type, "
+                "status, date, search), reversible approve/reject with immediate "
                 "webhooks, recommendation signals (demand score, "
                 "estimated earnings), and payout-bypass toggles."
             ),
@@ -420,6 +420,9 @@ SPECTACULAR_SETTINGS = {
         "SubmissionStatusEnum": "api.mie.enums.SubmissionStatus",
         "WebhookEventTypeEnum": "api.mie.enums.WebhookEventType",
         "WebhookDeliveryStatusEnum": "api.mie.enums.WebhookDeliveryStatus",
+        # A third choice set on fields named source_type (next to
+        # CourseSourceType and MediaSource below), so it must be pinned too.
+        "MieSourceTypeEnum": "api.mie.enums.MieSourceType",
         # KYCStatus has identical PENDING/APPROVED/REJECTED choices and is
         # already covered by RequestStatusEnum (CategoryRequestStatus) above.
         # Do NOT add a second override for it — drf-spectacular flags

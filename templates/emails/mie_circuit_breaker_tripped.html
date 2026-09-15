@@ -1,0 +1,21 @@
+<!doctype html>
+<html>
+  <body style="font-family: Arial, sans-serif; color: #1a1a1a; margin: 0; padding: 24px; background: #f5f5f5;">
+    <table role="presentation" style="max-width: 480px; margin: 0 auto; background: #ffffff; border-radius: 8px; padding: 32px;">
+      <tr>
+        <td>
+          <p style="margin: 0 0 16px;">Hello,</p>
+          <p style="margin: 0 0 16px;">The MIE circuit breaker has suspended the system developer account <strong>{{ developer_email }}</strong>.</p>
+          <p style="margin: 0 0 16px;">Admins rejected <strong>{{ rejected }}</strong> of the <strong>{{ decided }}</strong> ideas from this account decided within the breaker's window ({{ rejection_rate }}); the limit is {{ threshold }}. The window is the last {{ window_days }} days, or the time since the account was last approved if that is shorter.</p>
+          <p style="margin: 0 0 8px;">What this means:</p>
+          <ul style="margin: 0 0 16px; padding-left: 20px;">
+            <li>Its API key now returns 401 (account_suspended), so no new ideas are accepted.</li>
+            <li>Its key, queue history and pending webhooks are kept. Nothing was deleted.</li>
+          </ul>
+          <p style="margin: 0 0 24px;">To restore it, approve the account under Admin - MIE Developers. The existing key starts working again, and the breaker only counts decisions made after that approval.</p>
+          <p style="margin: 24px 0 0; color: #999999; font-size: 12px;">You're receiving this email because you are a Super Admin on this platform.</p>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

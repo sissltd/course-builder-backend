@@ -12,43 +12,62 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 
-from api.catalog.enums import CategoryDeletionStrategy
+from api.catalog.enums import CategoryDeletionStrategy, CategoryStatus
 from api.catalog.filters import CategoryFilter
 from api.catalog.models import Category
 from api.catalog.serializers import (
     CategoryStatsSerializer,
     CategoryDeletionImpactSerializer,
     CategoryDeletionSerializer,
+    CategoryPickerSerializer,
     CategorySerializer,
     CategoryWriteSerializer,
 )
 from api.catalog.services import category_service
 from api.users.permissions import CanManageCategories, IsMFAVerifiedForSession
-from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
+from includes.spectacular.responses import (
+    STANDARD_ERROR_RESPONSES,
+    ErrorEnvelopeSerializer,
+)
 
 WRITE_ACTIONS = {"create", "update", "partial_update", "destroy"}
+# Read endpoints that back the admin Categories screen rather than the
+# creator picker - full category data, including per-tier pricing, is an
+# Admin Writer concern, so the catalog stays a single source of truth.
+ADMIN_READ_ACTIONS = {"list", "retrieve", "stats", "deletion_impact"}
 
 _CATEGORY_EXAMPLE = {
     "id": "7d2f4b18-3c9a-4e51-b8f0-1a6c5d3e9b74",
     "name": "Software Engineering",
-    "description": "Courses covering programming, architecture, and delivery practices.",
-    "creator_price": "150.00",
+    "creator_price_beginner": "150.00",
+    "creator_price_intermediate": "200.00",
+    "creator_price_advanced": "300.00",
+    "icon": "code",
     "track_preference": "OPEN",
     "status": "ACTIVE",
+    "total_courses": 12,
     "created_datetime": "2026-07-12T09:30:11.204Z",
     "updated_datetime": "2026-07-19T06:04:45.882Z",
 }
 
 _AUTH_LINE = (
-    "**Auth:** Writer, Admin, or Super Admin. Approvers, Reviewers, and public "
-    "Course Creators have read access only — they browse categories but do not "
-    "manage them."
+    "**Auth:** Admin Writer \u2014 Writer, Admin, or Super Admin. Approvers, "
+    "Reviewers, and public Course Creators do not manage categories; they "
+    "browse a lightweight picker via `GET /api/v1/categories/picker/`."
 )
 
+_PICKER_EXAMPLE = {
+    "id": "7d2f4b18-3c9a-4e51-b8f0-1a6c5d3e9b74",
+    "name": "Software Engineering",
+    "is_active": True,
+}
+
 _PRICE_WARNING = (
-    "Editing `creator_price` is not retroactive: `Course.creator_price_snapshot` "
-    "freezes the rate when a course is submitted, so a change here only affects "
-    "courses submitted afterwards and never alters an existing payout."
+    "Editing the `creator_price_beginner`, `creator_price_intermediate`, or "
+    "`creator_price_advanced` rates is not retroactive: "
+    "`Course.creator_price_snapshot` freezes the rate when a course is "
+    "submitted, so a change here only affects courses submitted afterwards "
+    "and never alters an existing payout."
 )
 
 
@@ -56,20 +75,22 @@ _PRICE_WARNING = (
     list=extend_schema(
         summary="List course categories",
         description=(
-            "Returns every course category with its creator price, track "
-            "preference, and whether it is currently accepting submissions. "
-            "This is the lookup creators use to choose where a new course "
-            "belongs, and the table behind the admin Categories screen.\n\n"
-            "Called when rendering the category picker during course creation, "
-            "and whenever the Categories screen loads.\n\n"
-            "**Auth:** Any authenticated user. Everyone needs to read "
-            "categories; only Writers and Super Admins can change them.\n\n"
-            "**Prerequisites:** None beyond being signed in.\n\n"
-            "**Important:** Includes `INACTIVE` categories, which must not be "
-            "offered when creating a course — filter with `?status=ACTIVE` for "
-            "a picker. Results are paginated."
+            "Returns every course category with its per-difficulty creator "
+            "prices, track preference, and whether it is accepting "
+            "submissions. This is the table behind the admin Categories "
+            "screen, where writers keep pricing and availability in order.\n\n"
+            "Called when the admin Categories screen loads.\n\n"
+            "**Auth:** Admin Writer \u2014 Writer, Admin, or Super Admin. "
+            "Approvers, Reviewers, and Course Creators cannot list the full "
+            "catalog.\n\n"
+            "**Prerequisites:** None beyond holding the Writer, Admin, or "
+            "Super Admin role.\n\n"
+            "**Important:** Includes `INACTIVE` and `ARCHIVED` categories. "
+            "Results are paginated. Course creators use "
+            "`GET /api/v1/categories/picker/` instead \u2014 a filtered view "
+            "that only serves ACTIVE categories."
         ),
-        tags=["Creator — Categories"],
+        tags=["Admin Writer — Category"],
         responses={
             200: OpenApiResponse(
                 response=CategorySerializer(many=True),
@@ -77,20 +98,23 @@ _PRICE_WARNING = (
                 examples=[OpenApiExample(name="Success", value=[_CATEGORY_EXAMPLE])],
             ),
             **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
             **STANDARD_ERROR_RESPONSES["server"],
         },
     ),
     retrieve=extend_schema(
         summary="Retrieve a course category",
         description=(
-            "Returns a single category by id, including its current creator "
-            "price and submission status.\n\n"
-            "Called when opening a category's detail or edit view.\n\n"
-            "**Auth:** Any authenticated user.\n\n"
-            "**Prerequisites:** None beyond being signed in.\n\n"
+            "Returns a single category by id, including its per-difficulty "
+            "creator prices and submission status. Backs the category "
+            "detail/edit screen.\n\n"
+            "Called when an admin opens a category from the Categories "
+            "screen.\n\n"
+            "**Auth:** Admin Writer \u2014 Writer, Admin, or Super Admin.\n\n"
+            "**Prerequisites:** The category must exist.\n\n"
             "**Important:** None."
         ),
-        tags=["Creator — Categories"],
+        tags=["Admin Writer — Category"],
         responses={
             200: OpenApiResponse(
                 response=CategorySerializer,
@@ -98,6 +122,7 @@ _PRICE_WARNING = (
                 examples=[OpenApiExample(name="Success", value=_CATEGORY_EXAMPLE)],
             ),
             **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
             **STANDARD_ERROR_RESPONSES["not_found"],
             **STANDARD_ERROR_RESPONSES["server"],
         },
@@ -117,7 +142,7 @@ _PRICE_WARNING = (
             f"**Important:** `name` must be unique — a duplicate returns 400. "
             f"{_PRICE_WARNING}"
         ),
-        tags=["Admin — Categories"],
+        tags=["Admin Writer — Category"],
         request=CategoryWriteSerializer,
         examples=[
             OpenApiExample(
@@ -125,11 +150,10 @@ _PRICE_WARNING = (
                 request_only=True,
                 value={
                     "name": "Software Engineering",
-                    "description": (
-                        "Courses covering programming, architecture, and "
-                        "delivery practices."
-                    ),
-                    "creator_price": "150.00",
+                    "creator_price_beginner": "150.00",
+                    "creator_price_intermediate": "200.00",
+                    "creator_price_advanced": "300.00",
+                    "icon": "code",
                     "track_preference": "OPEN",
                     "status": "ACTIVE",
                 },
@@ -142,6 +166,7 @@ _PRICE_WARNING = (
                 examples=[OpenApiExample(name="Success", value=_CATEGORY_EXAMPLE)],
             ),
             400: OpenApiResponse(
+                response=ErrorEnvelopeSerializer,
                 description="The name is taken or a field failed validation.",
                 examples=[
                     OpenApiExample(
@@ -170,7 +195,7 @@ _PRICE_WARNING = (
                                         "Ensure this value is greater than or "
                                         "equal to 0."
                                     ),
-                                    "field_name": "creator_price",
+                                    "field_name": "creator_price_beginner",
                                 }
                             ]
                         },
@@ -195,7 +220,7 @@ _PRICE_WARNING = (
             f"**Important:** {_PRICE_WARNING} Closing a category to new work is "
             "a `status` change to `INACTIVE`, not a delete."
         ),
-        tags=["Admin — Categories"],
+        tags=["Admin Writer — Category"],
         request=CategoryWriteSerializer,
         responses={
             200: OpenApiResponse(
@@ -223,7 +248,7 @@ _PRICE_WARNING = (
             "stops new submissions but leaves courses already in the category "
             "untouched — this is the safe alternative to deleting."
         ),
-        tags=["Admin — Categories"],
+        tags=["Admin Writer — Category"],
         request=CategoryWriteSerializer,
         examples=[
             OpenApiExample(
@@ -234,7 +259,7 @@ _PRICE_WARNING = (
             OpenApiExample(
                 name="Reprice",
                 request_only=True,
-                value={"creator_price": "175.00"},
+                value={"creator_price_advanced": "175.00"},
             ),
         ],
         responses={
@@ -279,7 +304,7 @@ _PRICE_WARNING = (
             "The whole operation is atomic. To retire a category without any "
             "of this, PATCH `status` to `INACTIVE` instead."
         ),
-        tags=["Admin — Categories"],
+        tags=["Admin Writer — Category"],
         request=None,
         parameters=[
             OpenApiParameter(
@@ -306,8 +331,9 @@ _PRICE_WARNING = (
             ),
         ],
         responses={
-            204: OpenApiResponse(description="Category deleted."),
+            204: OpenApiResponse(description="Category soft-deleted."),
             400: OpenApiResponse(
+                response=ErrorEnvelopeSerializer,
                 description=(
                     "The strategy or replacement category is unusable — a "
                     "missing replacement, or one pointing at the category "
@@ -349,9 +375,10 @@ _PRICE_WARNING = (
                 ],
             ),
             409: OpenApiResponse(
+                response=ErrorEnvelopeSerializer,
                 description=(
                     "The category has courses and no strategy was given. "
-                    "Nothing was deleted."
+                    "Nothing was changed."
                 ),
                 examples=[
                     OpenApiExample(
@@ -381,14 +408,15 @@ _PRICE_WARNING = (
     ),
 )
 class CategoryViewSet(ModelViewSet):
-    """Staff-managed course categories (SCCS PRD Section 7).
+    """Admin Writer-managed course categories (SCCS PRD Section 7).
 
-    List/retrieve are open to any authenticated user - creators need to browse
-    categories to pick one (US-101). Create/update/delete are restricted to
-    Writers, Admins, and Super Admins via CanManageCategories; note this
-    deliberately excludes Approvers, who read categories like everyone else.
-    Writes also require an MFA-verified session (IsMFAVerifiedForSession) -
-    categories carry creator_price, a financial policy change.
+    Every endpoint under /categories/ is an Admin Writer concern
+    (CanManageCategories): Writer, Admin, or Super Admin. Create/update/delete
+    additionally require an MFA-verified session (IsMFAVerifiedForSession),
+    since categories carry creator pricing, a financial policy change.
+    Approvers, reviewers, and public Course Creators are deliberately
+    excluded; creators pick a category via GET /categories/picker/, which
+    serves only ACTIVE categories in a minimal payload (US-101).
     """
 
     queryset = Category.objects.all()
@@ -410,6 +438,7 @@ class CategoryViewSet(ModelViewSet):
         return (
             super()
             .get_queryset()
+            .filter(is_deleted=False)
             .annotate(total_courses=Count("courses"))
             .order_by("name")
         )
@@ -419,30 +448,48 @@ class CategoryViewSet(ModelViewSet):
             return CategoryWriteSerializer
         if self.action == "deletion_impact":
             return CategoryDeletionImpactSerializer
+        if self.action == "picker":
+            return CategoryPickerSerializer
         return CategorySerializer
 
     def get_permissions(self):
         if self.action in WRITE_ACTIONS or self.action in ("archive", "unarchive"):
             return [CanManageCategories(), IsMFAVerifiedForSession()]
+        if self.action in ADMIN_READ_ACTIONS:
+            return [CanManageCategories()]
         return super().get_permissions()
 
     @extend_schema(
         summary="Category counts by status",
         description=(
             "Returns the total, active, inactive and archived category "
-            "counts behind the tiles above the categories table.\n\n"
-            "**Auth:** Any authenticated user.\n\n"
-            "**Prerequisites:** None.\n\n"
+            "counts behind the tiles above the admin Categories table.\n\n"
+            "Called when the admin Categories screen loads.\n\n"
+            "**Auth:** Admin Writer \u2014 Writer, Admin, or Super Admin.\n\n"
+            "**Prerequisites:** None beyond holding the Writer, Admin, or "
+            "Super Admin role.\n\n"
             "**Important:** Every key is always present, including zeroes, "
             "so a tile never disappears when its bucket empties."
         ),
-        tags=["Creator — Categories"],
+        tags=["Admin Writer — Category"],
         responses={
             200: OpenApiResponse(
                 response=CategoryStatsSerializer,
                 description="Counts by status.",
+                examples=[
+                    OpenApiExample(
+                        name="Success",
+                        value={
+                            "total": 24,
+                            "active": 18,
+                            "inactive": 4,
+                            "archived": 2,
+                        },
+                    )
+                ],
             ),
             **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
             **STANDARD_ERROR_RESPONSES["server"],
         },
     )
@@ -451,6 +498,42 @@ class CategoryViewSet(ModelViewSet):
         return Response(
             CategoryStatsSerializer(category_service.get_category_stats()).data
         )
+
+    @extend_schema(
+        summary="List pickable categories",
+        description=(
+            "Returns the categories a creator can file a new course under: "
+            "a lightweight picker payload with the name and whether the "
+            "category accepts submissions. Only ACTIVE "
+            "categories are served \u2014 INACTIVE and ARCHIVED are never "
+            "offered for creation.\n\n"
+            "Called when the category picker opens during course creation.\n\n"
+            "**Auth:** Any authenticated user.\n\n"
+            "**Prerequisites:** None.\n\n"
+            "**Important:** Every returned row is ACTIVE, so `is_active` is "
+            "always true \u2014 the flag mirrors the on/off state the admin "
+            "toggles rather than signalling a mix. Use the returned `id` "
+            "when creating a course."
+        ),
+        tags=["Creator — Categories"],
+        responses={
+            200: OpenApiResponse(
+                response=CategoryPickerSerializer(many=True),
+                description="Active categories, ordered by name.",
+                examples=[
+                    OpenApiExample(name="Success", value=[_PICKER_EXAMPLE])
+                ],
+            ),
+**STANDARD_ERROR_RESPONSES["auth"],
+        **STANDARD_ERROR_RESPONSES["server"],
+    },
+)
+    @action(detail=False, methods=["get"], pagination_class=None)
+    def picker(self, request):
+        categories = Category.objects.filter(
+            status=CategoryStatus.ACTIVE, is_deleted=False
+        ).order_by("name")
+        return Response(CategoryPickerSerializer(categories, many=True).data)
 
     @extend_schema(
         summary="Archive a category",
@@ -467,11 +550,13 @@ class CategoryViewSet(ModelViewSet):
             "the creator picker. Archiving an already-archived category is "
             "a 400, not a silent success."
         ),
-        tags=["Admin — Categories"],
+        tags=["Admin Writer — Category"],
         request=None,
         responses={
             200: OpenApiResponse(
-                response=CategorySerializer, description="The archived category."
+                response=CategorySerializer,
+                description="The archived category.",
+                examples=[OpenApiExample(name="Success", value=_CATEGORY_EXAMPLE)],
             ),
             **STANDARD_ERROR_RESPONSES["validation"],
             **STANDARD_ERROR_RESPONSES["auth"],
@@ -499,11 +584,13 @@ class CategoryViewSet(ModelViewSet):
             "held before archiving \u2014 an INACTIVE category that was "
             "archived comes back active."
         ),
-        tags=["Admin — Categories"],
+        tags=["Admin Writer — Category"],
         request=None,
         responses={
             200: OpenApiResponse(
-                response=CategorySerializer, description="The restored category."
+                response=CategorySerializer,
+                description="The restored category.",
+                examples=[OpenApiExample(name="Success", value=_CATEGORY_EXAMPLE)],
             ),
             **STANDARD_ERROR_RESPONSES["validation"],
             **STANDARD_ERROR_RESPONSES["auth"],
@@ -526,20 +613,20 @@ class CategoryViewSet(ModelViewSet):
             "status, plus how many onboarding profiles name it as their "
             "primary expertise. Nothing is changed — this exists so the delete "
             "confirmation can warn the admin with real numbers and offer the "
-            "right choice, instead of letting them find out afterwards.\n\n"
+            "right choice before the category is soft-deleted.\n\n"
             "Called when the admin clicks delete on the Categories screen, "
             "before `DELETE /categories/{id}/` is sent with their decision.\n\n"
             f"{_AUTH_LINE}\n\n"
             "**Prerequisites:** The category must exist.\n\n"
             "**Important:** `requires_strategy` tells you whether the delete "
             "dialog needs to ask anything at all — when it is false, a plain "
-            "DELETE succeeds. Treat the counts as a snapshot: a course created "
+            "DELETE soft-deletes the category. Treat the counts as a snapshot: a course created "
             "between this call and the delete is included in whatever strategy "
             "runs. `affected_creator_profile_count` is informational — those "
-            "profiles are never deleted, they just lose the field, and that "
-            "happens under both strategies."
+            "profiles are never deleted and retain their reference because the "
+            "category row is soft-deleted."
         ),
-        tags=["Admin — Categories"],
+        tags=["Admin Writer — Category"],
         responses={
             200: OpenApiResponse(
                 response=CategoryDeletionImpactSerializer,

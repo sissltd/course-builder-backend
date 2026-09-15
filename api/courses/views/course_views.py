@@ -1177,6 +1177,10 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
                 sort_order=sort_order,
                 track_filter=track_filter,
                 sla_user=self.request.user,
+                # Pending is the screen reviewers claim from, so it shows only
+                # the seats they can actually take. Every other screen lists
+                # its whole status, as it did before the chain existed.
+                seats_for=self.request.user if self.action == "pending" else None,
             )
             if "ordering" not in self.request.query_params:
                 if self.action == "approved":
@@ -1245,7 +1249,11 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
             "**Auth:** Creator Reviewer, QA Reviewer, Verifier, or Admin.\n\n"
             "**Prerequisites:** None beyond holding one of those roles.\n\n"
             "**Important:** This route always enforces `SUBMITTED`; a supplied "
-            "status cannot widen it. Rows are paginated under `data.results`."
+            "status cannot widen it. Rows are paginated under `data.results`. "
+            "The queue is scoped to the seats you can actually take: a "
+            "Creator Reviewer sees First and Second Review seats, a Verifier "
+            "sees Verification seats, and courses where you already decided "
+            "an earlier seat this cycle are hidden. Admin sees every seat."
         ),
         tags=["Reviewer — Pending Courses"],
         parameters=[
@@ -1538,18 +1546,24 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
     @extend_schema(
         summary="Claim a course for review",
         description=(
-            "Transitions a Submitted course to In Review, marking that a "
-            "specific reviewer is now working on it.\n\n"
+            "Claims the content seat a Submitted course is waiting at, "
+            "transitioning it to In Review and marking that a specific "
+            "reviewer is now working on it.\n\n"
             "Called when a reviewer opens a Submitted course and starts "
             "reviewing it.\n\n"
-            "**Auth:** Creator Reviewer, Verifier, or Admin.\n\n"
+            "**Auth:** First and Second Review take a Creator Reviewer, "
+            "Verification takes a Verifier; Admin may take any seat.\n\n"
             "**Prerequisites:** The course must be `SUBMITTED` or already "
             "`IN_REVIEW`; the reviewer must not be marked Unavailable.\n\n"
-            "**Important:** Idempotent for the reviewer who already holds the "
-            "assignment. A competing reviewer receives a validation error. "
-            "A reviewer who has since gone Unavailable can still "
-            "re-claim a course they already hold; only a *new* claim is "
-            "blocked."
+            "**Important:** Content review has three seats, in order - First "
+            "Review, Second Review, Verification - and `review_stage` says "
+            "which one the course is at. Each seat must be held by a "
+            "different person: whoever decided an earlier seat this cycle is "
+            "refused (403), as is a reviewer whose role does not hold the "
+            "seat. Idempotent for the reviewer who already holds the seat; a "
+            "competing reviewer receives a validation error. A reviewer who "
+            "has since gone Unavailable can still re-claim a seat they "
+            "already hold; only a *new* claim is blocked."
         ),
         tags=["Reviewer — Review Queue"],
         request=None,
@@ -1603,16 +1617,23 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
     @extend_schema(
         summary="Approve a course under review",
         description=(
-            "Approves a Submitted/In Review course's content and moves it to "
-            "mandatory QA verification. Creator payment occurs only after QA "
-            "approval.\n\n"
+            "Approves the content seat the course is at and hands it to the "
+            "next one. Only the last seat, Verification, ends content review "
+            "and moves the course to mandatory QA verification. Creator "
+            "payment occurs only after QA approval.\n\n"
             "Called from the 'Approve' action on the review screen.\n\n"
-            "**Auth:** Creator Reviewer, Verifier, or Admin.\n\n"
+            "**Auth:** The seat's reviewer - Creator Reviewer for First and "
+            "Second Review, Verifier for Verification - or Admin.\n\n"
             "**Prerequisites:** The course must be `SUBMITTED` or "
-            "`IN_REVIEW`; the reviewer must not be marked Unavailable.\n\n"
-            "**Important:** This does not publish or pay; it moves the course to "
-            "the QA queue. `feedback` is optional here (unlike reject, where a "
-            "summary is required)."
+            "`IN_REVIEW` and you must hold its current seat; the reviewer "
+            "must not be marked Unavailable.\n\n"
+            "**Important:** A course needs three approvals before it reaches "
+            "QA, each from a different person. Only the reviewer who claimed "
+            "the seat may approve it (403 otherwise), and approving a seat "
+            "nobody claimed returns 400 - claim it first. Admin may override "
+            "both, which is logged. The creator is notified once, after "
+            "Verification. This does not publish or pay. `feedback` is "
+            "optional here (unlike reject, where a summary is required)."
         ),
         tags=["Reviewer — Review Queue"],
         request=ReviewApproveSerializer,
@@ -1669,13 +1690,17 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
     @extend_schema(
         summary="Approve course content",
         description=(
-            "Approves the course's written content and advances it to QA verification. "
-            "This explicit route has the same behaviour as the standard approve action.\n\n"
+            "Approves the course's written content at the seat it is "
+            "currently at. This explicit route has the same behaviour as the "
+            "standard approve action.\n\n"
             "Called when a content reviewer completes their review.\n\n"
-            "**Auth:** Creator Reviewer, Verifier, or Admin.\n\n"
-            "**Prerequisites:** The course must be `SUBMITTED` or `IN_REVIEW`.\n\n"
-            "**Important:** This action does not approve payment or publication; it only "
-            "moves the course to QA."
+            "**Auth:** The seat's reviewer - Creator Reviewer for First and "
+            "Second Review, Verifier for Verification - or Admin.\n\n"
+            "**Prerequisites:** The course must be `SUBMITTED` or "
+            "`IN_REVIEW`, and you must hold its current seat.\n\n"
+            "**Important:** This advances one seat at a time; only the "
+            "Verification approval moves the course to QA. It does not "
+            "approve payment or publication."
         ),
         tags=["Reviewer — Review Queue"],
         request=ReviewApproveSerializer,
@@ -1707,15 +1732,17 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
     @extend_schema(
         summary="Reject a course under review",
         description=(
-            "Rejects a Submitted/In Review course: records a ReviewAction "
-            "and reverts the course directly to Draft so the creator can "
-            "revise and resubmit (per PRD 'Returns to Draft. Creator "
-            "revises.'). No wallet credit occurs.\n\n"
+            "Rejects the content seat the course is at: records a "
+            "ReviewAction and reverts the course directly to Draft so the "
+            "creator can revise and resubmit (per PRD 'Returns to Draft. "
+            "Creator revises.'). No wallet credit occurs.\n\n"
             "Called from the 'Reject' action on the review screen.\n\n"
-            "**Auth:** Creator Reviewer, Verifier, or Admin.\n\n"
+            "**Auth:** The seat's reviewer - Creator Reviewer for First and "
+            "Second Review, Verifier for Verification - or Admin.\n\n"
             "**Prerequisites:** The course must be `SUBMITTED` or "
-            "`IN_REVIEW`; the reviewer must not be marked Unavailable; "
-            "`feedback.summary` must be a non-empty string.\n\n"
+            "`IN_REVIEW` and you must hold its current seat; the reviewer "
+            "must not be marked Unavailable; `feedback.summary` must be a "
+            "non-empty string.\n\n"
             "**Important:** Unlike approve, `feedback.summary` is required "
             "(US-202: reviewers must leave actionable feedback). "
             "`feedback.items`, if supplied, must be a list of objects each "

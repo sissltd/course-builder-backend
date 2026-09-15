@@ -1,6 +1,7 @@
 import django_filters
 from django.db.models import Q
 
+from api.mie.enums import MieSourceType
 from api.mie.models import CourseSubmission
 
 
@@ -16,6 +17,14 @@ class AdminSubmissionFilterSet(django_filters.FilterSet):
         lookup_expr="iexact",
         help_text="Filter to one developer account by exact email.",
     )
+    source_type = django_filters.ChoiceFilter(
+        field_name="developer__source_type",
+        choices=MieSourceType.choices,
+        help_text=(
+            "EXTERNAL for third-party developers, SYSTEM for platform-owned "
+            "integrations (the MIE crawler). Matched on the owning account."
+        ),
+    )
     created_after = django_filters.IsoDateTimeFilter(
         field_name="created_datetime",
         lookup_expr="gte",
@@ -29,7 +38,7 @@ class AdminSubmissionFilterSet(django_filters.FilterSet):
 
     class Meta:
         model = CourseSubmission
-        fields = ["status", "payout_bypass", "developer", "email"]
+        fields = ["status", "payout_bypass", "developer", "email", "source_type"]
 
     @property
     def qs(self):

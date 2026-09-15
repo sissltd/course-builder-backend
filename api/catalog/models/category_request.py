@@ -31,8 +31,7 @@ class CategoryRequest(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
         blank=True,
         default="",
         help_text=_(
-            "Why this category is needed and what belongs in it. Carried "
-            "onto the Category created on approval."
+            "Why this category is needed and what belongs in the request."
         ),
     )
     status = models.CharField(

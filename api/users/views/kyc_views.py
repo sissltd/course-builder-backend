@@ -401,6 +401,9 @@ class LivenessVerificationView(APIView):
         "liveness selfie."
     ),
     tags=["Admin — KYC Review"],
+    # Body-less POST: without this the schema generator cannot resolve a
+    # request serializer for a plain APIView and fails validation.
+    request=None,
     responses={
         200: inline_success_response(
             description="The target user's profile picture was updated.",

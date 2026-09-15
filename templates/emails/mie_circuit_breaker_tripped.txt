@@ -1,0 +1,11 @@
+Hello,
+
+The MIE circuit breaker has suspended the system developer account {{ developer_email }}.
+
+Admins rejected {{ rejected }} of the {{ decided }} ideas from this account decided within the breaker's window ({{ rejection_rate }}); the limit is {{ threshold }}. The window is the last {{ window_days }} days, or the time since the account was last approved if that is shorter.
+
+What this means:
+- Its API key now returns 401 (account_suspended), so no new ideas are accepted.
+- Its key, queue history and pending webhooks are kept. Nothing was deleted.
+
+To restore it, approve the account under Admin - MIE Developers. The existing key starts working again, and the breaker only counts decisions made after that approval.

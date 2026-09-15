@@ -1,5 +1,6 @@
 from rest_framework import serializers
 
+from api.mie.enums import MieSourceType
 from api.mie.models import CourseSubmission
 
 
@@ -30,6 +31,18 @@ class AdminSubmissionSerializer(serializers.ModelSerializer):
         allow_null=True,
         help_text="Superadmin responsible for the latest decision.",
     )
+    # Read off the owning account rather than stored per row, so a
+    # submission can never disagree with its account about who sent it.
+    source_type = serializers.ChoiceField(
+        source="developer.source_type",
+        choices=MieSourceType.choices,
+        read_only=True,
+        help_text=(
+            "EXTERNAL for a third-party developer, SYSTEM for a platform-"
+            "owned integration (the MIE crawler). Taken from the owning "
+            "developer account."
+        ),
+    )
 
     class Meta:
         model = CourseSubmission
@@ -39,8 +52,10 @@ class AdminSubmissionSerializer(serializers.ModelSerializer):
             "title",
             "status",
             "payload",
+            "confidence_note",
             "developer_id",
             "developer_email",
+            "source_type",
             "payout_bypass",
             "demand_score",
             "estimated_monthly_earnings",

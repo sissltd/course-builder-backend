@@ -1,9 +1,10 @@
-"""Coverage for category browsing and staff-managed category CRUD.
+"""Coverage for the creator category picker and staff-managed category CRUD.
 
 The access rule under test is deliberately narrow: Writers, Admins, and Super
-Admins manage categories, everyone else reads them. Approvers are included in
-"everyone else" - unlike courses, where they have full control - so several
-tests below assert a 403 for roles that are privileged elsewhere.
+Admins own every /categories/ endpoint (list, retrieve, stats, deletion impact,
+create, update, delete), while everyone else \u2014 including Approvers, who are
+privileged elsewhere \u2014 gets a 403. Course Creators browse only the
+lightweight /categories/picker/ endpoint, which serves ACTIVE categories alone.
 """
 
 from decimal import Decimal
@@ -45,45 +46,72 @@ def detail_url(category):
 
 
 class CategoryReadAccessTests(APITestCase):
-    def setUp(self):
-        self.creator = make_user(role=UserRole.COURSE_CREATOR)
+    """Only the Admin Writer roles may list/retrieve the full catalog."""
+
+    MANAGER_ROLES = [
+        UserRole.STAFF_WRITER,
+        UserRole.ADMIN,
+        UserRole.SUPER_ADMIN,
+    ]
+    NON_MANAGER_ROLES = [
+        UserRole.COURSE_CREATOR,
+        UserRole.CREATOR_REVIEWER,
+        UserRole.STAFF_VERIFIER,
+        UserRole.STAFF_APPROVER,
+    ]
 
     def test_list_requires_authentication(self):
         response = self.client.get(LIST_URL)
 
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
-    def test_authenticated_user_can_list_categories(self):
+    def test_manager_roles_can_list_categories(self):
         make_category(name="Web Dev", track_preference=TrackPreference.AI_PREFERRED)
-        self.client.force_authenticate(self.creator)
 
-        # Scoped via a track the seed migration never uses, so exactly the
-        # fixture row matches regardless of seeded categories.
-        response = self.client.get(LIST_URL, {"track_preference": "AI_PREFERRED"})
+        for role in self.MANAGER_ROLES:
+            with self.subTest(role=role):
+                self.client.force_authenticate(make_user(role=role))
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data["data"]["results"]), 1)
+                # Scoped via a track the seed migration never uses, so exactly
+                # the fixture row matches regardless of seeded categories.
+                response = self.client.get(
+                    LIST_URL, {"track_preference": "AI_PREFERRED"}
+                )
 
-    def test_every_role_can_read_categories(self):
+                self.assertEqual(response.status_code, status.HTTP_200_OK)
+                self.assertEqual(len(response.data["data"]["results"]), 1)
+
+    def test_non_manager_roles_cannot_list_categories(self):
         make_category(name="Readable")
 
-        for role in [
-            UserRole.COURSE_CREATOR,
-            UserRole.CREATOR_REVIEWER,
-            UserRole.STAFF_WRITER,
-            UserRole.STAFF_VERIFIER,
-            UserRole.STAFF_APPROVER,
-            UserRole.ADMIN,
-        ]:
+        for role in self.NON_MANAGER_ROLES:
             with self.subTest(role=role):
                 self.client.force_authenticate(make_user(role=role))
                 response = self.client.get(LIST_URL)
-                self.assertEqual(response.status_code, status.HTTP_200_OK)
+                self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_non_manager_roles_cannot_retrieve_a_category(self):
+        category = make_category(name="Readable")
+
+        for role in self.NON_MANAGER_ROLES:
+            with self.subTest(role=role):
+                self.client.force_authenticate(make_user(role=role))
+                response = self.client.get(detail_url(category))
+                self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_writer_can_retrieve_a_category(self):
+        category = make_category(name="Readable")
+        self.client.force_authenticate(make_user(role=UserRole.STAFF_WRITER))
+
+        response = self.client.get(detail_url(category))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["name"], "Readable")
 
     def test_filter_by_track_preference(self):
         make_category(name="Web Dev", track_preference=TrackPreference.OPEN)
         make_category(name="AI 101", track_preference=TrackPreference.AI_PREFERRED)
-        self.client.force_authenticate(self.creator)
+        self.client.force_authenticate(make_user(role=UserRole.STAFF_WRITER))
 
         response = self.client.get(LIST_URL, {"track_preference": "AI_PREFERRED"})
 
@@ -91,19 +119,86 @@ class CategoryReadAccessTests(APITestCase):
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0]["name"], "AI 101")
 
-    def test_filter_by_status_for_the_creation_picker(self):
-        make_category(name="Open", status=CategoryStatus.ACTIVE)
-        make_category(name="Closed", status=CategoryStatus.INACTIVE)
+    def test_non_manager_cannot_view_stats(self):
+        make_category()
+        self.client.force_authenticate(make_user(role=UserRole.COURSE_CREATOR))
+
+        response = self.client.get("/api/v1/categories/stats/")
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+
+class CategoryPickerTests(APITestCase):
+    """The single creator-facing endpoint: ACTIVE categories only."""
+
+    PICKER_URL = "/api/v1/categories/picker/"
+
+    def setUp(self):
+        self.creator = make_user(role=UserRole.COURSE_CREATOR)
+
+    def test_picker_requires_authentication(self):
+        response = self.client.get(self.PICKER_URL)
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_creator_can_view_the_picker(self):
+        make_category(name="Open")
         self.client.force_authenticate(self.creator)
 
-        response = self.client.get(LIST_URL, {"status": "ACTIVE"})
+        response = self.client.get(self.PICKER_URL)
 
-        results = response.data["data"]["results"]
-        names = [row["name"] for row in results]
-        # The picker must surface the active fixture and never the inactive
-        # one - seeded (all-active) categories may legitimately appear too.
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        expected_ids = {
+            str(cat.id)
+            for cat in Category.objects.filter(status=CategoryStatus.ACTIVE)
+        }
+        self.assertEqual({row["id"] for row in response.data}, expected_ids)
+
+    def test_picker_returns_only_minimal_read_only_fields(self):
+        make_category(name="Open")
+        self.client.force_authenticate(self.creator)
+
+        response = self.client.get(self.PICKER_URL)
+
+        self.assertEqual(
+            set(response.data[0].keys()),
+            {"id", "name", "is_active"},
+        )
+        self.assertTrue(response.data[0]["is_active"])
+
+    def test_picker_exposes_only_active_categories(self):
+        make_category(name="Open", status=CategoryStatus.ACTIVE)
+        make_category(name="Closed", status=CategoryStatus.INACTIVE)
+        make_category(name="Retired", status=CategoryStatus.ARCHIVED)
+        self.client.force_authenticate(self.creator)
+
+        response = self.client.get(self.PICKER_URL)
+
+        names = [row["name"] for row in response.data]
         self.assertIn("Open", names)
         self.assertNotIn("Closed", names)
+        self.assertNotIn("Retired", names)
+
+    def test_picker_is_ordered_by_name(self):
+        make_category(name="Beta")
+        make_category(name="Alpha")
+        self.client.force_authenticate(self.creator)
+
+        response = self.client.get(self.PICKER_URL)
+
+        self.assertEqual(
+            [row["name"] for row in response.data],
+            sorted(row["name"] for row in response.data),
+        )
+
+    def test_full_list_is_forbidden_for_a_creator(self):
+        # The picker replaces the full list for creators - they must not see
+        # per-tier pricing or INACTIVE/ARCHIVED rows.
+        self.client.force_authenticate(self.creator)
+
+        response = self.client.get(LIST_URL)
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
 
 class CategoryWriteAccessTests(APITestCase):
@@ -173,7 +268,8 @@ class CategoryWriteAccessTests(APITestCase):
 
         delete = self.client.delete(detail_url(category))
         self.assertEqual(delete.status_code, status.HTTP_204_NO_CONTENT)
-        self.assertFalse(Category.objects.filter(id=category.id).exists())
+        category.refresh_from_db()
+        self.assertTrue(category.is_deleted)
 
 
 class CategoryWriteBehaviourTests(APITestCase):
@@ -233,7 +329,8 @@ class CategoryWriteBehaviourTests(APITestCase):
         response = self.client.delete(detail_url(category))
 
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
-        self.assertFalse(Category.objects.filter(id=category.id).exists())
+        category.refresh_from_db()
+        self.assertTrue(category.is_deleted)
 
     def test_duplicate_name_rejected(self):
         make_category(name="Dup")
@@ -354,7 +451,7 @@ class CategoryDeletionStrategyTests(APITestCase):
         self.assertIn("Doomed", message)
         self.assertIn("2", message)
 
-    def test_reassign_moves_courses_and_deletes_the_category(self):
+    def test_reassign_moves_courses_and_soft_deletes_the_category(self):
         course = self._add_course()
 
         response = self.client.delete(
@@ -363,7 +460,8 @@ class CategoryDeletionStrategyTests(APITestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
-        self.assertFalse(Category.objects.filter(id=self.category.id).exists())
+        self.category.refresh_from_db()
+        self.assertTrue(self.category.is_deleted)
         course.refresh_from_db()
         self.assertEqual(course.category_id, self.replacement.id)
 
@@ -438,7 +536,8 @@ class CategoryDeletionStrategyTests(APITestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
-        self.assertFalse(Category.objects.filter(id=self.category.id).exists())
+        self.category.refresh_from_db()
+        self.assertTrue(self.category.is_deleted)
         self.assertFalse(Course.objects.filter(id=course.id).exists())
 
     def test_delete_courses_cascades_to_modules_and_lessons(self):
@@ -478,7 +577,7 @@ class CategoryDeletionStrategyTests(APITestCase):
         self.assertFalse(Course.objects.filter(id=mine.id).exists())
         self.assertTrue(Course.objects.filter(id=theirs.id).exists())
 
-    def test_creator_profile_survives_with_a_null_category(self):
+    def test_creator_profile_keeps_its_category_reference(self):
         from api.onboarding.models import CreatorProfile
 
         profile = CreatorProfile.objects.create(
@@ -489,7 +588,7 @@ class CategoryDeletionStrategyTests(APITestCase):
         self.client.delete(f"{detail_url(self.category)}?strategy=DELETE_COURSES")
 
         profile.refresh_from_db()
-        self.assertIsNone(profile.primary_expertise_category_id)
+        self.assertEqual(profile.primary_expertise_category_id, self.category.id)
 
     def test_invalid_strategy_rejected(self):
         self._add_course()

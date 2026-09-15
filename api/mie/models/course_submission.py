@@ -5,6 +5,9 @@ from django.utils.translation import gettext_lazy as _
 from api.mie.enums import SubmissionStatus
 from core.mixins import DateHistoryModelMixin, UUIDPrimaryKeyModelMixin
 
+CONFIDENCE_NOTE_MAX_LENGTH = 2000
+"""Ceiling on confidence_note, enforced at ingestion (the column is a TextField)."""
+
 
 class CourseSubmission(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
     """A course idea submitted by an external developer (Endpoint 1).
@@ -36,6 +39,15 @@ class CourseSubmission(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
         help_text=_(
             "Title extracted from the payload; the key used by all three "
             "dedup checks."
+        ),
+    )
+    confidence_note = models.TextField(
+        verbose_name=_("Confidence Note"),
+        blank=True,
+        help_text=_(
+            "Optional evidence for the idea's demand, extracted from the "
+            "payload like the title so reviewers see it as its own field. "
+            "The payload keeps its copy untouched."
         ),
     )
     status = models.CharField(
@@ -138,6 +150,11 @@ class CourseSubmission(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
         indexes = [
             models.Index(fields=["status", "-created_datetime"], name="mie_sub_status_idx"),
             models.Index(fields=["developer", "status"], name="mie_sub_dev_status_idx"),
+            # Serves the system-account daily cap (one developer's rows over
+            # a rolling window) and the developer queue's newest-first list.
+            models.Index(
+                fields=["developer", "-created_datetime"], name="mie_sub_dev_created_idx"
+            ),
         ]
 
     @property

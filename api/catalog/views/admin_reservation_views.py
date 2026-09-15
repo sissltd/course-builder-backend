@@ -1,6 +1,6 @@
 from django.utils import timezone
 from django_filters.rest_framework import DjangoFilterBackend
-from drf_spectacular.utils import extend_schema, extend_schema_view
+from drf_spectacular.utils import OpenApiExample, OpenApiResponse, extend_schema, extend_schema_view
 from rest_framework import filters as drf_filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -17,18 +17,129 @@ from api.catalog.serializers import (
     TopicReservationRejectSerializer,
 )
 from api.catalog.services import topic_reservation_service
-from api.users.permissions import IsAdminRole
+from api.users.permissions import CanManageCategories, IsAdminRole
+from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
+
+_TOPIC_REQUEST_EXAMPLE = {
+    "id": "f6a7b8c9-d0e1-4f2a-3b4c-5d6e7f8a9b0c",
+    "name": "Django REST Framework",
+    "category": {
+        "id": "7d2f4b18-3c9a-4e51-b8f0-1a6c5d3e9b74",
+        "name": "Software Engineering",
+    },
+    "topic": None,
+    "status": "PENDING",
+    "rejection_reason": None,
+    "reviewed_at": None,
+    "created_datetime": "2026-09-01T10:00:00Z",
+    "requested_by": {
+        "id": "5f4d3c2b-1a09-48e7-b6a5-9c8d7e6f5a4b",
+        "first_name": "Ada",
+        "last_name": "Lovelace",
+        "email": "creator@example.com",
+    },
+    "reviewed_by": None,
+}
 
 
 @extend_schema_view(
     list=extend_schema(
-        summary="List reservation requests", tags=["Admin — Reservation"]
+        summary="List reservation requests",
+        description=(
+            "Returns all proposed topic requests for the administrative review "
+            "queue, newest first.\n\n"
+            "Call this when the Admin reservation queue opens; filter by status, "
+            "category, requester, search text, or dates as needed.\n\n"
+            "**Auth:** Admin, Approver, or Super Admin.\n\n"
+            "**Prerequisites:** None.\n\n"
+            "**Important:** A request's `topic` is null until approval. Results "
+            "are paginated."
+        ),
+        tags=["Admin — Reservation"],
+        responses={
+            200: OpenApiResponse(
+                response=AdminTopicReservationRequestSerializer(many=True),
+                examples=[OpenApiExample("Success", value=[_TOPIC_REQUEST_EXAMPLE])],
+            )
+        },
     ),
     retrieve=extend_schema(
-        summary="Retrieve a reservation request", tags=["Admin — Reservation"]
+        summary="Retrieve a reservation request",
+        description=(
+            "Returns one proposed topic request for the administrative review "
+            "panel.\n\n"
+            "Call this after selecting a request from the queue.\n\n"
+            "**Auth:** Admin, Approver, or Super Admin.\n\n"
+            "**Prerequisites:** The request must exist.\n\n"
+            "**Important:** Requester and reviewer identity are included for the "
+            "audit trail."
+        ),
+        tags=["Admin — Reservation"],
+        responses={
+            200: OpenApiResponse(
+                response=AdminTopicReservationRequestSerializer,
+                examples=[OpenApiExample("Success", value=_TOPIC_REQUEST_EXAMPLE)],
+            )
+        },
     ),
-    approve=extend_schema(tags=["Admin — Reservation"]),
-    reject=extend_schema(tags=["Admin — Reservation"]),
+    approve=extend_schema(
+        summary="Approve a topic request",
+        description=(
+            "Approves a Pending topic request, creates the topic under its "
+            "category, and reserves it for the requesting creator.\n\n"
+            "Call this after reviewing the proposed name and category.\n\n"
+            "**Auth:** Admin, Approver, or Super Admin.\n\n"
+            "**Prerequisites:** The request must be Pending and the topic name "
+            "must be unique within its category.\n\n"
+            "**Important:** The new topic inherits the category's beginner "
+            "creator price; no price is accepted in this request."
+        ),
+        tags=["Admin — Reservation"],
+        request=None,
+        responses={
+            200: OpenApiResponse(
+                response=AdminTopicReservationRequestSerializer,
+                examples=[
+                    OpenApiExample(
+                        "Approved", value={**_TOPIC_REQUEST_EXAMPLE, "status": "APPROVED"}
+                    )
+                ],
+            ),
+            **STANDARD_ERROR_RESPONSES["validation"],
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
+            **STANDARD_ERROR_RESPONSES["not_found"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    ),
+    reject=extend_schema(
+        summary="Reject a topic request",
+        description=(
+            "Rejects a Pending topic request and retains it in the review history.\n\n"
+            "Call this after deciding the proposed topic should not be added.\n\n"
+            "**Auth:** Admin, Approver, or Super Admin.\n\n"
+            "**Prerequisites:** The request must be Pending.\n\n"
+            "**Important:** The optional reason is retained and no topic is created."
+        ),
+        tags=["Admin — Reservation"],
+        request=TopicReservationRejectSerializer,
+        examples=[OpenApiExample("Reject", request_only=True, value={"reason": "Duplicate topic."})],
+        responses={
+            200: OpenApiResponse(
+                response=AdminTopicReservationRequestSerializer,
+                examples=[
+                    OpenApiExample(
+                        "Rejected", value={**_TOPIC_REQUEST_EXAMPLE, "status": "REJECTED"}
+                    )
+                ],
+            ),
+            **STANDARD_ERROR_RESPONSES["validation"],
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
+            **STANDARD_ERROR_RESPONSES["not_found"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    ),
 )
 class AdminTopicReservationRequestViewSet(ReadOnlyModelViewSet):
     """Admin dashboard queue for proposed-topic reservation requests."""
@@ -68,6 +179,22 @@ class AdminTopicReservationRequestViewSet(ReadOnlyModelViewSet):
             reason=serializer.validated_data["reason"],
         )
         return Response(self.get_serializer(reservation_request).data)
+
+
+@extend_schema_view(
+    list=extend_schema(
+        summary="List all topic requests", tags=["Admin — Topic Requests"]
+    ),
+    retrieve=extend_schema(
+        summary="Retrieve a topic request", tags=["Admin — Topic Requests"]
+    ),
+    approve=extend_schema(tags=["Admin — Topic Requests"]),
+    reject=extend_schema(tags=["Admin — Topic Requests"]),
+)
+class AdminWriterTopicRequestViewSet(AdminTopicReservationRequestViewSet):
+    """Admin Writer queue for proposed topic requests."""
+
+    permission_classes = [CanManageCategories]
 
 
 @extend_schema_view(

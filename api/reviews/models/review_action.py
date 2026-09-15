@@ -36,7 +36,7 @@ class ReviewAction(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
     )
     stage = models.CharField(
         verbose_name=_("Review Stage"),
-        max_length=10,
+        max_length=20,
         choices=ReviewStage.choices,
         default=ReviewStage.CONTENT,
         help_text=_("Quality gate at which this decision was made."),

@@ -27,10 +27,7 @@ class GlobalSearchApiTests(APITestCase):
             first_name="Ben",
             last_name="Creator",
         )
-        self.category = make_category(
-            name="Python Engineering",
-            description="Programming courses.",
-        )
+        self.category = make_category(name="Python Engineering")
         self.topic = make_topic(category=self.category, name="Python APIs")
         self.draft_course = make_draft_course(
             creator=self.creator,

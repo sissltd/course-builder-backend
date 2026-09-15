@@ -7,10 +7,13 @@ from core.mixins import DateHistoryModelMixin, UUIDPrimaryKeyModelMixin
 class SubmissionRejectionReason(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
     """Admin-managed taxonomy backing dedup check #1.
 
-    When an incoming idea's title matches a previously rejected reason,
+    When an incoming idea's title matches a previously rejected title,
     the submission is short-circuited to PREVIOUSLY_REJECTED without ever
-    reaching the queue. Reasons are soft-deactivated (is_active=False)
-    rather than deleted so historical submissions keep pointing at them.
+    reaching the queue and inherits that rejection's reason. Matching is
+    on the title alone - is_active is never consulted - so a deactivated
+    reason can still be inherited. Reasons are soft-deactivated
+    (is_active=False) rather than deleted so historical submissions keep
+    pointing at them.
     """
 
     label = models.CharField(
@@ -27,7 +30,11 @@ class SubmissionRejectionReason(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin)
     is_active = models.BooleanField(
         verbose_name=_("Is Active"),
         default=True,
-        help_text=_("Inactive reasons stay on historical rows but stop matching."),
+        help_text=_(
+            "Inactive reasons stay on historical rows and can still be "
+            "inherited by dedup; they only stop being selectable when an "
+            "admin rejects."
+        ),
     )
 
     class Meta:

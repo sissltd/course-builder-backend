@@ -1,11 +1,13 @@
+from django.db import transaction
 from django.utils import timezone
 from rest_framework import exceptions
 
-from api.mie.enums import DeveloperAccountStatus
+from api.authentication.services.activity_service import log_activity
+from api.mie.enums import DeveloperAccountStatus, MiePlanType, MieSourceType
 from api.mie.models import DeveloperAccount
 from api.mie.services.key_service import issue_credentials, revoke_key
 from api.mie.services.webhook_dispatcher import drop_events_for_rejected_account
-from api.users.enums import UserRole
+from api.users.enums import UserActivityActionEnums, UserActivityCategoryEnums, UserRole
 from api.users.permissions import require_role
 
 
@@ -88,3 +90,56 @@ def suspend_developer(*, actor, account: DeveloperAccount) -> None:
     account.status = DeveloperAccountStatus.SUSPENDED
     account.decided_at = timezone.now()
     account.save(update_fields=["status", "decided_at", "updated_datetime"])
+
+
+def provision_system_account(
+    *, actor, email: str, webhook_url: str
+) -> tuple[DeveloperAccount, str | None]:
+    """Create and approve a platform-owned SYSTEM account (the crawler).
+
+    The only path that ever sets source_type=SYSTEM. The account goes
+    through the ordinary lifecycle - created PENDING, then approved by
+    approve_developer - so the key/status DB constraints hold exactly as
+    for any developer. plan_type is BYPASS_ACCOUNT because the platform
+    never pays itself for ideas.
+
+    Idempotent: an email already held by a SYSTEM account is returned
+    unchanged, whatever its state, with no key - a suspended crawler is
+    restored by approving it, not by re-provisioning. An email held by an
+    EXTERNAL developer is refused rather than converted, which would
+    silently put a third party under crawler guardrails and on a
+    no-payout plan.
+
+    Returns (account, raw_key); raw_key is None when nothing was issued.
+    """
+
+    require_role(actor, (UserRole.SUPER_ADMIN,))
+
+    existing = DeveloperAccount.objects.filter(email__iexact=email).first()
+    if existing is not None:
+        if existing.source_type != MieSourceType.SYSTEM:
+            raise exceptions.ValidationError(
+                {"email": ["This email belongs to an external developer account."]}
+            )
+        return existing, None
+
+    with transaction.atomic():
+        account = DeveloperAccount.objects.create(
+            email=email.lower(),
+            webhook_url=webhook_url,
+            plan_type=MiePlanType.BYPASS_ACCOUNT,
+            source_type=MieSourceType.SYSTEM,
+        )
+        raw_key = approve_developer(actor=actor, account=account)
+        log_activity(
+            user=actor,
+            category=UserActivityCategoryEnums.CONFIGURATION,
+            action=UserActivityActionEnums.ACCOUNT_CREATED,
+            summary="Provisioned an MIE system developer account.",
+            details={
+                "developer_account_id": str(account.id),
+                "developer_email": account.email,
+            },
+            target=account,
+        )
+    return account, raw_key
