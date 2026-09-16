@@ -57,6 +57,7 @@ QUESTION_SCHEMA = {
             "items": {"type": "string"},
         },
         "correct_index": {"type": "integer", "minimum": 0, "maximum": 3},
+        "explanation": {"type": "string"},
     },
 }
 
