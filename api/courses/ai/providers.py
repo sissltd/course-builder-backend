@@ -45,7 +45,14 @@ RETRYABLE_HTTP_STATUSES = {408, 425, 429, 500, 502, 503, 504}
 QUESTION_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
-    "required": ["type", "question", "points", "options", "correct_index"],
+    "required": [
+        "type",
+        "question",
+        "points",
+        "options",
+        "correct_index",
+        "explanation",
+    ],
     "properties": {
         "type": {"type": "string", "const": "MULTIPLE_CHOICE"},
         "question": {"type": "string"},
@@ -96,7 +103,13 @@ COURSE_OUTLINE_SCHEMA = {
         },
         "learning_objectives": {
             "type": "array",
-            "items": {"type": "string"},
+            "items": {
+                "type": "string",
+                "description": (
+                    "One complete, standalone learning objective sentence. "
+                    "Do not split comma-separated clauses into separate items."
+                ),
+            },
             "minItems": 3,
             "maxItems": 8,
         },
@@ -129,7 +142,14 @@ COURSE_OUTLINE_SCHEMA = {
                     "description": {"type": "string"},
                     "learning_objectives": {
                         "type": "array",
-                        "items": {"type": "string"},
+                        "items": {
+                            "type": "string",
+                            "description": (
+                                "One complete, standalone module objective "
+                                "sentence. Do not split comma-separated "
+                                "clauses into separate items."
+                            ),
+                        },
                     },
                     "lessons": {
                         "type": "array",
@@ -149,7 +169,15 @@ COURSE_OUTLINE_SCHEMA = {
                                     "type": "array",
                                     "minItems": 2,
                                     "maxItems": 5,
-                                    "items": {"type": "string"},
+                                    "items": {
+                                        "type": "string",
+                                        "description": (
+                                            "One complete, standalone lesson "
+                                            "objective sentence. Do not split "
+                                            "comma-separated clauses into "
+                                            "separate items."
+                                        ),
+                                    },
                                 },
                                 "duration_minutes": {
                                     "type": "integer",
@@ -188,7 +216,14 @@ MODULE_CONTENT_SCHEMA = {
                         "type": "array",
                         "minItems": 2,
                         "maxItems": 5,
-                        "items": {"type": "string"},
+                        "items": {
+                            "type": "string",
+                            "description": (
+                                "One complete, standalone lesson objective "
+                                "sentence. Do not split comma-separated "
+                                "clauses into separate items."
+                            ),
+                        },
                     },
                     "duration_minutes": {
                         "type": "integer",
@@ -353,7 +388,7 @@ class OpenAIResponsesProvider(CourseAIProvider):
     def generate_course_outline(self, *, title, description, category, topic):
         prompt = f"""Create a professional course outline for the supplied intent.
 Category: {category}\nTopic: {topic or 'Not specified'}\nWorking title: {title}\nCreator description: {description}
-Use 5-8 modules and 3-5 lessons per module. Return concise course, module, and lesson outlines only. Keep the selected category and topic authoritative."""
+Use 5-8 modules and 3-5 lessons per module. Return concise course, module, and lesson outlines only. Keep the selected category and topic authoritative. Each learning_objectives array item must be a complete standalone sentence; do not split one objective into separate items at commas."""
         return self._structured_response(
             name="course_outline", schema=COURSE_OUTLINE_SCHEMA, prompt=prompt
         )

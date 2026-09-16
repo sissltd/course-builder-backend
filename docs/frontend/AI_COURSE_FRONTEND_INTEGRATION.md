@@ -123,8 +123,12 @@ Important response fields:
   "kind": "FULL_COURSE",
   "status": "QUEUED",
   "stage": "",
-  "current_phase": "CREATING_CONTENT",
-  "result": {},
+      "current_phase": "CREATING_CONTENT",
+      "celery_task_id": "<task-id>",
+      "dispatch_attempts": 1,
+      "retry_count": 0,
+      "last_heartbeat_at": "2026-09-16T09:27:20Z",
+      "result": {},
   "error_message": "",
   "cancel_requested": false,
   "builder_ready": false,
@@ -178,7 +182,15 @@ When `builder_ready` becomes `true`, the outline exists, but the frontend must
 not navigate until `status` is `COMPLETED`; scripts and assessments may still
 be in progress.
 
-## 3. Stop the process
+## 3. Retry a failed generation
+
+`POST /api/v1/course-ai-generations/{job_id}/retry/`
+
+Use this for a `FAILED` or `CANCELLED` job. The backend reuses completed
+modules, lessons, and assessments and queues the unfinished work. Retries are
+bounded, and completed jobs cannot be retried.
+
+## 4. Stop the process
 
 The Figma button **Stop this process and go back** calls:
 
@@ -190,7 +202,7 @@ but cancellation is enforced before the next module or final-assessment call.
 Continue polling until the job reaches `CANCELLED` before discarding its local
 job ID.
 
-## 4. Open the generated course
+## 5. Open the generated course
 
 On `COMPLETED`, read the course UUID from either `course` or
 `result.course_id`, then request:

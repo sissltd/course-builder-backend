@@ -24,6 +24,7 @@ from drf_spectacular.views import (
     SpectacularRedocView,
     SpectacularSwaggerView,
 )
+from config.reviewer_settings_schema_urls import REVIEWER_SETTINGS_SCHEMA_SETTINGS
 from shared.constants.environ import DJANGO_ENV
 
 
@@ -37,9 +38,22 @@ urlpatterns = [
     # OpenAPI schema and interactive docs
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
     path(
+        "api/schema/reviewer-settings/",
+        SpectacularAPIView.as_view(
+            urlconf="config.reviewer_settings_schema_urls",
+            custom_settings=REVIEWER_SETTINGS_SCHEMA_SETTINGS,
+        ),
+        name="reviewer-settings-schema",
+    ),
+    path(
         "api/v1/docs/",
         SpectacularSwaggerView.as_view(url_name="schema"),
         name="swagger-ui",
+    ),
+    path(
+        "api/v1/docs/reviewer-settings/",
+        SpectacularSwaggerView.as_view(url_name="reviewer-settings-schema"),
+        name="reviewer-settings-swagger-ui",
     ),
     path(
         "api/v1/redoc/",

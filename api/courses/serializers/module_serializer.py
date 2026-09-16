@@ -4,6 +4,7 @@ from rest_framework import serializers
 from api.courses.models import Module
 from api.courses.serializers.assessment_serializer import AssessmentSerializer
 from api.courses.serializers.lesson_serializer import LessonSerializer
+from api.courses.services.ai_generation_service import normalize_ai_learning_objectives
 
 
 class ModuleMiniSerializer(serializers.ModelSerializer):
@@ -65,4 +66,4 @@ class ModuleWriteSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 "learning_objectives must be a list of non-empty strings."
             )
-        return value
+        return normalize_ai_learning_objectives(value)

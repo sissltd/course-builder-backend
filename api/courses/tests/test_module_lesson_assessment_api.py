@@ -52,6 +52,60 @@ class ModuleLessonAssessmentApiTests(APITestCase):
             ["Install the required tools", "Create a first project"],
         )
 
+    def test_manual_module_learning_objective_fragments_are_rejoined(self):
+        self.client.force_authenticate(self.creator)
+
+        response = self.client.post(
+            f"/api/v1/courses/{self.course.id}/modules/",
+            {
+                "title": "Module 1",
+                "order": 1,
+                "description": "An introduction to the course tools.",
+                "learning_objectives": [
+                    "Work with parameters",
+                    "arguments",
+                    "return values",
+                    "and default parameters.",
+                    "Understand variable scope",
+                    "lexical scope",
+                    "and closures.",
+                ],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(
+            response.data["learning_objectives"],
+            [
+                "Work with parameters, arguments, return values and default parameters.",
+                "Understand variable scope, lexical scope and closures.",
+            ],
+        )
+        module = Module.objects.get(id=response.data["id"])
+        self.assertEqual(
+            module.learning_objectives, response.data["learning_objectives"]
+        )
+
+    def test_duplicate_module_order_is_validation_error(self):
+        Module.objects.create(course=self.course, title="Existing", order=1)
+        self.client.force_authenticate(self.creator)
+
+        response = self.client.post(
+            f"/api/v1/courses/{self.course.id}/modules/",
+            {
+                "title": "Duplicate",
+                "order": 1,
+                "description": "This should not create a second order one module.",
+                "learning_objectives": ["Create a module with a duplicate order."],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["errors"][0]["field_name"], "order")
+        self.assertEqual(Module.objects.filter(course=self.course, order=1).count(), 1)
+
     def test_non_owner_gets_404_creating_module(self):
         self.client.force_authenticate(self.other_creator)
 
@@ -431,9 +485,7 @@ class ModuleLessonAssessmentApiTests(APITestCase):
             f"/api/v1/courses/{self.course.id}/modules/{module_id}/"
             f"lessons/{lesson_id}/assessment/"
         )
-        module_url = (
-            f"/api/v1/courses/{self.course.id}/modules/{module_id}/assessment/"
-        )
+        module_url = f"/api/v1/courses/{self.course.id}/modules/{module_id}/assessment/"
         final_url = f"/api/v1/courses/{self.course.id}/final-assessment/"
 
         for url in (lesson_url, module_url):
@@ -441,9 +493,7 @@ class ModuleLessonAssessmentApiTests(APITestCase):
             self.assertEqual(response.status_code, status.HTTP_200_OK)
             self.assertEqual(response.data["questions"][0]["correct_index"], 2)
             self.assertEqual(len(response.data["questions"][0]["options"]), 4)
-            self.assertEqual(
-                response.data["questions"][0]["options"][2], "user_name"
-            )
+            self.assertEqual(response.data["questions"][0]["options"][2], "user_name")
             self.assertEqual(
                 response.data["summary"],
                 {

@@ -63,6 +63,46 @@ class AIGenerationApiTests(APITestCase):
         delay.assert_called_once_with(str(job.id))
 
     @patch("api.courses.views.ai_generation_views.generate_ai_course.delay")
+    def test_retry_resets_failed_job_and_queues_same_job(self, delay):
+        job = AIGenerationJob.objects.create(
+            creator=self.creator,
+            kind=AIGenerationKind.FULL_COURSE,
+            status=AIGenerationStatus.FAILED,
+            error_message="worker unavailable",
+        )
+        delay.return_value.id = "retry-task-id"
+
+        response = self.client.post(
+            f"/api/v1/course-ai-generations/{job.id}/retry/", {}, format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
+        job.refresh_from_db()
+        self.assertEqual(job.status, AIGenerationStatus.QUEUED)
+        self.assertEqual(job.error_message, "")
+        self.assertEqual(job.retry_count, 1)
+        self.assertEqual(job.celery_task_id, "retry-task-id")
+        delay.assert_called_once_with(str(job.id))
+
+    def test_second_execution_claim_is_ignored(self):
+        job = AIGenerationJob.objects.create(
+            creator=self.creator,
+            kind=AIGenerationKind.FULL_COURSE,
+            status=AIGenerationStatus.QUEUED,
+        )
+
+        self.assertTrue(
+            ai_generation_service.claim_job_for_execution(
+                job_id=job.id, task_id="first-task", stage="Creating content..."
+            )
+        )
+        self.assertFalse(
+            ai_generation_service.claim_job_for_execution(
+                job_id=job.id, task_id="duplicate-task", stage="Creating content..."
+            )
+        )
+
+    @patch("api.courses.views.ai_generation_views.generate_ai_course.delay")
     def test_dispatch_failure_marks_job_failed(self, delay):
         delay.side_effect = RuntimeError("broker is unavailable")
         self.client.raise_request_exception = False
