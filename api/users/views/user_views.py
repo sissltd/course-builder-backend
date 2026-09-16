@@ -68,7 +68,7 @@ _ME_EXAMPLE = {
             "**Important:** `is_verified` represents approved KYC status. "
             "`badges` is an empty list until a badge-award domain is added."
         ),
-        tags=["Creator — Profile"],
+        tags=["Creator — Profile", "Reviewer Settings — Account"],
         responses={
             200: OpenApiResponse(
                 response=MeSerializer,
@@ -96,7 +96,7 @@ _ME_EXAMPLE = {
             "inactive ids are rejected by validation. The `category` set here "
             "is used to update the CreatorProfile's category field."
         ),
-        tags=["Creator — Profile"],
+        tags=["Creator — Profile", "Reviewer Settings — Account"],
         request=MeUpdateSerializer,
         examples=[
             OpenApiExample(
@@ -195,7 +195,7 @@ class ReviewerAvailabilityView(APIView):
             "**Auth:** Any authenticated user.\n\n"
             "**Prerequisites:** None."
         ),
-        tags=["Reviewer — Availability"],
+        tags=["Reviewer — Availability", "Reviewer Settings — Availability"],
         responses={
             200: OpenApiResponse(response=ReviewerAvailabilitySerializer),
             **STANDARD_ERROR_RESPONSES["auth"],
@@ -216,7 +216,7 @@ class ReviewerAvailabilityView(APIView):
             "**Auth:** Any authenticated user.\n\n"
             "**Prerequisites:** None."
         ),
-        tags=["Reviewer — Availability"],
+        tags=["Reviewer — Availability", "Reviewer Settings — Availability"],
         request=ReviewerAvailabilityUpdateSerializer,
         responses={
             200: OpenApiResponse(response=ReviewerAvailabilitySerializer),
@@ -261,7 +261,7 @@ class QueueBehaviourPreferenceView(APIView):
             "**Auth:** Any authenticated user.\n\n"
             "**Prerequisites:** None."
         ),
-        tags=["Reviewer — Queue Preferences"],
+        tags=["Reviewer — Queue Preferences", "Reviewer Settings — Queue Behaviour"],
         responses={
             200: OpenApiResponse(response=QueueBehaviourPreferenceSerializer),
             **STANDARD_ERROR_RESPONSES["auth"],
@@ -282,7 +282,7 @@ class QueueBehaviourPreferenceView(APIView):
             "**Auth:** Any authenticated user.\n\n"
             "**Prerequisites:** None."
         ),
-        tags=["Reviewer — Queue Preferences"],
+        tags=["Reviewer — Queue Preferences", "Reviewer Settings — Queue Behaviour"],
         request=QueueBehaviourPreferenceUpdateSerializer,
         responses={
             200: OpenApiResponse(response=QueueBehaviourPreferenceSerializer),

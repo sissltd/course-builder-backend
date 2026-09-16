@@ -335,6 +335,20 @@ class ModuleViewSet(ModelViewSet):
                 "remove modules."
             )
 
+    def _validate_unique_order(self, *, course: Course, order: int, exclude_pk=None):
+        siblings = Module.objects.filter(course=course, order=order)
+        if exclude_pk is not None:
+            siblings = siblings.exclude(pk=exclude_pk)
+        if siblings.exists():
+            raise exceptions.ValidationError(
+                {
+                    "order": (
+                        "A module with this order already exists for this course. "
+                        "Use a different order or reorder the existing modules."
+                    )
+                }
+            )
+
     def perform_create(self, serializer):
         course = self._get_course()
         self._require_manage_access(course)
@@ -342,6 +356,9 @@ class ModuleViewSet(ModelViewSet):
             raise exceptions.ValidationError(
                 "Modules can only be added while the course is Draft."
             )
+        self._validate_unique_order(
+            course=course, order=serializer.validated_data["order"]
+        )
         serializer.save(
             course=course, created_by=self.request.user, updated_by=self.request.user
         )
@@ -353,6 +370,12 @@ class ModuleViewSet(ModelViewSet):
                 "Modules can only be edited while the course is Draft."
             )
         module_lock_service.check_not_locked(module=module, user=self.request.user)
+        if "order" in serializer.validated_data:
+            self._validate_unique_order(
+                course=module.course,
+                order=serializer.validated_data["order"],
+                exclude_pk=module.pk,
+            )
         serializer.save(updated_by=self.request.user)
 
     def perform_destroy(self, instance):

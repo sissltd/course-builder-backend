@@ -133,7 +133,7 @@ class MyAuditLogExportView(APIView):
             "Administrators wanting the platform-wide trail use "
             "`GET /api/v1/logs` instead."
         ),
-        tags=["Creator — Activity Log"],
+        tags=["Creator — Activity Log", "Reviewer Settings — Data & Privacy"],
     )
     def get(self, request):
         entries = list(

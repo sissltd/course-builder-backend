@@ -26,7 +26,7 @@ from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 @extend_schema_view(
     get=extend_schema(
         summary="List my activity log",
-        tags=["Creator — Activity Log"],
+        tags=["Creator — Activity Log", "Reviewer Settings — Data & Privacy"],
     ),
 )
 class UserActivityLogListView(ListAPIView):
@@ -171,7 +171,7 @@ class UserActivityLogExportView(APIView):
             "it produced. Supports the same `?category=`/`?action=` filters "
             "as the list endpoint."
         ),
-        tags=["Creator — Activity Log"],
+        tags=["Creator — Activity Log", "Reviewer Settings — Data & Privacy"],
     )
     def get(self, request):
         base_queryset = UserActivityLog.objects.filter(

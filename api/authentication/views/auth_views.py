@@ -784,7 +784,7 @@ class ForgotPasswordView(APIView):
             "this never 404s - a non-existent email silently does nothing "
             "on the backend while still returning 200, by design."
         ),
-        tags=["Auth — Password"],
+        tags=["Auth — Password", "Reviewer Settings — Log in & Security"],
         request=ForgotPasswordSerializer,
         examples=[
             OpenApiExample(
@@ -854,7 +854,7 @@ class ResetPasswordView(APIView):
             "returns 404. `new_password` goes through Django's standard "
             "password validators (length, common-password checks, etc.)."
         ),
-        tags=["Auth — Password"],
+        tags=["Auth — Password", "Reviewer Settings — Log in & Security"],
         request=ResetPasswordSerializer,
         examples=[
             OpenApiExample(
@@ -966,7 +966,7 @@ class ChangePasswordView(APIView):
             "active sessions on other devices keep working after this "
             "call."
         ),
-        tags=["Auth — Password"],
+        tags=["Auth — Password", "Reviewer Settings — Log in & Security"],
         request=ChangePasswordSerializer,
         examples=[
             OpenApiExample(
@@ -1044,7 +1044,7 @@ class ChangeEmailRequestView(APIView):
             "`/api/v1/auth/change-email/confirm/` - nothing changes on "
             "this call alone."
         ),
-        tags=["Auth — Email Change"],
+        tags=["Auth — Email Change", "Reviewer Settings — Log in & Security"],
         request=ChangeEmailRequestSerializer,
         examples=[
             OpenApiExample(
@@ -1157,7 +1157,7 @@ class ChangeEmailConfirmView(APIView):
             "`User.email` - after this, the *old* email can no longer be "
             "used to log in."
         ),
-        tags=["Auth — Email Change"],
+        tags=["Auth — Email Change", "Reviewer Settings — Log in & Security"],
         request=ChangeEmailConfirmSerializer,
         examples=[
             OpenApiExample(
