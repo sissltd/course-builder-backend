@@ -2,11 +2,15 @@ from django.db import models
 from django.db.models.functions import Lower
 from django.utils.translation import gettext_lazy as _
 
+from api.courses.enums import DifficultyLevel
 from api.mie.enums import SubmissionStatus
 from core.mixins import DateHistoryModelMixin, UUIDPrimaryKeyModelMixin
 
 CONFIDENCE_NOTE_MAX_LENGTH = 2000
 """Ceiling on confidence_note, enforced at ingestion (the column is a TextField)."""
+
+DESCRIPTION_MAX_LENGTH = 5000
+"""Ceiling on description, enforced at ingestion (the column is a TextField)."""
 
 
 class CourseSubmission(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
@@ -48,6 +52,43 @@ class CourseSubmission(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
             "Optional evidence for the idea's demand, extracted from the "
             "payload like the title so reviewers see it as its own field. "
             "The payload keeps its copy untouched."
+        ),
+    )
+    description = models.TextField(
+        verbose_name=_("Description"),
+        blank=True,
+        help_text=_(
+            "What the idea covers, extracted from the payload like the "
+            "title. Shown in the reviewer's Topic details panel."
+        ),
+    )
+    category = models.ForeignKey(
+        "catalog.Category",
+        verbose_name=_("Category"),
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="mie_submissions",
+        help_text=_(
+            "Platform category this idea belongs to, resolved from the name "
+            "or slug the submitter sent. Null when they sent none, or one no "
+            "category matches - the raw value stays in the payload."
+        ),
+    )
+    difficulty_level = models.CharField(
+        verbose_name=_("Difficulty Level"),
+        max_length=20,
+        choices=DifficultyLevel.choices,
+        blank=True,
+        help_text=_("Difficulty the submitter claims for the idea."),
+    )
+    searches_per_month = models.PositiveIntegerField(
+        verbose_name=_("Searches Per Month"),
+        null=True,
+        blank=True,
+        help_text=_(
+            "Monthly search volume behind the idea, as reported by the "
+            "submitter. The crawler fills this from its own signals."
         ),
     )
     status = models.CharField(
@@ -154,6 +195,18 @@ class CourseSubmission(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
             # a rolling window) and the developer queue's newest-first list.
             models.Index(
                 fields=["developer", "-created_datetime"], name="mie_sub_dev_created_idx"
+            ),
+            # The Recommendations screen: pending rows ranked by score, then
+            # narrowed by category or difficulty. One index per query shape it
+            # actually issues.
+            models.Index(
+                fields=["status", "-demand_score"], name="mie_sub_status_score_idx"
+            ),
+            models.Index(
+                fields=["status", "category"], name="mie_sub_status_cat_idx"
+            ),
+            models.Index(
+                fields=["status", "difficulty_level"], name="mie_sub_status_diff_idx"
             ),
         ]
 

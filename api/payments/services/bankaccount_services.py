@@ -5,6 +5,7 @@ from django.utils import timezone
 from api.authentication.services.activity_service import log_activity
 from api.payments.models.bankaccount_models import BankAccount
 from api.users.enums import UserActivityActionEnums, UserActivityCategoryEnums, UserRole
+from api.users.permissions import IsAdminOrSuperAdminRole, require_role
 from shared.services.paystack_service import PaystackService
 from shared.utils.bank_account_check import check_account_name_matches_profile
 from shared.utils.encryption import encrypt_field
@@ -163,19 +164,28 @@ def set_default_bank_account(user, account_id, ip, ua):
 
 def suspend_bank_account(user, account_id, ip, ua):
     """
-    Suspend a bank account for a user.
+    Suspend any user's bank account; `user` is the acting admin.
+
+    An admin moderation action, so the lookup is deliberately not scoped to
+    the caller. The role is re-checked here as well as on the view, so no
+    other caller can reach it. The entry lands on the account owner's
+    activity log, with the admin recorded as the actor - the owner is the
+    one whose payouts just stopped.
     """
-    account = BankAccount.objects.get(id=account_id, is_deleted=False)
+    require_role(user, IsAdminOrSuperAdminRole.allowed_roles)
+    account = BankAccount.objects.select_related("user").get(
+        id=account_id, is_deleted=False
+    )
 
     # Suspend the selected account
     account.is_suspended = True
     account.save()
     try:
         log_activity(
-            user=user,
+            user=account.user,
             category=UserActivityCategoryEnums.PAYMENTS,
             action=UserActivityActionEnums.BANK_ACCOUNT_UPDATED,
-            summary=f"Bank account {account.account_number} suspended for {user.email}.",
+            summary=f"Bank account {account.account_number} suspended by {user.email}.",
             actor_user=user,
             details={
                 "account_id": str(account.id),

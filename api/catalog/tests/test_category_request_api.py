@@ -58,6 +58,43 @@ class CategoryRequestFlowTests(APITestCase):
         names = {row["name"] for row in response.data["data"]["results"]}
         self.assertEqual(names, {"Data Science", "Cybersecurity"})
 
+    def test_writer_can_approve_through_the_creator_route(self):
+        """Writers manage categories, so this route admits them too - and
+        its queryset shows them the request, rather than passing the gate
+        and then 404ing on a request it hid."""
+
+        request_id = self._file().data["id"]
+        self.client.force_authenticate(make_user(role=UserRole.STAFF_WRITER))
+
+        response = self.client.post(
+            f"{URL}{request_id}/approve/",
+            {"creator_price": "150000.00"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["status"], CategoryRequestStatus.APPROVED)
+
+    def test_approver_cannot_decide_a_category_request(self):
+        """Approvers approve courses, not categories: the view now refuses
+        them up front instead of passing them to a service that refused."""
+
+        request_id = self._file().data["id"]
+        self.client.force_authenticate(make_user(role=UserRole.STAFF_APPROVER))
+
+        for action in ("approve", "reject"):
+            with self.subTest(action=action):
+                response = self.client.post(
+                    f"{URL}{request_id}/{action}/",
+                    {"creator_price": "150000.00"},
+                    format="json",
+                )
+                self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(
+            CategoryRequest.objects.get(id=request_id).status,
+            CategoryRequestStatus.PENDING,
+        )
+
     def test_writer_can_list_every_request_from_admin_queue(self):
         self._file()
         self._file(user=self.other, name="Cybersecurity")

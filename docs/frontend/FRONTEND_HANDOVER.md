@@ -457,29 +457,75 @@ HeyGen. `kind`: `VOICE` | `VIDEO` | `TEXT` | `FALLBACK`.
 
 **Swagger tag:** `Admin — MIE Recommendations`
 
+**Auth:** Writer or Super Admin. A plain Admin gets `403` — the screen
+carries Approve and Reject, so it is scoped to who may use them.
+
 ```
-GET /api/v1/admin/mie-recommendations/?limit=20
+GET /api/v1/admin/mie-recommendations/?page=1&size=50
+        &search=&category=<uuid>&difficulty_level=ADVANCED
+        &min_demand_score=50&submitted_after=&submitted_before=
 ```
 
 ```json
 {
-  "pending_total": 42,
-  "scored_total": 18,
-  "results": [
-    { "id": "uuid", "reference": "SCB-0d1c7b2e-P",
-      "title": "Build a Production-Grade Rust Course",
-      "developer_email": "dev@studio.io",
-      "demand_score": 90,
-      "estimated_monthly_earnings": "4200.00",
-      "submitted_at": "2026-08-23T08:55:00Z" }
-  ]
+  "status": true,
+  "message": "Successfully retrieved data",
+  "data": {
+    "paginator": { "count": 42, "page": 1, "page_size": 50, "total_pages": 1,
+                   "next": null, "next_page_number": null,
+                   "previous": null, "previous_page_number": null },
+    "pending_total": 42,
+    "scored_total": 18,
+    "results": [
+      { "id": "uuid", "reference": "SCB-0d1c7b2e-P",
+        "title": "Introduction to Software design",
+        "description": "Principles, methods and practices of software design.",
+        "category": { "id": "uuid", "name": "Software Engineering" },
+        "difficulty_level": "ADVANCED",
+        "searches_per_month": 23000,
+        "demand_score": 69,
+        "estimated_monthly_earnings": "4200.00",
+        "status": "PENDING_REVIEW",
+        "developer_email": "dev@studio.io",
+        "source_type": "EXTERNAL",
+        "submitted_at": "2026-08-23T08:55:00Z" }
+    ]
+  }
 }
 ```
 
-Ranked by demand score, then estimated earnings. Unscored ideas sort
-**last** but are not hidden — compare `scored_total` against
-`pending_total` to show scoring coverage. Read-only; decisions still go
-through the MIE admin endpoints.
+Rows are under `data.results`. Ranked by demand score, then estimated
+earnings; unscored ideas sort **last** rather than being hidden, unless
+`min_demand_score` is set, which drops them. `pending_total` and
+`scored_total` describe the **filtered** set, so a category selection
+narrows them too.
+
+`category` is `null`, `difficulty_level` `""` and `searches_per_month`
+`null` for ideas whose submitter sent none — render those as blanks.
+An unknown `difficulty_level` or an unparseable date is a `400`, not an
+ignored parameter. Send dates as `...Z`; an unencoded `+` in an offset
+decodes to a space and is rejected.
+
+### Deciding
+
+```
+POST /api/v1/admin/mie-recommendations/{id}/approve/     (no body)
+POST /api/v1/admin/mie-recommendations/{id}/reject/      { "rejection_reason": "<label>", "rejection_note": "" }
+POST /api/v1/admin/mie-recommendations/decisions/        { "ids": [...], "action": "approve" | "reject",
+                                                           "rejection_reason": "<label>" }
+```
+
+All three answer `{ "status": 200, "success": true, "message": ..., "data": ... }`.
+The bulk route's `data` is `{ "decided": 5, "results": [...] }` and its message
+reads "You have approved 5 topics."
+
+- Rejection labels come from `GET /api/v1/mie/admin/rejection-reasons/`; an
+  unknown or inactive label is a `404`.
+- Bulk is all-or-nothing: one id matching nothing returns `404` and writes
+  nothing, so a selection is never half-applied. Max 100 ids per call.
+- One reason applies to every idea in a bulk rejection.
+- Approving notifies the submitter and is reversible, but **creates no
+  course and pays no one** — production is a separate, unbuilt step.
 
 ## Invite staff
 

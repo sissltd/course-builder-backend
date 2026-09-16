@@ -37,7 +37,7 @@ from api.payments.services.bankaccount_services import (
 )
 from api.platform.enums import PaymentProcessors
 from api.platform.services.platform_settings_service import get_settings
-from api.users.permissions import IsAdminRole
+from api.users.permissions import IsAdminOrSuperAdminRole
 from shared.response.error import custom_error_response
 from shared.response.success import custom_success_response
 from shared.services.flutterwave_service import FlutterwaveService
@@ -165,10 +165,13 @@ class BankAccountSetDefaultView(APIView):
 
 @extend_schema(**BANK_ACCOUNT_SUSPEND_DOCS, request=None)
 class BankAccountSuspendView(APIView):
-    permission_classes: ClassVar = [IsAdminRole]
+    # Admin tier without the Approver, matching every other money surface
+    # (wallet admin, KYC review): approving courses is no reason to be able
+    # to freeze someone's payouts.
+    permission_classes: ClassVar = [IsAdminOrSuperAdminRole]
 
     def post(self, request, pk):
-        """Suspend a specific bank account for the authenticated user."""
+        """Suspend any user's bank account - an admin moderation action."""
         user = request.user
         try:
             suspend_bank_account(user, pk, *client_meta(request))

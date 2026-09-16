@@ -9,7 +9,6 @@ from rest_framework import exceptions, status
 from rest_framework.filters import OrderingFilter, SearchFilter
 from rest_framework.generics import ListAPIView
 from rest_framework.response import Response
-from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from api.mie.authentication import MieDeveloperAuthentication
@@ -23,6 +22,7 @@ from api.mie.serializers.submission_serializer import (
     SubmissionIngestSerializer,
 )
 from api.mie.services import submission_service
+from api.mie.throttling import MieDeveloperRateThrottle
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 
 QUEUE_FILTER_PARAMETERS = [
@@ -85,7 +85,7 @@ class MieSubmissionIngestView(APIView):
 
     authentication_classes = [MieDeveloperAuthentication]
     permission_classes = [IsMieDeveloper]
-    throttle_classes = [ScopedRateThrottle]
+    throttle_classes = [MieDeveloperRateThrottle]
     throttle_scope = "mie_ingest"
 
     @extend_schema(

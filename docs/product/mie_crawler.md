@@ -86,9 +86,19 @@ with its API key in the `X-MIE-Api-Key` header. It may send one extra field:
 ```json
 {
   "title": "Kubernetes Security Hardening for DevOps Engineers",
+  "description": "Hardening production clusters: RBAC, admission control, supply-chain checks.",
+  "category": "Software Engineering",
+  "difficulty_level": "ADVANCED",
+  "searches_per_month": 23000,
   "confidence_note": "940 job postings mention this skill (up 34% month on month); 1,200+ related questions on community forums in the past 30 days"
 }
 ```
+
+Everything except the title is optional, but the crawler should send all of
+it: those fields are the columns an admin sorts and filters the review queue
+by. `category` is matched by name or slug against the platform's real
+categories — an unmatched value is not an error, it simply leaves the idea
+uncategorised with the raw value kept in the payload.
 
 `confidence_note` is free text, up to 2,000 characters, and it is the crawler's
 evidence — the reason it believes this idea is worth building. It is shown to
