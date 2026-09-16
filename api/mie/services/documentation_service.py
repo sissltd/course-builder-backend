@@ -38,7 +38,11 @@ from api.mie.enums import (
     WebhookDeliveryStatus,
     WebhookEventType,
 )
-from api.mie.models.course_submission import CONFIDENCE_NOTE_MAX_LENGTH
+from api.courses.enums import DifficultyLevel
+from api.mie.models.course_submission import (
+    CONFIDENCE_NOTE_MAX_LENGTH,
+    DESCRIPTION_MAX_LENGTH,
+)
 from api.mie.services import webhook_dispatcher
 from api.mie.services.key_service import API_KEY_PREFIX
 from api.mie.services.reference import REFERENCE_SUFFIXES
@@ -890,15 +894,42 @@ def _endpoints(base_url: str) -> list[dict]:
                     "into its own field, so reviewers see it beside the "
                     "title instead of hunting through the payload."
                 ),
+                "description": (
+                    "string, optional, up to "
+                    f"{DESCRIPTION_MAX_LENGTH} characters after trimming. "
+                    "What the course would cover. Reviewers read it in the "
+                    "idea's detail panel, so it is worth writing."
+                ),
+                "category": (
+                    "string, optional. The platform category this belongs "
+                    "to, by name or slug - 'Software Engineering' or "
+                    "'software-engineering'. Matched case-insensitively "
+                    "against live categories. A value we cannot match is "
+                    "not an error: the idea is filed without a category and "
+                    "your value stays in the payload for the reviewer."
+                ),
+                "difficulty_level": (
+                    "string, optional, one of "
+                    f"{', '.join(DifficultyLevel.values)}. How hard the "
+                    "resulting course would be."
+                ),
+                "searches_per_month": (
+                    "integer, optional, 0 or more. Monthly search volume "
+                    "behind the idea. Shown beside the reviewer's demand "
+                    "score, so send it when you have measured it."
+                ),
                 "<anything else>": (
                     "Optional. The entire JSON body is stored verbatim and "
-                    "shown to reviewers - description, audience, outline, "
-                    "your own internal ids, whatever helps the review."
+                    "shown to reviewers - audience, outline, your own "
+                    "internal ids, whatever helps the review."
                 ),
             },
             "request_example": {
                 "title": SAMPLE_TITLE,
                 "description": "Systems programming for backend engineers",
+                "category": "Software Engineering",
+                "difficulty_level": DifficultyLevel.ADVANCED.value,
+                "searches_per_month": 23000,
                 "audience": "mid-level backend developers",
                 "confidence_note": (
                     "620 backend job postings asked for Rust this month, up "
@@ -923,7 +954,7 @@ def _endpoints(base_url: str) -> list[dict]:
                 "created_datetime": "When we received it.",
             },
             "errors": [
-                {"status": 400, "when": "Missing title, empty title, title over 255 characters, a non-string or over-long confidence_note, or a non-object body."},
+                {"status": 400, "when": "Missing title, empty title, title over 255 characters, a non-string or over-long confidence_note or description, an unknown difficulty_level, a negative or non-integer searches_per_month, or a non-object body."},
                 {"status": 401, "when": "Missing, invalid, suspended, or inactive credentials."},
                 {"status": 429, "when": "Ingest rate limit exceeded, or - for platform-owned accounts only - the rolling 24-hour submission cap. Either way, wait the seconds in Retry-After."},
             ],
@@ -1454,8 +1485,12 @@ def _errors() -> dict:
 def _rate_limits() -> dict:
     return {
         "scope": (
-            "Limits are per client for the endpoints that declare them. "
-            "Endpoints not listed here are not rate limited."
+            "Registration is limited per client IP, because no account "
+            "exists yet. Every other limit below is per developer account: "
+            "one bucket whether you authenticate with your API key or a "
+            "platform session, and never shared with another account "
+            "behind the same IP. Endpoints not listed here are not rate "
+            "limited."
         ),
         "on_exceed": (
             "HTTP 429 with a Retry-After header carrying the seconds to "

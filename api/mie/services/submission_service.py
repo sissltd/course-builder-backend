@@ -3,13 +3,17 @@ from datetime import timedelta
 
 from django.conf import settings
 from django.db import IntegrityError, transaction
-from django.db.models import Count, Min
+from django.db.models import Count, Min, Q
 from django.utils import timezone
 from rest_framework import exceptions
 
+from api.courses.enums import DifficultyLevel
 from api.mie.enums import MieSourceType, SubmissionStatus, WebhookEventType
 from api.mie.models import CourseSubmission, DeveloperAccount, WebhookEvent
-from api.mie.models.course_submission import CONFIDENCE_NOTE_MAX_LENGTH
+from api.mie.models.course_submission import (
+    CONFIDENCE_NOTE_MAX_LENGTH,
+    DESCRIPTION_MAX_LENGTH,
+)
 from api.mie.services.dedup_service import DedupOutcome, evaluate_title, normalize_title
 
 DAILY_CAP_WINDOW = timedelta(hours=24)
@@ -75,18 +79,17 @@ def submit_idea(*, developer, payload: dict) -> tuple[CourseSubmission, bool]:
     developers never reach that check.
     """
 
-    title = validate_idea_payload(payload)
-    confidence_note = _extract_confidence_note(payload)
+    fields = _extract_fields(payload)
 
     if developer.source_type != MieSourceType.SYSTEM:
-        submission = _persist_submission(developer, payload, title, confidence_note)
+        submission = _persist_submission(developer, payload, fields)
     else:
         # Count and insert share one transaction behind a lock on the
         # account row, so two concurrent crawler requests cannot both read
         # "19 of 20" and both get in.
         with transaction.atomic():
             _enforce_daily_cap(developer)
-            submission = _persist_submission(developer, payload, title, confidence_note)
+            submission = _persist_submission(developer, payload, fields)
 
     return submission, submission.status == SubmissionStatus.PENDING_REVIEW
 
@@ -106,7 +109,7 @@ def record_event(submission: CourseSubmission) -> WebhookEvent:
     )
 
 
-def _persist_submission(developer, payload, title, confidence_note) -> CourseSubmission:
+def _persist_submission(developer, payload, fields: dict) -> CourseSubmission:
     """Dedup, store and record the event, resolving a lost queue race.
 
     The inner atomic becomes a savepoint whenever the caller already holds
@@ -117,14 +120,13 @@ def _persist_submission(developer, payload, title, confidence_note) -> CourseSub
 
     try:
         with transaction.atomic():
-            outcome: DedupOutcome = evaluate_title(title)
+            outcome: DedupOutcome = evaluate_title(fields["title"])
             submission = CourseSubmission.objects.create(
                 developer=developer,
                 payload=payload,
-                title=title,
-                confidence_note=confidence_note,
                 status=outcome.status,
                 rejection_reason=outcome.inherited_reason,
+                **fields,
             )
             if outcome.status == SubmissionStatus.PENDING_REVIEW:
                 CourseSubmission.objects.filter(id=submission.id).update(
@@ -134,7 +136,7 @@ def _persist_submission(developer, payload, title, confidence_note) -> CourseSub
     except IntegrityError:
         # Lost a race against the partial unique index on pending titles;
         # another developer enqueued this exact title mid-transaction.
-        submission = _record_lost_race(developer, payload, title, confidence_note)
+        submission = _record_lost_race(developer, payload, fields)
     return submission
 
 
@@ -164,33 +166,108 @@ def _enforce_daily_cap(developer) -> None:
     raise DailySubmissionCapReached(max(1, math.ceil((frees_at - now).total_seconds())))
 
 
-def _extract_confidence_note(payload: dict) -> str:
-    """Lift the optional confidence_note out of a raw Endpoint 1 body.
+def _extract_fields(payload: dict) -> dict:
+    """Lift the columns the platform reads out of a raw Endpoint 1 body.
 
-    Checked here for the same reason the title is: the serializer alone
-    would coerce a number to a string, leaving the stored payload and the
-    extracted column disagreeing about what was sent.
+    Every one of these also stays verbatim in `payload`; the columns are
+    the copies the review screens sort, filter and display on. Types are
+    checked here rather than left to the serializer for the reason the
+    title is: the serializer would coerce, leaving the stored payload and
+    the extracted column disagreeing about what was actually sent.
     """
 
-    note = payload.get("confidence_note", "")
-    if not isinstance(note, str):
+    return {
+        "title": validate_idea_payload(payload),
+        "confidence_note": _extract_text(
+            payload, "confidence_note", CONFIDENCE_NOTE_MAX_LENGTH
+        ),
+        "description": _extract_text(payload, "description", DESCRIPTION_MAX_LENGTH),
+        "category": _resolve_category(payload.get("category")),
+        "difficulty_level": _extract_difficulty_level(payload),
+        "searches_per_month": _extract_searches_per_month(payload),
+    }
+
+
+def _extract_text(payload: dict, field: str, max_length: int) -> str:
+    """Trimmed text for `field`, or "" when it was not sent."""
+
+    value = payload.get(field, "")
+    if not isinstance(value, str):
+        raise exceptions.ValidationError({field: [f"{field} must be a string."]})
+    value = value.strip()
+    if len(value) > max_length:
         raise exceptions.ValidationError(
-            {"confidence_note": ["confidence_note must be a string."]}
+            {field: [f"{field} must be {max_length} characters or fewer."]}
         )
-    note = note.strip()
-    if len(note) > CONFIDENCE_NOTE_MAX_LENGTH:
+    return value
+
+
+def _resolve_category(raw):
+    """Map a submitted category name or slug onto a real platform Category.
+
+    Matching is case-insensitive on either, and archived categories are
+    ignored - an idea cannot be filed under a retired one. A value that
+    matches nothing is not an error: the column stays null and the raw
+    string survives in the payload, so a reviewer can still see what the
+    submitter meant and set the category themselves.
+    """
+
+    from api.catalog.enums import CategoryStatus
+    from api.catalog.models import Category
+
+    if raw in (None, ""):
+        return None
+    if not isinstance(raw, str):
+        raise exceptions.ValidationError({"category": ["category must be a string."]})
+
+    candidate = raw.strip()
+    return (
+        Category.objects.exclude(status=CategoryStatus.ARCHIVED)
+        .filter(Q(name__iexact=candidate) | Q(slug__iexact=candidate))
+        .first()
+    )
+
+
+def _extract_difficulty_level(payload: dict) -> str:
+    """The submitter's claimed difficulty, normalised to the platform enum."""
+
+    raw = payload.get("difficulty_level", "")
+    if raw in (None, ""):
+        return ""
+    if not isinstance(raw, str) or raw.strip().upper() not in DifficultyLevel.values:
         raise exceptions.ValidationError(
             {
-                "confidence_note": [
-                    f"confidence_note must be {CONFIDENCE_NOTE_MAX_LENGTH} "
-                    "characters or fewer."
+                "difficulty_level": [
+                    "difficulty_level must be one of: "
+                    f"{', '.join(DifficultyLevel.values)}."
                 ]
             }
         )
-    return note
+    return raw.strip().upper()
 
 
-def _record_lost_race(developer, payload, title, confidence_note) -> CourseSubmission:
+def _extract_searches_per_month(payload: dict):
+    """Monthly search volume, or None when it was not sent.
+
+    `bool` is rejected explicitly because it is an int in Python, and
+    `True` is not a search volume.
+    """
+
+    raw = payload.get("searches_per_month")
+    if raw is None:
+        return None
+    if isinstance(raw, bool) or not isinstance(raw, int) or raw < 0:
+        raise exceptions.ValidationError(
+            {
+                "searches_per_month": [
+                    "searches_per_month must be a whole number of 0 or more."
+                ]
+            }
+        )
+    return raw
+
+
+def _record_lost_race(developer, payload, fields: dict) -> CourseSubmission:
     """Re-evaluate after an index race and persist without re-checking.
 
     The unique index guarantees exactly one PENDING_REVIEW row per title,
@@ -202,9 +279,8 @@ def _record_lost_race(developer, payload, title, confidence_note) -> CourseSubmi
         submission = CourseSubmission.objects.create(
             developer=developer,
             payload=payload,
-            title=title,
-            confidence_note=confidence_note,
             status=SubmissionStatus.DUPLICATE_IN_QUEUE,
+            **fields,
         )
         record_event(submission)
     return submission

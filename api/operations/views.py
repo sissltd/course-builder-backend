@@ -1,14 +1,24 @@
+from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import (
+    OpenApiExample,
     OpenApiParameter,
     OpenApiResponse,
     extend_schema,
 )
+from rest_framework import exceptions, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from api.courses.enums import DifficultyLevel
+from api.mie.models import CourseSubmission, SubmissionRejectionReason
+from api.mie.serializers.admin_submission_serializer import SubmissionDecisionSerializer
+from api.mie.services import submission_admin_service
+from api.operations.filters import MieRecommendationFilterSet
 from api.operations.serializers import (
     AdminAnalyticsSerializer,
+    MieBulkDecisionSerializer,
+    MieRecommendationRowSerializer,
     MieRecommendationsSerializer,
     PipelineOverviewSerializer,
     SystemHealthSerializer,
@@ -19,8 +29,10 @@ from api.operations.services import (
     pipeline_service,
     recommendation_service,
 )
-from api.users.permissions import IsAdminOrSuperAdminRole
+from api.users.permissions import CanDecideMieIdeas, IsAdminOrSuperAdminRole
+from includes.helpers.pagination import PageNumberAPIPagination
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
+from shared.response.success import custom_success_response
 
 _NO_DATA_NOTE = (
     "Metrics with nothing recorded behind them yet return **null**, not "
@@ -180,60 +192,333 @@ class AdminAnalyticsView(APIView):
         return Response(AdminAnalyticsSerializer(data).data)
 
 
+_RECOMMENDATION_FILTERS = [
+    OpenApiParameter(
+        name="search",
+        type=str,
+        required=False,
+        description="Case-insensitive substring match on the idea title.",
+    ),
+    OpenApiParameter(
+        name="category",
+        type=str,
+        required=False,
+        description="Platform category id, from `GET /api/v1/categories/`.",
+    ),
+    OpenApiParameter(
+        name="difficulty_level",
+        type=str,
+        required=False,
+        enum=DifficultyLevel.values,
+        description="Difficulty the submitter claimed. An unknown value is a 400.",
+    ),
+    OpenApiParameter(
+        name="min_demand_score",
+        type=int,
+        required=False,
+        description=(
+            "Keep ideas scored at least this high. Unscored ideas drop out "
+            "whenever this is set, since they have no score to compare."
+        ),
+    ),
+    OpenApiParameter(
+        name="submitted_after",
+        type=str,
+        required=False,
+        description="ISO-8601 lower bound on when the idea arrived.",
+    ),
+    OpenApiParameter(
+        name="submitted_before",
+        type=str,
+        required=False,
+        description="ISO-8601 upper bound on when the idea arrived.",
+    ),
+]
+
+_DECIDER_AUTH = (
+    "**Auth:** Writer or Super Admin. A plain Admin is refused — deciding "
+    "ideas is the Writer's job, and the Super Admin keeps it so the queue is "
+    "never blocked.\n\n"
+)
+
+
 @extend_schema(tags=["Admin — MIE Recommendations"])
 class MieRecommendationsView(APIView):
-    """Highest-demand MIE ideas still awaiting a decision."""
+    """The Recommendations screen: pending ideas, ranked and filterable."""
 
-    permission_classes = [IsAuthenticated, IsAdminOrSuperAdminRole]
+    permission_classes = [CanDecideMieIdeas]
+    pagination_class = PageNumberAPIPagination
     serializer_class = MieRecommendationsSerializer  # schema generation only
 
     @extend_schema(
-        summary="Retrieve MIE recommendations",
+        summary="List MIE recommendations",
         description=(
-            "Returns partner-submitted course ideas still awaiting review, "
-            "ranked by the market-intelligence signals admins record on "
-            "them — demand score first, then estimated monthly earnings.\n\n"
-            "Called when the admin MIE Recommendation screen loads.\n\n"
-            "**Auth:** Admin or Super Admin.\n\n"
-            "**Prerequisites:** Ideas must be in PENDING_REVIEW; scores are "
-            "set via `POST /api/v1/mie/admin/submissions/{id}/signals/`.\n\n"
-            "**Important:** Read-only over the MIE queue — deciding an idea "
-            "still goes through the MIE admin endpoints. Unscored ideas "
-            "sort last rather than being hidden, so a scoring backlog is "
-            "visible; compare `scored_total` against `pending_total` to see "
-            "how much of the queue has been assessed."
+            "Returns course ideas still awaiting review — the Recommendations "
+            "table — ranked by the market-intelligence signals recorded on "
+            "them: demand score first, then estimated monthly earnings. Each "
+            "row carries what the table draws: topic, category, difficulty, "
+            "demand score and monthly searches, plus the description behind "
+            "the Topic details panel.\n\n"
+            "Called when the screen loads, and again on every filter or page "
+            "change.\n\n"
+            + _DECIDER_AUTH
+            + "**Prerequisites:** None. Ideas appear here while they are in "
+            "PENDING_REVIEW; scores are set through `signals` on the MIE "
+            "admin submissions endpoint.\n\n"
+            "**Important:** Rows are paginated under `data.results`, with "
+            "`data.paginator` alongside. `pending_total` and `scored_total` "
+            "describe the **filtered** set, so a category selection narrows "
+            "them too; compare them to show scoring coverage. Unscored ideas "
+            "sort last rather than being hidden, unless `min_demand_score` "
+            "is set, which drops them."
         ),
-        parameters=[
-            OpenApiParameter(
-                name="limit",
-                type=int,
-                required=False,
-                description=(
-                    "How many ideas to return. Defaults to "
-                    f"{recommendation_service.DEFAULT_LIMIT}, capped at "
-                    f"{recommendation_service.MAX_LIMIT}."
-                ),
-            )
-        ],
+        parameters=_RECOMMENDATION_FILTERS,
         responses={
             200: OpenApiResponse(
                 response=MieRecommendationsSerializer,
                 description="Ranked recommendations plus scoring coverage.",
             ),
+            **STANDARD_ERROR_RESPONSES["validation"],
             **STANDARD_ERROR_RESPONSES["auth"],
             **STANDARD_ERROR_RESPONSES["permission"],
             **STANDARD_ERROR_RESPONSES["server"],
         },
     )
     def get(self, request):
-        try:
-            limit = int(
-                request.query_params.get(
-                    "limit", recommendation_service.DEFAULT_LIMIT
-                )
-            )
-        except (TypeError, ValueError):
-            limit = recommendation_service.DEFAULT_LIMIT
+        filterset = MieRecommendationFilterSet(
+            request.query_params,
+            queryset=recommendation_service.recommendation_queryset(),
+        )
+        if not filterset.is_valid():
+            raise exceptions.ValidationError(filterset.errors)
 
-        data = recommendation_service.get_recommendations(limit=limit)
-        return Response(MieRecommendationsSerializer(data).data)
+        queryset = filterset.qs
+        paginator = self.pagination_class()
+        page = paginator.paginate_queryset(queryset, request, self)
+        response = paginator.get_paginated_response(
+            MieRecommendationRowSerializer(page, many=True).data
+        )
+        # The coverage counts ride inside `data`, beside paginator and results,
+        # so one response answers "what is on this page" and "how much of the
+        # filtered queue is scored".
+        response.data["data"].update(
+            recommendation_service.recommendation_totals(queryset)
+        )
+        return response
+
+
+@extend_schema(tags=["Admin — MIE Recommendations"])
+class MieRecommendationApproveView(APIView):
+    """Accept one idea from the Recommendations table."""
+
+    permission_classes = [CanDecideMieIdeas]
+
+    @extend_schema(
+        summary="Approve an idea",
+        description=(
+            "Accepts one course idea, taking it out of the Recommendations "
+            "queue and notifying the submitter.\n\n"
+            "Called from the row's Approve button, or Approve topic in the "
+            "Topic details panel.\n\n"
+            + _DECIDER_AUTH
+            + "**Prerequisites:** The idea must exist.\n\n"
+            "**Important:** Fires a SUBMISSION_APPROVED webhook to the "
+            "submitter immediately, and is reversible — rejecting it later "
+            "flips it back and fires the matching webhook. Approving does "
+            "not create a course or pay anyone: production is a separate, "
+            "unbuilt step."
+        ),
+        request=None,
+        responses={
+            200: OpenApiResponse(
+                response=MieRecommendationRowSerializer,
+                description="The idea, now approved.",
+            ),
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
+            **STANDARD_ERROR_RESPONSES["not_found"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
+    def post(self, request, id):
+        submission = get_object_or_404(CourseSubmission, id=id)
+        decided = submission_admin_service.decide_submission(
+            actor=request.user, submission=submission, approve=True
+        )
+        return custom_success_response(
+            status=status.HTTP_200_OK,
+            message="Topic successfully approved.",
+            data=MieRecommendationRowSerializer(decided).data,
+        )
+
+
+@extend_schema(tags=["Admin — MIE Recommendations"])
+class MieRecommendationRejectView(APIView):
+    """Decline one idea from the Recommendations table."""
+
+    permission_classes = [CanDecideMieIdeas]
+
+    @extend_schema(
+        summary="Reject an idea",
+        description=(
+            "Declines one course idea with a reason from the shared "
+            "taxonomy, so the submitter gets consistent feedback.\n\n"
+            "Called from the row's Reject button, or Reject topic in the "
+            "Topic details panel.\n\n"
+            + _DECIDER_AUTH
+            + "**Prerequisites:** The idea must exist, and "
+            "`rejection_reason` must match an active rejection reason label "
+            "from `GET /api/v1/mie/admin/rejection-reasons/`.\n\n"
+            "**Important:** Fires a SUBMISSION_REJECTED webhook carrying the "
+            "reason and note. Reversible — approving later flips it back. "
+            "Rejecting enough of one crawler's ideas trips the circuit "
+            "breaker and suspends that account."
+        ),
+        request=SubmissionDecisionSerializer,
+        examples=[
+            OpenApiExample(
+                "Reject with a reason",
+                request_only=True,
+                value={
+                    "rejection_reason": "Duplicate of existing catalog",
+                    "rejection_note": "Covered by the live Kubernetes course.",
+                },
+            )
+        ],
+        responses={
+            200: OpenApiResponse(
+                response=MieRecommendationRowSerializer,
+                description="The idea, now rejected.",
+            ),
+            **STANDARD_ERROR_RESPONSES["validation"],
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
+            **STANDARD_ERROR_RESPONSES["not_found"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
+    def post(self, request, id):
+        submission = get_object_or_404(CourseSubmission, id=id)
+        serializer = SubmissionDecisionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        label = serializer.validated_data.get("rejection_reason")
+        if not label:
+            raise exceptions.ValidationError(
+                {"rejection_reason": ["A rejection reason label is required to reject."]}
+            )
+        reason = get_object_or_404(
+            SubmissionRejectionReason, label=label, is_active=True
+        )
+
+        decided = submission_admin_service.decide_submission(
+            actor=request.user,
+            submission=submission,
+            approve=False,
+            rejection_reason=reason,
+            rejection_note=serializer.validated_data.get("rejection_note", ""),
+        )
+        return custom_success_response(
+            status=status.HTTP_200_OK,
+            message="Topic successfully rejected.",
+            data=MieRecommendationRowSerializer(decided).data,
+        )
+
+
+@extend_schema(tags=["Admin — MIE Recommendations"])
+class MieRecommendationBulkDecisionView(APIView):
+    """Decide a checkbox selection from the Recommendations table."""
+
+    permission_classes = [CanDecideMieIdeas]
+
+    @extend_schema(
+        summary="Approve or reject selected ideas",
+        description=(
+            "Applies one decision to every selected idea — the bulk bar "
+            "under the table's checkboxes.\n\n"
+            "Called from Approve topic or Reject topic once rows are "
+            "selected.\n\n"
+            + _DECIDER_AUTH
+            + "**Prerequisites:** Every id must exist. Rejecting needs a "
+            "`rejection_reason` label, which is applied to the whole "
+            "selection.\n\n"
+            "**Important:** All or nothing — an id matching no idea returns "
+            "404 and nothing is written, so a selection is never "
+            "half-applied. Each idea still gets its own webhook. At most "
+            f"{submission_admin_service.BULK_DECISION_LIMIT} ideas per call."
+        ),
+        request=MieBulkDecisionSerializer,
+        examples=[
+            OpenApiExample(
+                "Approve a selection",
+                request_only=True,
+                value={
+                    "ids": [
+                        "0d1c7b2e-6f5a-4a3f-9a2b-1f4e8c9d0a11",
+                        "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+                    ],
+                    "action": "approve",
+                },
+            ),
+            OpenApiExample(
+                "Reject a selection",
+                request_only=True,
+                value={
+                    "ids": ["0d1c7b2e-6f5a-4a3f-9a2b-1f4e8c9d0a11"],
+                    "action": "reject",
+                    "rejection_reason": "Duplicate of existing catalog",
+                },
+            ),
+        ],
+        responses={
+            200: OpenApiResponse(
+                description="How many ideas were decided, and the rows.",
+                examples=[
+                    OpenApiExample(
+                        "Approved five",
+                        value={
+                            "status": 200,
+                            "success": True,
+                            "message": "You have approved 5 topics.",
+                            "data": {"decided": 5, "results": []},
+                        },
+                    )
+                ],
+            ),
+            **STANDARD_ERROR_RESPONSES["validation"],
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
+            **STANDARD_ERROR_RESPONSES["not_found"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
+    def post(self, request):
+        serializer = MieBulkDecisionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        approve = serializer.validated_data["action"] == "approve"
+
+        reason = None
+        if not approve:
+            reason = get_object_or_404(
+                SubmissionRejectionReason,
+                label=serializer.validated_data["rejection_reason"],
+                is_active=True,
+            )
+
+        decided = submission_admin_service.decide_submissions_bulk(
+            actor=request.user,
+            submission_ids=serializer.validated_data["ids"],
+            approve=approve,
+            rejection_reason=reason,
+            rejection_note=serializer.validated_data.get("rejection_note", ""),
+        )
+        verb = "approved" if approve else "rejected"
+        plural = "topic" if len(decided) == 1 else "topics"
+        return custom_success_response(
+            status=status.HTTP_200_OK,
+            message=f"You have {verb} {len(decided)} {plural}.",
+            data={
+                "decided": len(decided),
+                "results": MieRecommendationRowSerializer(decided, many=True).data,
+            },
+        )

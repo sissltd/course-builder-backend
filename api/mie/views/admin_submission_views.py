@@ -506,6 +506,10 @@ class MieSubmissionAdminViewSet(viewsets.ReadOnlyModelViewSet):
             estimated_monthly_earnings=serializer.validated_data.get(
                 "estimated_monthly_earnings"
             ),
+            category=serializer.validated_data.get("category"),
+            difficulty_level=serializer.validated_data.get("difficulty_level"),
+            searches_per_month=serializer.validated_data.get("searches_per_month"),
+            description=serializer.validated_data.get("description"),
         )
         return Response(AdminSubmissionSerializer(updated).data)
 

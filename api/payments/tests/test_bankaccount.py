@@ -14,7 +14,8 @@ from api.courses.tests.factories import make_user
 from api.payments.models.bankaccount_models import BankAccount
 from api.payments.services.bankaccount_services import AccountDetailsError
 from api.platform.enums import PaymentProcessors
-from api.users.enums import UserRole
+from api.users.enums import UserActivityActionEnums, UserRole
+from api.users.models import UserActivityLog
 from shared.utils.encryption import encrypt_field
 
 LIST_URL = "/api/v1/payout-accounts/"
@@ -250,7 +251,41 @@ class BankAccountMutationTests(APITestCase):
 
 
 class BankAccountSuspendAccessTests(APITestCase):
-    """Only IsAdminRole users can call suspend."""
+    """Only the Admin tier (Admin, Super Admin) can call suspend - an admin
+    moderation action over any user's account."""
+
+    def test_approver_cannot_suspend(self):
+        """Approvers approve courses; that is no reason to freeze payouts."""
+
+        approver = make_user(role=UserRole.STAFF_APPROVER)
+        account = make_bank_account(
+            user=make_user(role=UserRole.COURSE_CREATOR),
+            is_default=True,
+            paystack_recipient_code="RCP_1234567890",
+        )
+        self.client.force_authenticate(approver)
+
+        response = self.client.post(suspend_url(account), format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        account.refresh_from_db()
+        self.assertFalse(account.is_suspended)
+
+    def test_suspension_is_logged_on_the_owners_activity_log(self):
+        admin_ = make_user(role=UserRole.ADMIN)
+        acct_owner = make_user(role=UserRole.COURSE_CREATOR)
+        account = make_bank_account(
+            user=acct_owner, is_default=True, paystack_recipient_code="RCP_1234567890"
+        )
+        self.client.force_authenticate(admin_)
+
+        self.client.post(suspend_url(account), format="json")
+
+        entries = UserActivityLog.objects.filter(
+            action=UserActivityActionEnums.BANK_ACCOUNT_UPDATED
+        )
+        self.assertTrue(entries.filter(user=acct_owner).exists())
+        self.assertFalse(entries.filter(user=admin_).exists())
 
     def test_non_admin_role_cannot_suspend(self):
         creator = make_user(role=UserRole.COURSE_CREATOR)

@@ -1,7 +1,11 @@
 from rest_framework import serializers
 
+from api.catalog.enums import CategoryStatus
+from api.catalog.models import Category
+from api.courses.enums import DifficultyLevel
 from api.mie.enums import MieSourceType
 from api.mie.models import CourseSubmission
+from api.mie.models.course_submission import DESCRIPTION_MAX_LENGTH
 
 
 class AdminSubmissionSerializer(serializers.ModelSerializer):
@@ -95,7 +99,13 @@ class SubmissionDecisionResponseSerializer(serializers.Serializer):
 
 
 class DemandSignalsSerializer(serializers.Serializer):
-    """Admin-entered market-research signals for queue prioritisation."""
+    """Admin-entered market-research signals, plus corrections to what the
+    submitter sent.
+
+    Everything except `demand_score` is optional and means "leave what is
+    stored" when omitted, so a partial edit cannot blank the fields it did
+    not touch.
+    """
 
     demand_score = serializers.IntegerField(
         min_value=0,
@@ -108,6 +118,30 @@ class DemandSignalsSerializer(serializers.Serializer):
         required=False,
         allow_null=True,
         help_text="Estimated monthly earnings figure, in platform currency.",
+    )
+    category = serializers.PrimaryKeyRelatedField(
+        queryset=Category.objects.exclude(status=CategoryStatus.ARCHIVED),
+        required=False,
+        help_text=(
+            "Platform category id, to file the idea correctly when the "
+            "submitter sent none or named one that matched nothing."
+        ),
+    )
+    difficulty_level = serializers.ChoiceField(
+        choices=DifficultyLevel.choices,
+        required=False,
+        help_text="Corrects the difficulty the submitter claimed.",
+    )
+    searches_per_month = serializers.IntegerField(
+        min_value=0,
+        required=False,
+        help_text="Corrects the monthly search volume the submitter reported.",
+    )
+    description = serializers.CharField(
+        max_length=DESCRIPTION_MAX_LENGTH,
+        required=False,
+        allow_blank=True,
+        help_text="Corrects the description shown in the Topic details panel.",
     )
 
 

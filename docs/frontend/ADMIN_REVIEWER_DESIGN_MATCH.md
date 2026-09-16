@@ -206,13 +206,25 @@ from an idle provider.
 ### MIE Recommendations
 
 ```
-GET /api/v1/admin/mie-recommendations/?limit=20
+GET  /api/v1/admin/mie-recommendations/?page=1&size=50
+POST /api/v1/admin/mie-recommendations/{id}/approve/
+POST /api/v1/admin/mie-recommendations/{id}/reject/
+POST /api/v1/admin/mie-recommendations/decisions/
 ```
 
-Pending partner ideas ranked by `demand_score`, then estimated earnings.
-Unscored ideas sort **last** but are not hidden — compare `scored_total`
-against `pending_total` to see how much of the queue has been assessed.
-Read-only; deciding an idea still goes through the MIE admin endpoints.
+Pending ideas ranked by `demand_score`, then estimated earnings, and
+decided from the same screen. **Writer or Super Admin only** — a plain
+Admin is refused.
+
+Rows are paginated under `data.results` and carry the columns the table
+draws: `title`, `category` (`{id, name}` or null), `difficulty_level`,
+`searches_per_month`, `demand_score` and `description` for the details
+panel. Filters: `search`, `category`, `difficulty_level`,
+`min_demand_score`, `submitted_after`, `submitted_before`.
+
+Unscored ideas sort **last** rather than being hidden; compare
+`scored_total` against `pending_total`, both of which describe the
+filtered set. The bulk route takes up to 100 ids and is all-or-nothing.
 
 ### Overview
 

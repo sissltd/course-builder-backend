@@ -10,7 +10,7 @@ from api.catalog.serializers import (
     CategoryRequestSerializer,
 )
 from api.catalog.services import category_request_service
-from api.users.permissions import IsAdminRole, IsCourseCreatorRole
+from api.users.permissions import CanManageCategories, IsCourseCreatorRole
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 
 MANAGE_ACTIONS = {"approve", "reject"}
@@ -50,10 +50,13 @@ class CategoryRequestViewSet(ModelViewSet):
 
     Approving creates the real Category and emails the requester; the
     price is set by the approving admin, not the requester. Creators see
-    only their own requests; admins see every request.
+    only their own requests; category managers (Writer, Admin, Super Admin -
+    CanManageCategories) see every request and decide them. The view, the
+    queryset and the service all use that one role set, so a caller can
+    never pass the gate and then be refused or 404'd further in.
     """
 
-    permission_classes = [IsCourseCreatorRole | IsAdminRole]
+    permission_classes = [IsCourseCreatorRole | CanManageCategories]
     http_method_names = ["get", "post", "head", "options"]
 
     def get_queryset(self):
@@ -64,7 +67,7 @@ class CategoryRequestViewSet(ModelViewSet):
             "requested_by", "resulting_category"
         )
         if self.request.user.is_superuser or self.request.user.role in (
-            IsAdminRole.allowed_roles
+            CanManageCategories.allowed_roles
         ):
             return queryset
         return queryset.filter(requested_by=self.request.user)
@@ -76,7 +79,7 @@ class CategoryRequestViewSet(ModelViewSet):
 
     def get_permissions(self):
         if self.action in MANAGE_ACTIONS:
-            return [IsAdminRole()]
+            return [CanManageCategories()]
         return super().get_permissions()
 
     @extend_schema(
@@ -88,7 +91,7 @@ class CategoryRequestViewSet(ModelViewSet):
             "link on course creation. The category is **not** usable until "
             "an admin approves it \u2014 the creator is emailed when that "
             "happens.\n\n"
-            "**Auth:** Course Creator or Admin.\n\n"
+            "**Auth:** Course Creator, Writer, Admin, or Super Admin.\n\n"
             "**Prerequisites:** None.\n\n"
             "**Important:** A name matching an existing category is not "
             "rejected automatically \u2014 whether it is a real duplicate "
@@ -125,10 +128,11 @@ class CategoryRequestViewSet(ModelViewSet):
         summary="List category requests",
         description=(
             "Returns category requests, newest first. A Course Creator sees "
-            "only their own; an Admin sees every request.\n\n"
+            "only their own; a category manager (Writer, Admin, Super Admin) "
+            "sees every request.\n\n"
             "Call this to show a creator the state of what they asked for, "
             "or to populate the admin review queue.\n\n"
-            "**Auth:** Course Creator or Admin.\n\n"
+            "**Auth:** Course Creator, or a Writer, Admin, or Super Admin.\n\n"
             "**Prerequisites:** None.\n\n"
             "**Important:** Scoping is server-side \u2014 no query "
             "parameter lets a creator see another creator's requests."
@@ -151,7 +155,8 @@ class CategoryRequestViewSet(ModelViewSet):
         summary="Retrieve a category request",
         description=(
             "Returns one category request.\n\n"
-            "**Auth:** Course Creator (own requests only) or Admin.\n\n"
+            "**Auth:** Course Creator (own requests only), or a Writer, "
+            "Admin, or Super Admin.\n\n"
             "**Prerequisites:** The request must exist and be visible to "
             "the caller.\n\n"
             "**Important:** A creator requesting another creator's request "
@@ -179,7 +184,7 @@ class CategoryRequestViewSet(ModelViewSet):
             "requester.\n\n"
             "Call this from the admin review queue once the request has "
             "been checked and the payout decided.\n\n"
-            "**Auth:** Admin.\n\n"
+            "**Auth:** Writer, Admin, or Super Admin.\n\n"
             "**Prerequisites:** The request must be Pending.\n\n"
             "**Important:** `creator_price` is required and is set by you, "
             "not the requester \u2014 it is what the platform pays per "
@@ -226,7 +231,7 @@ class CategoryRequestViewSet(ModelViewSet):
             "Closes a Pending request without creating a Category.\n\n"
             "Call this from the admin review queue to decline a request that "
             "should not become a category.\n\n"
-            "**Auth:** Admin.\n\n"
+            "**Auth:** Writer, Admin, or Super Admin.\n\n"
             "**Prerequisites:** The request must be Pending.\n\n"
             "**Important:** No email is sent \u2014 there is no "
             "rejection-notice screen. The request is retained for history."

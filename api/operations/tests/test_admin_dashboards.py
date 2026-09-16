@@ -377,12 +377,19 @@ class AdminOverviewTilesTests(APITestCase):
 
 
 class MieRecommendationsTests(APITestCase):
-    """Read-only ranking over the MIE queue. Must not alter MIE itself."""
+    """The Recommendations table: ranking, paging and who may open it."""
 
     URL = "/api/v1/admin/mie-recommendations/"
 
     def setUp(self):
-        self.client.force_authenticate(make_user(role=UserRole.ADMIN))
+        self.client.force_authenticate(make_user(role=UserRole.STAFF_WRITER))
+
+    def _body(self, query=""):
+        """The screen's payload - rows and coverage both live under `data`."""
+
+        response = self.client.get(f"{self.URL}{query}")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        return response.data["data"]
 
     def _submission(self, *, title, score=None, earnings=None, decided=False):
         from api.mie.enums import SubmissionStatus
@@ -400,11 +407,24 @@ class MieRecommendationsTests(APITestCase):
         submission.save()
         return submission
 
-    def test_requires_admin(self):
-        self.client.force_authenticate(make_user(role=UserRole.COURSE_CREATOR))
+    def test_only_deciders_may_open_the_screen(self):
+        """It carries Approve and Reject, so it is scoped to who may use
+        them: the Writer and the Super Admin, not the wider admin tier."""
 
+        for role, expected in (
+            (UserRole.STAFF_WRITER, status.HTTP_200_OK),
+            (UserRole.SUPER_ADMIN, status.HTTP_200_OK),
+            (UserRole.ADMIN, status.HTTP_403_FORBIDDEN),
+            (UserRole.STAFF_APPROVER, status.HTTP_403_FORBIDDEN),
+            (UserRole.COURSE_CREATOR, status.HTTP_403_FORBIDDEN),
+        ):
+            with self.subTest(role=role):
+                self.client.force_authenticate(make_user(role=role))
+                self.assertEqual(self.client.get(self.URL).status_code, expected)
+
+        self.client.force_authenticate(None)
         self.assertEqual(
-            self.client.get(self.URL).status_code, status.HTTP_403_FORBIDDEN
+            self.client.get(self.URL).status_code, status.HTTP_401_UNAUTHORIZED
         )
 
     def test_ranks_by_demand_score(self):
@@ -412,7 +432,7 @@ class MieRecommendationsTests(APITestCase):
         self._submission(title="High demand", score=90)
         self._submission(title="Mid demand", score=50)
 
-        titles = [row["title"] for row in self.client.get(self.URL).data["results"]]
+        titles = [row["title"] for row in self._body()["results"]]
 
         self.assertEqual(titles, ["High demand", "Mid demand", "Low demand"])
 
@@ -420,7 +440,7 @@ class MieRecommendationsTests(APITestCase):
         self._submission(title="Unscored")
         self._submission(title="Scored", score=40)
 
-        data = self.client.get(self.URL).data
+        data = self._body()
 
         self.assertEqual(data["results"][0]["title"], "Scored")
         self.assertEqual(data["results"][-1]["title"], "Unscored")
@@ -431,7 +451,7 @@ class MieRecommendationsTests(APITestCase):
         self._submission(title="Already approved", score=99, decided=True)
         self._submission(title="Still pending", score=1)
 
-        data = self.client.get(self.URL).data
+        data = self._body()
 
         titles = [row["title"] for row in data["results"]]
         self.assertEqual(titles, ["Still pending"])
@@ -440,22 +460,27 @@ class MieRecommendationsTests(APITestCase):
     def test_earnings_are_decimal_strings(self):
         self._submission(title="Lucrative", score=80, earnings="4200.00")
 
-        row = self.client.get(self.URL).data["results"][0]
+        row = self._body()["results"][0]
 
         self.assertIsInstance(row["estimated_monthly_earnings"], str)
         self.assertEqual(Decimal(row["estimated_monthly_earnings"]), Decimal("4200.00"))
 
-    def test_limit_is_capped_and_survives_garbage(self):
+    def test_rows_are_paginated_under_data(self):
+        """The table pages through 'Showing N entries', so rows arrive under
+        data.results with data.paginator beside them."""
+
         for index in range(3):
             self._submission(title=f"Idea {index}", score=index)
 
-        self.assertEqual(len(self.client.get(f"{self.URL}?limit=1").data["results"]), 1)
-        self.assertEqual(
-            len(self.client.get(f"{self.URL}?limit=abc").data["results"]), 3
-        )
-        self.assertEqual(
-            len(self.client.get(f"{self.URL}?limit=99999").data["results"]), 3
-        )
+        data = self._body("?size=2")
+
+        self.assertEqual(len(data["results"]), 2)
+        self.assertEqual(data["paginator"]["count"], 3)
+        self.assertEqual(data["paginator"]["total_pages"], 2)
+        self.assertEqual(data["pending_total"], 3)
+
+        second_page = self._body("?size=2&page=2")
+        self.assertEqual(len(second_page["results"]), 1)
 
     def test_rows_carry_the_submitting_account_source_type(self):
         """The screen tells the crawler's ideas apart from partners' by this
@@ -469,8 +494,7 @@ class MieRecommendationsTests(APITestCase):
         crawler, _key = make_system_developer()
         make_submission(developer=crawler, title="Crawler idea", demand_score=10)
 
-        results = self.client.get(self.URL).data["results"]
-        rows = {row["title"]: row for row in results}
+        rows = {row["title"]: row for row in self._body()["results"]}
 
         self.assertEqual(rows["Partner idea"]["source_type"], MieSourceType.EXTERNAL)
         self.assertEqual(rows["Crawler idea"]["source_type"], MieSourceType.SYSTEM)

@@ -10,17 +10,30 @@ actually happens is the resulting-course production flow's concern (not
 built yet - MIE courses are ideas until produced).
 """
 
+from django.contrib.contenttypes.models import ContentType
 from django.db import transaction
 from django.utils import timezone
 from rest_framework import exceptions
 
+from api.authentication.services.activity_service import log_activity
 from api.mie.enums import MieSourceType, SubmissionStatus, WebhookEventType
 from api.mie.models import CourseSubmission, SubmissionRejectionReason, WebhookEvent
 from api.mie.services import guardrail_service
-from api.users.enums import UserRole
-from api.users.permissions import require_role
+from api.users.enums import (
+    UserActivityActionEnums,
+    UserActivityCategoryEnums,
+    UserRole,
+)
+from api.users.models import UserActivityLog
+from api.users.permissions import CanDecideMieIdeas, require_role
 
 DECIDED_STATUSES = (SubmissionStatus.APPROVED, SubmissionStatus.REJECTED)
+
+BULK_DECISION_LIMIT = 100
+"""Most ideas one bulk call may decide - the batch size every write below uses."""
+
+SUMMARY_TITLE_LIMIT = 180
+"""Title budget inside an activity summary, which the column caps at 255."""
 
 
 def decide_submission(
@@ -34,6 +47,9 @@ def decide_submission(
     """Approve or reject an idea; callable from any state, any number of
     times. Returns the refreshed submission; caller serializes it.
 
+    Deciding an idea is the Writer's job as well as the Super Admin's
+    (CanDecideMieIdeas); the rest of the MIE console stays Super Admin only.
+
     Reversal side effects:
     * APPROVED -> REJECTED with a linked resulting_course flags that
       course out of production (unpublished + flagged for review) rather
@@ -41,7 +57,7 @@ def decide_submission(
     * REJECTED -> APPROVED clears stale rejection metadata.
     """
 
-    require_role(actor, (UserRole.SUPER_ADMIN,))
+    require_role(actor, CanDecideMieIdeas.allowed_roles)
     new_status = SubmissionStatus.APPROVED if approve else SubmissionStatus.REJECTED
 
     # An already-rejected row may be re-rejected without a fresh reason;
@@ -84,6 +100,23 @@ def decide_submission(
             payload=_decision_payload(submission),
         )
 
+        # Recorded against the deciding admin: the submitter is an external
+        # developer with no row in the platform's user table, so there is no
+        # other account this belongs on.
+        log_activity(
+            user=actor,
+            category=UserActivityCategoryEnums.APPROVAL,
+            action=UserActivityActionEnums.COURSE_APPROVED
+            if approve
+            else UserActivityActionEnums.COURSE_REJECTED,
+            summary=_decision_summary(approve, submission.title),
+            details={
+                "submission_id": str(submission.id),
+                "reference": submission.public_reference,
+            },
+            target=submission,
+        )
+
         # Same transaction as the rejection that feeds it: if this decision
         # rolls back, so does any suspension it caused. Approvals and
         # external developers never reach the breaker.
@@ -100,26 +133,209 @@ def set_demand_signals(
     submission: CourseSubmission,
     demand_score: int | None,
     estimated_monthly_earnings=None,
+    category=None,
+    difficulty_level=None,
+    searches_per_month=None,
+    description=None,
 ) -> CourseSubmission:
-    """Record the admin-entered market-research prioritisation signals."""
+    """Record the admin-entered prioritisation signals, and any correction
+    to what the submitter sent.
 
-    require_role(actor, (UserRole.SUPER_ADMIN,))
+    Everything after `demand_score` is an override: omitted means "leave
+    what is stored", which is why a partial edit from the review screen
+    cannot blank the fields it did not touch.
+    """
+
+    require_role(actor, CanDecideMieIdeas.allowed_roles)
     if demand_score is not None and not 0 <= demand_score <= 100:
         raise exceptions.ValidationError(
             {"demand_score": ["Demand score must be between 0 and 100."]}
         )
 
     submission.demand_score = demand_score
-    if estimated_monthly_earnings is not None:
-        submission.estimated_monthly_earnings = estimated_monthly_earnings
-    submission.save(
-        update_fields=[
-            "demand_score",
-            "estimated_monthly_earnings",
-            "updated_datetime",
-        ]
-    )
+    updated = ["demand_score", "updated_datetime"]
+    for field, value in (
+        ("estimated_monthly_earnings", estimated_monthly_earnings),
+        ("category", category),
+        ("difficulty_level", difficulty_level),
+        ("searches_per_month", searches_per_month),
+        ("description", description),
+    ):
+        if value is not None:
+            setattr(submission, field, value)
+            updated.append(field)
+
+    submission.save(update_fields=updated)
     return submission
+
+
+def decide_submissions_bulk(
+    *,
+    actor,
+    submission_ids: list,
+    approve: bool,
+    rejection_reason: SubmissionRejectionReason | None = None,
+    rejection_note: str = "",
+) -> list[CourseSubmission]:
+    """Approve or reject many ideas at once, from the Recommendations screen.
+
+    Validated as one batch, then written as one batch: whatever the number
+    of ideas, this costs two SELECTs, one UPDATE and two INSERTs, so a
+    fifty-row selection is no more expensive per row than a single one.
+    An id matching nothing fails the whole call before any write, so a
+    half-applied selection is impossible.
+
+    Each idea still gets its own webhook event and audit row, exactly as a
+    one-at-a-time decision would.
+    """
+
+    require_role(actor, CanDecideMieIdeas.allowed_roles)
+    if len(submission_ids) > BULK_DECISION_LIMIT:
+        raise exceptions.ValidationError(
+            {"ids": [f"At most {BULK_DECISION_LIMIT} ideas can be decided at once."]}
+        )
+
+    submissions = list(
+        CourseSubmission.objects.select_related("developer").filter(
+            id__in=submission_ids
+        )
+    )
+    found = {str(submission.id) for submission in submissions}
+    missing = sorted({str(given) for given in submission_ids} - found)
+    if missing:
+        raise exceptions.NotFound(f"No submission found for: {', '.join(missing)}.")
+
+    # The same rule decide_submission applies, asked once for the batch.
+    if (
+        not approve
+        and rejection_reason is None
+        and any(item.status != SubmissionStatus.REJECTED for item in submissions)
+    ):
+        raise exceptions.ValidationError(
+            {"rejection_reason": ["A rejection reason is required to reject."]}
+        )
+
+    now = timezone.now()
+    new_status = SubmissionStatus.APPROVED if approve else SubmissionStatus.REJECTED
+    for submission in submissions:
+        submission.status = new_status
+        submission.decided_at = now
+        submission.decided_by = actor
+        submission.updated_datetime = now
+        if approve:
+            submission.rejection_reason = None
+            submission.rejection_note = ""
+        else:
+            submission.rejection_reason = rejection_reason or submission.rejection_reason
+            submission.rejection_note = rejection_note or submission.rejection_note
+
+    with transaction.atomic():
+        if not approve:
+            _flag_resulting_courses(submissions)
+
+        CourseSubmission.objects.bulk_update(
+            submissions,
+            fields=[
+                "status",
+                "decided_at",
+                "decided_by",
+                "rejection_reason",
+                "rejection_note",
+                "updated_datetime",
+            ],
+            batch_size=BULK_DECISION_LIMIT,
+        )
+        WebhookEvent.objects.bulk_create(
+            [
+                WebhookEvent(
+                    submission=submission,
+                    event_type=WebhookEventType.SUBMISSION_APPROVED
+                    if approve
+                    else WebhookEventType.SUBMISSION_REJECTED,
+                    payload=_decision_payload(submission),
+                )
+                for submission in submissions
+            ],
+            batch_size=BULK_DECISION_LIMIT,
+        )
+        # Built rather than routed through activity_service.log_activity: the
+        # helper writes one row per call, which would put an INSERT per idea
+        # back into a path whose whole point is a flat cost. Same columns.
+        content_type = ContentType.objects.get_for_model(CourseSubmission)
+        UserActivityLog.objects.bulk_create(
+            [
+                UserActivityLog(
+                    user=actor,
+                    actor_user=actor,
+                    category=UserActivityCategoryEnums.APPROVAL,
+                    action=UserActivityActionEnums.COURSE_APPROVED
+                    if approve
+                    else UserActivityActionEnums.COURSE_REJECTED,
+                    summary=_decision_summary(approve, submission.title),
+                    details={
+                        "submission_id": str(submission.id),
+                        "reference": submission.public_reference,
+                        "bulk": True,
+                    },
+                    activity_datetime=now,
+                    content_type=content_type,
+                    object_id=str(submission.id),
+                )
+                for submission in submissions
+            ],
+            batch_size=BULK_DECISION_LIMIT,
+        )
+
+        if not approve:
+            crawlers = {
+                submission.developer
+                for submission in submissions
+                if submission.developer.source_type == MieSourceType.SYSTEM
+            }
+            for account in crawlers:
+                guardrail_service.evaluate_rejection_breaker(
+                    account=account, actor=actor
+                )
+
+    return submissions
+
+
+def _decision_summary(approve: bool, title: str) -> str:
+    """Activity-log line, with the title trimmed to fit the column."""
+
+    verb = "approved" if approve else "rejected"
+    return f"You {verb} the idea '{title[:SUMMARY_TITLE_LIMIT]}'."
+
+
+def _flag_resulting_courses(submissions) -> None:
+    """Batch form of _flag_resulting_course_if_any: one SELECT, one UPDATE.
+
+    No-op today, since nothing sets resulting_course yet, but it keeps the
+    bulk path honouring the same contract as the single one.
+    """
+
+    from api.courses.enums import CourseStatus
+    from api.courses.models import Course
+
+    course_ids = [
+        submission.resulting_course_id
+        for submission in submissions
+        if submission.resulting_course_id
+    ]
+    if not course_ids:
+        return
+
+    courses = list(
+        Course.objects.filter(id__in=course_ids, status=CourseStatus.PUBLISHED)
+    )
+    if not courses:
+        return
+
+    now = timezone.now()
+    for course in courses:
+        course.status = CourseStatus.NEEDS_REVISION
+        course.updated_datetime = now
+    Course.objects.bulk_update(courses, fields=["status", "updated_datetime"])
 
 
 def set_payout_bypass(*, actor, submission: CourseSubmission, bypass: bool) -> CourseSubmission:
