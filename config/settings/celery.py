@@ -28,6 +28,10 @@ CELERY_TASK_ROUTES = {
 # everything due in one indexed query + batched writes, so a missed run is
 # absorbed by the next one and nothing accumulates in the broker.
 CELERY_BEAT_SCHEDULE = {
+    "recover-ai-generation-jobs": {
+        "task": "api.courses.tasks.recover_ai_generation_jobs",
+        "schedule": 60.0,
+    },
     "mie-dispatch-webhooks": {
         "task": "api.mie.tasks.dispatch_due_webhooks_task",
         "schedule": 60.0,

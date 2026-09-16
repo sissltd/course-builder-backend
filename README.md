@@ -940,6 +940,7 @@ bounded while the creator polls one job and can cancel between requests.
   to inspect older terminal jobs.
 - `POST /api/v1/course-ai-generations/` starts a course draft.
 - `GET` or `DELETE /api/v1/course-ai-generations/{id}/` polls or cancels it.
+- `POST /api/v1/course-ai-generations/{id}/retry/` safely resumes a failed or cancelled job.
 - `POST /api/v1/courses/{id}/ai-assists/` drafts a contextual field rewrite;
   applying remains an explicit creator action.
 - `POST /api/v1/courses/{id}/ai-thumbnail/` creates an opt-in course cover.

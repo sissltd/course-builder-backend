@@ -1,6 +1,7 @@
 from datetime import timedelta
 
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 from rest_framework import exceptions
 
@@ -31,6 +32,10 @@ IN_FLIGHT_JOB_STATUSES = (
     AIGenerationStatus.STRUCTURE_READY,
 )
 STALE_IN_FLIGHT_AFTER = timedelta(hours=6)
+QUEUE_REDISPATCH_AFTER = timedelta(minutes=5)
+HEARTBEAT_TIMEOUT = timedelta(minutes=10)
+MAX_DISPATCH_ATTEMPTS = 3
+MAX_RETRY_COUNT = 3
 STALE_JOB_ERROR_MESSAGE = (
     "AI generation did not complete within the expected time. Please start a new "
     "generation request."
@@ -68,6 +73,46 @@ PROGRESS_ITEMS = [
         AIGenerationPhase.PREPARING_DETAILS,
     ),
 ]
+
+
+def _ends_sentence(value: str) -> bool:
+    return value.rstrip().endswith((".", "!", "?"))
+
+
+def _looks_like_comma_fragment(value: str) -> bool:
+    stripped = value.strip()
+    if not stripped:
+        return False
+    first = stripped[0]
+    return first.islower() or stripped.lower().startswith(
+        ("and ", "or ", "but ", "including ", "such as ", "as well as ")
+    )
+
+
+def normalize_ai_learning_objectives(objectives: list) -> list[str]:
+    """Repair AI arrays that split one objective at comma-separated clauses.
+
+    The provider is asked for an array of complete objectives, but it can
+    occasionally return fragments such as ["Work with parameters", "arguments",
+    "return values", "and default parameters."]. Only apply this to
+    sentence-like AI output: manual creator lists such as ["a", "b"] or terse
+    provider lists without punctuation are left as-is.
+    """
+
+    cleaned = [str(item).strip() for item in objectives if str(item).strip()]
+    if not any(_ends_sentence(item) for item in cleaned):
+        return cleaned
+
+    normalized: list[str] = []
+    for item in cleaned:
+        if normalized and _looks_like_comma_fragment(item):
+            separator = (
+                " " if item.lower().startswith(("and ", "or ", "but ")) else ", "
+            )
+            normalized[-1] = f"{normalized[-1].rstrip(' ,')}{separator}{item}"
+        else:
+            normalized.append(item)
+    return normalized
 
 
 @transaction.atomic
@@ -135,6 +180,104 @@ def check_cancelled(job):
     return False
 
 
+@transaction.atomic
+def claim_job_for_execution(*, job_id, task_id, stage):
+    """Atomically claim a queued or abandoned task execution.
+
+    Celery can deliver a task twice during broker recovery. Only the first
+    worker claim is allowed to execute; a recent running claim makes later
+    deliveries harmless no-ops.
+    """
+
+    job = AIGenerationJob.objects.select_for_update().get(pk=job_id)
+    if job.status in {
+        AIGenerationStatus.COMPLETED,
+        AIGenerationStatus.FAILED,
+        AIGenerationStatus.CANCELLED,
+    }:
+        return False
+    now = timezone.now()
+    heartbeat = job.last_heartbeat_at or job.updated_datetime
+    if (
+        job.status == AIGenerationStatus.RUNNING
+        and heartbeat
+        and now - heartbeat < HEARTBEAT_TIMEOUT
+    ):
+        return False
+    job.status = AIGenerationStatus.RUNNING
+    job.stage = stage
+    job.celery_task_id = task_id or job.celery_task_id
+    job.started_at = job.started_at or now
+    job.last_heartbeat_at = now
+    job.save(
+        update_fields=[
+            "status",
+            "stage",
+            "celery_task_id",
+            "started_at",
+            "last_heartbeat_at",
+            "updated_datetime",
+        ]
+    )
+    return True
+
+
+def heartbeat(*, job):
+    """Record that a worker is still executing the job."""
+
+    now = timezone.now()
+    AIGenerationJob.objects.filter(
+        pk=job.pk, status=AIGenerationStatus.RUNNING
+    ).update(last_heartbeat_at=now, updated_datetime=now)
+
+
+@transaction.atomic
+def prepare_job_retry(*, job, actor):
+    """Reset a failed/cancelled job for a bounded, resumable retry."""
+
+    if job.creator_id != actor.id:
+        raise exceptions.PermissionDenied()
+    job = AIGenerationJob.objects.select_for_update().get(pk=job.pk)
+    if job.status not in {
+        AIGenerationStatus.FAILED,
+        AIGenerationStatus.CANCELLED,
+    }:
+        raise exceptions.ValidationError(
+            "Only failed or cancelled AI generations can be retried."
+        )
+    if job.retry_count >= MAX_RETRY_COUNT:
+        raise exceptions.ValidationError(
+            "This AI generation has reached its maximum retry count."
+        )
+    job.status = AIGenerationStatus.QUEUED
+    job.stage = "Queued for retry"
+    job.error_message = ""
+    job.cancel_requested = False
+    job.completed_at = None
+    job.last_heartbeat_at = None
+    job.last_dispatch_at = None
+    job.dispatch_attempts = 0
+    job.retry_count += 1
+    job.save(
+        update_fields=[
+            "status",
+            "stage",
+            "error_message",
+            "cancel_requested",
+            "completed_at",
+            "last_heartbeat_at",
+            "last_dispatch_at",
+            "dispatch_attempts",
+            "retry_count",
+            "updated_datetime",
+        ]
+    )
+    job.items.exclude(status=AIGenerationItemStatus.COMPLETED).update(
+        status=AIGenerationItemStatus.PENDING, error_message=""
+    )
+    return job
+
+
 def mark_item(job, key, status):
     job.items.filter(key=key).update(status=status)
 
@@ -164,10 +307,26 @@ def fail_stale_in_flight_jobs(*, creator):
     """Release creator-owned AI jobs that can no longer be completed."""
 
     stale_before = timezone.now() - STALE_IN_FLIGHT_AFTER
-    stale_jobs = AIGenerationJob.objects.filter(
-        creator=creator,
-        status__in=IN_FLIGHT_JOB_STATUSES,
-        updated_datetime__lt=stale_before,
+    stale_jobs = AIGenerationJob.objects.filter(creator=creator).filter(
+        Q(
+            status=AIGenerationStatus.QUEUED,
+            updated_datetime__lt=stale_before,
+        )
+        | Q(
+            status__in=[
+                AIGenerationStatus.RUNNING,
+                AIGenerationStatus.STRUCTURE_READY,
+            ],
+            last_heartbeat_at__lt=stale_before,
+        )
+        | Q(
+            status__in=[
+                AIGenerationStatus.RUNNING,
+                AIGenerationStatus.STRUCTURE_READY,
+            ],
+            last_heartbeat_at__isnull=True,
+            updated_datetime__lt=stale_before,
+        )
     )
     for job in stale_jobs.prefetch_related("items"):
         if job.cancel_requested:
@@ -204,7 +363,9 @@ def materialize_structure(*, job, generated):
         title=generated["title"],
         description=generated["description"],
         difficulty_level=generated["difficulty_level"],
-        learning_objectives=generated["learning_objectives"],
+        learning_objectives=normalize_ai_learning_objectives(
+            generated["learning_objectives"]
+        ),
         tags=generated["tags"],
         duration_seconds=generated["planned_duration_seconds"],
         terms_accepted=True,
@@ -221,7 +382,9 @@ def materialize_structure(*, job, generated):
             title=module_data["title"],
             order=module_order,
             description=module_data["description"],
-            learning_objectives=module_data["learning_objectives"],
+            learning_objectives=normalize_ai_learning_objectives(
+                module_data["learning_objectives"]
+            ),
             created_by=job.creator,
             updated_by=job.creator,
         )
@@ -230,7 +393,9 @@ def materialize_structure(*, job, generated):
                 module=module,
                 title=lesson_data["title"],
                 order=lesson_order,
-                learning_objectives=lesson_data["learning_objectives"],
+                learning_objectives=normalize_ai_learning_objectives(
+                    lesson_data["learning_objectives"]
+                ),
                 duration_minutes=lesson_data["duration_minutes"],
                 created_by=job.creator,
                 updated_by=job.creator,
@@ -243,7 +408,9 @@ def materialize_module_content(*, job, module, generated):
     lessons = list(module.lessons.order_by("order"))
     for lesson, lesson_data in zip(lessons, generated["lessons"], strict=True):
         lesson.script = lesson_data["script"]
-        lesson.learning_objectives = lesson_data["learning_objectives"]
+        lesson.learning_objectives = normalize_ai_learning_objectives(
+            lesson_data["learning_objectives"]
+        )
         lesson.duration_minutes = lesson_data["duration_minutes"]
         lesson.save(
             update_fields=[

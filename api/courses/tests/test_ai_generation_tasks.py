@@ -1,6 +1,8 @@
+from datetime import timedelta
 from unittest.mock import Mock, patch
 
-from django.test import TestCase
+from django.test import SimpleTestCase, TestCase
+from django.utils import timezone
 
 from api.courses.enums import AIGenerationStatus
 from api.courses.ai.providers import AIProviderRateLimited
@@ -8,6 +10,37 @@ from api.courses.models import Assessment
 from api.courses.services import ai_generation_service
 from api.courses.tasks import generate_ai_course
 from api.courses.tests.factories import make_category, make_topic, make_user
+
+
+class AILearningObjectiveNormalizationTests(SimpleTestCase):
+    def test_joins_ai_comma_fragments_back_into_one_objective(self):
+        self.assertEqual(
+            ai_generation_service.normalize_ai_learning_objectives(
+                [
+                    "Create reusable functions using different JavaScript function patterns.",
+                    "Work with parameters",
+                    "arguments",
+                    "return values",
+                    "and default parameters.",
+                    "Understand variable scope",
+                    "lexical scope",
+                    "and closures.",
+                ]
+            ),
+            [
+                "Create reusable functions using different JavaScript function patterns.",
+                "Work with parameters, arguments, return values and default parameters.",
+                "Understand variable scope, lexical scope and closures.",
+            ],
+        )
+
+    def test_leaves_terse_objective_lists_unchanged(self):
+        self.assertEqual(
+            ai_generation_service.normalize_ai_learning_objectives(
+                ["Analyze data", "Clean data", "Chart data"]
+            ),
+            ["Analyze data", "Clean data", "Chart data"],
+        )
 
 
 def _question(number):
@@ -49,20 +82,30 @@ class AICourseGenerationTaskTests(TestCase):
                 "title": "Practical Analytics",
                 "description": "Generated description",
                 "difficulty_level": "BEGINNER",
-                "learning_objectives": ["Analyze data", "Clean data", "Chart data"],
+                "learning_objectives": [
+                    "Analyze data",
+                    "clean data",
+                    "and chart data.",
+                ],
                 "tags": ["analytics", "python", "data"],
                 "planned_duration_seconds": 7200,
                 "modules": [
                     {
                         "title": "Foundations",
                         "description": "Analytics foundations",
-                        "learning_objectives": ["Understand analytics"],
+                        "learning_objectives": [
+                            "Work with parameters",
+                            "arguments",
+                            "return values",
+                            "and default parameters.",
+                        ],
                         "lessons": [
                             {
                                 "title": "Data basics",
                                 "learning_objectives": [
                                     "Define data",
-                                    "Recognize data types",
+                                    "recognize data types",
+                                    "and explain data sources.",
                                 ],
                                 "duration_minutes": 30,
                             }
@@ -79,7 +122,8 @@ class AICourseGenerationTaskTests(TestCase):
                         "script": "Detailed lesson script",
                         "learning_objectives": [
                             "Define data",
-                            "Recognize data types",
+                            "recognize data types",
+                            "and explain data sources.",
                         ],
                         "duration_minutes": 30,
                     }
@@ -110,6 +154,18 @@ class AICourseGenerationTaskTests(TestCase):
             ["COMPLETED"] * 6,
         )
         lesson = self.job.course.modules.get().lessons.get()
+        self.assertEqual(
+            self.job.course.learning_objectives,
+            ["Analyze data, clean data and chart data."],
+        )
+        self.assertEqual(
+            lesson.module.learning_objectives,
+            ["Work with parameters, arguments, return values and default parameters."],
+        )
+        self.assertEqual(
+            lesson.learning_objectives,
+            ["Define data, recognize data types and explain data sources."],
+        )
         self.assertEqual(lesson.script, "Detailed lesson script")
         self.assertFalse(hasattr(lesson, "assessment"))
         self.assertTrue(hasattr(lesson.module, "assessment"))
@@ -171,7 +227,10 @@ class AICourseGenerationTaskTests(TestCase):
                         "lessons": [
                             {
                                 "title": "Data basics",
-                                "learning_objectives": ["Define data", "Recognize data types"],
+                                "learning_objectives": [
+                                    "Define data",
+                                    "Recognize data types",
+                                ],
                                 "duration_minutes": 30,
                             }
                         ],
@@ -182,7 +241,13 @@ class AICourseGenerationTaskTests(TestCase):
         )
         provider.generate_module_content.return_value = (
             {
-                "lessons": [{"script": "Script", "learning_objectives": ["Define data", "Recognize data types"], "duration_minutes": 30}],
+                "lessons": [
+                    {
+                        "script": "Script",
+                        "learning_objectives": ["Define data", "Recognize data types"],
+                        "duration_minutes": 30,
+                    }
+                ],
                 "assessment": {"title": "Module quiz", "questions": [_question(1)]},
             },
             {"input_tokens": 30, "output_tokens": 40},
@@ -199,7 +264,10 @@ class AICourseGenerationTaskTests(TestCase):
         provider.reset_mock()
 
         self.job.status = AIGenerationStatus.RUNNING
-        self.job.save(update_fields=["status", "updated_datetime"])
+        self.job.last_heartbeat_at = timezone.now() - timedelta(minutes=11)
+        self.job.save(
+            update_fields=["status", "last_heartbeat_at", "updated_datetime"]
+        )
         generate_ai_course.run(str(self.job.id))
 
         self.job.refresh_from_db()

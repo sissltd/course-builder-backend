@@ -9,6 +9,7 @@ from drf_spectacular.utils import (
 from rest_framework import exceptions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from django.utils import timezone
 
 from api.courses.exceptions import AIDispatchUnavailable
 from api.courses.enums import (
@@ -93,7 +94,16 @@ def _dispatch_generation_task(*, task, job):
         )
         raise AIDispatchUnavailable() from exc
     job.celery_task_id = async_result.id or ""
-    job.save(update_fields=["celery_task_id", "updated_datetime"])
+    job.dispatch_attempts += 1
+    job.last_dispatch_at = timezone.now()
+    job.save(
+        update_fields=[
+            "celery_task_id",
+            "dispatch_attempts",
+            "last_dispatch_at",
+            "updated_datetime",
+        ]
+    )
     return job
 
 
@@ -340,6 +350,49 @@ class AIGenerationDetailView(APIView):
         job = ai_generation_service.cancel_job(
             job=self.get_object(request, pk), actor=request.user
         )
+        return Response(
+            AIGenerationJobSerializer(job).data, status=status.HTTP_202_ACCEPTED
+        )
+
+
+class AIGenerationRetryView(APIView):
+    permission_classes = [IsCourseCreatorRole]
+    serializer_class = AIGenerationJobSerializer
+
+    @extend_schema(
+        operation_id="course_ai_generations_retry",
+        summary="Retry an AI generation",
+        description=(
+            "Requeues a failed or cancelled creator-owned AI generation. "
+            "Completed course modules, lessons, and assessments are reused, "
+            "so a partial generation resumes without duplicating content."
+        ),
+        responses={
+            202: OpenApiResponse(
+                response=AIGenerationJobSerializer,
+                description="The AI generation was queued for retry.",
+            ),
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["forbidden"],
+            **STANDARD_ERROR_RESPONSES["not_found"],
+            **STANDARD_ERROR_RESPONSES["validation"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+        tags=AI_TAG,
+    )
+    def post(self, request, pk):
+        job = AIGenerationJob.objects.filter(
+            pk=pk, creator=request.user
+        ).first()
+        if not job:
+            raise exceptions.NotFound()
+        job = ai_generation_service.prepare_job_retry(job=job, actor=request.user)
+        task = {
+            AIGenerationKind.FULL_COURSE: generate_ai_course,
+            AIGenerationKind.ASSIST: generate_ai_assist,
+            AIGenerationKind.THUMBNAIL: generate_ai_thumbnail,
+        }[job.kind]
+        job = _dispatch_generation_task(task=task, job=job)
         return Response(
             AIGenerationJobSerializer(job).data, status=status.HTTP_202_ACCEPTED
         )

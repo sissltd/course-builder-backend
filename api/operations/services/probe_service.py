@@ -59,6 +59,23 @@ def _probe_cache() -> int:
     return _elapsed_ms(started)
 
 
+@probe("Celery AI Worker")
+def _probe_celery_ai_worker() -> int:
+    """Verify that a worker is alive and consuming the AI queue."""
+
+    from config.celery import app as celery_app
+
+    started = time.monotonic()
+    queues_by_worker = celery_app.control.inspect(timeout=2).active_queues() or {}
+    if not any(
+        queue.get("name") == "course_ai"
+        for queues in queues_by_worker.values()
+        for queue in queues
+    ):
+        raise RuntimeError("no worker is consuming the course_ai queue")
+    return _elapsed_ms(started)
+
+
 STORAGE_PROBE_TIMEOUT_SECONDS = 3
 """Bounded so an unreachable endpoint cannot stall the whole sweep.
 
