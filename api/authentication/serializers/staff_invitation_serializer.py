@@ -35,8 +35,9 @@ class StaffInvitationSerializer(serializers.Serializer):
             "`STAFF_WRITER` (Writer - authors courses), "
             "`STAFF_VERIFIER` (Verifier - reviews submitted courses), "
             "`STAFF_APPROVER` (Approver - approves and publishes courses), "
-            "`AI_REVIEWER` (AI Reviewer - performs AI-based course reviews), or "
-            "`QA_REVIEWER` (QA Reviewer - performs QA reviews on courses). "
+            "`AI_REVIEWER` (AI Reviewer - performs AI-based course reviews), "
+            "`QA_REVIEWER` (QA Reviewer - performs QA reviews on courses), or "
+            "`ADMIN` (Admin - platform administration; must enrol MFA). "
             "Any other role, including SUPER_ADMIN, is rejected."
         ),
     )

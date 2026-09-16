@@ -1,34 +1,29 @@
-"""MIE recommendation feed for the admin dashboard.
+"""MIE recommendation feed for the admin Recommendations screen.
 
-Reads the market-intelligence signals admins record on MIE submissions
-(`demand_score`, `estimated_monthly_earnings`) and ranks the pending
-queue by them. Read-only: nothing here writes to the MIE app, and the
-partner-facing MIE contract is untouched.
+Ranks the pending idea queue by the market-intelligence signals admins
+record on it (`demand_score`, then `estimated_monthly_earnings`). Filtering,
+pagination and the decisions themselves belong to the view; the ranking and
+the coverage counts live here.
 """
 
-from django.db.models import F
+from django.db.models import F, QuerySet
 
 from api.mie.enums import SubmissionStatus
 from api.mie.models import CourseSubmission
 
-DEFAULT_LIMIT = 20
-MAX_LIMIT = 100
 
-
-def get_recommendations(*, limit: int = DEFAULT_LIMIT) -> dict:
-    """Highest-demand ideas still awaiting a decision.
+def recommendation_queryset() -> QuerySet[CourseSubmission]:
+    """Ideas still awaiting a decision, best first.
 
     Only PENDING_REVIEW rows are recommendable - an approved or
-    deduplicated idea is not something an admin can still act on. Rows
-    without a demand score sort last rather than being hidden, so an
-    unscored backlog is visible instead of silently absent.
+    deduplicated idea is not something an admin can still act on.
+    `select_related` covers every relation the row serializer reads, so a
+    page costs the same number of queries whatever its size.
     """
 
-    limit = max(1, min(limit, MAX_LIMIT))
-
-    queryset = (
+    return (
         CourseSubmission.objects.filter(status=SubmissionStatus.PENDING_REVIEW)
-        .select_related("developer")
+        .select_related("developer", "category")
         .order_by(
             # nulls_last is load-bearing: Postgres sorts NULLs FIRST under
             # DESC, which would put every unscored idea at the top of a
@@ -39,26 +34,16 @@ def get_recommendations(*, limit: int = DEFAULT_LIMIT) -> dict:
         )
     )
 
-    rows = [
-        {
-            "id": str(row.id),
-            "reference": row.public_reference,
-            "title": row.title,
-            "developer_email": row.developer.email,
-            "source_type": row.developer.source_type,
-            "demand_score": row.demand_score,
-            "estimated_monthly_earnings": (
-                str(row.estimated_monthly_earnings)
-                if row.estimated_monthly_earnings is not None
-                else None
-            ),
-            "submitted_at": row.created_datetime.isoformat(),
-        }
-        for row in queryset[:limit]
-    ]
+
+def recommendation_totals(queryset: QuerySet[CourseSubmission]) -> dict:
+    """Scoring coverage for the rows the caller is actually looking at.
+
+    Counted over the filtered queryset rather than the whole queue, so the
+    two numbers describe the current view: with a category selected they
+    answer "how much of *this* is scored", which is what the screen shows.
+    """
 
     return {
         "pending_total": queryset.count(),
         "scored_total": queryset.exclude(demand_score__isnull=True).count(),
-        "results": rows,
     }

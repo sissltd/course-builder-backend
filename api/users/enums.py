@@ -55,20 +55,23 @@ class UserRole(models.TextChoices):
 
 
 #: Roles a Super Admin may hand out via the "Invite a staff" dialog, in the
-#: order the dropdown shows them. SUPER_ADMIN is absent by design - the seat is
-#: unique and claimable only through the bootstrap endpoint - and so are the
-#: public roles, which are not staff positions.
+#: order the dropdown shows them. ADMIN is here so a Super Admin can appoint
+#: Admins - otherwise no API path grants it; Admins are MFA-mandated, so an
+#: invited one enrols like the Super Admin does. SUPER_ADMIN is absent by
+#: design - the seat is unique and claimable only through the bootstrap
+#: endpoint - and so are the public roles, which are not staff positions.
 INVITABLE_STAFF_ROLES = (
     UserRole.STAFF_WRITER,
     UserRole.STAFF_VERIFIER,
     UserRole.STAFF_APPROVER,
     UserRole.AI_REVIEWER,
     UserRole.QA_REVIEWER,
+    UserRole.ADMIN,
 )
 
 #: Every role that counts as staff for the Teams page: the invitable roles plus
-#: the privileged roles, which are staff too but are not handed out by invite.
-STAFF_ROLES = INVITABLE_STAFF_ROLES + (UserRole.ADMIN, UserRole.SUPER_ADMIN)
+#: the Super Admin, which is staff too but is never handed out by invite.
+STAFF_ROLES = INVITABLE_STAFF_ROLES + (UserRole.SUPER_ADMIN,)
 
 
 class UserActivityCategoryEnums(models.TextChoices):

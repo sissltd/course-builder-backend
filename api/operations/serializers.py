@@ -1,6 +1,9 @@
 from rest_framework import serializers
 
+from api.catalog.serializers.category_serializer import CategoryMiniSerializer
+from api.courses.enums import DifficultyLevel
 from api.mie.enums import MieSourceType
+from api.mie.services.submission_admin_service import BULK_DECISION_LIMIT
 
 
 # ── System Health ────────────────────────────────────────────────────
@@ -219,15 +222,55 @@ class AdminAnalyticsSerializer(serializers.Serializer):
 
 
 class MieRecommendationRowSerializer(serializers.Serializer):
-    """One recommendable course idea from the MIE queue."""
+    """One row of the Recommendations table, read off a CourseSubmission."""
 
-    id = serializers.UUIDField()
-    reference = serializers.CharField(
-        help_text="MIE public reference; the suffix letter tracks status."
+    id = serializers.UUIDField(
+        help_text="Submission id - what the approve, reject and bulk routes take."
     )
-    title = serializers.CharField()
-    developer_email = serializers.EmailField(help_text="Submitting partner.")
+    reference = serializers.CharField(
+        source="public_reference",
+        help_text="MIE public reference; the suffix letter tracks status.",
+    )
+    title = serializers.CharField(help_text="The idea, shown in the Topics column.")
+    description = serializers.CharField(
+        help_text=(
+            "What the idea covers, shown in the Topic details panel. Empty "
+            "when the submitter sent none."
+        )
+    )
+    category = CategoryMiniSerializer(
+        allow_null=True,
+        help_text=(
+            "Platform category, or null when the submitter sent none and when "
+            "what they sent matched no category."
+        ),
+    )
+    difficulty_level = serializers.ChoiceField(
+        choices=DifficultyLevel.choices,
+        allow_blank=True,
+        help_text="Difficulty the submitter claimed; empty when they stated none.",
+    )
+    searches_per_month = serializers.IntegerField(
+        allow_null=True,
+        help_text="Monthly search volume behind the idea. Null when unstated.",
+    )
+    demand_score = serializers.IntegerField(
+        allow_null=True, help_text="Admin-entered 0-100 signal. Null when unscored."
+    )
+    estimated_monthly_earnings = serializers.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        allow_null=True,
+        help_text="Admin-entered estimate, as a decimal string.",
+    )
+    status = serializers.CharField(
+        help_text="Pipeline state - PENDING_REVIEW for every row in this queue."
+    )
+    developer_email = serializers.EmailField(
+        source="developer.email", help_text="Submitting partner."
+    )
     source_type = serializers.ChoiceField(
+        source="developer.source_type",
         choices=MieSourceType.choices,
         help_text=(
             "Who stands behind the submitting account: EXTERNAL for a "
@@ -236,22 +279,57 @@ class MieRecommendationRowSerializer(serializers.Serializer):
             "differently from one the platform generated for itself."
         ),
     )
-    demand_score = serializers.IntegerField(
-        allow_null=True, help_text="Admin-entered 0-100 signal. Null when unscored."
+    submitted_at = serializers.DateTimeField(
+        source="created_datetime", help_text="When the idea arrived."
     )
-    estimated_monthly_earnings = serializers.CharField(
-        allow_null=True, help_text="Admin-entered estimate as a decimal string."
-    )
-    submitted_at = serializers.DateTimeField()
 
 
 class MieRecommendationsSerializer(serializers.Serializer):
-    """The MIE Recommendation screen."""
+    """The MIE Recommendation screen's paginated body, for the schema."""
 
     pending_total = serializers.IntegerField(
-        help_text="Every idea still awaiting a decision."
+        help_text="Ideas awaiting a decision under the current filters."
     )
     scored_total = serializers.IntegerField(
         help_text="How many of those carry a demand score, so coverage is visible."
     )
     results = MieRecommendationRowSerializer(many=True)
+
+
+class MieBulkDecisionSerializer(serializers.Serializer):
+    """Body for deciding a selection from the Recommendations table."""
+
+    ids = serializers.ListField(
+        child=serializers.UUIDField(),
+        allow_empty=False,
+        max_length=BULK_DECISION_LIMIT,
+        help_text=(
+            f"Submission ids to decide, 1 to {BULK_DECISION_LIMIT}. An id "
+            "matching no submission fails the whole call, so a selection is "
+            "never half-applied."
+        ),
+    )
+    action = serializers.ChoiceField(
+        choices=[("approve", "Approve"), ("reject", "Reject")],
+        help_text="What to do with every selected idea.",
+    )
+    rejection_reason = serializers.CharField(
+        required=False,
+        help_text=(
+            "Label of an active rejection reason - required when action is "
+            "`reject`, and the one reason is applied to every selected idea. "
+            "Labels come from GET /api/v1/mie/admin/rejection-reasons/."
+        ),
+    )
+    rejection_note = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        help_text="Free-text detail delivered inside each rejection webhook.",
+    )
+
+    def validate(self, attrs):
+        if attrs["action"] == "reject" and not attrs.get("rejection_reason"):
+            raise serializers.ValidationError(
+                {"rejection_reason": "A rejection reason is required to reject."}
+            )
+        return attrs

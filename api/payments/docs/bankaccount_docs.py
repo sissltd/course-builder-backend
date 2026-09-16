@@ -237,13 +237,15 @@ BANK_ACCOUNT_SET_DEFAULT_DOCS = {
 BANK_ACCOUNT_SUSPEND_DOCS = {
     "summary": "Suspend a bank account",
     "description": (
-        "Marks a saved bank account as suspended for the authenticated user. "
-        "This is used when a bank account should no longer be used for "
-        "withdrawals while keeping the record for audit and support purposes.\n\n"
-        "**Auth:** Admin user.\n\n"
-        "**Prerequisites:** The caller must have a valid access token and the "
-        "bank account must belong to the authenticated user and not already "
-        "be suspended."
+        "Suspends any user's saved bank account so it can no longer be used "
+        "for withdrawals, while keeping the record for audit and support "
+        "purposes. This is an admin moderation action: the account does not "
+        "belong to the caller.\n\n"
+        "**Auth:** Admin or Super Admin.\n\n"
+        "**Prerequisites:** The bank account must exist and not be deleted.\n\n"
+        "**Important:** Recorded on the account owner's activity log with the "
+        "acting admin as the actor. Suspending an already-suspended account "
+        "leaves it suspended. There is no unsuspend endpoint."
     ),
     "tags": ["Admin — Bank Accounts"],
     "parameters": [

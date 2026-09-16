@@ -134,6 +134,21 @@ class IsAdminOrSuperAdminRole(HasRole):
     allowed_roles = (UserRole.ADMIN, UserRole.SUPER_ADMIN)
 
 
+class CanDecideMieIdeas(HasRole):
+    """Grants approve/reject on MIE course ideas, and the screen that lists them.
+
+    Deliberately narrower than the admin tier: curating the idea queue is the
+    Writer's job, and the Super Admin keeps it so the queue is never blocked by
+    one absent Writer. A plain Admin is excluded, so the Recommendations screen
+    never shows buttons its caller cannot use.
+
+    The Super-Admin-only MIE console (developers, credentials, payout bypass)
+    is untouched by this - only the idea decisions widen.
+    """
+
+    allowed_roles = (UserRole.STAFF_WRITER, UserRole.SUPER_ADMIN)
+
+
 class IsSuperAdminRole(HasRole):
     """Grants access to users with the Super Admin role only.
 

@@ -8,8 +8,10 @@ from drf_spectacular.utils import (
     extend_schema,
 )
 from rest_framework.generics import ListAPIView
-from rest_framework.permissions import IsAdminUser, IsAuthenticated
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
+
+from api.users.permissions import IsAdminOrSuperAdminRole
 
 from .filters import AuditLogFilter
 from .models import AuditLog
@@ -17,12 +19,17 @@ from .serializers import AuditLogSerializer
 
 
 class AuditLogListView(ListAPIView):
-    """
-    The permission is set to IsAuthenticated as only authenticated users will be able to see the log of their sessions
+    """The platform-wide audit trail, for the Admin tier.
+
+    Every user's entries - emails and IP addresses included - so it is
+    gated by the app's own roles (Admin, Super Admin). It used Django's
+    IsAdminUser, which checks is_staff: only the bootstrapped Super Admin
+    carries that flag, so no invited Admin could ever reach it. A user's
+    own entries are MyAuditLogExportView's job.
     """
 
     serializer_class = AuditLogSerializer
-    permission_classes = (IsAdminUser,)
+    permission_classes = (IsAdminOrSuperAdminRole,)
     filterset_class = AuditLogFilter
 
     # modifying the queryset to get all Audit log by filtering it by -created_at (that is, from the newest to the oldest)
@@ -31,8 +38,20 @@ class AuditLogListView(ListAPIView):
 
     # extending the openapi(swagger) schema, creating filtering logic by setting required to false
     @extend_schema(
-        summary="List audit log enteries",
-        description="Paginated audit Logs. Filterable by email, event, date range. Authentication required (JWT)",
+        summary="List audit log entries",
+        description=(
+            "Returns the platform-wide audit trail of sign-in events (OTP "
+            "requested, verified, failed, locked), newest first, across every "
+            "user.\n\n"
+            "Called from the admin audit screen when investigating account "
+            "activity.\n\n"
+            "**Auth:** Admin or Super Admin.\n\n"
+            "**Prerequisites:** None.\n\n"
+            "**Important:** Exposes other users' emails and IP addresses, so "
+            "it is admin-only. Filter with `email`, `event`, `from_date` and "
+            "`to_date`. A user downloading their own entries uses "
+            "`GET /api/v1/users/me/audit-log/export/` instead."
+        ),
         parameters=[
             OpenApiParameter("email", str, OpenApiParameter.QUERY, required=False),
             OpenApiParameter(

@@ -1,8 +1,12 @@
 from drf_spectacular.utils import OpenApiExample, extend_schema_serializer
 from rest_framework import serializers
 
+from api.courses.enums import DifficultyLevel
 from api.mie.enums import SubmissionStatus
-from api.mie.models.course_submission import CONFIDENCE_NOTE_MAX_LENGTH
+from api.mie.models.course_submission import (
+    CONFIDENCE_NOTE_MAX_LENGTH,
+    DESCRIPTION_MAX_LENGTH,
+)
 
 
 @extend_schema_serializer(
@@ -12,6 +16,9 @@ from api.mie.models.course_submission import CONFIDENCE_NOTE_MAX_LENGTH
             value={
                 "title": "Build a Production-Grade Rust Course",
                 "description": "Systems programming for backend engineers",
+                "category": "Software Engineering",
+                "difficulty_level": "ADVANCED",
+                "searches_per_month": 23000,
                 "audience": "mid-level backend developers",
                 "confidence_note": (
                     "620 backend job postings asked for Rust this month, up "
@@ -26,9 +33,10 @@ class SubmissionIngestSerializer(serializers.Serializer):
     """Endpoint 1 request body.
 
     Stored verbatim; `title` is the only required field and drives all
-    three dedup checks. `confidence_note` is the one other key the
-    platform reads - it is lifted into its own column for reviewers.
-    Extra keys ride along untouched.
+    three dedup checks. The fields below it are the ones the platform also
+    reads - each is lifted into its own column so the reviewer's queue can
+    show, sort and filter on it. Every one is optional, and any other key
+    rides along untouched.
     """
 
     title = serializers.CharField(
@@ -48,6 +56,46 @@ class SubmissionIngestSerializer(serializers.Serializer):
             "search volume, community questions - shown to reviewers as its "
             f"own field. Plain text, up to {CONFIDENCE_NOTE_MAX_LENGTH} "
             "characters after trimming; when omitted it is stored empty."
+        ),
+    )
+    description = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=DESCRIPTION_MAX_LENGTH,
+        help_text=(
+            "What the idea covers, shown in the reviewer's Topic details "
+            f"panel. Plain text, up to {DESCRIPTION_MAX_LENGTH} characters "
+            "after trimming."
+        ),
+    )
+    category = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        help_text=(
+            "Platform category this idea belongs to, by name or slug - "
+            "'Software Engineering' or 'software-engineering'. Matching is "
+            "case-insensitive and ignores archived categories. A value that "
+            "matches nothing is not an error: the idea is filed without a "
+            "category and your value stays in the stored payload."
+        ),
+    )
+    difficulty_level = serializers.ChoiceField(
+        required=False,
+        allow_blank=True,
+        choices=DifficultyLevel.choices,
+        help_text=(
+            "How hard the resulting course would be: "
+            f"{', '.join(DifficultyLevel.values)}. Shown as the Difficulty "
+            "level column and filterable there."
+        ),
+    )
+    searches_per_month = serializers.IntegerField(
+        required=False,
+        min_value=0,
+        help_text=(
+            "Monthly search volume behind the idea, as a whole number. The "
+            "reviewer's queue shows it beside the demand score, so send it "
+            "when you have measured it."
         ),
     )
 
