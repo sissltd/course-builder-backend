@@ -275,6 +275,7 @@ class ModuleLessonAssessmentApiTests(APITestCase):
                     "points": 10,
                     "options": ["2var", "var_2"],
                     "correct_index": 1,
+                    "explanation": "Underscores are valid in Python variable names.",
                 },
                 {
                     "type": "ESSAY",
@@ -293,6 +294,10 @@ class ModuleLessonAssessmentApiTests(APITestCase):
         questions = response.data["questions"]
         self.assertEqual(questions[0]["type"], "MULTIPLE_CHOICE")
         self.assertEqual(questions[0]["points"], 10)
+        self.assertEqual(
+            questions[0]["explanation"],
+            "Underscores are valid in Python variable names.",
+        )
         self.assertEqual(questions[1]["type"], "ESSAY")
         self.assertEqual(
             questions[1]["explanation"],

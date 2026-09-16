@@ -42,6 +42,7 @@ type SingleChoiceQuestion = {
   points: number;
   options: string[];
   correct_index: number;
+  explanation?: string;
 };
 
 type MultipleChoiceQuestion = {
@@ -50,6 +51,7 @@ type MultipleChoiceQuestion = {
   points: number;
   options: string[];
   correct_indices: number[];
+  explanation?: string;
 };
 
 type EssayQuestion = {
@@ -82,6 +84,8 @@ type Assessment = {
 - **Multiple choice** is the existing frontend's additional multi-answer
   view. Render checkboxes in preview and send one or more unique
   `correct_indices`.
+- Choice questions may include a top-level `explanation`, but must not include
+  `expected_answer`.
 - **Essay** has `question`, `points`, `expected_answer`, and `explanation`.
   The expected answer is the reference response; the explanation gives grading
   guidance. Do not render or send options or correct indexes.

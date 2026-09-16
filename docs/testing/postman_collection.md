@@ -832,7 +832,8 @@ Question shape (used identically at all three levels):
   "question": "What keyword defines a function in Python?",
   "points": 10,
   "options": ["func", "def", "function", "lambda"],
-  "correct_index": 1
+  "correct_index": 1,
+  "explanation": "Choose the Python keyword used to define a function."
 }
 ```
 

@@ -11,9 +11,9 @@ class QuizQuestionSerializer(serializers.Serializer):
     """One quiz question, shaped differently depending on `type`.
 
     SINGLE_CHOICE has one correct option; MULTIPLE_CHOICE has one or more.
-    Both have 2-6 string options. ESSAY has distinct top-level expected_answer
-    and explanation fields, and no options. The legacy MULTIPLE_CHOICE +
-    correct_index shape remains valid for existing clients.
+    Both have 2-6 string options and may include a top-level explanation.
+    ESSAY additionally requires expected_answer and has no options. The legacy
+    MULTIPLE_CHOICE + correct_index shape remains valid for existing clients.
     """
 
     type = serializers.ChoiceField(
@@ -38,12 +38,11 @@ class QuizQuestionSerializer(serializers.Serializer):
             QuestionType.SINGLE_CHOICE,
             QuestionType.MULTIPLE_CHOICE,
         }:
-            if "expected_answer" in attrs or "explanation" in attrs:
+            if "expected_answer" in attrs:
                 raise serializers.ValidationError(
                     {
                         "expected_answer": (
-                            "Choice questions do not accept top-level expected "
-                            "answers or explanations."
+                            "Choice questions do not accept expected_answer."
                         )
                     }
                 )

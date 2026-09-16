@@ -68,6 +68,7 @@ type SingleChoiceQuestion = {
   points: number;
   options: string[];
   correct_index: number;
+  explanation?: string;
 };
 ```
 
@@ -78,7 +79,7 @@ Rules:
 - Exactly one answer is correct.
 - Do not send `correct_indices`.
 - Do not send top-level `expected_answer`.
-- Do not send top-level `explanation`.
+- `explanation` may be sent at question level.
 
 Learner answer shape:
 
@@ -103,6 +104,7 @@ type MultipleChoiceQuestion = {
   points: number;
   options: string[];
   correct_indices: number[];
+  explanation?: string;
 };
 ```
 
@@ -113,7 +115,7 @@ Rules:
 - `correct_indices` must contain one or more unique indexes.
 - Do not send `correct_index`.
 - Do not send top-level `expected_answer`.
-- Do not send top-level `explanation`.
+- `explanation` may be sent at question level.
 
 Learner answer shape:
 
