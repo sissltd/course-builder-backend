@@ -17,7 +17,8 @@ from api.collaborators.serializers import (
 )
 from api.collaborators.services import collaborator_service
 from api.courses.models import Course
-from api.users.permissions import IsCourseCreatorRole
+from api.authorization import codenames
+from api.authorization.permissions import Perm
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 
 _COLLABORATOR_EXAMPLE = {
@@ -44,7 +45,7 @@ _COLLABORATOR_EXAMPLE = {
 }
 
 _AUTH_LINE = (
-    "**Auth:** Course Creator or Writer. Read access (list/retrieve) is "
+    "**Auth:** The `courses.create` permission (Course Creator and Writer by default). Read access (list/retrieve) is "
     "open to anyone with view access to the course - the creator or any "
     "existing collaborator. Write access (change-role/remove) is "
     "further restricted to the course's own creator or an Admin-role "
@@ -215,7 +216,7 @@ class CourseCollaboratorViewSet(ModelViewSet):
     resolved course, not just the requesting user's platform-wide role).
     """
 
-    permission_classes = [IsCourseCreatorRole]
+    permission_classes = [Perm(codenames.COURSES_CREATE)]
     http_method_names = ["get", "patch", "delete", "head", "options"]
     filterset_class = CollaboratorFilter
 

@@ -12,7 +12,9 @@ from rest_framework.viewsets import ModelViewSet
 from api.quizzes.models import Question, Quiz
 from api.quizzes.serializers import QuestionSerializer
 from api.quizzes.services import quiz_service
-from api.users.permissions import IsAdminRole, IsCourseCreatorRole
+from api.authorization import codenames
+from api.authorization.permissions import Perm
+from api.authorization.services import permission_service
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 
 _SINGLE_CHOICE_QUESTION_EXAMPLE = {
@@ -72,8 +74,9 @@ _QUESTION_TYPE_RULES = (
             "quiz.\n\n"
             "Use this endpoint to populate relational quiz question lists. "
             f"For the Figma Course Builder quiz editor, use the assessment endpoints.\n\n{_FIGMA_ASSESSMENT_NOTE}\n\n"
-            "**Auth:** Course Creator/Writer with access to the parent course, "
-            "or Admin.\n\n"
+            "**Auth:** `courses.create` with access to the parent course, or "
+            "any course with `courses.view` (reads) / `courses.edit` (changes) - "
+            "Admin, Approver and Super Admin by default.\n\n"
             "**Prerequisites:** None.\n\n"
             f"{_QUESTION_TYPE_RULES}\n\n"
             "**Important:** Results are paginated. `quiz` and `question_type` "
@@ -115,8 +118,9 @@ _QUESTION_TYPE_RULES = (
             "Returns a single question with its options nested.\n\n"
             "Use this when opening a question in the relational quiz editor. "
             f"For Figma Course Builder quizzes, use the assessment endpoints.\n\n{_FIGMA_ASSESSMENT_NOTE}\n\n"
-            "**Auth:** Course Creator/Writer with access to the parent course, "
-            "or Admin.\n\n"
+            "**Auth:** `courses.create` with access to the parent course, or "
+            "any course with `courses.view` (reads) / `courses.edit` (changes) - "
+            "Admin, Approver and Super Admin by default.\n\n"
             "**Prerequisites:** The question must exist in an accessible quiz.\n\n"
             "**Important:** Questions outside the caller's course scope return "
             "404, the same as an unknown id."
@@ -138,8 +142,9 @@ _QUESTION_TYPE_RULES = (
             "questions must not have any.\n\n"
             "Call this after the parent quiz has been created.\n\n"
             f"{_FIGMA_ASSESSMENT_NOTE}\n\n"
-            "**Auth:** Course Creator/Writer with access to the parent course, "
-            "or Admin.\n\n"
+            "**Auth:** `courses.create` with access to the parent course, or "
+            "any course with `courses.view` (reads) / `courses.edit` (changes) - "
+            "Admin, Approver and Super Admin by default.\n\n"
             "**Prerequisites:** The referenced quiz must exist and be accessible.\n\n"
             f"{_QUESTION_TYPE_RULES}\n\n"
             "**Important:** Relational `SINGLE_CHOICE` and `MULTIPLE_CHOICE` "
@@ -182,8 +187,9 @@ _QUESTION_TYPE_RULES = (
             "option set.\n\n"
             "Use this when saving the complete relational question editor "
             f"form. For Figma Course Builder quizzes, use the assessment endpoints.\n\n{_FIGMA_ASSESSMENT_NOTE}\n\n"
-            "**Auth:** Course Creator/Writer with access to the parent course, "
-            "or Admin.\n\n"
+            "**Auth:** `courses.create` with access to the parent course, or "
+            "any course with `courses.view` (reads) / `courses.edit` (changes) - "
+            "Admin, Approver and Super Admin by default.\n\n"
             "**Prerequisites:** The question and target quiz must be accessible.\n\n"
             f"{_QUESTION_TYPE_RULES}\n\n"
             "**Important:** The same type, correct-option, and unique-order "
@@ -213,8 +219,9 @@ _QUESTION_TYPE_RULES = (
             "Updates only the supplied fields.\n\n"
             "Use this for small relational edits such as changing text, "
             f"points, or options. For Figma Course Builder quizzes, use the assessment endpoints.\n\n{_FIGMA_ASSESSMENT_NOTE}\n\n"
-            "**Auth:** Course Creator/Writer with access to the parent course, "
-            "or Admin.\n\n"
+            "**Auth:** `courses.create` with access to the parent course, or "
+            "any course with `courses.view` (reads) / `courses.edit` (changes) - "
+            "Admin, Approver and Super Admin by default.\n\n"
             "**Prerequisites:** The question and target quiz must be accessible.\n\n"
             f"{_QUESTION_TYPE_RULES}\n\n"
             "**Important:** If `options` is supplied, it replaces the entire "
@@ -245,8 +252,9 @@ _QUESTION_TYPE_RULES = (
             "Use this when removing a question from a relational quiz. Figma "
             "Course Builder assessments are replaced by PUTting the desired "
             f"assessment question list.\n\n{_FIGMA_ASSESSMENT_NOTE}\n\n"
-            "**Auth:** Course Creator/Writer with access to the parent course, "
-            "or Admin.\n\n"
+            "**Auth:** `courses.create` with access to the parent course, or "
+            "any course with `courses.view` (reads) / `courses.edit` (changes) - "
+            "Admin, Approver and Super Admin by default.\n\n"
             "**Prerequisites:** The question must exist in an accessible quiz.\n\n"
             "**Important:** Deletion is immediate and also deletes every nested "
             "option."
@@ -266,11 +274,19 @@ class QuestionViewSet(ModelViewSet):
 
     queryset = Question.objects.all()
     serializer_class = QuestionSerializer
-    permission_classes = [IsCourseCreatorRole | IsAdminRole]
+    permission_classes = [
+        Perm(codenames.COURSES_CREATE, codenames.COURSES_VIEW, codenames.COURSES_EDIT)
+    ]
     filterset_fields = ["quiz", "question_type"]
 
     def _accessible_quizzes(self):
-        if IsAdminRole().has_permission(self.request, self):
+        # View Course reads every quiz's questions; changing them needs Edit Course.
+        codename = (
+            codenames.COURSES_VIEW
+            if self.action in {"list", "retrieve"}
+            else codenames.COURSES_EDIT
+        )
+        if permission_service.user_has_permission(self.request.user, codename):
             return Quiz.objects.all()
         return quiz_service.quizzes_accessible_to(user=self.request.user)
 

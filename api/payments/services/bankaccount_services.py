@@ -4,8 +4,9 @@ from django.utils import timezone
 
 from api.authentication.services.activity_service import log_activity
 from api.payments.models.bankaccount_models import BankAccount
-from api.users.enums import UserActivityActionEnums, UserActivityCategoryEnums, UserRole
-from api.users.permissions import IsAdminOrSuperAdminRole, require_role
+from api.users.enums import UserActivityActionEnums, UserActivityCategoryEnums
+from api.authorization import codenames
+from api.authorization.services import permission_service
 from shared.services.paystack_service import PaystackService
 from shared.utils.bank_account_check import check_account_name_matches_profile
 from shared.utils.encryption import encrypt_field
@@ -23,7 +24,7 @@ def get_bank_account_list(user):
     """
     qs = BankAccount.objects.filter(is_deleted=False)
 
-    if user.role not in [UserRole.ADMIN, UserRole.SUPER_ADMIN]:
+    if not permission_service.user_has_permission(user, codenames.CREATORS_VIEW_WALLET):
         qs = qs.filter(user=user)
 
     return qs
@@ -172,7 +173,7 @@ def suspend_bank_account(user, account_id, ip, ua):
     activity log, with the admin recorded as the actor - the owner is the
     one whose payouts just stopped.
     """
-    require_role(user, IsAdminOrSuperAdminRole.allowed_roles)
+    permission_service.require_permission(user, codenames.CREATORS_SUSPEND)
     account = BankAccount.objects.select_related("user").get(
         id=account_id, is_deleted=False
     )

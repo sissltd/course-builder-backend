@@ -6,6 +6,7 @@ from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from api.catalog.enums import CategoryStatus
+from api.users.enums import UserRole
 from api.users.models import User
 
 
@@ -17,14 +18,45 @@ class ProfileCategorySerializer(serializers.Serializer):
 
 
 class ProfileBadgeSerializer(serializers.Serializer):
-    """Swagger contract for badges awarded by a future badge engine."""
+    """A badge the user holds, as the profile draws it.
+
+    `code` and `label` were the original placeholder contract and keep their
+    meaning; the rest were added when badges became real (api.achievements).
+    """
 
     code = serializers.CharField(
-        read_only=True, help_text="Stable machine-readable badge code."
+        source="badge.id",
+        read_only=True,
+        help_text="Stable machine-readable badge code (the badge id).",
     )
     label = serializers.CharField(
-        read_only=True, help_text="Human-readable badge label."
+        source="badge.title", read_only=True, help_text="Human-readable badge label."
     )
+    icon = serializers.CharField(
+        source="badge.icon", read_only=True, help_text="Icon identifier."
+    )
+    color = serializers.CharField(
+        source="badge.color", read_only=True, help_text="Badge colour as #RRGGBB."
+    )
+    awarded_at = serializers.DateTimeField(
+        read_only=True, help_text="When the badge was awarded."
+    )
+
+
+class ProfileAccessRoleSerializer(serializers.Serializer):
+    """The role whose permissions the user holds."""
+
+    id = serializers.UUIDField(read_only=True, help_text="Access role id.")
+    name = serializers.CharField(read_only=True, help_text="Role name.")
+    is_system = serializers.SerializerMethodField(
+        help_text="True for built-in roles, false for custom roles."
+    )
+    base_role = serializers.CharField(
+        read_only=True, help_text="The built-in role whose workflow the user follows."
+    )
+
+    def get_is_system(self, obj) -> bool:
+        return obj.system_key is not None
 
 
 class MeSerializer(serializers.ModelSerializer):
@@ -46,8 +78,20 @@ class MeSerializer(serializers.ModelSerializer):
     is_verified = serializers.SerializerMethodField(
         help_text="Whether the creator's latest KYC submission is approved."
     )
+    role_label = serializers.SerializerMethodField(
+        help_text="Display name for the role, e.g. `Writer`. Safe to render as-is."
+    )
     badges = serializers.SerializerMethodField(
-        help_text="Badges awarded to the creator; empty until badge assignment is implemented."
+        help_text="Achievement badges the user currently holds, newest first."
+    )
+    access_role = ProfileAccessRoleSerializer(
+        read_only=True, help_text="The role whose permissions the user holds."
+    )
+    permissions = serializers.SerializerMethodField(
+        help_text=(
+            "Permission codenames the user holds, sorted. Use these to decide "
+            "which controls to show; the API enforces them regardless."
+        )
     )
     category = ProfileCategorySerializer(
         source="creator_profile.primary_expertise_category",
@@ -72,6 +116,9 @@ class MeSerializer(serializers.ModelSerializer):
             "avatar_url",
             "terms_accepted_at",
             "role",
+            "role_label",
+            "access_role",
+            "permissions",
             "assigned_track",
             "is_active",
             "status",
@@ -104,15 +151,24 @@ class MeSerializer(serializers.ModelSerializer):
 
         return kyc_submission_service.is_verified(user=obj)
 
+    def get_role_label(self, obj) -> str:
+        return UserRole(obj.role).label
+
+    @extend_schema_field(serializers.ListField(child=serializers.CharField()))
+    def get_permissions(self, obj) -> list:
+        from api.authorization.services import permission_service
+
+        return sorted(permission_service.get_permissions(obj))
+
     @extend_schema_field(ProfileBadgeSerializer(many=True))
     def get_badges(self, obj) -> list:
-        """Return awarded profile badges.
+        """Return the badges the user holds. One query."""
 
-        Badge assignment is not yet a domain capability, so do not infer or
-        falsely award the Figma's illustrative ``Top creator`` badge.
-        """
+        from api.achievements.services import award_service
 
-        return []
+        return ProfileBadgeSerializer(
+            award_service.held_badges(user=obj), many=True
+        ).data
 
 
 class MeUpdateSerializer(serializers.ModelSerializer):

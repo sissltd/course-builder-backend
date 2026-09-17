@@ -209,10 +209,16 @@ class AdminAnalyticsSerializer(serializers.Serializer):
 
     period = serializers.CharField()
     since = serializers.DateTimeField()
+    financials_included = serializers.BooleanField(
+        help_text=(
+            "False for Limited Access callers: cost, earnings and the cost KPI "
+            "are null and should be hidden, not shown as zero."
+        )
+    )
     catalog = AnalyticsCatalogSerializer()
     enrollment = AnalyticsEnrollmentSerializer()
-    cost = AnalyticsCostSerializer()
-    earnings = AnalyticsEarningsSerializer()
+    cost = AnalyticsCostSerializer(allow_null=True, help_text="Null for Limited Access.")
+    earnings = AnalyticsEarningsSerializer(allow_null=True, help_text="Null for Limited Access.")
     distribution = AnalyticsDistributionSerializer(many=True)
     production_vs_approval = AnalyticsProductionSerializer()
     kpis = AnalyticsKpiSerializer()

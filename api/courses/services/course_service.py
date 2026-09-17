@@ -15,6 +15,9 @@ from django.db.models import (
 from django.utils import timezone
 from rest_framework import exceptions
 
+from api.achievements.enums import BadgeCriterion
+from api.authorization import codenames
+from api.achievements.services import award_service
 from api.authentication.services import activity_service
 from api.catalog.enums import CategoryStatus, TrackPreference
 from api.catalog.models import Category, Topic
@@ -47,12 +50,7 @@ from api.users.enums import (
     UserActivityCategoryEnums,
 )
 from api.users.models import User
-from api.users.permissions import (
-    IsAdminRole,
-    IsCourseCreatorRole,
-    IsCreatorReviewerRole,
-    require_role,
-)
+from api.authorization.services import permission_service
 from api.users.services import reviewer_availability_service
 
 #: Maps a reviewer's QueueTrackFilter preference onto the Category-level
@@ -121,7 +119,7 @@ def create_draft_course(
     requesting a brand-new topic that doesn't exist yet.
     """
 
-    require_role(creator, IsCourseCreatorRole.allowed_roles)
+    permission_service.require_permission(creator, codenames.COURSES_CREATE)
     if not terms_accepted:
         raise exceptions.ValidationError(
             "You must accept the category Terms and Conditions to create a course."
@@ -169,6 +167,9 @@ def create_draft_course(
             topic.save(
                 update_fields=["reserved_by", "reserved_until", "updated_datetime"]
             )
+        award_service.schedule_evaluation(
+            creator_id=creator.id, criterion=BadgeCriterion.COURSES_CREATED
+        )
 
     return course
 
@@ -214,7 +215,9 @@ def submit_course(*, course: Course, actor: User) -> Course:
       AI-generated courses remain unpaid and keep this field null.
     """
 
-    require_role(actor, IsCourseCreatorRole.allowed_roles + IsAdminRole.allowed_roles)
+    permission_service.require_any_permission(
+        actor, (codenames.COURSES_CREATE, codenames.COURSES_EDIT)
+    )
     if course.creator_id != actor.id:
         raise exceptions.ValidationError(
             "Only the course creator can submit this course."
@@ -313,8 +316,8 @@ def claim_for_review(*, course: Course, reviewer: User) -> Course:
     works even if they've since gone Unavailable).
     """
 
-    require_role(
-        reviewer, IsCreatorReviewerRole.allowed_roles + IsAdminRole.allowed_roles
+    permission_service.require_any_permission(
+        reviewer, (codenames.COURSES_APPROVE, codenames.COURSES_REJECT)
     )
     with transaction.atomic():
         course = Course.objects.select_for_update().get(pk=course.pk)
@@ -432,10 +435,7 @@ def publish_course(
     course today - see CourseVersion's docstring.
     """
 
-    require_role(
-        actor,
-        IsCreatorReviewerRole.allowed_roles + IsAdminRole.allowed_roles,
-    )
+    permission_service.require_permission(actor, codenames.COURSES_PUBLISH)
     if course.status != CourseStatus.APPROVED:
         raise exceptions.ValidationError(
             f"Course cannot be published from status '{course.status}'."
@@ -495,6 +495,10 @@ def publish_course(
             summary=f"You published '{course.title}'.",
             target=course,
         )
+        if course.creator_id:
+            award_service.schedule_evaluation(
+                creator_id=course.creator_id, criterion=BadgeCriterion.COURSES_PUBLISHED
+            )
     return course
 
 

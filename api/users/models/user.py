@@ -32,7 +32,21 @@ class User(
         max_length=20,
         choices=UserRole.choices,
         default=UserRole.COURSE_CREATOR,
-        help_text=_("Primary role used for role-based permission checks."),
+        help_text=_(
+            "Workflow role: decides review seats, MFA mandate, staff roster "
+            "membership and login workspace. Permissions come from access_role."
+        ),
+    )
+    access_role = models.ForeignKey(
+        "authorization.Role",
+        verbose_name=_("Access role"),
+        on_delete=models.PROTECT,
+        related_name="members",
+        help_text=_(
+            "The role whose permissions this user holds. Always has "
+            "base_role equal to `role`; defaults to the built-in role for "
+            "`role` when not set explicitly."
+        ),
     )
     assigned_track = models.CharField(
         verbose_name=_("Assigned Track"),
@@ -153,6 +167,25 @@ class User(
         ),
     )
 
+    erased_at = models.DateTimeField(
+        verbose_name=_("Erased at"),
+        null=True,
+        blank=True,
+        help_text=_(
+            "When this account was deleted and its personal data erased. Set "
+            "once, never cleared: an erased account cannot be restored."
+        ),
+    )
+    erased_by = models.ForeignKey(
+        "users.User",
+        verbose_name=_("Erased by"),
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text=_("Administrator who deleted the account."),
+    )
+
     # >>>>>>>>>>>> KYC-verified identity (authoritative, from NIMC/NIBSS) <<<<<<<<<<
     # Populated from the KYC NIN/BVN response at verification time — distinct from
     # the self-entered name/gender above. Drives the admin verification dashboard's
@@ -227,8 +260,45 @@ class User(
 
         return self.email
 
+    @classmethod
+    def from_db(cls, db, field_names, values):
+        instance = super().from_db(db, field_names, values)
+        # Remember what was loaded so save() can tell a role change that
+        # came without an explicit access role (which must follow the role)
+        # from one that came with it.
+        loaded = dict(zip(field_names, values, strict=False))
+        instance._loaded_role = loaded.get("role")
+        instance._loaded_access_role_id = loaded.get("access_role_id")
+        return instance
+
+    def _sync_access_role(self, kwargs):
+        """Point access_role at the built-in role for `role` when it must follow it.
+
+        That is: no access role yet, or `role` changed while access_role was
+        left untouched. An access role set deliberately alongside a role
+        change (a custom role) is kept - the role service checks its base role.
+        """
+
+        role_changed = getattr(self, "_loaded_role", self.role) != self.role
+        access_role_untouched = (
+            getattr(self, "_loaded_access_role_id", self.access_role_id)
+            == self.access_role_id
+        )
+        if self.access_role_id is not None and not (
+            role_changed and access_role_untouched
+        ):
+            return
+        from api.authorization.services.role_registry import system_role_id
+
+        self.access_role_id = system_role_id(self.role)
+        update_fields = kwargs.get("update_fields")
+        if update_fields is not None and "access_role" not in update_fields:
+            kwargs["update_fields"] = [*update_fields, "access_role"]
+
     def save(self, *args, **kwargs):
-        """Self-healing MFA grace-period trigger: the moment a row holding
+        """Keep access_role in step with role, then run the MFA grace-period trigger.
+
+        Self-healing MFA grace-period trigger: the moment a row holding
         role=ADMIN/SUPER_ADMIN is saved with no grace period set yet, start
         the clock. Covers every path that can produce such a row (bootstrap,
         a future staff-invite extension, a direct admin-site edit) without
@@ -265,4 +335,7 @@ class User(
             ):
                 kwargs["update_fields"] = [*update_fields, "mfa_grace_period_ends_at"]
 
+        self._sync_access_role(kwargs)
         super().save(*args, **kwargs)
+        self._loaded_role = self.role
+        self._loaded_access_role_id = self.access_role_id

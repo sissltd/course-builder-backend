@@ -5,13 +5,14 @@ from django.db.models import Count, Q, Sum
 from django.db.models.functions import TruncDate
 from django.utils import timezone
 
+from api.authorization import codenames
+from api.authorization.services import permission_service
 from api.courses.enums import CourseStatus
 from api.courses.models import Course
 from api.operations.models import ProductionCost
 from api.payments.models.transaction_model import Transaction
 from api.users.enums import AccountStatus, KYCStatus
 from api.users.models import KYCVerification, User
-from api.users.permissions import IsAdminOrSuperAdminRole, require_role
 from api.wallet.enums import (
     TransactionStatus,
     TransactionType,
@@ -26,7 +27,9 @@ TREND_DAYS = {"24h": 1, "7d": 7, "31d": 31, "6m": 182}
 DEFAULT_PERIOD = "7d"
 
 
-def get_overview(*, actor: User, period: str = DEFAULT_PERIOD) -> dict:
+def get_overview(
+    *, actor: User, period: str = DEFAULT_PERIOD, include_financials: bool = True
+) -> dict:
     """Aggregate the counts an admin home screen leads with.
 
     Deliberately counts rather than lists: every figure here has a dedicated
@@ -39,31 +42,39 @@ def get_overview(*, actor: User, period: str = DEFAULT_PERIOD) -> dict:
     the enums grow.
     """
 
-    require_role(actor, IsAdminOrSuperAdminRole.allowed_roles)
+    permission_service.require_any_permission(
+        actor, (codenames.DASHBOARD_VIEW, codenames.DASHBOARD_VIEW_LIMITED)
+    )
 
     if period not in TREND_DAYS:
         period = DEFAULT_PERIOD
     days = TREND_DAYS[period]
 
+    # Limited Access sees the same dashboard with every money figure null.
+    # They are never computed rather than computed and dropped, so the
+    # figures cannot leak and the request is cheaper.
     return {
         "period": period,
+        "financials_included": include_financials,
         "users": _counts_by(User.objects.all(), "status", AccountStatus),
         "courses": _counts_by(Course.objects.all(), "status", CourseStatus),
         "kyc": _counts_by(KYCVerification.objects.all(), "status", KYCStatus),
-        "withdrawals": _counts_by(
-            WithdrawalRequest.objects.all(), "status", WithdrawalRequestStatus
+        "withdrawals": (
+            _counts_by(WithdrawalRequest.objects.all(), "status", WithdrawalRequestStatus)
+            if include_financials
+            else None
         ),
-        "wallet_totals": _wallet_totals(),
+        "wallet_totals": _wallet_totals() if include_financials else None,
         # The design's headline tiles and the two charts beside them. The
         # blocks above are the same data broken down and stay for clients
         # already reading them.
-        "today": _today_tiles(),
+        "today": _today_tiles(include_financials=include_financials),
         "production_trend": _production_trend(days),
-        "cost_trend": _cost_trend(days),
+        "cost_trend": _cost_trend(days) if include_financials else None,
     }
 
 
-def _today_tiles() -> dict:
+def _today_tiles(*, include_financials: bool = True) -> dict:
     """The four tiles across the top of the admin dashboard.
 
     Each carries the comparison the design shows beside it, so the client
@@ -83,18 +94,25 @@ def _today_tiles() -> dict:
         updated_datetime__gte=timezone.now() - timedelta(hours=24),
     ).count()
 
-    cost_today = _cost_between(today, today)
-    cost_yesterday = _cost_between(yesterday, yesterday)
     published_total = Course.objects.filter(status=CourseStatus.PUBLISHED).count()
-    lifetime_cost = ProductionCost.objects.aggregate(total=Sum("amount"))["total"]
-
-    return {
+    tiles = {
         "courses_created_today": created_today,
         "courses_created_change_percent": _percent_change(
             created_today, created_yesterday
         ),
         "published_last_24h": published_24h,
         "published_total": published_total,
+        "daily_cost": None,
+        "daily_cost_change_percent": None,
+        "avg_cost_per_course": None,
+    }
+    if not include_financials:
+        return tiles
+
+    cost_today = _cost_between(today, today)
+    cost_yesterday = _cost_between(yesterday, yesterday)
+    lifetime_cost = ProductionCost.objects.aggregate(total=Sum("amount"))["total"]
+    tiles.update({
         "daily_cost": str(cost_today) if cost_today is not None else None,
         "daily_cost_change_percent": _percent_change(cost_today, cost_yesterday),
         "avg_cost_per_course": (
@@ -102,7 +120,8 @@ def _today_tiles() -> dict:
             if lifetime_cost is not None and published_total
             else None
         ),
-    }
+    })
+    return tiles
 
 
 def _courses_created_on(day) -> int:

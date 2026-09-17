@@ -36,23 +36,25 @@ KPI_TARGETS = {
 does not hardcode business goals it cannot see change."""
 
 
-def get_analytics(*, period: str = DEFAULT_PERIOD) -> dict:
+def get_analytics(*, period: str = DEFAULT_PERIOD, include_financials: bool = True) -> dict:
     """The Analytics screen: headline tiles, distribution, trend and KPIs."""
 
     if period not in PERIODS:
         period = DEFAULT_PERIOD
     since = timezone.now() - timedelta(days=PERIODS[period])
 
+    # Limited Access: money figures are null and never computed.
     return {
         "period": period,
         "since": since.isoformat(),
+        "financials_included": include_financials,
         "catalog": _catalog(since),
         "enrollment": _enrollment(since),
-        "cost": _cost(since),
-        "earnings": _earnings(),
+        "cost": _cost(since) if include_financials else None,
+        "earnings": _earnings() if include_financials else None,
         "distribution": _distribution(),
         "production_vs_approval": _production_vs_approval(since),
-        "kpis": _kpis(since),
+        "kpis": _kpis(since, include_financials=include_financials),
     }
 
 
@@ -178,7 +180,7 @@ def _production_vs_approval(since) -> dict:
     }
 
 
-def _kpis(since) -> dict:
+def _kpis(since, *, include_financials: bool = True) -> dict:
     """Operational KPIs, each null when nothing backs it yet."""
 
     decided = ReviewAction.objects.filter(created_datetime__gte=since)
@@ -205,7 +207,7 @@ def _kpis(since) -> dict:
         "avg_pipeline_time_minutes": (
             round(pipeline_seconds / 60, 2) if pipeline_seconds is not None else None
         ),
-        "cost_per_course": _cost(since)["cost_per_course"],
+        "cost_per_course": _cost(since)["cost_per_course"] if include_financials else None,
         "review_turnaround_hours": _review_turnaround_hours(since),
         "system_uptime_percent": uptime,
         "targets": dict(KPI_TARGETS),

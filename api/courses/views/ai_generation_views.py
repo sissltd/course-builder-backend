@@ -33,7 +33,8 @@ from api.courses.tasks import (
     generate_ai_course,
     generate_ai_thumbnail,
 )
-from api.users.permissions import IsCourseCreatorRole
+from api.authorization import codenames
+from api.authorization.permissions import Perm
 from includes.helpers.pagination import PageNumberAPIPagination
 from shared.spectacular.responses import STANDARD_ERROR_RESPONSES, inline_error_response
 
@@ -108,7 +109,7 @@ def _dispatch_generation_task(*, task, job):
 
 
 class AICourseGenerationListCreateView(APIView):
-    permission_classes = [IsCourseCreatorRole]
+    permission_classes = [Perm(codenames.COURSES_CREATE)]
     pagination_class = PageNumberAPIPagination
 
     @extend_schema(
@@ -119,7 +120,7 @@ class AICourseGenerationListCreateView(APIView):
             "a loading screen after navigation, refresh, or reconnect.\n\n"
             "Call this when the creator opens the Create with AI experience before "
             "starting a new request.\n\n"
-            "**Auth:** Course Creator or invited Staff Writer with a valid Bearer token.\n\n"
+            "**Auth:** The `courses.create` permission (Course Creator and Writer by default).\n\n"
             "**Prerequisites:** None.\n\n"
             "**Important:** Defaults to `status=in_progress`, which returns `QUEUED`, "
             "`RUNNING`, and `STRUCTURE_READY` jobs. Stale in-flight jobs are marked "
@@ -217,7 +218,7 @@ class AICourseGenerationListCreateView(APIView):
             "to poll.\n\n"
             "Call this after the creator completes the Create with AI form and "
             "accepts the selected category terms.\n\n"
-            "**Auth:** Course Creator or invited Staff Writer with a valid Bearer token.\n\n"
+            "**Auth:** The `courses.create` permission (Course Creator and Writer by default).\n\n"
             "**Prerequisites:** The category must exist; when supplied, the topic "
             "must belong to that category.\n\n"
             "**Important:** Generation is asynchronous. Poll the returned job URL. "
@@ -274,7 +275,7 @@ class AICourseGenerationListCreateView(APIView):
 
 
 class AIGenerationDetailView(APIView):
-    permission_classes = [IsCourseCreatorRole]
+    permission_classes = [Perm(codenames.COURSES_CREATE)]
 
     def get_object(self, request, pk):
         ai_generation_service.fail_stale_in_flight_jobs(creator=request.user)
@@ -290,7 +291,7 @@ class AIGenerationDetailView(APIView):
             "its active Figma phase and ordered progress items. The completed response "
             "contains the generated Draft course identifier.\n\n"
             "Poll this endpoint while the two generation screens are displayed.\n\n"
-            "**Auth:** Course Creator or invited Staff Writer with a valid Bearer token.\n\n"
+            "**Auth:** The `courses.create` permission (Course Creator and Writer by default).\n\n"
             "**Prerequisites:** A generation job must already have been created by the caller.\n\n"
             "**Important:** Poll every 2–3 seconds and stop on COMPLETED, FAILED, or "
             "CANCELLED. Jobs owned by another creator are returned as 404."
@@ -321,7 +322,7 @@ class AIGenerationDetailView(APIView):
             "Requests cancellation of a creator-owned AI generation job. The worker "
             "stops at the next safe checkpoint and marks remaining progress items cancelled.\n\n"
             "Call this when the creator selects ‘Stop this process and go back’.\n\n"
-            "**Auth:** Course Creator or invited Staff Writer with a valid Bearer token.\n\n"
+            "**Auth:** The `courses.create` permission (Course Creator and Writer by default).\n\n"
             "**Prerequisites:** The job must belong to the caller.\n\n"
             "**Important:** Cancellation is cooperative, so the returned job may show "
             "`cancel_requested=true` before its status becomes CANCELLED. Repeating the "
@@ -356,7 +357,7 @@ class AIGenerationDetailView(APIView):
 
 
 class AIGenerationRetryView(APIView):
-    permission_classes = [IsCourseCreatorRole]
+    permission_classes = [Perm(codenames.COURSES_CREATE)]
     serializer_class = AIGenerationJobSerializer
 
     @extend_schema(
@@ -399,7 +400,7 @@ class AIGenerationRetryView(APIView):
 
 
 class AIAssistListCreateView(APIView):
-    permission_classes = [IsCourseCreatorRole]
+    permission_classes = [Perm(codenames.COURSES_CREATE)]
 
     @extend_schema(
         summary="Generate an AI field suggestion",
@@ -408,7 +409,7 @@ class AIAssistListCreateView(APIView):
             "or lesson without changing the saved value. The returned job can be polled "
             "until its result contains the suggestion.\n\n"
             "Call this from an AI-assist action beside a course-builder field.\n\n"
-            "**Auth:** Course Creator or invited Staff Writer with a valid Bearer token.\n\n"
+            "**Auth:** The `courses.create` permission (Course Creator and Writer by default).\n\n"
             "**Prerequisites:** The course must be a caller-owned Draft, and target_id "
             "must identify a record within that course.\n\n"
             "**Important:** Save `target_updated_at` from the builder. Applying the result "
@@ -483,7 +484,7 @@ class AIAssistListCreateView(APIView):
 
 
 class AIAssistApplyView(APIView):
-    permission_classes = [IsCourseCreatorRole]
+    permission_classes = [Perm(codenames.COURSES_CREATE)]
 
     @extend_schema(
         summary="Apply an AI field suggestion",
@@ -491,7 +492,7 @@ class AIAssistApplyView(APIView):
             "Applies a completed AI suggestion to its original course, module, or lesson "
             "field and returns the saved value and update time.\n\n"
             "Call this only after the creator previews and accepts the generated suggestion.\n\n"
-            "**Auth:** Course Creator or invited Staff Writer with a valid Bearer token.\n\n"
+            "**Auth:** The `courses.create` permission (Course Creator and Writer by default).\n\n"
             "**Prerequisites:** The assist job must belong to the caller, target this course, "
             "and have status COMPLETED.\n\n"
             "**Important:** The operation returns 409 rather than overwriting newer edits "
@@ -567,7 +568,7 @@ class AIAssistApplyView(APIView):
 
 
 class AIThumbnailCreateView(APIView):
-    permission_classes = [IsCourseCreatorRole]
+    permission_classes = [Perm(codenames.COURSES_CREATE)]
 
     @extend_schema(
         summary="Generate an AI course thumbnail",
@@ -575,7 +576,7 @@ class AIThumbnailCreateView(APIView):
             "Queues generation of a thumbnail image for a caller-owned Draft course. "
             "It returns a job whose completed result contains the generated image URL.\n\n"
             "Call this from the thumbnail step after the course structure is available.\n\n"
-            "**Auth:** Course Creator or invited Staff Writer with a valid Bearer token.\n\n"
+            "**Auth:** The `courses.create` permission (Course Creator and Writer by default).\n\n"
             "**Prerequisites:** The course must exist, belong to the caller, and remain Draft.\n\n"
             "**Important:** This does not change the active course thumbnail. Poll the job, "
             "preview its result, then call the apply endpoint after creator approval."
@@ -636,7 +637,7 @@ class AIThumbnailCreateView(APIView):
 
 
 class AIThumbnailApplyView(APIView):
-    permission_classes = [IsCourseCreatorRole]
+    permission_classes = [Perm(codenames.COURSES_CREATE)]
 
     @extend_schema(
         summary="Apply an AI course thumbnail",
@@ -644,7 +645,7 @@ class AIThumbnailApplyView(APIView):
             "Makes a completed AI-generated image the active thumbnail for its Draft course "
             "and returns the created thumbnail record. Any previously active thumbnail is disabled.\n\n"
             "Call this after the creator previews and accepts the generated image.\n\n"
-            "**Auth:** Course Creator or invited Staff Writer with a valid Bearer token.\n\n"
+            "**Auth:** The `courses.create` permission (Course Creator and Writer by default).\n\n"
             "**Prerequisites:** The thumbnail job must belong to the caller, target this "
             "course, and have status COMPLETED.\n\n"
             "**Important:** This changes the active thumbnail immediately; applying another "

@@ -14,7 +14,8 @@ from api.courses.models import Course, CourseThumbnail
 from api.courses.serializers.course_thumbnail_serializer import (
     CourseThumbnailSerializer,
 )
-from api.users.permissions import IsCourseCreatorRole
+from api.authorization import codenames
+from api.authorization.permissions import Perm
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 
 _COURSE_PK_PARAMETER = OpenApiParameter(
@@ -35,14 +36,14 @@ class CourseThumbnailView(APIView):
     course, enforced by a partial unique constraint.
     """
 
-    permission_classes = [IsCourseCreatorRole]
+    permission_classes = [Perm(codenames.COURSES_CREATE)]
 
     @extend_schema(
         summary="Retrieve a course's thumbnail",
         description=(
             "Returns the course's active thumbnail first, followed by any "
             "deactivated (replaced) ones.\n\n"
-            "**Auth:** Course Creator/Writer with access to the course."
+            "**Auth:** The `courses.create` permission (Course Creator and Writer by default), with access to the course."
         ),
         tags=["Creator — Courses"],
         parameters=[_COURSE_PK_PARAMETER],
@@ -67,7 +68,7 @@ class CourseThumbnailView(APIView):
             "+ `external_url`) - never both. Replacing deactivates the "
             "previous thumbnail rather than deleting it, so history is "
             "kept.\n\n"
-            "**Auth:** Course Creator/Writer with manage access to the "
+            "**Auth:** The `courses.create` permission (Course Creator and Writer by default), with manage access to the "
             "course (creator or Admin collaborator); course must be Draft."
         ),
         tags=["Creator — Courses"],

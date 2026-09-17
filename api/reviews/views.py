@@ -16,7 +16,9 @@ from api.reviews.serializers import (
     QualityCheckCriterionSerializer,
 )
 from api.reviews.services import quality_check_template_service
-from api.users.permissions import IsAdminOrSuperAdminRole, IsCourseCreatorRole
+from api.authorization import codenames
+from api.authorization.permissions import Perm
+from api.authorization.services import permission_service
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 
 _COURSE_PK_PARAMETER = OpenApiParameter(
@@ -34,7 +36,8 @@ _COURSE_PK_PARAMETER = OpenApiParameter(
             "Returns the checklist template - every criterion grouped by "
             "wizard section. Admins see all criteria (including retired); "
             "creators see only active ones.\n\n"
-            "**Auth:** any signed-in course builder user."
+            "**Auth:** `courses.create` or `courses.manage_quality`; only "
+            "`courses.manage_quality` (Admin, Super Admin by default) sees retired criteria."
         ),
         tags=["Quality Check"],
         responses={
@@ -47,7 +50,8 @@ _COURSE_PK_PARAMETER = OpenApiParameter(
         summary="Add a quality-check criterion",
         description=(
             "Adds a checklist item to a wizard section. Admin-only.\n\n"
-            "**Auth:** Admin or Super Admin."
+            "**Auth:** The `courses.manage_quality` permission — Admin and Super "
+            "Admin by default."
         ),
         tags=["Quality Check"],
         request=QualityCheckCriterionSerializer,
@@ -71,15 +75,15 @@ class QualityCheckCriterionViewSet(ModelViewSet):
 
     def get_permissions(self):
         if self.action in {"create", "update", "partial_update", "destroy"}:
-            return [IsAdminOrSuperAdminRole()]
-        return [(IsCourseCreatorRole | IsAdminOrSuperAdminRole)()]
+            return [Perm(codenames.COURSES_MANAGE_QUALITY)()]
+        return [Perm(codenames.COURSES_CREATE, codenames.COURSES_MANAGE_QUALITY)()]
 
     def get_queryset(self):
         if getattr(self, "swagger_fake_view", False):
             return QualityCheckCriterion.objects.none()
         queryset = QualityCheckCriterion.objects.all()
         user = self.request.user
-        if not (user.is_superuser or getattr(user, "role", None) in IsAdminOrSuperAdminRole.allowed_roles):
+        if not permission_service.user_has_permission(user, codenames.COURSES_MANAGE_QUALITY):
             queryset = queryset.filter(is_active=True)
         return queryset
 
@@ -94,7 +98,7 @@ class CourseQualityCheckView(APIView):
     needs server-side ticking).
     """
 
-    permission_classes = [IsCourseCreatorRole | IsAdminOrSuperAdminRole]
+    permission_classes = [Perm(codenames.COURSES_CREATE, codenames.COURSES_MANAGE_QUALITY)]
 
     @extend_schema(
         summary="List a course's quality-check results",
@@ -102,7 +106,8 @@ class CourseQualityCheckView(APIView):
             "Returns the course's current result for every active "
             "criterion, grouped by section - the pre-submission checklist "
             "the wizard's Quality Check step renders.\n\n"
-            "**Auth:** Course Creator/Writer with access to the course, or Admin."
+            "**Auth:** `courses.create` with access to the course, or "
+            "`courses.manage_quality`."
         ),
         tags=["Quality Check"],
         parameters=[_COURSE_PK_PARAMETER],
@@ -130,7 +135,8 @@ class CourseQualityCheckView(APIView):
             "module/lesson counts, script lengths, preview video, terms, "
             "final assessment) are recomputed; manual criteria keep their "
             "existing state.\n\n"
-            "**Auth:** Course Creator/Writer with access to the course, or Admin."
+            "**Auth:** `courses.create` with access to the course, or "
+            "`courses.manage_quality`."
         ),
         tags=["Quality Check"],
         parameters=[_COURSE_PK_PARAMETER],

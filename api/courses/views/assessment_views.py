@@ -12,7 +12,8 @@ from api.collaborators.services import collaborator_service
 from api.courses.enums import AssessmentLevel, CourseStatus
 from api.courses.models import Course, Lesson, Module
 from api.courses.serializers import AssessmentSerializer, AssessmentWriteSerializer
-from api.users.permissions import IsCourseCreatorRole
+from api.authorization import codenames
+from api.authorization.permissions import Perm
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 
 
@@ -119,7 +120,7 @@ class LessonAssessmentView(APIView):
     apply - PUT creates the assessment if absent, otherwise updates it.
     """
 
-    permission_classes = [IsCourseCreatorRole]
+    permission_classes = [Perm(codenames.COURSES_CREATE)]
     serializer_class = (
         AssessmentWriteSerializer  # for schema generation only; not a GenericAPIView
     )
@@ -141,7 +142,7 @@ class LessonAssessmentView(APIView):
             "Returns the quiz attached to a single lesson.\n\n"
             "Called when opening a lesson's assessment editor in the course "
             "builder.\n\n"
-            "**Auth:** Course Creator/Writer with access to the course.\n\n"
+            "**Auth:** The `courses.create` permission (Course Creator and Writer by default), with access to the course.\n\n"
             "**Prerequisites:** The lesson must have an assessment set - "
             "use PUT to create one if it doesn't.\n\n"
             "**Important:** None."
@@ -180,7 +181,7 @@ class LessonAssessmentView(APIView):
             "exists yet, otherwise overwrites it.\n\n"
             "Called from the lesson assessment editor when the creator "
             "saves questions.\n\n"
-            "**Auth:** Course Creator/Writer with access to the course.\n\n"
+            "**Auth:** The `courses.create` permission (Course Creator and Writer by default), with access to the course.\n\n"
             "**Prerequisites:** The parent course must be `DRAFT`.\n\n"
             "**Important:** Each question's `type` decides which fields "
             "apply: `SINGLE_CHOICE` needs 2-6 string `options` and one "
@@ -246,7 +247,7 @@ class LessonAssessmentView(APIView):
 class ModuleAssessmentView(APIView):
     """GET/PUT-upsert the module-level assessment attached to a single Module."""
 
-    permission_classes = [IsCourseCreatorRole]
+    permission_classes = [Perm(codenames.COURSES_CREATE)]
     serializer_class = (
         AssessmentWriteSerializer  # for schema generation only; not a GenericAPIView
     )
@@ -267,7 +268,7 @@ class ModuleAssessmentView(APIView):
             "Returns the module-level quiz attached to a single module.\n\n"
             "Called when opening a module's assessment editor in the course "
             "builder.\n\n"
-            "**Auth:** Course Creator/Writer with access to the course.\n\n"
+            "**Auth:** The `courses.create` permission (Course Creator and Writer by default), with access to the course.\n\n"
             "**Prerequisites:** The module must have an assessment set - "
             "use PUT to create one if it doesn't.\n\n"
             "**Important:** None."
@@ -305,7 +306,7 @@ class ModuleAssessmentView(APIView):
             "otherwise overwrites it.\n\n"
             "Called from the module assessment editor when the creator "
             "saves questions.\n\n"
-            "**Auth:** Course Creator/Writer with access to the course.\n\n"
+            "**Auth:** The `courses.create` permission (Course Creator and Writer by default), with access to the course.\n\n"
             "**Prerequisites:** The parent course must be `DRAFT`.\n\n"
             "**Important:** Each question's `type` decides which fields "
             "apply: `SINGLE_CHOICE` needs 2-6 string `options` and one "
@@ -370,7 +371,7 @@ class ModuleAssessmentView(APIView):
 class CourseAssessmentView(APIView):
     """GET/PUT-upsert the final course-level assessment attached to a Course."""
 
-    permission_classes = [IsCourseCreatorRole]
+    permission_classes = [Perm(codenames.COURSES_CREATE)]
     serializer_class = (
         AssessmentWriteSerializer  # for schema generation only; not a GenericAPIView
     )
@@ -390,7 +391,7 @@ class CourseAssessmentView(APIView):
             "is complete.\n\n"
             "Called when opening the final assessment editor in the course "
             "builder.\n\n"
-            "**Auth:** Course Creator/Writer with access to the course.\n\n"
+            "**Auth:** The `courses.create` permission (Course Creator and Writer by default), with access to the course.\n\n"
             "**Prerequisites:** The course must have a final assessment set "
             "- use PUT to create one if it doesn't.\n\n"
             "**Important:** None."
@@ -427,7 +428,7 @@ class CourseAssessmentView(APIView):
             "structural standards require >=15 questions here).\n\n"
             "Called from the final assessment editor in the course "
             "builder.\n\n"
-            "**Auth:** Course Creator/Writer with access to the course.\n\n"
+            "**Auth:** The `courses.create` permission (Course Creator and Writer by default), with access to the course.\n\n"
             "**Prerequisites:** The course must be `DRAFT`.\n\n"
             "**Important:** Each question's `type` decides which fields "
             "apply: `SINGLE_CHOICE` needs 2-6 string `options` and one "

@@ -3,10 +3,14 @@ from django.db.models import QuerySet
 from django.utils import timezone
 from rest_framework import exceptions
 
+from api.achievements.enums import BadgeCriterion
+from api.achievements.services import award_service
 from api.authentication.services import activity_service
+from api.authorization import codenames
+from api.authorization.services import permission_service
 from api.courses.enums import CourseSourceType, CourseStatus
 from api.courses.models import Course
-from api.notification.models import Notification
+from api.notification.models import Notification, NotificationPreference
 from api.reviews.enums import ReviewActionType, ReviewStage
 from api.reviews.models import ReviewAction, ReviewAssignment
 from api.reviews.services import quality_review_service
@@ -16,7 +20,6 @@ from api.users.enums import (
     UserRole,
 )
 from api.users.models import User
-from api.users.permissions import IsAdminRole, IsCreatorReviewerRole, require_role
 from api.users.services import reviewer_availability_service
 from api.wallet.services import wallet_service
 
@@ -32,6 +35,11 @@ SEAT_ROLES = {
 }
 CONTENT_REVIEW_SEATS = tuple(SEAT_ROLES)
 
+#: Who may sit the QA seat that follows content review. Like SEAT_ROLES this is
+#: workflow, not a permission: holding Approve Course lets you decide seats your
+#: role may sit, and Assign Course (the admin tier by default) lets you sit any.
+QA_SEAT_ROLES = (UserRole.QA_REVIEWER,)
+
 #: The seat an approval hands the course to, derived from the order above so
 #: the two can't disagree. The last seat maps to None: its approval ends
 #: content review and the course moves on to QA verification.
@@ -39,11 +47,20 @@ NEXT_SEAT = dict(zip(CONTENT_REVIEW_SEATS, CONTENT_REVIEW_SEATS[1:] + (None,)))
 
 
 def is_admin_tier(user: User) -> bool:
-    """Admin, Approver and Super Admin may take any content seat, and may
-    decide one they don't hold. Superusers count as Admin tier, matching
-    require_role's bypass."""
+    """Holders of Assign Course may take any seat, and may decide one they
+    don't hold. That is Admin, Approver and Super Admin by default;
+    superusers always hold it."""
 
-    return bool(user.is_superuser or user.role in IsAdminRole.allowed_roles)
+    return permission_service.user_has_permission(user, codenames.COURSES_ASSIGN)
+
+
+def require_qa_seat_access(*, user: User) -> None:
+    """Refuse (403) a caller who may not sit the QA seat."""
+
+    if not (user.role in QA_SEAT_ROLES or is_admin_tier(user)):
+        raise exceptions.PermissionDenied(
+            "The QA Verification seat is for a QA Reviewer."
+        )
 
 
 def claimable_seats(*, user: User) -> tuple:
@@ -86,6 +103,229 @@ def open_seat(*, course: Course, verb: str) -> str:
             f"Course cannot be {verb} from status '{course.status}'."
         )
     return seat
+
+
+class SeatAlreadyAssigned(exceptions.APIException):
+    """Assigning a seat someone else holds, without asking to replace them."""
+
+    status_code = 409
+    default_code = "seat_already_assigned"
+    default_detail = (
+        "Another reviewer holds this seat. Send replace=true to reassign it."
+    )
+
+
+def _seat_for_assignment(course: Course) -> str:
+    if course.status == CourseStatus.QA_VERIFICATION:
+        return ReviewStage.QA
+    return open_seat(course=course, verb="assigned")
+
+
+def _seat_refusal(*, course: Course, seat: str, reviewer: User) -> str | None:
+    """Why `reviewer` may not sit `seat` on `course`, or None if they may."""
+
+    if not reviewer.is_active:
+        return "This reviewer's account is not active."
+    if not permission_service.user_has_any_permission(
+        reviewer, (codenames.COURSES_APPROVE, codenames.COURSES_REJECT)
+    ):
+        return "This user's role cannot review courses."
+    if seat == ReviewStage.QA:
+        if not (reviewer.role in QA_SEAT_ROLES or is_admin_tier(reviewer)):
+            return "The QA Verification seat is for a QA Reviewer."
+        return None
+    try:
+        require_seat_access(course=course, seat=seat, user=reviewer)
+    except exceptions.PermissionDenied as refusal:
+        return str(refusal.detail)
+    return None
+
+
+def assign_seat(
+    *, actor: User, course: Course, reviewer: User, replace: bool = False, request=None
+) -> ReviewAssignment:
+    """Put `reviewer` in the seat `course` is waiting on (Assign Course).
+
+    The content seat it is at, or QA when it is in QA verification. The
+    reviewer must be able to sit that seat themselves - role, four eyes and
+    availability all apply to them, not to the assigner. A seat someone else
+    holds is only taken over with `replace`, and both are notified.
+    """
+
+    permission_service.require_permission(actor, codenames.COURSES_ASSIGN)
+    with transaction.atomic():
+        course = Course.objects.select_for_update().get(pk=course.pk)
+        seat = _seat_for_assignment(course)
+        refusal = _seat_refusal(course=course, seat=seat, reviewer=reviewer)
+        if refusal:
+            raise exceptions.ValidationError({"reviewer_id": refusal})
+        if not reviewer_availability_service.is_reviewer_available(user=reviewer):
+            raise exceptions.ValidationError(
+                {"reviewer_id": "This reviewer is marked Unavailable."}
+            )
+
+        assignment, _ = ReviewAssignment.objects.get_or_create(
+            course=course, stage=seat
+        )
+        # A content seat is only held while the course is In Review.
+        held_by = (
+            assignment.reviewer_id
+            if (seat == ReviewStage.QA or course.status == CourseStatus.IN_REVIEW)
+            else None
+        )
+        if held_by == reviewer.id:
+            return assignment
+        if held_by is not None and not replace:
+            raise SeatAlreadyAssigned()
+        previous = assignment.reviewer if held_by else None
+
+        assignment.reviewer = reviewer
+        assignment.claimed_at = timezone.now()
+        assignment.save(update_fields=["reviewer", "claimed_at", "updated_datetime"])
+        if seat != ReviewStage.QA and course.status != CourseStatus.IN_REVIEW:
+            course.status = CourseStatus.IN_REVIEW
+            course.save(update_fields=["status", "updated_datetime"])
+
+        label = ReviewStage(seat).label
+        activity_service.log_activity(
+            user=reviewer,
+            actor_user=actor,
+            category=UserActivityCategoryEnums.COURSE,
+            action=UserActivityActionEnums.COURSE_ASSIGNED,
+            summary=f"Course '{course.title}' assigned to you for {label}.",
+            details={
+                "seat": seat,
+                "assigned_by": str(actor.id),
+                "previous_reviewer_id": str(previous.id) if previous else None,
+            },
+            target=course,
+            request=request,
+        )
+        wants_notice = not NotificationPreference.objects.filter(
+            user=reviewer, new_course_assigned=False
+        ).exists()
+        if wants_notice:
+            Notification.emit_in_app_notification(
+                receivers=[reviewer],
+                title="Course assigned to you",
+                content=f"'{course.title}' was assigned to you for {label}.",
+                metadata={"course_id": course.id, "stage": seat},
+            )
+        if previous is not None:
+            Notification.emit_in_app_notification(
+                receivers=[previous],
+                title="Course reassigned",
+                content=f"'{course.title}' ({label}) was reassigned to another reviewer.",
+                metadata={"course_id": course.id, "stage": seat},
+            )
+    return assignment
+
+
+def assignable_reviewers(*, actor: User, course: Course) -> list[dict]:
+    """Who could be assigned the seat `course` is waiting on.
+
+    A fixed number of queries however many reviewers exist: candidates by base
+    role and review permission in one, earlier deciders in the same query,
+    and availability for all candidates in one more.
+    """
+
+    from django.db.models import Exists, OuterRef
+
+    from api.authorization.models import RolePermission
+    from api.users.models import ReviewerAvailability
+
+    permission_service.require_permission(actor, codenames.COURSES_ASSIGN)
+    seat = _seat_for_assignment(course)
+    roles = QA_SEAT_ROLES if seat == ReviewStage.QA else SEAT_ROLES[seat]
+    may_review = RolePermission.objects.filter(
+        role_id=OuterRef("access_role_id"),
+        codename__in=(codenames.COURSES_APPROVE, codenames.COURSES_REJECT),
+    )
+    candidates = User.objects.filter(is_active=True, role__in=roles).filter(
+        Exists(may_review)
+    )
+    if seat != ReviewStage.QA:
+        earlier = CONTENT_REVIEW_SEATS[: CONTENT_REVIEW_SEATS.index(seat)]
+        decided_earlier = ReviewAssignment.objects.filter(
+            reviewer=OuterRef("pk"),
+            course=course,
+            stage__in=earlier,
+            completed_at__isnull=False,
+        )
+        candidates = candidates.exclude(Exists(decided_earlier))
+    candidates = list(candidates.order_by("first_name", "last_name", "email"))
+    availability = {
+        row.user_id: row
+        for row in ReviewerAvailability.objects.filter(user__in=candidates)
+    }
+    holder_id = (
+        ReviewAssignment.objects.filter(course=course, stage=seat)
+        .values_list("reviewer_id", flat=True)
+        .first()
+    )
+    return [
+        {
+            "user": candidate,
+            "seat": seat,
+            "is_available": candidate.id not in availability
+            or availability[candidate.id].is_effectively_available,
+            "holds_seat": candidate.id == holder_id,
+        }
+        for candidate in candidates
+    ]
+
+
+def release_open_seats(*, user: User) -> int:
+    """Release every seat `user` claimed but has not decided. Returns how many.
+
+    For an account that can no longer review (deleted). A released content
+    seat goes back to the pending queue (IN_REVIEW -> SUBMITTED); a released
+    QA seat stays in QA verification, unclaimed.
+    """
+
+    return _release_seats(user=user, keep=lambda assignment: False)
+
+
+def release_seats_after_role_change(*, user: User) -> int:
+    """Release the undecided seats `user` held that their new role cannot sit."""
+
+    seats = claimable_seats(user=user)
+    may_sit_qa = user.role in QA_SEAT_ROLES or is_admin_tier(user)
+    return _release_seats(
+        user=user,
+        keep=lambda assignment: (
+            may_sit_qa
+            if assignment.stage == ReviewStage.QA
+            else assignment.stage in seats
+        ),
+    )
+
+
+def _release_seats(*, user: User, keep) -> int:
+    held = [
+        assignment
+        for assignment in ReviewAssignment.objects.select_related("course").filter(
+            reviewer=user, completed_at__isnull=True
+        )
+        if not keep(assignment)
+    ]
+    if not held:
+        return 0
+    now = timezone.now()
+    ReviewAssignment.objects.filter(id__in=[a.id for a in held]).update(
+        reviewer=None, claimed_at=None, updated_datetime=now
+    )
+    content_course_ids = [
+        a.course_id
+        for a in held
+        if a.stage != ReviewStage.QA
+        and a.course.status == CourseStatus.IN_REVIEW
+        and (a.course.review_stage or ReviewStage.CONTENT) == a.stage
+    ]
+    Course.objects.filter(id__in=content_course_ids).update(
+        status=CourseStatus.SUBMITTED, updated_datetime=now
+    )
+    return len(held)
 
 
 def require_seat_access(*, course: Course, seat: str, user: User) -> None:
@@ -197,9 +437,7 @@ def approve_course(
     are approved without a payout. All changes are atomic.
     """
 
-    require_role(
-        reviewer, IsCreatorReviewerRole.allowed_roles + IsAdminRole.allowed_roles
-    )
+    permission_service.require_permission(reviewer, codenames.COURSES_APPROVE)
     if course.status not in REVIEWABLE_STATUSES:
         raise exceptions.ValidationError(
             f"Course cannot be approved from status '{course.status}'."
@@ -282,9 +520,7 @@ def reject_course(
     creator with the feedback.
     """
 
-    require_role(
-        reviewer, IsCreatorReviewerRole.allowed_roles + IsAdminRole.allowed_roles
-    )
+    permission_service.require_permission(reviewer, codenames.COURSES_REJECT)
     if not (feedback or {}).get("summary"):
         raise exceptions.ValidationError(
             {"feedback": "A summary is required when rejecting a course."}
@@ -411,9 +647,7 @@ def approve_content(
     The claimant, four-eyes, lock and stale-course rules are reject_course's.
     """
 
-    require_role(
-        reviewer, IsCreatorReviewerRole.allowed_roles + IsAdminRole.allowed_roles
-    )
+    permission_service.require_permission(reviewer, codenames.COURSES_APPROVE)
     with transaction.atomic():
         course, seat = _lock_open_seat(course=course, verb="content-approved")
         assignment = _hold_seat(course=course, seat=seat, reviewer=reviewer)
@@ -454,13 +688,17 @@ def approve_content(
                 content=f"Your course '{course.title}' is now awaiting media QA verification.",
                 metadata={"course_id": course.id, "stage": seat},
             )
+            award_service.schedule_evaluation(
+                creator_id=course.creator_id, criterion=BadgeCriterion.COURSES_REVIEWED
+            )
     return action
 
 
 def claim_qa_verification(*, course: Course, reviewer: User) -> Course:
-    from api.users.permissions import IsQaReviewerRole
-
-    require_role(reviewer, IsQaReviewerRole.allowed_roles + IsAdminRole.allowed_roles)
+    permission_service.require_any_permission(
+        reviewer, (codenames.COURSES_APPROVE, codenames.COURSES_REJECT)
+    )
+    require_qa_seat_access(user=reviewer)
     if course.status != CourseStatus.QA_VERIFICATION:
         raise exceptions.ValidationError(
             f"Course cannot enter QA from status '{course.status}'."
@@ -482,9 +720,8 @@ def claim_qa_verification(*, course: Course, reviewer: User) -> Course:
 def approve_qa(
     *, course: Course, reviewer: User, feedback: dict | None = None
 ) -> ReviewAction:
-    from api.users.permissions import IsQaReviewerRole
-
-    require_role(reviewer, IsQaReviewerRole.allowed_roles + IsAdminRole.allowed_roles)
+    permission_service.require_permission(reviewer, codenames.COURSES_APPROVE)
+    require_qa_seat_access(user=reviewer)
     if course.status != CourseStatus.QA_VERIFICATION:
         raise exceptions.ValidationError(
             f"Course cannot be QA-approved from status '{course.status}'."
@@ -537,13 +774,16 @@ def approve_qa(
             summary=f"You QA-approved '{course.title}'.",
             target=course,
         )
+        if course.creator_id:
+            award_service.schedule_evaluation(
+                creator_id=course.creator_id, criterion=BadgeCriterion.COURSES_APPROVED
+            )
     return action
 
 
 def reject_qa(*, course: Course, reviewer: User, feedback: dict) -> ReviewAction:
-    from api.users.permissions import IsQaReviewerRole
-
-    require_role(reviewer, IsQaReviewerRole.allowed_roles + IsAdminRole.allowed_roles)
+    permission_service.require_permission(reviewer, codenames.COURSES_REJECT)
+    require_qa_seat_access(user=reviewer)
     if not feedback.get("summary"):
         raise exceptions.ValidationError(
             {"feedback": "A summary is required when rejecting a course."}

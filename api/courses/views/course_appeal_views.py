@@ -15,7 +15,9 @@ from api.courses.serializers import (
     CourseAppealSerializer,
 )
 from api.courses.services import course_appeal_service
-from api.users.permissions import IsAdminOrSuperAdminRole, IsCourseCreatorRole
+from api.authorization import codenames
+from api.authorization.permissions import Perm
+from api.authorization.services import permission_service
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 
 MANAGE_ACTIONS = {"approve", "reject"}
@@ -46,8 +48,8 @@ _APPEAL_EXAMPLE = {
         description=(
             "Returns the caller's own appeals, or every appeal on the "
             "platform for an Admin/Super Admin (the Support review queue).\n\n"
-            "**Auth:** Course Creator/Writer (own appeals), or Admin/Super "
-            "Admin (every appeal).\n\n"
+            "**Auth:** Own appeals with `courses.create` (Course Creator and "
+            "Writer by default), or every appeal with `courses.decide_appeals` (Admin and Super Admin by default).\n\n"
             "**Prerequisites:** None beyond holding one of those roles. "
             "Results are paginated."
         ),
@@ -67,7 +69,7 @@ _APPEAL_EXAMPLE = {
         summary="Retrieve a course-rejection appeal",
         description=(
             "Returns a single appeal.\n\n"
-            "**Auth:** The submitting creator, or Admin/Super Admin.\n\n"
+            "**Auth:** The submitting creator, or `courses.decide_appeals` (Admin and Super Admin by default).\n\n"
             "**Prerequisites:** The appeal must exist and be visible to the "
             "caller.\n\n"
             "**Important:** A creator requesting someone else's appeal gets "
@@ -95,7 +97,8 @@ _APPEAL_EXAMPLE = {
             "form.\n\n"
             "Called from the Support page's 'Request for an appeal' "
             "action.\n\n"
-            "**Auth:** Course Creator or Writer.\n\n"
+            "**Auth:** The `courses.create` permission — Course Creator and Writer "
+            "by default.\n\n"
             "**Prerequisites:** `course` must belong to the caller and must "
             "currently be in the just-rejected state (returned to Draft "
             "with `rejected_at` set - see the review-queue reject action). "
@@ -141,7 +144,9 @@ class CourseAppealViewSet(ModelViewSet):
     appeal out with `decision_notes`."""
 
     http_method_names = ["get", "post", "head", "options"]
-    permission_classes = [IsCourseCreatorRole | IsAdminOrSuperAdminRole]
+    permission_classes = [
+        Perm(codenames.COURSES_CREATE, codenames.COURSES_DECIDE_APPEALS)
+    ]
 
     def get_queryset(self):
         if getattr(self, "swagger_fake_view", False):
@@ -150,8 +155,8 @@ class CourseAppealViewSet(ModelViewSet):
         queryset = CourseAppeal.objects.select_related(
             "course", "submitted_by", "reviewed_by"
         )
-        if self.request.user.is_superuser or self.request.user.role in (
-            IsAdminOrSuperAdminRole.allowed_roles
+        if permission_service.user_has_permission(
+            self.request.user, codenames.COURSES_DECIDE_APPEALS
         ):
             return queryset
         return queryset.filter(submitted_by=self.request.user)
@@ -163,7 +168,7 @@ class CourseAppealViewSet(ModelViewSet):
 
     def get_permissions(self):
         if self.action in MANAGE_ACTIONS:
-            return [IsAdminOrSuperAdminRole()]
+            return [Perm(codenames.COURSES_DECIDE_APPEALS)()]
         return super().get_permissions()
 
     @extend_schema(
@@ -173,7 +178,7 @@ class CourseAppealViewSet(ModelViewSet):
             "(status -> SUBMITTED) and notifies the creator.\n\n"
             "Called from the 'Approve' action on the Support review "
             "queue.\n\n"
-            "**Auth:** Admin or Super Admin.\n\n"
+            "**Auth:** `courses.decide_appeals` (Admin and Super Admin by default).\n\n"
             "**Prerequisites:** The appeal must be `PENDING`.\n\n"
             "**Important:** Per PRD wording, the decision is final - an "
             "already-decided appeal cannot be re-decided."
@@ -245,7 +250,7 @@ class CourseAppealViewSet(ModelViewSet):
             "decision is final, per the PRD.\n\n"
             "Called from the 'Reject' action on the Support review "
             "queue.\n\n"
-            "**Auth:** Admin or Super Admin.\n\n"
+            "**Auth:** `courses.decide_appeals` (Admin and Super Admin by default).\n\n"
             "**Prerequisites:** The appeal must be `PENDING`."
         ),
         tags=["Admin — Appeals"],

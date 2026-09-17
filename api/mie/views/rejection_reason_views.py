@@ -5,7 +5,8 @@ from api.mie.models import SubmissionRejectionReason
 from api.mie.serializers.rejection_reason_serializer import (
     RejectionReasonSerializer,
 )
-from api.users.permissions import IsSuperAdminRole
+from api.authorization import codenames
+from api.authorization.permissions import Perm
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 
 
@@ -15,7 +16,7 @@ class RejectionReasonAdminViewSet(viewsets.ModelViewSet):
 
     queryset = SubmissionRejectionReason.objects.order_by("label")
     serializer_class = RejectionReasonSerializer
-    permission_classes = [IsSuperAdminRole]
+    permission_classes = [Perm(codenames.MIE_MANAGE_CONSOLE)]
     lookup_field = "id"
     filterset_fields = ["is_active"]
     # The taxonomy is soft-deactivated (is_active=false), never deleted -
@@ -34,7 +35,7 @@ class RejectionReasonAdminViewSet(viewsets.ModelViewSet):
             "rendering the rejection-reason dropdown in the submission review "
             "screen.\n\n"
 
-            "**Auth:** Requires the Super Admin role.\n\n"
+            "**Auth:** The `mie.manage_console` permission — Super Admin by default.\n\n"
 
             "**Prerequisites:** None.\n\n"
 
@@ -65,7 +66,7 @@ class RejectionReasonAdminViewSet(viewsets.ModelViewSet):
             "Called from the admin rejection-reasons management page when a "
             "new rejection category is needed.\n\n"
 
-            "**Auth:** Requires the Super Admin role.\n\n"
+            "**Auth:** The `mie.manage_console` permission — Super Admin by default.\n\n"
 
             "**Prerequisites:** None.\n\n"
 
@@ -105,7 +106,7 @@ class RejectionReasonAdminViewSet(viewsets.ModelViewSet):
             "Called from the admin rejection-reasons management page when "
             "editing or deactivating a reason.\n\n"
 
-            "**Auth:** Requires the Super Admin role.\n\n"
+            "**Auth:** The `mie.manage_console` permission — Super Admin by default.\n\n"
 
             "**Prerequisites:** The rejection reason with the given id must "
             "exist.\n\n"
@@ -138,7 +139,7 @@ class RejectionReasonAdminViewSet(viewsets.ModelViewSet):
             "Called from the admin rejection-reasons management page when "
             "viewing the details of a specific reason.\n\n"
 
-            "**Auth:** Requires the Super Admin role.\n\n"
+            "**Auth:** The `mie.manage_console` permission — Super Admin by default.\n\n"
 
             "**Prerequisites:** The rejection reason with the given id must "
             "exist.\n\n"

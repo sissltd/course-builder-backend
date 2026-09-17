@@ -8,7 +8,7 @@ from api.courses.enums import AppealStatus, CourseStatus
 from api.courses.models import Course, CourseAppeal
 from api.reviews.enums import ReviewActionType
 from api.reviews.models import ReviewAction
-from api.users.permissions import IsCreatorReviewerRole, require_role
+from api.users.workflow import REVIEWER_WORKSPACE_ROLES, require_base_role
 
 ACTIVITY_PERIODS = ("all_time", "today", "this_week", "this_month")
 """Ranges offered by the dashboard's Activity Overview dropdown."""
@@ -25,7 +25,7 @@ def get_overview(*, actor) -> dict:
     lifetime approve/reject split plus today's volume.
     """
 
-    require_role(actor, IsCreatorReviewerRole.allowed_roles)
+    require_base_role(actor, REVIEWER_WORKSPACE_ROLES)
 
     queue_statuses = (CourseStatus.SUBMITTED, CourseStatus.IN_REVIEW)
     counted = {
@@ -84,7 +84,7 @@ def get_activity_overview(*, actor, period: str = DEFAULT_ACTIVITY_PERIOD) -> di
     activity at all it degrades to today alone rather than an empty chart.
     """
 
-    require_role(actor, IsCreatorReviewerRole.allowed_roles)
+    require_base_role(actor, REVIEWER_WORKSPACE_ROLES)
 
     if period not in ACTIVITY_PERIODS:
         period = DEFAULT_ACTIVITY_PERIOD

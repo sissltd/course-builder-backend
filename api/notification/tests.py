@@ -499,3 +499,42 @@ class SlaThresholdServiceTests(TestCase):
         amber, _red = sla_threshold_service.get_effective_thresholds(user=user)
 
         self.assertEqual(amber, 10)
+
+
+class InAppPreferenceDeliveryTests(APITestCase):
+    """emit_in_app_notification honours NotificationPreference.in_app_enabled."""
+
+    def test_opted_out_receivers_are_skipped(self):
+        opted_out = make_user()
+        default = make_user()
+        NotificationPreference.objects.create(user=opted_out, in_app_enabled=False)
+
+        Notification.emit_in_app_notification(
+            receivers=[opted_out, default], title="Hello", content="Body"
+        )
+
+        self.assertFalse(Notification.objects.filter(receiver=opted_out).exists())
+        self.assertTrue(Notification.objects.filter(receiver=default).exists())
+
+    def test_critical_notifications_ignore_the_preference(self):
+        opted_out = make_user()
+        NotificationPreference.objects.create(user=opted_out, in_app_enabled=False)
+
+        Notification.emit_in_app_notification(
+            receivers=[opted_out], title="Alert", content="Body", critical=True
+        )
+
+        self.assertTrue(Notification.objects.filter(receiver=opted_out).exists())
+
+    def test_turning_in_app_off_through_the_settings_screen_stops_delivery(self):
+        user = make_user()
+        self.client.force_authenticate(user)
+        self.client.patch(
+            "/api/v1/users/me/notification-preferences/",
+            {"in_app_enabled": False},
+            format="json",
+        )
+
+        Notification.emit_in_app_notification(receivers=[user], title="Hi", content="Body")
+
+        self.assertFalse(Notification.objects.filter(receiver=user).exists())

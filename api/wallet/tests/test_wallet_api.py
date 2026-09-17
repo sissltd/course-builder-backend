@@ -174,7 +174,7 @@ class AdminWalletApiTests(APITestCase):
 
     def test_admin_can_see_a_creators_wallet(self):
         """Regression: every creator-facing wallet route is gated on
-        IsCourseCreatorRole, so an admin used to be 403'd from all of them and
+        a creator-only permission, so an admin used to be 403'd from all of them and
         had no way to answer 'what is this creator's balance?'."""
 
         self.client.force_authenticate(self.admin)

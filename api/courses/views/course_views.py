@@ -7,7 +7,8 @@ from drf_spectacular.utils import (
     extend_schema,
     extend_schema_view,
 )
-from rest_framework import exceptions
+from django.shortcuts import get_object_or_404
+from rest_framework import exceptions, serializers
 from rest_framework import filters as drf_filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -42,27 +43,42 @@ from api.courses.services import course_preview_service, course_service
 from api.reviews.serializers import ReviewActionSerializer
 from api.reviews.services import review_service
 from shared.constants.authentication import FRONTEND_URL
-from api.users.permissions import (
-    IsAdminRole,
-    IsCourseCreatorRole,
-    IsCreatorReviewerRole,
-    IsQaReviewerRole,
-)
+from api.authorization import codenames
+from api.authorization.permissions import Perm
+from api.authorization.services import permission_service
+from api.users.models import User
 from api.users.services import queue_preference_service
+from shared.response.success import custom_success_response
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 
 OWNER_SCOPED_ACTIONS = {"retrieve", "update", "partial_update", "destroy"}
 
-#: Creators reach their own courses; Admins reach any course. Composed rather
-#: than listed side by side because DRF ANDs a permission list together, which
-#: would require an Admin to also hold the creator role.
-OWNER_OR_ADMIN = (IsCourseCreatorRole & IsCourseOwner) | IsAdminRole
+#: Authors reach their own courses; holders of View Course / Edit Course reach
+#: any course. Composed rather than listed side by side because DRF ANDs a
+#: permission list together, which would require an editor to also be an author.
+OWNER_OR_VIEWER = (Perm(codenames.COURSES_CREATE) & IsCourseOwner) | Perm(
+    codenames.COURSES_VIEW
+)
+OWNER_OR_EDITOR = (Perm(codenames.COURSES_CREATE) & IsCourseOwner) | Perm(
+    codenames.COURSES_EDIT
+)
 
-#: Submission is the one owner-scoped action an Admin does NOT get a bypass on.
+#: Submission is the one owner-scoped action Edit Course does NOT bypass.
 #: Submitting is the author vouching for their own work (see
-#: course_service.submit_course), so an Admin may submit only a course they
+#: course_service.submit_course), so an editor may submit only a course they
 #: themselves created - in which case IsCourseOwner passes anyway.
-SUBMIT_PERMISSION = (IsCourseCreatorRole | IsAdminRole) & IsCourseOwner
+SUBMIT_PERMISSION = (
+    Perm(codenames.COURSES_CREATE) | Perm(codenames.COURSES_EDIT)
+) & IsCourseOwner
+
+#: The creator-side publish/pricing route keeps its stricter gate: it needs the
+#: review-side permission AND Edit Course, which together only the admin tier
+#: holds by default. The reviewer route (CourseReviewViewSet) needs only the
+#: review-side permission.
+CREATOR_ROUTE_PUBLISH = Perm(codenames.COURSES_PUBLISH) & Perm(codenames.COURSES_EDIT)
+CREATOR_ROUTE_PRICING = Perm(codenames.COURSES_SET_PRICING) & Perm(
+    codenames.COURSES_EDIT
+)
 
 _COURSE_LIST_EXAMPLE = {
     "id": "3f9a2e11-6b7c-4d2a-9e5f-1c8d4a7b2f30",
@@ -101,7 +117,7 @@ class CourseVersionViewSet(ReadOnlyModelViewSet):
     """Read-only lookup used by the draft course Versioning screen."""
 
     serializer_class = CourseVersionSerializer
-    permission_classes = [IsCourseCreatorRole]
+    permission_classes = [Perm(codenames.COURSES_CREATE)]
     queryset = CourseVersion.objects.filter(is_active=True).order_by("label")
 
 
@@ -281,9 +297,11 @@ _REVIEW_ACTION_EXAMPLE = {
 }
 
 _AUTH_LINE_COURSE = (
-    "**Auth:** Course Creator or Writer (own courses only), or Admin/Approver "
-    "(any course). A collaborator added to a course can also read/edit it "
-    "(see [api/collaborators/](../collaborators/))."
+    "**Auth:** Your own courses with `courses.create` (Course Creator and "
+    "Writer by default); any course with `courses.view` to read or "
+    "`courses.edit` to change it (Admin, Approver, Super Admin by default). A "
+    "collaborator added to a course can also read/edit it (see "
+    "[api/collaborators/](../collaborators/))."
 )
 
 
@@ -351,7 +369,8 @@ _AUTH_LINE_COURSE = (
             "time.\n\n"
             "Called from the 'Create course' action on the My Courses "
             "screen.\n\n"
-            "**Auth:** Course Creator or Writer.\n\n"
+            "**Auth:** The `courses.create` permission — Course Creator and Writer "
+            "by default.\n\n"
             "**Prerequisites:** `terms_accepted` must be `true` (BR-005) and "
             "the target category must be `ACTIVE`.\n\n"
             "**Important:** If `topic` is supplied it must belong to the "
@@ -548,7 +567,9 @@ class CourseViewSet(ModelViewSet):
     would.
     """
 
-    permission_classes = [IsCourseCreatorRole | IsAdminRole]
+    permission_classes = [
+        Perm(codenames.COURSES_CREATE, codenames.COURSES_VIEW, codenames.COURSES_EDIT)
+    ]
     filterset_class = CourseFilter
     filter_backends = [DjangoFilterBackend, drf_filters.OrderingFilter]
     ordering_fields = [
@@ -569,10 +590,13 @@ class CourseViewSet(ModelViewSet):
             # an Admin publishing a course is never its creator.
             return Course.objects.select_related("category", "topic")
 
-        is_admin = IsAdminRole().has_permission(self.request, self)
+        sees_every_course = permission_service.user_has_any_permission(
+            self.request.user, (codenames.COURSES_VIEW, codenames.COURSES_EDIT)
+        )
 
-        if is_admin:
-            # Admins have full read/write visibility across every course.
+        if sees_every_course:
+            # View Course / Edit Course holders see every course; the gates in
+            # get_permissions decide which of them may change one.
             return Course.objects.select_related("category", "topic")
 
         if self.action in {"retrieve", "update", "partial_update"}:
@@ -593,14 +617,18 @@ class CourseViewSet(ModelViewSet):
         return CourseDetailSerializer
 
     def get_permissions(self):
+        if self.action == "retrieve":
+            return [OWNER_OR_VIEWER()]
         if self.action in OWNER_SCOPED_ACTIONS:
-            return [OWNER_OR_ADMIN()]
+            return [OWNER_OR_EDITOR()]
         if self.action == "submit":
             return [SUBMIT_PERMISSION()]
-        if self.action in {"publish", "review_prices"}:
-            return [IsAdminRole()]
+        if self.action == "publish":
+            return [CREATOR_ROUTE_PUBLISH()]
+        if self.action == "review_prices":
+            return [CREATOR_ROUTE_PRICING()]
         if self.action == "create":
-            return [IsCourseCreatorRole()]
+            return [Perm(codenames.COURSES_CREATE)()]
         return super().get_permissions()
 
     def perform_destroy(self, instance):
@@ -615,10 +643,10 @@ class CourseViewSet(ModelViewSet):
             "moment, not at draft creation or at approval time.\n\n"
             "Called from the 'Submit for review' action once the creator "
             "believes the course is complete.\n\n"
-            "**Auth:** The course's own Course Creator/Writer, or an Admin "
-            "submitting a course they themselves created (an Admin cannot "
-            "submit someone else's course - submission is the author "
-            "vouching for their own work).\n\n"
+            "**Auth:** The course's own author, holding `courses.create` or "
+            "`courses.edit`. Edit Course does not let anyone submit someone "
+            "else's course - submission is the author vouching for their own "
+            "work.\n\n"
             "**Prerequisites:** The course must be `DRAFT` and pass "
             "structural validation (minimum modules/lessons, learning "
             "objectives, assessments, etc. per SCCS PRD structural "
@@ -702,7 +730,8 @@ class CourseViewSet(ModelViewSet):
             "Each row is one tab: `SOLUDESK`, `COURSERA`, or `UDEMY`.\n\n"
             "Called when an Admin opens Review and publish from the Approved "
             "Courses table.\n\n"
-            "**Auth:** Admin, Approver, or Super Admin.\n\n"
+            "**Auth:** `courses.set_pricing` and `courses.edit` together — Admin, "
+            "Approver and Super Admin by default.\n\n"
             "**Prerequisites:** The course must exist. Pricing rows are empty until "
             "they are saved with PUT.\n\n"
             "**Important:** `creator_payout_fixed` comes from the creator price "
@@ -736,7 +765,8 @@ class CourseViewSet(ModelViewSet):
             "are updated; omitted channels are left unchanged.\n\n"
             "Called when the Admin selects Continue after reviewing the channel "
             "prices.\n\n"
-            "**Auth:** Admin, Approver, or Super Admin.\n\n"
+            "**Auth:** `courses.set_pricing` and `courses.edit` together — Admin, "
+            "Approver and Super Admin by default.\n\n"
             "**Prerequisites:** The course must be `APPROVED`. At least one channel "
             "is required, and each channel may occur only once.\n\n"
             "**Important:** Money fields are decimal strings. `model` accepts "
@@ -795,7 +825,8 @@ class CourseViewSet(ModelViewSet):
             "future integration workers.\n\n"
             "Called when the Admin presses Continue on the Review and publish "
             "overview modal.\n\n"
-            "**Auth:** Admin, Approver, or Super Admin.\n\n"
+            "**Auth:** `courses.publish` and `courses.edit` together — Admin, "
+            "Approver and Super Admin by default.\n\n"
             "**Prerequisites:** The course must be `APPROVED`. Existing clients may "
             "publish without pricing; the Figma workflow supplies or first saves at "
             "least one distribution channel.\n\n"
@@ -884,7 +915,8 @@ class CourseViewSet(ModelViewSet):
             "Returns the media inventory and technical evidence registered for a "
             "course. Creators use it to confirm what QA will evaluate.\n\n"
             "Called while preparing a course for QA verification.\n\n"
-            "**Auth:** Course Creator (own course only) or Admin.\n\n"
+            "**Auth:** Your own course with `courses.create`, or any course with "
+            "`courses.view`/`courses.edit` (Admin, Approver, Super Admin by default).\n\n"
             "**Prerequisites:** The course must exist and be accessible to the caller.\n\n"
             "**Important:** Course-level preview videos and thumbnails do not have a "
             "`lesson`; lesson media does."
@@ -926,7 +958,8 @@ class CourseViewSet(ModelViewSet):
             "video, audio, caption, and accessibility requirements. It does not upload "
             "the file itself.\n\n"
             "Called after a media file has been uploaded and its accessible URL is known.\n\n"
-            "**Auth:** Course Creator (own course only) or Admin.\n\n"
+            "**Auth:** Your own course with `courses.create`, or any course with "
+            "`courses.view`/`courses.edit` (Admin, Approver, Super Admin by default).\n\n"
             "**Prerequisites:** The course must exist; any supplied `lesson` must belong "
             "to that course.\n\n"
             "**Important:** Register a `VIDEO` for each lesson and the required "
@@ -984,7 +1017,8 @@ class CourseViewSet(ModelViewSet):
             "`preview_url`, or share it with a reviewer who is not signed "
             "in \u2014 the token in the link is the authorisation, so no "
             "account is required to open it.\n\n"
-            "**Auth:** Anyone with access to the course.\n\n"
+            "**Auth:** Anyone with access to the course: its author or a "
+            "collaborator (`courses.create`), or `courses.view`/`courses.edit`.\n\n"
             "**Prerequisites:** The course must exist and be accessible to "
             "the caller.\n\n"
             "**Important:** The link expires 15 minutes after it is issued "
@@ -1056,8 +1090,10 @@ class CourseViewSet(ModelViewSet):
             "and Published for context, oldest-submitted-first. This is the "
             "table behind the review queue screen.\n\n"
             "Called when the review queue screen loads.\n\n"
-            "**Auth:** Creator Reviewer, QA Reviewer, Verifier, or Admin.\n\n"
-            "**Prerequisites:** None beyond holding one of those roles.\n\n"
+            "**Auth:** `courses.approve`, `courses.reject` or `courses.view` — "
+            "Creator Reviewer, Verifier, QA Reviewer, Admin, Approver and Super "
+            "Admin by default.\n\n"
+            "**Prerequisites:** None.\n\n"
             "**Important:** Narrow with `?status=SUBMITTED` (or any "
             "`CourseStatus` value) to show only one stage. Results are "
             "paginated and ordered by `submitted_at` ascending, so the "
@@ -1081,7 +1117,9 @@ class CourseViewSet(ModelViewSet):
             "Returns a single course's full detail for the reviewer to "
             "inspect before deciding to claim/approve/reject it.\n\n"
             "Called when a reviewer opens a course from the queue.\n\n"
-            "**Auth:** Creator Reviewer, Verifier, or Admin.\n\n"
+            "**Auth:** `courses.approve`, `courses.reject` or `courses.view` — "
+            "Creator Reviewer, Verifier, QA Reviewer, Admin, Approver and Super "
+            "Admin by default.\n\n"
             "**Prerequisites:** The course must exist.\n\n"
             "**Important:** Any course id is retrievable here regardless of "
             "status, so acting on it in the wrong status produces a 400 from "
@@ -1116,7 +1154,14 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
     than a misleading 404.
     """
 
-    permission_classes = [IsCreatorReviewerRole | IsQaReviewerRole | IsAdminRole]
+    #: Browsing the queue and a course's review detail: anyone who decides
+    #: reviews, or may view any course. Deciding actions narrow further in
+    #: get_permissions.
+    permission_classes = [
+        Perm(
+            codenames.COURSES_APPROVE, codenames.COURSES_REJECT, codenames.COURSES_VIEW
+        )
+    ]
     filterset_class = CourseReviewQueueFilter
     filter_backends = [
         DjangoFilterBackend,
@@ -1222,10 +1267,20 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
         return ReviewerCourseDetailSerializer
 
     def get_permissions(self):
-        if self.action in {"qa_claim", "qa_approve", "qa_reject"}:
-            return [(IsQaReviewerRole | IsAdminRole)()]
-        if self.action in {"review_prices", "publish"}:
-            return [(IsCreatorReviewerRole | IsAdminRole)()]
+        # Which seat a caller may sit is workflow, checked in review_service
+        # against their base role (SEAT_ROLES / QA_SEAT_ROLES) or Assign Course.
+        if self.action in {"claim", "qa_claim"}:
+            return [Perm(codenames.COURSES_APPROVE, codenames.COURSES_REJECT)()]
+        if self.action in {"approve", "content_approve", "qa_approve"}:
+            return [Perm(codenames.COURSES_APPROVE)()]
+        if self.action in {"reject", "content_reject", "qa_reject"}:
+            return [Perm(codenames.COURSES_REJECT)()]
+        if self.action in {"assign", "assignable_reviewers"}:
+            return [Perm(codenames.COURSES_ASSIGN)()]
+        if self.action == "review_prices":
+            return [Perm(codenames.COURSES_SET_PRICING)()]
+        if self.action == "publish":
+            return [Perm(codenames.COURSES_PUBLISH)()]
         return [permission() for permission in self.permission_classes]
 
     def _list_current_screen(self, request):
@@ -1246,8 +1301,10 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
             "Returns only Submitted courses for the Pending table. The source "
             "filter drives the Creators and Created with AI tabs shown in the design.\n\n"
             "Called when the reviewer opens Pending or changes a table filter.\n\n"
-            "**Auth:** Creator Reviewer, QA Reviewer, Verifier, or Admin.\n\n"
-            "**Prerequisites:** None beyond holding one of those roles.\n\n"
+            "**Auth:** `courses.approve`, `courses.reject` or `courses.view` — "
+            "Creator Reviewer, Verifier, QA Reviewer, Admin, Approver and Super "
+            "Admin by default.\n\n"
+            "**Prerequisites:** None.\n\n"
             "**Important:** This route always enforces `SUBMITTED`; a supplied "
             "status cannot widen it. Rows are paginated under `data.results`. "
             "The queue is scoped to the seats you can actually take: a "
@@ -1288,8 +1345,10 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
             "Returns only Approved courses for the Approved Courses table, including "
             "the reviewer, review timestamp, reviewer note, and course drawer fields.\n\n"
             "Called when the reviewer opens Approved Courses or changes a filter.\n\n"
-            "**Auth:** Creator Reviewer, QA Reviewer, Verifier, or Admin.\n\n"
-            "**Prerequisites:** None beyond holding one of those roles.\n\n"
+            "**Auth:** `courses.approve`, `courses.reject` or `courses.view` — "
+            "Creator Reviewer, Verifier, QA Reviewer, Admin, Approver and Super "
+            "Admin by default.\n\n"
+            "**Prerequisites:** None.\n\n"
             "**Important:** Results default to newest approval first. Use the course "
             "detail, review-prices, and publish routes for the drawer workflow."
         ),
@@ -1325,8 +1384,10 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
             "Returns only In Review courses with assigned reviewer and last-reviewed "
             "metadata for the In Review table and information drawer.\n\n"
             "Called when the reviewer opens In Review or changes a table filter.\n\n"
-            "**Auth:** Creator Reviewer, QA Reviewer, Verifier, or Admin.\n\n"
-            "**Prerequisites:** None beyond holding one of those roles.\n\n"
+            "**Auth:** `courses.approve`, `courses.reject` or `courses.view` — "
+            "Creator Reviewer, Verifier, QA Reviewer, Admin, Approver and Super "
+            "Admin by default.\n\n"
+            "**Prerequisites:** None.\n\n"
             "**Important:** Results default to most recently submitted first and "
             "remain fixed to `IN_REVIEW`."
         ),
@@ -1363,8 +1424,10 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
             "Returns only Published courses with creator price, destination channels, "
             "approver, source, owner, and per-channel drawer data.\n\n"
             "Called when the reviewer opens Published Courses or changes a filter.\n\n"
-            "**Auth:** Creator Reviewer, QA Reviewer, Verifier, or Admin.\n\n"
-            "**Prerequisites:** None beyond holding one of those roles.\n\n"
+            "**Auth:** `courses.approve`, `courses.reject` or `courses.view` — "
+            "Creator Reviewer, Verifier, QA Reviewer, Admin, Approver and Super "
+            "Admin by default.\n\n"
+            "**Prerequisites:** None.\n\n"
             "**Important:** Results default to newest publication first. Marketplace "
             "channel status can remain Queued after the local course is Published."
         ),
@@ -1401,7 +1464,8 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
             "Returns the saved SoluDesk, Coursera, and Udemy pricing tabs for an "
             "Approved course. The fields correspond directly to the Figma Review modal.\n\n"
             "Called from Review Prices in the Approved Course information drawer.\n\n"
-            "**Auth:** Creator Reviewer, Verifier, Approver, or Admin.\n\n"
+            "**Auth:** The `courses.set_pricing` permission — Creator Reviewer, "
+            "Verifier, Admin, Approver and Super Admin by default.\n\n"
             "**Prerequisites:** The course must be `APPROVED`.\n\n"
             "**Important:** `creator_payout_fixed` is read-only and comes from the "
             "submission price snapshot. Money values are decimal strings."
@@ -1433,7 +1497,8 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
             "input corresponds to the learner price, MIE suggestion, model, fee, "
             "promotional pricing, explanation, or comparable-course fields in Figma.\n\n"
             "Called when the reviewer continues from the pricing review step.\n\n"
-            "**Auth:** Creator Reviewer, Verifier, Approver, or Admin.\n\n"
+            "**Auth:** The `courses.set_pricing` permission — Creator Reviewer, "
+            "Verifier, Admin, Approver and Super Admin by default.\n\n"
             "**Prerequisites:** The course must be `APPROVED`; at least one unique "
             "distribution channel is required.\n\n"
             "**Important:** Omitted channels are left unchanged. Coursera and Udemy "
@@ -1490,7 +1555,8 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
             "Confirms the Review and publish overview and moves an Approved course "
             "to Published. Pricing can be supplied here or saved in the prior step.\n\n"
             "Called when the reviewer presses Continue on Review and publish.\n\n"
-            "**Auth:** Creator Reviewer, Verifier, Approver, or Admin.\n\n"
+            "**Auth:** The `courses.publish` permission — Creator Reviewer, "
+            "Verifier, Admin, Approver and Super Admin by default.\n\n"
             "**Prerequisites:** The course must be `APPROVED` and an active course "
             "version must exist.\n\n"
             "**Important:** Publication is atomic and has no unpublish action. "
@@ -1551,8 +1617,10 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
             "reviewer is now working on it.\n\n"
             "Called when a reviewer opens a Submitted course and starts "
             "reviewing it.\n\n"
-            "**Auth:** First and Second Review take a Creator Reviewer, "
-            "Verification takes a Verifier; Admin may take any seat.\n\n"
+            "**Auth:** `courses.approve` or `courses.reject`, and a base role "
+            "that sits the seat: First and Second Review take a Creator "
+            "Reviewer, Verification takes a Verifier. `courses.assign` (Admin, "
+            "Approver, Super Admin by default) may take any seat.\n\n"
             "**Prerequisites:** The course must be `SUBMITTED` or already "
             "`IN_REVIEW`; the reviewer must not be marked Unavailable.\n\n"
             "**Important:** Content review has three seats, in order - First "
@@ -1622,8 +1690,9 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
             "and moves the course to mandatory QA verification. Creator "
             "payment occurs only after QA approval.\n\n"
             "Called from the 'Approve' action on the review screen.\n\n"
-            "**Auth:** The seat's reviewer - Creator Reviewer for First and "
-            "Second Review, Verifier for Verification - or Admin.\n\n"
+            "**Auth:** `courses.approve`, and a base role that sits the current seat - "
+            "Creator Reviewer for First and Second Review, Verifier for "
+            "Verification - or `courses.assign` for any seat.\n\n"
             "**Prerequisites:** The course must be `SUBMITTED` or "
             "`IN_REVIEW` and you must hold its current seat; the reviewer "
             "must not be marked Unavailable.\n\n"
@@ -1694,8 +1763,9 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
             "currently at. This explicit route has the same behaviour as the "
             "standard approve action.\n\n"
             "Called when a content reviewer completes their review.\n\n"
-            "**Auth:** The seat's reviewer - Creator Reviewer for First and "
-            "Second Review, Verifier for Verification - or Admin.\n\n"
+            "**Auth:** `courses.approve`, and a base role that sits the current seat - "
+            "Creator Reviewer for First and Second Review, Verifier for "
+            "Verification - or `courses.assign` for any seat.\n\n"
             "**Prerequisites:** The course must be `SUBMITTED` or "
             "`IN_REVIEW`, and you must hold its current seat.\n\n"
             "**Important:** This advances one seat at a time; only the "
@@ -1737,8 +1807,9 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
             "creator can revise and resubmit (per PRD 'Returns to Draft. "
             "Creator revises.'). No wallet credit occurs.\n\n"
             "Called from the 'Reject' action on the review screen.\n\n"
-            "**Auth:** The seat's reviewer - Creator Reviewer for First and "
-            "Second Review, Verifier for Verification - or Admin.\n\n"
+            "**Auth:** `courses.reject`, and a base role that sits the current seat - "
+            "Creator Reviewer for First and Second Review, Verifier for "
+            "Verification - or `courses.assign` for any seat.\n\n"
             "**Prerequisites:** The course must be `SUBMITTED` or "
             "`IN_REVIEW` and you must hold its current seat; the reviewer "
             "must not be marked Unavailable; `feedback.summary` must be a "
@@ -1842,7 +1913,9 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
             "the creator to revise. This explicit route has the same behaviour as the "
             "standard reject action.\n\n"
             "Called when a content reviewer finds blocking issues.\n\n"
-            "**Auth:** Creator Reviewer, Verifier, or Admin.\n\n"
+            "**Auth:** `courses.reject`, and a base role that sits the current seat - "
+            "Creator Reviewer for First and Second Review, Verifier for "
+            "Verification - or `courses.assign` for any seat.\n\n"
             "**Prerequisites:** The course must be `SUBMITTED` or `IN_REVIEW`, and "
             "`feedback.summary` must be non-empty.\n\n"
             "**Important:** The rejection feedback is shown to the creator; make it "
@@ -1887,7 +1960,8 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
             "Claims a course in QA verification for the authenticated QA reviewer. "
             "The assignment identifies who is accountable for the final quality gate.\n\n"
             "Called when a QA reviewer begins checking a course that passed content review.\n\n"
-            "**Auth:** QA Reviewer or Admin.\n\n"
+            "**Auth:** `courses.approve` or `courses.reject` and the QA Reviewer base role, or `courses.assign` "
+            "(Admin, Approver, Super Admin by default).\n\n"
             "**Prerequisites:** The course must be in `QA_VERIFICATION` and the caller "
             "must be available.\n\n"
             "**Important:** A course already claimed by another QA reviewer cannot be "
@@ -1928,7 +2002,8 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
             "Completes the QA quality gate, approves the course, and credits the creator "
             "when the course originated from a creator.\n\n"
             "Called after the QA reviewer has verified all required media and quality checks.\n\n"
-            "**Auth:** QA Reviewer or Admin.\n\n"
+            "**Auth:** `courses.approve` and the QA Reviewer base role, or `courses.assign` "
+            "(Admin, Approver, Super Admin by default).\n\n"
             "**Prerequisites:** The course must be `QA_VERIFICATION`, the caller must be "
             "available, and required media checks must pass.\n\n"
             "**Important:** This action creates the final approval and can credit the "
@@ -1981,7 +2056,8 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
             "Rejects a course at the QA quality gate and returns it to Draft so the "
             "creator can correct media or accessibility issues.\n\n"
             "Called when required QA checks or media evidence fail.\n\n"
-            "**Auth:** QA Reviewer or Admin.\n\n"
+            "**Auth:** `courses.reject` and the QA Reviewer base role, or `courses.assign` "
+            "(Admin, Approver, Super Admin by default).\n\n"
             "**Prerequisites:** The course must be `QA_VERIFICATION` and "
             "`feedback.summary` must be non-empty.\n\n"
             "**Important:** The feedback is delivered to the creator and should identify "
@@ -2040,7 +2116,9 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
             "Returns comments recorded by content and QA reviewers for a course. These "
             "comments explain the issues the creator must address.\n\n"
             "Called when a reviewer or creator opens the course review history.\n\n"
-            "**Auth:** Creator Reviewer, QA Reviewer, or Admin.\n\n"
+            "**Auth:** `courses.approve`, `courses.reject` or `courses.view` — "
+            "Creator Reviewer, Verifier, QA Reviewer, Admin, Approver and Super "
+            "Admin by default.\n\n"
             "**Prerequisites:** The course must exist.\n\n"
             "**Important:** Comments are returned across both review stages; inspect the "
             "`stage` field to distinguish them."
@@ -2065,7 +2143,9 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
             "Adds a reviewer comment to a course, optionally attached to one module or "
             "lesson. The comment becomes part of the review record returned to the client.\n\n"
             "Called while documenting a content or QA finding.\n\n"
-            "**Auth:** Creator Reviewer, QA Reviewer, or Admin.\n\n"
+            "**Auth:** `courses.approve`, `courses.reject` or `courses.view` — "
+            "Creator Reviewer, Verifier, QA Reviewer, Admin, Approver and Super "
+            "Admin by default.\n\n"
             "**Prerequisites:** The course must exist; supplied module and lesson IDs must "
             "belong to it.\n\n"
             "**Important:** Comments are not automatically resolved when a course changes "
@@ -2126,6 +2206,13 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
         return Response(ReviewCommentSerializer(comment).data, status=201)
 
 
+class AssignCourseSerializer(serializers.Serializer):
+    reviewer_id = serializers.UUIDField(help_text="The reviewer to put in the seat.")
+    replace = serializers.BooleanField(
+        default=False, help_text="Take the seat over from its current holder."
+    )
+
+
 @extend_schema_view(
     list=extend_schema(
         summary="List courses for administration", tags=["Admin — Courses"]
@@ -2175,4 +2262,166 @@ class AdminCourseViewSet(CourseReviewViewSet):
             "quality_findings",
             "review_assignments__reviewer",
             "review_comments__reviewer",
+        )
+
+    @extend_schema(
+        summary="List reviewers a course can be assigned to",
+        description=(
+            "Returns the reviewers who could take the seat the course is waiting "
+            "on: its current content seat, or QA when it is in QA verification.\n\n"
+            "Called when opening the Assign dialog on the admin courses table.\n\n"
+            "**Auth:** The `courses.assign` permission (Assign Course) — Admin, "
+            "Approver and Super Admin by default.\n\n"
+            "**Prerequisites:** The course must be Submitted, In Review or in QA "
+            "verification.\n\n"
+            "**Important:** Reviewers whose base role cannot sit the seat, or who "
+            "decided an earlier seat on this course, are left out. Unavailable "
+            "reviewers are listed with `is_available: false`; assigning them is 400."
+        ),
+        tags=["Admin — Courses"],
+        responses={
+            200: OpenApiResponse(
+                description="Candidate reviewers.",
+                examples=[
+                    OpenApiExample(
+                        name="Success",
+                        value={
+                            "success": True,
+                            "status": 200,
+                            "message": "Retrieved successfully",
+                            "data": [
+                                {
+                                    "id": "9f8e7d6c-5b4a-4321-8765-0fedcba98765",
+                                    "email": "ada@example.com",
+                                    "full_name": "Ada Obi",
+                                    "role": "CREATOR_REVIEWER",
+                                    "seat": "SECOND_REVIEW",
+                                    "is_available": True,
+                                    "holds_seat": False,
+                                }
+                            ],
+                        },
+                    )
+                ],
+            ),
+            **STANDARD_ERROR_RESPONSES["validation"],
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
+            **STANDARD_ERROR_RESPONSES["not_found"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
+    @action(detail=True, methods=["get"], url_path="assignable-reviewers")
+    def assignable_reviewers(self, request, pk=None):
+        course = get_object_or_404(Course, pk=pk)
+        rows = review_service.assignable_reviewers(actor=request.user, course=course)
+        return custom_success_response(
+            status=200,
+            message="Retrieved successfully",
+            data=[
+                {
+                    "id": str(row["user"].id),
+                    "email": row["user"].email,
+                    "full_name": row["user"].get_full_name(),
+                    "role": row["user"].role,
+                    "seat": row["seat"],
+                    "is_available": row["is_available"],
+                    "holds_seat": row["holds_seat"],
+                }
+                for row in rows
+            ],
+        )
+
+    @extend_schema(
+        summary="Assign a course to a reviewer",
+        description=(
+            "Puts a reviewer in the seat the course is waiting on, as if they had "
+            "claimed it, and notifies them.\n\n"
+            "**Auth:** The `courses.assign` permission (Assign Course) — Admin, "
+            "Approver and Super Admin by default.\n\n"
+            "**Prerequisites:** The course must be Submitted, In Review or in QA "
+            "verification. The reviewer must be able to sit the seat themselves: "
+            "a base role for that seat, a review permission, not having decided "
+            "an earlier seat on this course, and not marked Unavailable.\n\n"
+            "**Important:** A seat someone else already holds returns 409 unless "
+            "`replace` is true; with `replace` the previous holder is notified. "
+            "Assigning the current holder again changes nothing."
+        ),
+        tags=["Admin — Courses"],
+        request=AssignCourseSerializer,
+        examples=[
+            OpenApiExample(
+                name="Sample Request",
+                request_only=True,
+                value={
+                    "reviewer_id": "9f8e7d6c-5b4a-4321-8765-0fedcba98765",
+                    "replace": False,
+                },
+            )
+        ],
+        responses={
+            200: OpenApiResponse(
+                description="The seat and who now holds it.",
+                examples=[
+                    OpenApiExample(
+                        name="Assigned",
+                        value={
+                            "success": True,
+                            "status": 200,
+                            "message": "Course assigned.",
+                            "data": {
+                                "course_id": "3f9a2e11-6b7c-4d2a-9e5f-1c8d4a7b2f30",
+                                "seat": "SECOND_REVIEW",
+                                "reviewer_id": "9f8e7d6c-5b4a-4321-8765-0fedcba98765",
+                            },
+                        },
+                    )
+                ],
+            ),
+            **STANDARD_ERROR_RESPONSES["validation"],
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
+            **STANDARD_ERROR_RESPONSES["not_found"],
+            409: OpenApiResponse(
+                description="Another reviewer holds the seat and `replace` was not set.",
+                examples=[
+                    OpenApiExample(
+                        name="Held",
+                        value={
+                            "errors": [
+                                {
+                                    "type": "client_error",
+                                    "code": "seat_already_assigned",
+                                    "message": "Another reviewer holds this seat. Send replace=true to reassign it.",
+                                    "field_name": None,
+                                }
+                            ]
+                        },
+                    )
+                ],
+            ),
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
+    @action(detail=True, methods=["post"])
+    def assign(self, request, pk=None):
+        serializer = AssignCourseSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        course = get_object_or_404(Course, pk=pk)
+        reviewer = get_object_or_404(User, pk=serializer.validated_data["reviewer_id"])
+        assignment = review_service.assign_seat(
+            actor=request.user,
+            course=course,
+            reviewer=reviewer,
+            replace=serializer.validated_data["replace"],
+            request=request,
+        )
+        return custom_success_response(
+            status=200,
+            message="Course assigned.",
+            data={
+                "course_id": str(course.id),
+                "seat": assignment.stage,
+                "reviewer_id": str(reviewer.id),
+            },
         )

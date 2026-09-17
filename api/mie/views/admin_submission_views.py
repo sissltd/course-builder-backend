@@ -21,7 +21,8 @@ from api.mie.serializers.admin_submission_serializer import (
     SubmissionDecisionSerializer,
 )
 from api.mie.services import submission_admin_service
-from api.users.permissions import IsSuperAdminRole
+from api.authorization import codenames
+from api.authorization.permissions import Perm
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 
 
@@ -93,7 +94,7 @@ class MieSubmissionAdminViewSet(viewsets.ReadOnlyModelViewSet):
         ).order_by("-created_datetime")
     )
     serializer_class = AdminSubmissionSerializer
-    permission_classes = [IsSuperAdminRole]
+    permission_classes = [Perm(codenames.MIE_MANAGE_CONSOLE)]
     filterset_class = AdminSubmissionFilterSet
     lookup_field = "id"
 
@@ -108,7 +109,7 @@ class MieSubmissionAdminViewSet(viewsets.ReadOnlyModelViewSet):
             "Call this endpoint at the start of each admin review session "
             "to pull the latest queue state, or refresh after deciding on "
             "a submission to see the updated pipeline.\n\n"
-            "**Auth:** Superadmin role required.\n\n"
+            "**Auth:** The `mie.manage_console` permission — Super Admin by default.\n\n"
             "**Prerequisites:** None.\n\n"
             "**Important:** Results are ordered newest-first by default. "
             "Use the search and filter parameters to narrow the queue; "
@@ -180,7 +181,7 @@ class MieSubmissionAdminViewSet(viewsets.ReadOnlyModelViewSet):
             "Call this endpoint when you need the complete picture of a "
             "submission before approving, rejecting, or updating its "
             "signal metadata.\n\n"
-            "**Auth:** Superadmin role required.\n\n"
+            "**Auth:** The `mie.manage_console` permission — Super Admin by default.\n\n"
             "**Prerequisites:** The submission must exist and be "
             "accessible.\n\n"
             "**Important:** None."
@@ -248,7 +249,7 @@ class MieSubmissionAdminViewSet(viewsets.ReadOnlyModelViewSet):
             "Call this endpoint after reviewing a submission's detail and "
             "confirming it meets quality standards. Once approved the "
             "developer is notified immediately and the payout flow begins.\n\n"
-            "**Auth:** Superadmin role required.\n\n"
+            "**Auth:** The `mie.manage_console` permission — Super Admin by default.\n\n"
             "**Prerequisites:** The submission must exist and be "
             "accessible.\n\n"
             "**Important:** Approval fires a SUBMISSION_APPROVED webhook "
@@ -327,7 +328,7 @@ class MieSubmissionAdminViewSet(viewsets.ReadOnlyModelViewSet):
             "determining it does not meet quality standards. The rejection "
             "reason is required so the developer receives actionable "
             "feedback.\n\n"
-            "**Auth:** Superadmin role required.\n\n"
+            "**Auth:** The `mie.manage_console` permission — Super Admin by default.\n\n"
             "**Prerequisites:** The submission must exist and be "
             "accessible. The `rejection_reason` label must match an "
             "active SubmissionRejectionReason record.\n\n"
@@ -435,7 +436,7 @@ class MieSubmissionAdminViewSet(viewsets.ReadOnlyModelViewSet):
             "submission. Demand signals are used by the Recommendations "
             "engine to decide which approved ideas get surfaced first in "
             "the catalog.\n\n"
-            "**Auth:** Superadmin role required.\n\n"
+            "**Auth:** The `mie.manage_console` permission — Super Admin by default.\n\n"
             "**Prerequisites:** The submission must exist and be "
             "accessible.\n\n"
             "**Important:** This endpoint only sets advisory metadata — "
@@ -524,7 +525,7 @@ class MieSubmissionAdminViewSet(viewsets.ReadOnlyModelViewSet):
             "the payout pipeline, for example when it was submitted as a "
             "test or violates the developer agreement, without rejecting "
             "the idea itself.\n\n"
-            "**Auth:** Superadmin role required.\n\n"
+            "**Auth:** The `mie.manage_console` permission — Super Admin by default.\n\n"
             "**Prerequisites:** The submission must exist and be "
             "accessible.\n\n"
             "**Important:** Fires a SUBMISSION_PAYOUT_BYPASS_UPDATED "

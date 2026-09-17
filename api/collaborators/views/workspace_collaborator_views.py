@@ -13,7 +13,8 @@ from rest_framework.viewsets import ModelViewSet
 from api.collaborators.filters import WorkspaceCollaboratorFilter
 from api.collaborators.models import CourseCollaborator, WorkspaceCollaborator
 from api.collaborators.serializers import WorkspaceCollaboratorSerializer
-from api.users.permissions import IsCourseCreatorRole
+from api.authorization import codenames
+from api.authorization.permissions import Perm
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 
 
@@ -28,7 +29,7 @@ from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
             "Supports `search`, `role`, `category`, `date_from`, and `date_to` "
             "filters used by the desktop and mobile designs. Removed people "
             "are hidden from this list by default.\n\n"
-            "**Auth:** Course Creator or Writer."
+            "**Auth:** The `courses.create` permission (Course Creator and Writer by default)."
         ),
         tags=["Creator — Collaborators"],
         responses={
@@ -43,7 +44,7 @@ from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
             "Adds a person to the caller's roster by email (they need no "
             "account yet) with a platform-wide role of ADMIN, AUTHOR, or "
             "COLLABORATOR. Duplicate emails per workspace are rejected.\n\n"
-            "**Auth:** Course Creator or Writer."
+            "**Auth:** The `courses.create` permission (Course Creator and Writer by default)."
         ),
         tags=["Creator — Collaborators"],
         request=WorkspaceCollaboratorSerializer,
@@ -58,7 +59,7 @@ from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
         summary="Update a workspace collaborator",
         description=(
             "Updates role or demographic fields for one roster entry.\n\n"
-            "**Auth:** Course Creator or Writer (roster owner)."
+            "**Auth:** The `courses.create` permission (Course Creator and Writer by default); the roster owner."
         ),
         tags=["Creator — Collaborators"],
         request=WorkspaceCollaboratorSerializer,
@@ -76,7 +77,7 @@ from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
             "is stamped, the row is not deleted) so past course "
             "audit trail stays intact. Active access grants on courses owned "
             "by the caller are revoked at the same time.\n\n"
-            "**Auth:** Course Creator or Writer (roster owner)."
+            "**Auth:** The `courses.create` permission (Course Creator and Writer by default); the roster owner."
         ),
         tags=["Creator — Collaborators"],
         responses={
@@ -97,7 +98,7 @@ class WorkspaceCollaboratorViewSet(ModelViewSet):
     """
 
     serializer_class = WorkspaceCollaboratorSerializer
-    permission_classes = [IsCourseCreatorRole]
+    permission_classes = [Perm(codenames.COURSES_CREATE)]
     http_method_names = ["get", "post", "patch", "delete", "head", "options"]
     filter_backends = [DjangoFilterBackend, drf_filters.OrderingFilter]
     filterset_class = WorkspaceCollaboratorFilter

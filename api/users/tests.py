@@ -1230,7 +1230,7 @@ class CreateSuperuserTests(TestCase):
     """Regression cover for shell-created superusers.
 
     create_superuser used to leave `role` at its COURSE_CREATOR default while
-    setting is_superuser=True. Because HasRole and require_role both bypass on
+    setting is_superuser=True. Because permission_service grants superusers every permission on
     that flag, the result was a full-authority account that reported itself as
     a public creator and escaped the one-seat unique index entirely.
     """

@@ -178,7 +178,7 @@ class AuthenticationService(TsesAuthenticationInterface):
 
         _token, raw_token = token_service.issue_token(user=user, purpose=purpose)
         if purpose == TokenPurpose.PASSWORD_RESET:
-            self._send_password_reset_email(user=user, raw_token=raw_token)
+            self.send_password_reset_email(user=user, raw_token=raw_token)
         else:
             self._send_signup_verification_email(user=user, raw_token=raw_token)
 
@@ -344,7 +344,7 @@ class AuthenticationService(TsesAuthenticationInterface):
         _token, raw_token = token_service.issue_token(
             user=user, purpose=TokenPurpose.PASSWORD_RESET
         )
-        self._send_password_reset_email(user=user, raw_token=raw_token)
+        self.send_password_reset_email(user=user, raw_token=raw_token)
 
     @staticmethod
     def _get_user_or_404(email: str) -> User:
@@ -371,7 +371,7 @@ class AuthenticationService(TsesAuthenticationInterface):
         )
 
     @staticmethod
-    def _send_password_reset_email(*, user: User, raw_token: str) -> None:
+    def send_password_reset_email(*, user: User, raw_token: str) -> None:
         link = build_verification_link(
             path="/auth/reset-password", email=user.email, token=raw_token
         )
@@ -414,7 +414,9 @@ _WORKSPACE_BY_ROLE = {
 }
 
 
-def finish_login(*, user: User, request=None, mfa_verified: bool) -> dict:
+def finish_login(
+    *, user: User, request=None, mfa_verified: bool, mfa_challenged: bool = False
+) -> dict:
     """Shared tail of a successful login, called once the caller has already
     decided the account is fully authenticated - either LoginSerializer
     (password-only, no MFA required or not yet enrolled) or the MFA-verify
@@ -426,6 +428,10 @@ def finish_login(*, user: User, request=None, mfa_verified: bool) -> dict:
     IsMFAVerifiedForSession - True only when this login actually completed
     an MFA challenge (or the role never required one), never merely because
     the account happens to be inside its enrollment grace period.
+
+    `mfa_challenged` is stricter: True only when this login passed an MFA
+    challenge. IsStrongMFASession reads it for money and identity actions,
+    which need a real second factor whatever the caller's role.
 
     Local import of LoginSerializer avoids a module-level import cycle:
     login_serializer.py imports this module already.
@@ -440,6 +446,7 @@ def finish_login(*, user: User, request=None, mfa_verified: bool) -> dict:
     )
     refresh["sid"] = str(session.id)
     refresh["mfa_verified"] = mfa_verified
+    refresh["mfa_challenged"] = mfa_challenged
     access = refresh.access_token
 
     activity_service.log_auth_activity(

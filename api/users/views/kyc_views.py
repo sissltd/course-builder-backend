@@ -26,7 +26,8 @@ from api.users.enums import (
 from api.users.exceptions import SISSLError, SISSLLivenessFailed
 from api.users.filters import KYCReviewQueueFilter
 from api.users.models import KYCVerification, User
-from api.users.permissions import IsAdminOrSuperAdminRole
+from api.authorization import codenames
+from api.authorization.permissions import Perm
 from api.users.serializers import (
     KYCReviewApproveSerializer,
     KYCReviewRejectSerializer,
@@ -125,8 +126,9 @@ class KYCVerificationView(APIView):
             "Lists KYC submissions for admin review. Defaults to PENDING "
             "submissions (the actual queue), narrowable via the `status` "
             "query parameter.\n\n"
-            "**Auth:** Admin or Super Admin.\n\n"
-            "**Prerequisites:** Authenticated Admin or Super Admin.\n\n"
+            "**Auth:** The `creators.approve_account` permission (Approve Account) "
+            "— Admin and Super Admin by default.\n\n"
+            "**Prerequisites:** None.\n\n"
             "**Important:** The `user` field captures the submitted user information while `kyc_user_data` captures the data returned from the KYC provider. `kyc_request_status` reflects the status of the request with the KYC provider — `found` or `not found`"
         ),
         tags=["Admin — KYC Review"],
@@ -142,8 +144,9 @@ class KYCVerificationView(APIView):
         description=(
             "Returns a single KYC submission, including the submitting "
             "user and raw `id_number`.\n\n"
-            "**Auth:** Admin or Super Admin.\n\n"
-            "**Prerequisites:** Authenticated Admin or Super Admin.\n\n"
+            "**Auth:** The `creators.approve_account` permission (Approve Account) "
+            "— Admin and Super Admin by default.\n\n"
+            "**Prerequisites:** None.\n\n"
             "**Important:** The `user` field captures the submitted user information while `kyc_user_data` captures the data returned from the KYC provider. `kyc_request_status` reflects the status of the request with the KYC provider — `found` or `not found`"
         ),
         tags=["Admin — KYC Review"],
@@ -159,15 +162,15 @@ class KYCVerificationView(APIView):
 class KYCReviewViewSet(ReadOnlyModelViewSet):
     """Admin review queue for KYC verification submissions.
 
-    Restricted to Admins and Super Admins (not invited Approvers - see
-    IsAdminOrSuperAdminRole). `list` defaults to PENDING submissions (the
+    Needs the `creators.approve_account` permission (Admins and Super Admins
+    by default, not invited Approvers). `list` defaults to PENDING submissions (the
     actual queue), narrowable via KYCReviewQueueFilter's ?status= param;
     detail actions look up any submission by id, so acting on one in the
     wrong status produces a 400 from the service layer rather than a
     misleading 404. Mirrors CourseReviewViewSet's shape.
     """
 
-    permission_classes = [IsAdminOrSuperAdminRole]
+    permission_classes = [Perm(codenames.CREATORS_APPROVE_ACCOUNT)]
     filterset_class = KYCReviewQueueFilter
     filter_backends = [DjangoFilterBackend, drf_filters.OrderingFilter]
     ordering_fields = ["created_datetime"]
@@ -193,7 +196,8 @@ class KYCReviewViewSet(ReadOnlyModelViewSet):
         description=(
             "Approves a KYC submission. Takes no body - approval needs no "
             "accompanying data.\n\n"
-            "**Auth:** Admin or Super Admin.\n\n"
+            "**Auth:** The `creators.approve_account` permission (Approve Account) "
+            "— Admin and Super Admin by default.\n\n"
             "**Prerequisites:** The submission must exist."
         ),
         tags=["Admin — KYC Review"],
@@ -219,7 +223,8 @@ class KYCReviewViewSet(ReadOnlyModelViewSet):
             "Rejects a KYC submission with a required "
             "`rejection_reason` the submitter can act on when "
             "resubmitting.\n\n"
-            "**Auth:** Admin or Super Admin.\n\n"
+            "**Auth:** The `creators.approve_account` permission (Approve Account) "
+            "— Admin and Super Admin by default.\n\n"
             "**Prerequisites:** The submission must exist."
         ),
         tags=["Admin — KYC Review"],
@@ -250,7 +255,8 @@ class KYCReviewViewSet(ReadOnlyModelViewSet):
             "Flags a KYC submission for review with an optional "
             "`flag_reason` the submitter can act on when "
             "resubmitting.\n\n"
-            "**Auth:** Admin or Super Admin.\n\n"
+            "**Auth:** The `creators.approve_account` permission (Approve Account) "
+            "— Admin and Super Admin by default.\n\n"
             "**Prerequisites:** The submission must exist."
         ),
         tags=["Admin — KYC Review"],
@@ -392,7 +398,8 @@ class LivenessVerificationView(APIView):
         "Call this after a liveness verification has passed and an admin has "
         "decided that the verified selfie should become the user's profile "
         "picture.\n\n"
-        "**Auth:** Admin or Super Admin.\n\n"
+        "**Auth:** The `creators.approve_account` permission (Approve Account) "
+            "— Admin and Super Admin by default.\n\n"
         "**Prerequisites:** The target user must exist and must have a "
         "verified liveness selfie saved by the liveness endpoint.\n\n"
         "**Important:** This replaces the target user's current profile "
@@ -447,7 +454,7 @@ class LivenessAvatarSettingView(APIView):
     Called by an admin to set the verified selfie as the profile picture.
     """
 
-    permission_classes: ClassVar[list] = [IsAdminOrSuperAdminRole]
+    permission_classes: ClassVar[list] = [Perm(codenames.CREATORS_APPROVE_ACCOUNT)]
 
     def post(self, request, user_id, *args, **kwargs):
 

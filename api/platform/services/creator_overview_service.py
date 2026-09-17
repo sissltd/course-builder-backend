@@ -1,11 +1,12 @@
 from django.db.models import Count
 from django.utils import timezone
 
+from api.authorization import codenames
+from api.authorization.services import permission_service
 from api.collaborators.enums import CollaboratorInviteStatus
 from api.collaborators.models import CollaboratorInvite
 from api.courses.enums import CourseStatus
 from api.courses.models import Course
-from api.users.permissions import IsCourseCreatorRole, require_role
 from api.wallet.services import wallet_service
 
 
@@ -18,7 +19,7 @@ def get_overview(*, actor) -> dict:
     call - the course-builder home screen's load request.
     """
 
-    require_role(actor, IsCourseCreatorRole.allowed_roles)
+    permission_service.require_permission(actor, codenames.COURSES_CREATE)
 
     wallet = wallet_service.get_or_create_wallet(user=actor)
     pending_invites = (

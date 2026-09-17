@@ -17,7 +17,8 @@ from api.mie.serializers.developer_admin_serializer import (
     DeveloperRegisterSerializer,
 )
 from api.mie.services import developer_service
-from api.users.permissions import IsSuperAdminRole
+from api.authorization import codenames
+from api.authorization.permissions import Perm
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 
 
@@ -33,7 +34,7 @@ class MieDeveloperAdminViewSet(viewsets.ReadOnlyModelViewSet):
 
     queryset = DeveloperAccount.objects.order_by("-created_datetime")
     serializer_class = DeveloperAccountAdminSerializer
-    permission_classes = [IsSuperAdminRole]
+    permission_classes = [Perm(codenames.MIE_MANAGE_CONSOLE)]
     lookup_field = "id"
     filterset_fields = ["status", "plan_type"]
     search_fields = ["email"]
@@ -47,7 +48,7 @@ class MieDeveloperAdminViewSet(viewsets.ReadOnlyModelViewSet):
             "Called from the superadmin MIE Developers table to get an "
             "overview of all registered developers and filter or search "
             "the list.\n\n"
-            "**Auth:** Super Admin.\n\n"
+            "**Auth:** The `mie.manage_console` permission — Super Admin by default.\n\n"
             "**Prerequisites:** None.\n\n"
             "**Important:** Results are paginated. Use `?status=` and "
             "`?plan_type=` to narrow results; use `?search=` to filter "
@@ -122,7 +123,7 @@ class MieDeveloperAdminViewSet(viewsets.ReadOnlyModelViewSet):
             "Called when a superadmin opens a developer's detail panel to "
             "review their account history before taking an approval "
             "action.\n\n"
-            "**Auth:** Super Admin.\n\n"
+            "**Auth:** The `mie.manage_console` permission — Super Admin by default.\n\n"
             "**Prerequisites:** The developer account must exist.\n\n"
             "**Important:** The raw API key is never included. Only the "
             "masked preview prefix is returned."
@@ -170,7 +171,7 @@ class MieDeveloperAdminViewSet(viewsets.ReadOnlyModelViewSet):
             "(POST /api/v1/mie/v1/register/) that developers use to "
             "register themselves; both land in PENDING and require "
             "approval through this admin surface.\n\n"
-            "**Auth:** Super Admin.\n\n"
+            "**Auth:** The `mie.manage_console` permission — Super Admin by default.\n\n"
             "**Prerequisites:** None.\n\n"
             "**Important:** A duplicate email address will return 400. "
             "The account remains in PENDING until approve is called \u2014 "
@@ -237,7 +238,7 @@ class MieDeveloperAdminViewSet(viewsets.ReadOnlyModelViewSet):
             "onwards the developer's integration docs are live at "
             "GET /api/v1/mie/v1/documentation/ and also accessible via "
             "the /me endpoint at any time.\n\n"
-            "**Auth:** Super Admin.\n\n"
+            "**Auth:** The `mie.manage_console` permission — Super Admin by default.\n\n"
             "**Prerequisites:** The developer account must exist and not "
             "already be in APPROVED status.\n\n"
             "**Important:** The raw API key is shown exactly once. If "
@@ -320,7 +321,7 @@ class MieDeveloperAdminViewSet(viewsets.ReadOnlyModelViewSet):
             "Use this when a registration should be denied or an existing "
             "account needs to be permanently shut down. The decision is "
             "reversible \u2014 a subsequent approve call issues fresh keys.\n\n"
-            "**Auth:** Super Admin.\n\n"
+            "**Auth:** The `mie.manage_console` permission — Super Admin by default.\n\n"
             "**Prerequisites:** The developer account must exist.\n\n"
             "**Important:** Rejecting revokes the API key immediately \u2014 "
             "any in-flight requests using the key will fail. This action "
@@ -363,7 +364,7 @@ class MieDeveloperAdminViewSet(viewsets.ReadOnlyModelViewSet):
             "Use this for temporary access revocation without losing any "
             "integration state. The account can be restored to full "
             "access later via the approve action.\n\n"
-            "**Auth:** Super Admin.\n\n"
+            "**Auth:** The `mie.manage_console` permission — Super Admin by default.\n\n"
             "**Prerequisites:** The developer account must exist and be "
             "in APPROVED status.\n\n"
             "**Important:** Suspension is immediate \u2014 in-flight API "

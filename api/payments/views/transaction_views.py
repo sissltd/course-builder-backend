@@ -11,14 +11,15 @@ from api.payments.filters import TransactionFilter
 from api.payments.models.transaction_model import Transaction
 from api.payments.serializers.transaction_serializers import TransactionSerializer
 from api.payments.services.transaction_services import list_transactions
-from api.users.permissions import IsCourseCreatorRole
+from api.authorization import codenames
+from api.authorization.permissions import Perm
 
 
 @extend_schema(**TRANSACTION_LIST_DOCS)
 class TransactionListView(ListAPIView):
     """The current user's wallet transaction history."""
 
-    permission_classes: ClassVar = [IsCourseCreatorRole]
+    permission_classes: ClassVar = [Perm(codenames.EARNINGS_MANAGE_OWN)]
     serializer_class = TransactionSerializer
     filterset_class = TransactionFilter
     filter_backends: ClassVar = [

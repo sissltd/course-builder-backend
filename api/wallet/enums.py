@@ -21,6 +21,13 @@ class TransactionStatus(models.TextChoices):
     FAILED = "FAILED", "Failed"
 
 
+class AdjustmentDirection(models.TextChoices):
+    """Which way an admin wallet adjustment moves money."""
+
+    CREDIT = "CREDIT", "Credit"
+    DEBIT = "DEBIT", "Debit"
+
+
 class WithdrawalRequestStatus(models.TextChoices):
     """State of a withdrawal between "Request withdrawal" and OTP confirmation."""
 

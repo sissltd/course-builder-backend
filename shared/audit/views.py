@@ -11,7 +11,8 @@ from rest_framework.generics import ListAPIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 
-from api.users.permissions import IsAdminOrSuperAdminRole
+from api.authorization import codenames
+from api.authorization.permissions import Perm
 
 from .filters import AuditLogFilter
 from .models import AuditLog
@@ -29,7 +30,7 @@ class AuditLogListView(ListAPIView):
     """
 
     serializer_class = AuditLogSerializer
-    permission_classes = (IsAdminOrSuperAdminRole,)
+    permission_classes = (Perm(codenames.AUDIT_VIEW),)
     filterset_class = AuditLogFilter
 
     # modifying the queryset to get all Audit log by filtering it by -created_at (that is, from the newest to the oldest)
@@ -45,7 +46,8 @@ class AuditLogListView(ListAPIView):
             "user.\n\n"
             "Called from the admin audit screen when investigating account "
             "activity.\n\n"
-            "**Auth:** Admin or Super Admin.\n\n"
+            "**Auth:** The `audit.view` permission — Admin and Super Admin by "
+            "default.\n\n"
             "**Prerequisites:** None.\n\n"
             "**Important:** Exposes other users' emails and IP addresses, so "
             "it is admin-only. Filter with `email`, `event`, `from_date` and "

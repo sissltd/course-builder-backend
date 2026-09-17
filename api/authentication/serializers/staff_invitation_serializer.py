@@ -1,7 +1,7 @@
 from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 
-from api.users.enums import INVITABLE_STAFF_ROLES, UserRole
+from api.users.enums import INVITABLE_STAFF_ROLE_CHOICES, UserRole
 
 
 class StaffInvitationSerializer(serializers.Serializer):
@@ -29,17 +29,39 @@ class StaffInvitationSerializer(serializers.Serializer):
         # Restricted to the invitable positions rather than UserRole at large:
         # this is the boundary that stops a Super Admin from minting a second
         # Super Admin, or an invitee from landing on a public role.
-        choices=[(role.value, role.label) for role in INVITABLE_STAFF_ROLES],
+        choices=INVITABLE_STAFF_ROLE_CHOICES,
+        required=False,
         help_text=(
-            "Staff position to grant on acceptance. One of "
-            "`STAFF_WRITER` (Writer - authors courses), "
-            "`STAFF_VERIFIER` (Verifier - reviews submitted courses), "
-            "`STAFF_APPROVER` (Approver - approves and publishes courses), "
-            "`AI_REVIEWER` (AI Reviewer - performs AI-based course reviews), "
-            "`QA_REVIEWER` (QA Reviewer - performs QA reviews on courses), or "
-            "`ADMIN` (Admin - platform administration; must enrol MFA). "
-            "Any other role, including SUPER_ADMIN, is rejected."
+            "A built-in staff position, e.g. `STAFF_WRITER` or `ADMIN`. Send "
+            "this or `role_id`, not both. Kept for existing clients; prefer "
+            "`role_id`, which also accepts custom roles."
         ),
+    )
+    role_id = serializers.UUIDField(
+        required=False,
+        help_text=(
+            "Id of the staff role to grant on acceptance - built-in or custom "
+            "(see GET /admin/roles/). Send this or `role`, not both."
+        ),
+    )
+
+    def validate(self, attrs):
+        if ("role" in attrs) == ("role_id" in attrs):
+            raise serializers.ValidationError(
+                "Send exactly one of `role` or `role_id`."
+            )
+        return attrs
+
+
+class TeamInvitationSerializer(serializers.Serializer):
+    """Input for inviting someone to join as a Creator Reviewer."""
+
+    email = serializers.EmailField(help_text="Email to send the invitation to.")
+    first_name = serializers.CharField(
+        max_length=150, help_text="Invitee's given name."
+    )
+    last_name = serializers.CharField(
+        max_length=150, help_text="Invitee's family name."
     )
 
 

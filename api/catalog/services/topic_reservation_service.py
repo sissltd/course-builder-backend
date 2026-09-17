@@ -9,7 +9,8 @@ from api.catalog.models import Category, Topic, TopicReservationRequest
 from api.notification.models import Notification
 from api.platform.services import platform_settings_service
 from api.users.models import User
-from api.users.permissions import IsAdminRole, IsCreatorReviewerRole
+from api.authorization import codenames
+from api.authorization.services import permission_service
 
 
 def submit_request(
@@ -28,10 +29,9 @@ def submit_request(
         requested_by=user, name=name, category=category
     )
 
+    # Whoever can decide the request hears about it.
     managers = list(
-        User.objects.filter(
-            role__in=IsAdminRole.allowed_roles + IsCreatorReviewerRole.allowed_roles
-        )
+        permission_service.users_with_permission(codenames.CATALOG_MANAGE_TOPICS)
     )
     if managers:
         Notification.emit_in_app_notification(

@@ -17,11 +17,12 @@ from api.collaborators.serializers import (
 )
 from api.collaborators.services import collaborator_service, invite_service
 from api.courses.models import Course
-from api.users.permissions import IsCourseCreatorRole
+from api.authorization import codenames
+from api.authorization.permissions import Perm
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 
 _AUTH_LINE = (
-    "**Auth:** Course Creator or Writer. Creating/revoking invites requires "
+    "**Auth:** The `courses.create` permission (Course Creator and Writer by default). Creating/revoking invites requires "
     "manage access to the course (its creator or an Admin-role collaborator); "
     "accepting/declining requires being the signed-in owner of the invite's "
     "email address."
@@ -55,7 +56,7 @@ class CollaboratorInviteViewSet(ModelViewSet):
     Until acceptance the invite confers no access.
     """
 
-    permission_classes = [IsCourseCreatorRole]
+    permission_classes = [Perm(codenames.COURSES_CREATE)]
     serializer_class = CollaboratorInviteSerializer
 
     def get_queryset(self):

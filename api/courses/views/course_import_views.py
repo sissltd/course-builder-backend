@@ -11,7 +11,8 @@ from api.courses.serializers.course_import_serializer import (
     CourseImportJobSerializer,
 )
 from api.courses.services import course_import_service
-from api.users.permissions import IsCourseCreatorRole
+from api.authorization import codenames
+from api.authorization.permissions import Perm
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 
 COURSE_IMPORT_TAG = ["Creator — Course Imports"]
@@ -54,7 +55,7 @@ JOB_EXAMPLE = {
 
 
 class CourseImportListCreateView(APIView):
-    permission_classes = [IsCourseCreatorRole]
+    permission_classes = [Perm(codenames.COURSES_CREATE)]
     serializer_class = CourseImportCreateSerializer
 
     @extend_schema(
@@ -66,7 +67,7 @@ class CourseImportListCreateView(APIView):
             "and returns an import job for the frontend to poll or review.\n\n"
             "Call this after `/api/v1/uploads/presign/` succeeds and the browser "
             "has uploaded the file to object storage.\n\n"
-            "**Auth:** Course Creator or invited Staff Writer.\n\n"
+            "**Auth:** The `courses.create` permission (Course Creator and Writer by default).\n\n"
             "**Prerequisites:** The uploaded file must use `folder=course-imports` "
             "and `purpose=COURSE_DOCUMENT_IMPORT`; the selected category must be "
             "active, and any topic must belong to that category.\n\n"
@@ -128,7 +129,7 @@ class CourseImportListCreateView(APIView):
 
 
 class CourseImportDetailView(APIView):
-    permission_classes = [IsCourseCreatorRole]
+    permission_classes = [Perm(codenames.COURSES_CREATE)]
     serializer_class = CourseImportJobSerializer
 
     def get_object(self, request, pk):
@@ -145,7 +146,7 @@ class CourseImportDetailView(APIView):
             "Poll this endpoint every 2–3 seconds after starting an import, and "
             "stop when status becomes `READY_FOR_REVIEW`, `COMPLETED`, `FAILED`, "
             "or `CANCELLED`.\n\n"
-            "**Auth:** Course Creator or invited Staff Writer.\n\n"
+            "**Auth:** The `courses.create` permission (Course Creator and Writer by default).\n\n"
             "**Prerequisites:** The import job must belong to the caller.\n\n"
             "**Important:** Jobs owned by another creator return 404 so import "
             "existence is not leaked."
@@ -186,7 +187,7 @@ class CourseImportDetailView(APIView):
             "Cancels a creator-owned document import job. Terminal jobs are returned "
             "unchanged, so repeated cancellation is safe.\n\n"
             "Call this when the creator backs out of the document import flow.\n\n"
-            "**Auth:** Course Creator or invited Staff Writer.\n\n"
+            "**Auth:** The `courses.create` permission (Course Creator and Writer by default).\n\n"
             "**Prerequisites:** The import job must belong to the caller.\n\n"
             "**Important:** Cancellation does not delete the uploaded object from "
             "storage; it only stops this import workflow."
@@ -223,7 +224,7 @@ class CourseImportDetailView(APIView):
 
 
 class CourseImportConfirmView(APIView):
-    permission_classes = [IsCourseCreatorRole]
+    permission_classes = [Perm(codenames.COURSES_CREATE)]
     serializer_class = CourseImportConfirmSerializer
 
     def get_object(self, request, pk):
@@ -239,7 +240,7 @@ class CourseImportConfirmView(APIView):
             "created atomically from the reviewed tree.\n\n"
             "Call this after the frontend shows the detected module/lesson preview "
             "and the creator confirms the structure.\n\n"
-            "**Auth:** Course Creator or invited Staff Writer.\n\n"
+            "**Auth:** The `courses.create` permission (Course Creator and Writer by default).\n\n"
             "**Prerequisites:** The job must belong to the caller and be "
             "`READY_FOR_REVIEW`.\n\n"
             "**Important:** This action is not repeatable. After success the job "

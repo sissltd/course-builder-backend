@@ -226,13 +226,17 @@ class Notification(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
         content,
         metadata=None,
         content_type=notification_enums.NotificationContentType.TEXT,
+        critical=False,
     ):
         """Create one or more persisted in-app notifications.
 
-        This is the only delivery helper implemented directly in the scaffold,
-        because it maps cleanly to database persistence without external provider
-        dependencies. Teams can wrap or override it if their in-app flow needs
-        fan-out rules, deduplication, or asynchronous dispatch.
+        Receivers who switched `NotificationPreference.in_app_enabled` off are
+        skipped (no preference row means the default, on). The preference
+        check is one query however many receivers there are.
+
+        `critical=True` skips that check. Reserve it for operational and
+        security alerts staff must see regardless of their own settings, such
+        as repeated login lockouts or the MIE circuit breaker.
         """
 
         if not receivers:
@@ -243,6 +247,17 @@ class Notification(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
 
         serialized_metadata = cls._serialize_for_json(metadata or {})
         resolved_receivers = [cls._resolve_user(receiver) for receiver in receivers]
+        if not critical:
+            opted_out = set(
+                NotificationPreference.objects.filter(
+                    user__in=resolved_receivers, in_app_enabled=False
+                ).values_list("user_id", flat=True)
+            )
+            resolved_receivers = [
+                receiver
+                for receiver in resolved_receivers
+                if receiver.pk not in opted_out
+            ]
         notifications = [
             cls(
                 type=notification_enums.NotificationType.IN_APP,
@@ -356,8 +371,9 @@ class NotificationPreference(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
         verbose_name=_("In-App Notifications Enabled"),
         default=True,
         help_text=_(
-            "Master toggle for in-app notifications. Off suppresses all "
-            "in-app alerts regardless of the per-event toggles above."
+            "Master toggle for in-app notifications. Off suppresses every "
+            "in-app notification except critical operational alerts (see "
+            "Notification.emit_in_app_notification)."
         ),
     )
     sla_amber_threshold_hours_override = models.PositiveIntegerField(

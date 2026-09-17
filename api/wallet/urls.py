@@ -1,6 +1,10 @@
 from django.urls import path
 
 from api.wallet import views as wallet_views
+from api.wallet.adjustment_views import (
+    WalletAdjustmentCreateView,
+    WalletAdjustmentListView,
+)
 
 urlpatterns = [
     path("wallet/", wallet_views.WalletDetailView.as_view(), name="wallet-detail"),
@@ -28,5 +32,15 @@ urlpatterns = [
         "admin/withdrawals/",
         wallet_views.AdminWithdrawalRequestListView.as_view(),
         name="admin-withdrawal-list",
+    ),
+    path(
+        "admin/wallets/<uuid:wallet_id>/adjustments/",
+        WalletAdjustmentCreateView.as_view(),
+        name="admin-wallet-adjust",
+    ),
+    path(
+        "admin/wallet-adjustments/",
+        WalletAdjustmentListView.as_view(),
+        name="admin-wallet-adjustment-list",
     ),
 ]

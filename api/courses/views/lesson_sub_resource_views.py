@@ -24,7 +24,8 @@ from api.courses.serializers.lesson_serializer import (
     LessonRequirementSerializer,
 )
 from api.courses.services import module_lock_service
-from api.users.permissions import IsCourseCreatorRole
+from api.authorization import codenames
+from api.authorization.permissions import Perm
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 
 _LESSON_PK_PARAMETER = OpenApiParameter(
@@ -44,7 +45,7 @@ class _BaseLessonSubResourceViewSet(ModelViewSet):
     the rest of the builder's editing rules.
     """
 
-    permission_classes = [IsCourseCreatorRole]
+    permission_classes = [Perm(codenames.COURSES_CREATE)]
 
     def get_queryset(self):
         if getattr(self, "swagger_fake_view", False):
@@ -111,7 +112,7 @@ class _BaseLessonSubResourceViewSet(ModelViewSet):
         description=(
             "Returns the lesson's body blocks in order - the block-based "
             "editor's document.\n\n"
-            "**Auth:** Course Creator/Writer with access to the lesson's module."
+            "**Auth:** The `courses.create` permission (Course Creator and Writer by default), with access to the lesson's module."
         ),
         tags=["Creator — Lessons"],
         parameters=[_LESSON_PK_PARAMETER],
@@ -129,7 +130,7 @@ class _BaseLessonSubResourceViewSet(ModelViewSet):
             "match its type: prose blocks carry `text_content`, media "
             "blocks carry `media_url`, a QUIZ block references `quiz`, and "
             "a DIVIDER carries neither.\n\n"
-            "**Auth:** Course Creator/Writer with access; course must be Draft "
+            "**Auth:** The `courses.create` permission (Course Creator and Writer by default), with access; course must be Draft "
             "and the module unlocked."
         ),
         tags=["Creator — Lessons"],
@@ -163,7 +164,7 @@ class LessonContentBlockViewSet(_BaseLessonSubResourceViewSet):
             "image becomes IMAGE with `media_url`, and so on. Do **not** "
             "put rich-text HTML in the lesson's `script` field: that is "
             "narration copy under a separate word-count rule.\n\n"
-            "**Auth:** Course Creator/Writer with access to the lesson's "
+            "**Auth:** The `courses.create` permission (Course Creator and Writer by default), with access to the lesson's "
             "module.\n\n"
             "**Prerequisites:** The parent course must be Draft and the "
             "module must not be locked by another user.\n\n"
@@ -226,7 +227,7 @@ class LessonContentBlockViewSet(_BaseLessonSubResourceViewSet):
         description=(
             "Returns the images attached to a lesson via the 'Add image' "
             "modal, in display order, with captions and source metadata.\n\n"
-            "**Auth:** Course Creator/Writer with access to the lesson's module."
+            "**Auth:** The `courses.create` permission (Course Creator and Writer by default), with access to the lesson's module."
         ),
         tags=["Creator — Lessons"],
         parameters=[_LESSON_PK_PARAMETER],
@@ -242,7 +243,7 @@ class LessonContentBlockViewSet(_BaseLessonSubResourceViewSet):
         description=(
             "Adds an image (upload path or external URL) with optional "
             "caption to the lesson's media library.\n\n"
-            "**Auth:** Course Creator/Writer with access; course must be Draft "
+            "**Auth:** The `courses.create` permission (Course Creator and Writer by default), with access; course must be Draft "
             "and the module unlocked."
         ),
         tags=["Creator — Lessons"],
@@ -271,7 +272,7 @@ class LessonImageViewSet(_BaseLessonSubResourceViewSet):
         description=(
             "Returns the prerequisite/requirement lines attached to a "
             "lesson, in order.\n\n"
-            "**Auth:** Course Creator/Writer with access to the lesson's module."
+            "**Auth:** The `courses.create` permission (Course Creator and Writer by default), with access to the lesson's module."
         ),
         tags=["Creator — Lessons"],
         parameters=[_LESSON_PK_PARAMETER],
@@ -287,7 +288,7 @@ class LessonImageViewSet(_BaseLessonSubResourceViewSet):
         description=(
             "Attaches one prerequisite line (e.g. 'Basic Python syntax "
             "knowledge') to the lesson.\n\n"
-            "**Auth:** Course Creator/Writer with access; course must be Draft "
+            "**Auth:** The `courses.create` permission (Course Creator and Writer by default), with access; course must be Draft "
             "and the module unlocked."
         ),
         tags=["Creator — Lessons"],

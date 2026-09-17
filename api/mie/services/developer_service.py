@@ -7,8 +7,9 @@ from api.mie.enums import DeveloperAccountStatus, MiePlanType, MieSourceType
 from api.mie.models import DeveloperAccount
 from api.mie.services.key_service import issue_credentials, revoke_key
 from api.mie.services.webhook_dispatcher import drop_events_for_rejected_account
-from api.users.enums import UserActivityActionEnums, UserActivityCategoryEnums, UserRole
-from api.users.permissions import require_role
+from api.users.enums import UserActivityActionEnums, UserActivityCategoryEnums
+from api.authorization import codenames
+from api.authorization.services import permission_service
 
 
 def register_developer(*, email: str, webhook_url: str, plan_type: str) -> DeveloperAccount:
@@ -41,7 +42,7 @@ def approve_developer(*, actor, account: DeveloperAccount) -> str | None:
     approval can never leave credentials stranded on a PENDING account.
     """
 
-    require_role(actor, (UserRole.SUPER_ADMIN,))
+    permission_service.require_permission(actor, codenames.MIE_MANAGE_CONSOLE)
     if account.status == DeveloperAccountStatus.APPROVED:
         raise exceptions.ValidationError({"status": ["Account is already approved."]})
 
@@ -64,7 +65,7 @@ def reject_developer(*, actor, account: DeveloperAccount) -> None:
     issues fresh credentials.
     """
 
-    require_role(actor, (UserRole.SUPER_ADMIN,))
+    permission_service.require_permission(actor, codenames.MIE_MANAGE_CONSOLE)
     if account.status == DeveloperAccountStatus.REJECTED:
         raise exceptions.ValidationError({"status": ["Account is already rejected."]})
 
@@ -81,7 +82,7 @@ def reject_developer(*, actor, account: DeveloperAccount) -> None:
 def suspend_developer(*, actor, account: DeveloperAccount) -> None:
     """Freeze an approved account without touching its queue history."""
 
-    require_role(actor, (UserRole.SUPER_ADMIN,))
+    permission_service.require_permission(actor, codenames.MIE_MANAGE_CONSOLE)
     if account.status != DeveloperAccountStatus.APPROVED:
         raise exceptions.ValidationError(
             {"status": ["Only approved accounts can be suspended."]}
@@ -113,7 +114,7 @@ def provision_system_account(
     Returns (account, raw_key); raw_key is None when nothing was issued.
     """
 
-    require_role(actor, (UserRole.SUPER_ADMIN,))
+    permission_service.require_permission(actor, codenames.MIE_MANAGE_CONSOLE)
 
     existing = DeveloperAccount.objects.filter(email__iexact=email).first()
     if existing is not None:

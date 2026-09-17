@@ -4,6 +4,8 @@ import uuid
 
 from django.db.models import Q, QuerySet
 
+from api.authorization import codenames
+from api.authorization.services import permission_service
 from api.catalog.models import Category, Topic
 from api.courses.enums import CourseStatus
 from api.courses.models import Course
@@ -53,7 +55,7 @@ def search(*, actor: User, query: str, limit: int = DEFAULT_LIMIT) -> dict:
     if topic_results:
         buckets["topics"] = _bucket(topic_results)
 
-    if actor.is_superuser or actor.role in ADMIN_ROLES:
+    if permission_service.user_has_permission(actor, codenames.CREATORS_VIEW_PROFILE):
         user_results = _search_users(query=normalized_query, limit=capped_limit)
         if user_results:
             buckets["users"] = _bucket(user_results)

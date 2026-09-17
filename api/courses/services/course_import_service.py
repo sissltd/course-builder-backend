@@ -10,7 +10,8 @@ from api.catalog.enums import CategoryStatus
 from api.courses.enums import CourseImportStatus, CourseSourceType
 from api.courses.models import CourseImportJob, Lesson, LessonContentBlock, Module
 from api.courses.services import course_service
-from api.users.permissions import IsCourseCreatorRole, require_role
+from api.authorization import codenames
+from api.authorization.services import permission_service
 from shared.services.storage_service import StorageService
 
 DOCUMENT_IMPORT_PURPOSE = "COURSE_DOCUMENT_IMPORT"
@@ -96,7 +97,7 @@ def validate_import_file_metadata(
 
 @transaction.atomic
 def create_import_job(*, creator, validated_data):
-    require_role(creator, IsCourseCreatorRole.allowed_roles)
+    permission_service.require_permission(creator, codenames.COURSES_CREATE)
     key = validated_data.get("idempotency_key", "")
     if key:
         existing = CourseImportJob.objects.filter(
