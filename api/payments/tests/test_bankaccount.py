@@ -328,10 +328,6 @@ class VerifyBankAccountViewTests(APITestCase):
     def test_public_can_verify_bank_account(self):
         with (
             patch(
-                "api.payments.views.bankaccount_views.PaystackService.resolve_bank",
-                return_value={"account_name": "Test User"},
-            ),
-            patch(
                 "api.payments.views.bankaccount_views.FlutterwaveService.resolve_bank",
                 return_value={"account_name": "Test User"},
             ),
@@ -357,10 +353,6 @@ class VerifyBankAccountViewTests(APITestCase):
     def test_verify_returns_custom_error_when_provider_fails(self):
         with (
             patch(
-                "api.payments.views.bankaccount_views.PaystackService.resolve_bank",
-                side_effect=Exception("provider down"),
-            ),
-            patch(
                 "api.payments.views.bankaccount_views.FlutterwaveService.resolve_bank",
                 side_effect=Exception("provider down"),
             ),
@@ -382,13 +374,13 @@ class BankListViewTests(APITestCase):
         with (
             patch(
                 "api.payments.views.bankaccount_views.get_settings",
-                return_value=SimpleNamespace(payment_processor=PaymentProcessors.PAYSTACK),
+                return_value=SimpleNamespace(payment_processor=PaymentProcessors.FLUTTERWAVE),
             ),
             patch(
-                "api.payments.views.bankaccount_views.PaystackService.get_banks",
+                "api.payments.views.bankaccount_views.FlutterwaveService.get_banks",
                 return_value=[
-                    {"name": "Access Bank", "code": "044"},
                     {"name": "GTBank", "code": "058"},
+                    {"name": "Access Bank", "code": "044"},
                 ],
             ),
         ):

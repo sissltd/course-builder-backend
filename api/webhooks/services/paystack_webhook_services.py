@@ -36,30 +36,21 @@ class PaystackWebhookServices:
 
     @staticmethod
     def parse_webhook_event(event_data):
-        try:
-            if not isinstance(event_data, dict):
-                raise NonRetryableWebhookError("Webhook payload must be a JSON object")
+        if not isinstance(event_data, dict):
+            raise NonRetryableWebhookError("Webhook payload must be a JSON object")
 
-            event_type = event_data.get("event")
-            data = event_data.get("data", {})
-            if not event_type:
-                raise NonRetryableWebhookError("Missing 'event' in webhook payload")
+        event_type = event_data.get("event")
+        data = event_data.get("data", {})
+        if not event_type:
+            raise NonRetryableWebhookError("Missing 'event' in webhook payload")
 
-            match event_type:
-                case "transfer.success":
-                    return PaystackWebhookServices._handle_transfer_success(data)
-                case "transfer.failed" | "transfer.reversed":
-                    return PaystackWebhookServices._handle_transfer_failure(data)
-                case _:
-                    raise NonRetryableWebhookError(
-                        f"Unhandled event type: {event_type}"
-                    )
-
-        except Exception as e:
-            logger.error(f"Error processing Paystack webhook event: {e!s}")
-            raise WebhookProcessingError(
-                f"Error processing Paystack webhook event: {e!s}"
-            )
+        match event_type:
+            case "transfer.success":
+                return PaystackWebhookServices._handle_transfer_success(data)
+            case "transfer.failed" | "transfer.reversed":
+                return PaystackWebhookServices._handle_transfer_failure(data)
+            case _:
+                raise NonRetryableWebhookError(f"Unhandled event type: {event_type}")
 
     @staticmethod
     @django_transaction.atomic

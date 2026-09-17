@@ -55,7 +55,7 @@ class CreatorOverviewApiTests(APITestCase):
         self.assertEqual(wallet["balance"], "90.00")
         self.assertEqual(wallet["total_earned"], "90.00")
         self.assertEqual(wallet["pending_balance"], "0.00")
-        self.assertEqual(wallet["currency"], "USD")
+        self.assertEqual(wallet["currency"], "NGN")
 
     def test_pending_invites_counted_for_my_email(self):
         from api.collaborators.models import CollaboratorInvite

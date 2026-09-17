@@ -10,7 +10,6 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from api.platform.enums import PaymentProcessors
 from api.webhooks.services.paystack_webhook_services import PaystackWebhookServices
 from api.webhooks.tasks import process_webhook_task
 from core.models import WebhookEvent
@@ -80,7 +79,7 @@ class PaystackWebhookView(APIView):
                         "payload": data,
                         "status": "PENDING",
                         "amount": amount,
-                        "provider": PaymentProcessors.PAYSTACK,
+                        "provider": "PAYSTACK",
                     },
                 )
 

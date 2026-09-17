@@ -11,6 +11,8 @@ from rest_framework import exceptions
 from api.authentication.enums import TokenPurpose
 from api.authentication.services import token_service
 from api.authentication.services.activity_service import log_activity
+from api.authorization import codenames
+from api.authorization.services import permission_service
 from api.courses.models import Course
 from api.notification.models import Notification
 from api.payments.models.bankaccount_models import BankAccount
@@ -23,8 +25,6 @@ from api.platform.enums import PaymentProcessors
 from api.platform.services import platform_settings_service
 from api.users.enums import UserActivityActionEnums, UserActivityCategoryEnums
 from api.users.models import User
-from api.authorization import codenames
-from api.authorization.services import permission_service
 from api.users.services.kyc_services import kyc_submission_service
 from api.wallet.enums import (
     TransactionStatus,
@@ -39,7 +39,6 @@ from api.wallet.models import (
 from api.wallet.tasks import dispatch_transfer_task
 from core.models import TransferOutboxEvent
 from shared.services.flutterwave_service import FlutterwaveService
-from shared.services.paystack_service import PaystackService
 from shared.utils.encryption import encrypt_field
 
 logger = logging.getLogger(__name__)
@@ -55,9 +54,7 @@ def _update_account_recipient_code(account: BankAccount, recipient_code: str, pr
     A failure is logged, but not allowed disrupt the follow of operation
     """
     try:
-        if provider == PaymentProcessors.PAYSTACK:
-            account.paystack_recipient_code = recipient_code
-        elif provider == PaymentProcessors.FLUTTERWAVE:
+        if provider == PaymentProcessors.FLUTTERWAVE:
             account.flutterwave_recipient_code = recipient_code
         else:
             logger.warning(f"Unsupported payment processor: {provider}")
@@ -79,23 +76,7 @@ def _transfer_processor_and_recipient_code(account: BankAccount) -> tuple[str, s
     This makes it easier for the caller to interprete the result
     """
     payment_processor = platform_settings_service.get_settings().payment_processor
-    if payment_processor == PaymentProcessors.PAYSTACK:
-        recipient_code = account.paystack_recipient_code
-        if not recipient_code:
-            successful, resp = PaystackService.create_transfer_recipient(
-                account_number=account.account_number,
-                bank_code=account.bank_code,
-                name=account.account_name,
-            )
-            if successful and resp.get("recipient_code"):
-                recipient_code = resp["recipient_code"]
-                _update_account_recipient_code(account, recipient_code, payment_processor)
-            else:
-                logger.error(f"Failed to create Paystack transfer recipient for account {account.id}: {resp}")
-                raise RecipientCreationError(
-                    f"Failed to create Paystack transfer recipient: {resp.get('message', 'Unknown error')}"
-                )
-    elif payment_processor == PaymentProcessors.FLUTTERWAVE:
+    if payment_processor == PaymentProcessors.FLUTTERWAVE:
         recipient_code = account.flutterwave_recipient_code
         if not recipient_code:
             recipient_code = FlutterwaveService().get_recipient_id(
@@ -120,7 +101,7 @@ def get_or_create_wallet(*, user: User) -> Wallet:
     wallet-detail view).
     """
 
-    wallet, _created = Wallet.objects.get_or_create(user=user)
+    wallet, _ = Wallet.objects.get_or_create(user=user)
     return wallet
 
 
