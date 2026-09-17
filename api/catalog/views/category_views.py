@@ -24,7 +24,9 @@ from api.catalog.serializers import (
     CategoryWriteSerializer,
 )
 from api.catalog.services import category_service
-from api.users.permissions import CanManageCategories, IsMFAVerifiedForSession
+from api.authorization import codenames
+from api.authorization.permissions import Perm
+from api.users.permissions import IsMFAVerifiedForSession
 from includes.spectacular.responses import (
     STANDARD_ERROR_RESPONSES,
     ErrorEnvelopeSerializer,
@@ -51,7 +53,7 @@ _CATEGORY_EXAMPLE = {
 }
 
 _AUTH_LINE = (
-    "**Auth:** Admin Writer \u2014 Writer, Admin, or Super Admin. Approvers, "
+    "**Auth:** The `catalog.manage_categories` permission — Writer, Admin and Super Admin by default. Approvers, "
     "Reviewers, and public Course Creators do not manage categories; they "
     "browse a lightweight picker via `GET /api/v1/categories/picker/`."
 )
@@ -80,7 +82,7 @@ _PRICE_WARNING = (
             "submissions. This is the table behind the admin Categories "
             "screen, where writers keep pricing and availability in order.\n\n"
             "Called when the admin Categories screen loads.\n\n"
-            "**Auth:** Admin Writer \u2014 Writer, Admin, or Super Admin. "
+            "**Auth:** The `catalog.manage_categories` permission — Writer, Admin and Super Admin by default. "
             "Approvers, Reviewers, and Course Creators cannot list the full "
             "catalog.\n\n"
             "**Prerequisites:** None beyond holding the Writer, Admin, or "
@@ -110,7 +112,7 @@ _PRICE_WARNING = (
             "detail/edit screen.\n\n"
             "Called when an admin opens a category from the Categories "
             "screen.\n\n"
-            "**Auth:** Admin Writer \u2014 Writer, Admin, or Super Admin.\n\n"
+            "**Auth:** The `catalog.manage_categories` permission — Writer, Admin and Super Admin by default.\n\n"
             "**Prerequisites:** The category must exist.\n\n"
             "**Important:** None."
         ),
@@ -410,8 +412,8 @@ _PRICE_WARNING = (
 class CategoryViewSet(ModelViewSet):
     """Admin Writer-managed course categories (SCCS PRD Section 7).
 
-    Every endpoint under /categories/ is an Admin Writer concern
-    (CanManageCategories): Writer, Admin, or Super Admin. Create/update/delete
+    Every endpoint under /categories/ needs `catalog.manage_categories`
+    (Writer, Admin and Super Admin by default). Create/update/delete
     additionally require an MFA-verified session (IsMFAVerifiedForSession),
     since categories carry creator pricing, a financial policy change.
     Approvers, reviewers, and public Course Creators are deliberately
@@ -454,9 +456,9 @@ class CategoryViewSet(ModelViewSet):
 
     def get_permissions(self):
         if self.action in WRITE_ACTIONS or self.action in ("archive", "unarchive"):
-            return [CanManageCategories(), IsMFAVerifiedForSession()]
+            return [Perm(codenames.CATALOG_MANAGE_CATEGORIES)(), IsMFAVerifiedForSession()]
         if self.action in ADMIN_READ_ACTIONS:
-            return [CanManageCategories()]
+            return [Perm(codenames.CATALOG_MANAGE_CATEGORIES)()]
         return super().get_permissions()
 
     @extend_schema(
@@ -465,7 +467,7 @@ class CategoryViewSet(ModelViewSet):
             "Returns the total, active, inactive and archived category "
             "counts behind the tiles above the admin Categories table.\n\n"
             "Called when the admin Categories screen loads.\n\n"
-            "**Auth:** Admin Writer \u2014 Writer, Admin, or Super Admin.\n\n"
+            "**Auth:** The `catalog.manage_categories` permission — Writer, Admin and Super Admin by default.\n\n"
             "**Prerequisites:** None beyond holding the Writer, Admin, or "
             "Super Admin role.\n\n"
             "**Important:** Every key is always present, including zeroes, "
@@ -542,8 +544,8 @@ class CategoryViewSet(ModelViewSet):
             "new courses under it, without deleting anything.\n\n"
             "Use this instead of delete when a category is being retired "
             "but its courses must stay. Reversible via unarchive.\n\n"
-            "**Auth:** Writer, Admin or Super Admin, with an MFA-verified "
-            "session.\n\n"
+            "**Auth:** The `catalog.manage_categories` permission — Writer, Admin and Super Admin by default, with an MFA-verified session "
+            "where MFA is mandatory for the caller's role.\n\n"
             "**Prerequisites:** The category must not already be archived.\n\n"
             "**Important:** Existing courses, payouts and price snapshots "
             "are untouched \u2014 archiving only removes the category from "
@@ -577,8 +579,8 @@ class CategoryViewSet(ModelViewSet):
         description=(
             "Returns an archived category to ACTIVE so creators can use it "
             "again.\n\n"
-            "**Auth:** Writer, Admin or Super Admin, with an MFA-verified "
-            "session.\n\n"
+            "**Auth:** The `catalog.manage_categories` permission — Writer, Admin and Super Admin by default, with an MFA-verified session "
+            "where MFA is mandatory for the caller's role.\n\n"
             "**Prerequisites:** The category must currently be archived.\n\n"
             "**Important:** Restores to ACTIVE, not to whatever status it "
             "held before archiving \u2014 an INACTIVE category that was "
@@ -670,7 +672,7 @@ class CategoryViewSet(ModelViewSet):
         detail=True,
         methods=["get"],
         url_path="deletion-impact",
-        permission_classes=[CanManageCategories],
+        permission_classes=[Perm(codenames.CATALOG_MANAGE_CATEGORIES)],
     )
     def deletion_impact(self, request, pk=None):
         impact = category_service.get_deletion_impact(category=self.get_object())

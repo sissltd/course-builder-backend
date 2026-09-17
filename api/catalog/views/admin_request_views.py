@@ -17,7 +17,8 @@ from api.catalog.serializers import (
     CategoryRequestApproveSerializer,
 )
 from api.catalog.services import category_request_service
-from api.users.permissions import CanManageCategories
+from api.authorization import codenames
+from api.authorization.permissions import Perm
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 
 _CATEGORY_REQUEST_EXAMPLE = {
@@ -48,7 +49,7 @@ _CATEGORY_REQUEST_EXAMPLE = {
             "and requester/reviewer identities.\n\n"
             "Call this when the Admin Writer opens the category-request queue, "
             "then use the detail or approve/reject actions for a selected row.\n\n"
-            "**Auth:** Admin Writer — Writer, Admin, or Super Admin.\n\n"
+            "**Auth:** The `catalog.manage_categories` permission — Writer, Admin and Super Admin by default.\n\n"
             "**Prerequisites:** None.\n\n"
             "**Important:** This is the admin-wide queue; it is not scoped to "
             "the authenticated user's own requests. Use `status` in the client "
@@ -71,7 +72,7 @@ _CATEGORY_REQUEST_EXAMPLE = {
         description=(
             "Returns one category request for the Admin Writer review panel.\n\n"
             "Call this after selecting a row from the category-request queue.\n\n"
-            "**Auth:** Admin Writer — Writer, Admin, or Super Admin.\n\n"
+            "**Auth:** The `catalog.manage_categories` permission — Writer, Admin and Super Admin by default.\n\n"
             "**Prerequisites:** The request must exist.\n\n"
             "**Important:** The payload includes requester and reviewer identity "
             "for the admin audit trail."
@@ -92,7 +93,7 @@ _CATEGORY_REQUEST_EXAMPLE = {
 class AdminCategoryRequestViewSet(ReadOnlyModelViewSet):
     """Admin Writer queue for every category request."""
 
-    permission_classes = [CanManageCategories]
+    permission_classes = [Perm(codenames.CATALOG_MANAGE_CATEGORIES)]
     serializer_class = AdminCategoryRequestSerializer
     filterset_class = AdminCategoryRequestFilter
     filter_backends = [DjangoFilterBackend, drf_filters.OrderingFilter]
@@ -113,7 +114,7 @@ class AdminCategoryRequestViewSet(ReadOnlyModelViewSet):
             "Approves a Pending category request and creates the real Category.\n\n"
             "Call this after reviewing the request and deciding its starting "
             "creator payout.\n\n"
-            "**Auth:** Admin Writer — Writer, Admin, or Super Admin.\n\n"
+            "**Auth:** The `catalog.manage_categories` permission — Writer, Admin and Super Admin by default.\n\n"
             "**Prerequisites:** The request must be Pending.\n\n"
             "**Important:** `creator_price` seeds all three category price tiers. "
             "A duplicate category name or slug returns 400 and creates nothing."
@@ -159,7 +160,7 @@ class AdminCategoryRequestViewSet(ReadOnlyModelViewSet):
             "Rejects a Pending category request without creating a Category.\n\n"
             "Call this after reviewing a request that should not enter the "
             "catalog.\n\n"
-            "**Auth:** Admin Writer — Writer, Admin, or Super Admin.\n\n"
+            "**Auth:** The `catalog.manage_categories` permission — Writer, Admin and Super Admin by default.\n\n"
             "**Prerequisites:** The request must be Pending.\n\n"
             "**Important:** The request remains in the queue as Rejected for history."
         ),

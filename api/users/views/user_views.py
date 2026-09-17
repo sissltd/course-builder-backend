@@ -36,6 +36,7 @@ _ME_EXAMPLE = {
     "avatar_url": "",
     "terms_accepted_at": "2026-07-12T09:30:11.204Z",
     "role": "COURSE_CREATOR",
+    "role_label": "Course Creator",
     "is_active": False,
     "status": "PENDING",
     "created_datetime": "2026-07-12T09:30:11.204Z",
@@ -63,12 +64,14 @@ _ME_EXAMPLE = {
             "form in sync with server state.\n\n"
             "Called when the profile screen opens and whenever the frontend "
             "needs to refresh cached account details after an edit.\n\n"
-            "**Auth:** Authenticated Course Creator.\n\n"
+            "**Auth:** Any authenticated user, whatever their role.\n\n"
             "**Prerequisites:** None.\n\n"
             "**Important:** `is_verified` represents approved KYC status. "
-            "`badges` is an empty list until a badge-award domain is added."
+            "`role_label` is the display name for `role`. `badges` lists the "
+            "achievement badges the user holds, newest first, and is empty "
+            "for anyone who holds none."
         ),
-        tags=["Creator — Profile", "Reviewer Settings — Account"],
+        tags=["Creator — Profile", "Admin — Profile", "Reviewer Settings — Account"],
         responses={
             200: OpenApiResponse(
                 response=MeSerializer,
@@ -96,7 +99,7 @@ _ME_EXAMPLE = {
             "inactive ids are rejected by validation. The `category` set here "
             "is used to update the CreatorProfile's category field."
         ),
-        tags=["Creator — Profile", "Reviewer Settings — Account"],
+        tags=["Creator — Profile", "Admin — Profile", "Reviewer Settings — Account"],
         request=MeUpdateSerializer,
         examples=[
             OpenApiExample(
@@ -151,7 +154,7 @@ class MeView(RetrieveUpdateAPIView):
     # Self-scoped: get_object() returns request.user, so no role can reach
     # another account's record. Every role needs its own Account settings
     # screen - reviewers included - so this is deliberately not gated on
-    # IsPublicCourseCreatorRole, which would 403 reviewers and staff.
+    # a creator-only permission, which would 403 reviewers and staff.
     permission_classes = [IsAuthenticated]
     http_method_names = ["get", "patch", "head", "options"]
 

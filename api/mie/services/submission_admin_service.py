@@ -22,10 +22,10 @@ from api.mie.services import guardrail_service
 from api.users.enums import (
     UserActivityActionEnums,
     UserActivityCategoryEnums,
-    UserRole,
 )
 from api.users.models import UserActivityLog
-from api.users.permissions import CanDecideMieIdeas, require_role
+from api.authorization import codenames
+from api.authorization.services import permission_service
 
 DECIDED_STATUSES = (SubmissionStatus.APPROVED, SubmissionStatus.REJECTED)
 
@@ -48,7 +48,7 @@ def decide_submission(
     times. Returns the refreshed submission; caller serializes it.
 
     Deciding an idea is the Writer's job as well as the Super Admin's
-    (CanDecideMieIdeas); the rest of the MIE console stays Super Admin only.
+    (`mie.approve_topic_proposals`); the rest of the MIE console needs `mie.manage_console`.
 
     Reversal side effects:
     * APPROVED -> REJECTED with a linked resulting_course flags that
@@ -57,7 +57,7 @@ def decide_submission(
     * REJECTED -> APPROVED clears stale rejection metadata.
     """
 
-    require_role(actor, CanDecideMieIdeas.allowed_roles)
+    permission_service.require_permission(actor, codenames.MIE_APPROVE_TOPIC_PROPOSALS)
     new_status = SubmissionStatus.APPROVED if approve else SubmissionStatus.REJECTED
 
     # An already-rejected row may be re-rejected without a fresh reason;
@@ -146,7 +146,7 @@ def set_demand_signals(
     cannot blank the fields it did not touch.
     """
 
-    require_role(actor, CanDecideMieIdeas.allowed_roles)
+    permission_service.require_permission(actor, codenames.MIE_APPROVE_TOPIC_PROPOSALS)
     if demand_score is not None and not 0 <= demand_score <= 100:
         raise exceptions.ValidationError(
             {"demand_score": ["Demand score must be between 0 and 100."]}
@@ -189,7 +189,7 @@ def decide_submissions_bulk(
     one-at-a-time decision would.
     """
 
-    require_role(actor, CanDecideMieIdeas.allowed_roles)
+    permission_service.require_permission(actor, codenames.MIE_APPROVE_TOPIC_PROPOSALS)
     if len(submission_ids) > BULK_DECISION_LIMIT:
         raise exceptions.ValidationError(
             {"ids": [f"At most {BULK_DECISION_LIMIT} ideas can be decided at once."]}
@@ -346,7 +346,7 @@ def set_payout_bypass(*, actor, submission: CourseSubmission, bypass: bool) -> C
     event type rather than overloading approve/reject.
     """
 
-    require_role(actor, (UserRole.SUPER_ADMIN,))
+    permission_service.require_permission(actor, codenames.MIE_MANAGE_CONSOLE)
     if submission.payout_bypass == bypass:
         raise exceptions.ValidationError(
             {"payout_bypass": [f"Payout bypass is already {'set' if bypass else 'clear'}."]}

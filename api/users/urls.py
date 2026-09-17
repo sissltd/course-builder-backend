@@ -1,5 +1,13 @@
 from django.urls import path
 
+from api.users.views.account_admin_views import (
+    StaffEraseView,
+    StaffSendPasswordResetView,
+    TeamInvitationView,
+    TeamsEraseView,
+    TeamsSendPasswordResetView,
+)
+
 from api.users.views import (
     AdminUserActivityLogListView,
     KYCReviewViewSet,
@@ -103,4 +111,21 @@ urlpatterns = [
         AdminUserActivityLogListView.as_view(),
         name="admin-activity-log",
     ),
+    path(
+        "users/admin/invitations/",
+        TeamInvitationView.as_view(),
+        name="user-admin-invite",
+    ),
+    path(
+        "users/admin/<uuid:pk>/send-password-reset/",
+        TeamsSendPasswordResetView.as_view(),
+        name="user-admin-send-password-reset",
+    ),
+    path("users/admin/<uuid:pk>/erase/", TeamsEraseView.as_view(), name="user-admin-erase"),
+    path(
+        "auth/staff/<uuid:pk>/send-password-reset/",
+        StaffSendPasswordResetView.as_view(),
+        name="auth-staff-send-password-reset",
+    ),
+    path("auth/staff/<uuid:pk>/erase/", StaffEraseView.as_view(), name="auth-staff-erase"),
 ]

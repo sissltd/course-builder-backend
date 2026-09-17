@@ -182,6 +182,8 @@ def reseed_reference_data() -> None:
         ("paystack_transfer", "Paystack Transfer"),
         ("general", "General Ledger"),
         ("suspense", "Suspense Ledger"),
+        ("flutterwave_transfer", "Flutterwave Transfer"),
+        ("adjustments", "Admin Adjustments"),
     ):
         InternalAccount.objects.get_or_create(
             code_name=code_name,

@@ -18,7 +18,8 @@ from api.authentication.serializers import (
 )
 from api.authentication.services import authentication_service, mfa_service
 from api.users.models import User
-from api.users.permissions import IsSuperAdminRole
+from api.authorization import codenames
+from api.authorization.permissions import Perm
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 
 _ENROLL_EXAMPLE = {
@@ -205,7 +206,7 @@ class MFAVerifyView(APIView):
             request=request,
         )
         data = authentication_service.finish_login(
-            user=user, request=request, mfa_verified=True
+            user=user, request=request, mfa_verified=True, mfa_challenged=True
         )
         return Response(data)
 
@@ -317,7 +318,7 @@ class MFAAdminResetView(APIView):
     """Super-Admin-only: reset another user's MFA device (lost-device
     recovery). Forces re-enrollment; does not grant a fresh grace period."""
 
-    permission_classes = [IsSuperAdminRole]
+    permission_classes = [Perm(codenames.STAFF_FULL_ACCESS)]
 
     @extend_schema(
         summary="Reset a user's MFA (admin)",
@@ -325,7 +326,8 @@ class MFAAdminResetView(APIView):
             "Super-Admin-only lost-device recovery: deletes the target "
             "user's MFA device and recovery codes, forcing them to "
             "re-enroll from scratch on next login.\n\n"
-            "**Auth:** Super Admin only.\n\n"
+            "**Auth:** The `staff.full_access` permission — Super Admin by "
+            "default.\n\n"
             "**Prerequisites:** `user_id` must belong to an existing "
             "user.\n\n"
             "**Important:** Does not grant a fresh MFA grace period - if "

@@ -9,11 +9,8 @@ from api.courses.services import course_service
 from api.notification.models import Notification
 from api.users.enums import UserActivityActionEnums, UserActivityCategoryEnums
 from api.users.models import User
-from api.users.permissions import (
-    IsAdminOrSuperAdminRole,
-    IsCourseCreatorRole,
-    require_role,
-)
+from api.authorization import codenames
+from api.authorization.services import permission_service
 
 
 def submit_appeal(
@@ -36,7 +33,7 @@ def submit_appeal(
     idiom used by TopicReservationRequest.
     """
 
-    require_role(user, IsCourseCreatorRole.allowed_roles)
+    permission_service.require_permission(user, codenames.COURSES_CREATE)
     if course.creator_id != user.id:
         raise exceptions.PermissionDenied("You can only appeal your own course.")
     if course.status != CourseStatus.DRAFT or course.rejected_at is None:
@@ -55,7 +52,9 @@ def submit_appeal(
         description=description,
     )
 
-    admins = list(User.objects.filter(role__in=IsAdminOrSuperAdminRole.allowed_roles))
+    admins = list(
+        permission_service.users_with_permission(codenames.COURSES_DECIDE_APPEALS)
+    )
     if admins:
         Notification.emit_in_app_notification(
             receivers=admins,
@@ -83,7 +82,7 @@ def approve_appeal(
     submission does. Decision is final per the PRD - once decided, this
     appeal can't be re-decided."""
 
-    require_role(actor, IsAdminOrSuperAdminRole.allowed_roles)
+    permission_service.require_permission(actor, codenames.COURSES_DECIDE_APPEALS)
     if appeal.status != AppealStatus.PENDING:
         raise exceptions.ValidationError(
             f"Appeal cannot be approved from status '{appeal.status}'."
@@ -132,7 +131,7 @@ def reject_appeal(
     """Reject a Pending appeal. Decision is final per the PRD - the course
     is left untouched (still Draft)."""
 
-    require_role(actor, IsAdminOrSuperAdminRole.allowed_roles)
+    permission_service.require_permission(actor, codenames.COURSES_DECIDE_APPEALS)
     if appeal.status != AppealStatus.PENDING:
         raise exceptions.ValidationError(
             f"Appeal cannot be rejected from status '{appeal.status}'."

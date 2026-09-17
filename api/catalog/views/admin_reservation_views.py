@@ -17,7 +17,8 @@ from api.catalog.serializers import (
     TopicReservationRejectSerializer,
 )
 from api.catalog.services import topic_reservation_service
-from api.users.permissions import CanManageCategories, IsAdminRole
+from api.authorization import codenames
+from api.authorization.permissions import Perm
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 
 _TOPIC_REQUEST_EXAMPLE = {
@@ -50,7 +51,8 @@ _TOPIC_REQUEST_EXAMPLE = {
             "queue, newest first.\n\n"
             "Call this when the Admin reservation queue opens; filter by status, "
             "category, requester, search text, or dates as needed.\n\n"
-            "**Auth:** Admin, Approver, or Super Admin.\n\n"
+            "**Auth:** The `catalog.view_topic_queue` permission — Admin, Approver "
+            "and Super Admin by default.\n\n"
             "**Prerequisites:** None.\n\n"
             "**Important:** A request's `topic` is null until approval. Results "
             "are paginated."
@@ -69,7 +71,8 @@ _TOPIC_REQUEST_EXAMPLE = {
             "Returns one proposed topic request for the administrative review "
             "panel.\n\n"
             "Call this after selecting a request from the queue.\n\n"
-            "**Auth:** Admin, Approver, or Super Admin.\n\n"
+            "**Auth:** The `catalog.view_topic_queue` permission — Admin, Approver "
+            "and Super Admin by default.\n\n"
             "**Prerequisites:** The request must exist.\n\n"
             "**Important:** Requester and reviewer identity are included for the "
             "audit trail."
@@ -88,7 +91,8 @@ _TOPIC_REQUEST_EXAMPLE = {
             "Approves a Pending topic request, creates the topic under its "
             "category, and reserves it for the requesting creator.\n\n"
             "Call this after reviewing the proposed name and category.\n\n"
-            "**Auth:** Admin, Approver, or Super Admin.\n\n"
+            "**Auth:** The `catalog.view_topic_queue` permission — Admin, Approver "
+            "and Super Admin by default.\n\n"
             "**Prerequisites:** The request must be Pending and the topic name "
             "must be unique within its category.\n\n"
             "**Important:** The new topic inherits the category's beginner "
@@ -117,7 +121,8 @@ _TOPIC_REQUEST_EXAMPLE = {
         description=(
             "Rejects a Pending topic request and retains it in the review history.\n\n"
             "Call this after deciding the proposed topic should not be added.\n\n"
-            "**Auth:** Admin, Approver, or Super Admin.\n\n"
+            "**Auth:** The `catalog.view_topic_queue` permission — Admin, Approver "
+            "and Super Admin by default.\n\n"
             "**Prerequisites:** The request must be Pending.\n\n"
             "**Important:** The optional reason is retained and no topic is created."
         ),
@@ -144,7 +149,7 @@ _TOPIC_REQUEST_EXAMPLE = {
 class AdminTopicReservationRequestViewSet(ReadOnlyModelViewSet):
     """Admin dashboard queue for proposed-topic reservation requests."""
 
-    permission_classes = [IsAdminRole]
+    permission_classes = [Perm(codenames.CATALOG_VIEW_TOPIC_QUEUE)]
     serializer_class = AdminTopicReservationRequestSerializer
     filterset_class = AdminReservationRequestFilter
     filter_backends = [DjangoFilterBackend, drf_filters.OrderingFilter]
@@ -194,7 +199,7 @@ class AdminTopicReservationRequestViewSet(ReadOnlyModelViewSet):
 class AdminWriterTopicRequestViewSet(AdminTopicReservationRequestViewSet):
     """Admin Writer queue for proposed topic requests."""
 
-    permission_classes = [CanManageCategories]
+    permission_classes = [Perm(codenames.CATALOG_MANAGE_CATEGORIES)]
 
 
 @extend_schema_view(
@@ -209,7 +214,7 @@ class AdminWriterTopicRequestViewSet(AdminTopicReservationRequestViewSet):
 class ActiveTopicReservationViewSet(ReadOnlyModelViewSet):
     """Currently active topic reservations for the Admin dashboard."""
 
-    permission_classes = [IsAdminRole]
+    permission_classes = [Perm(codenames.CATALOG_VIEW_TOPIC_QUEUE)]
     serializer_class = ActiveTopicReservationSerializer
     filterset_class = ActiveTopicReservationFilter
     filter_backends = [DjangoFilterBackend, drf_filters.OrderingFilter]

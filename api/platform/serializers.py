@@ -244,12 +244,19 @@ class AdminOverviewSerializer(serializers.Serializer):
         child=serializers.IntegerField(),
         help_text="KYC submission counts keyed by KYCStatus.",
     )
+    financials_included = serializers.BooleanField(
+        help_text=(
+            "False for Limited Access callers: every money figure below is "
+            "null and should be hidden, not shown as zero."
+        )
+    )
     withdrawals = serializers.DictField(
         child=serializers.IntegerField(),
-        help_text="Withdrawal request counts keyed by WithdrawalRequestStatus.",
+        allow_null=True,
+        help_text="Withdrawal request counts keyed by WithdrawalRequestStatus. Null for Limited Access.",
     )
     wallet_totals = AdminOverviewWalletTotalsSerializer(
-        help_text="Platform-wide wallet money figures."
+        allow_null=True, help_text="Platform-wide wallet money figures. Null for Limited Access."
     )
     period = serializers.CharField(
         help_text="Window the trend series cover, echoing the request."
@@ -261,7 +268,9 @@ class AdminOverviewSerializer(serializers.Serializer):
         many=True, help_text="Courses created per day, zero-filled, oldest first."
     )
     cost_trend = AdminCostTrendPointSerializer(
-        many=True, help_text="Production spend per day, zero-filled, oldest first."
+        many=True,
+        allow_null=True,
+        help_text="Production spend per day, zero-filled, oldest first. Null for Limited Access.",
     )
 
 

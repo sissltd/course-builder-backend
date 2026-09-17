@@ -15,7 +15,9 @@ from api.quizzes.filters import QuizFilter
 from api.quizzes.models import Quiz
 from api.quizzes.serializers import QuizSerializer
 from api.quizzes.services import quiz_service
-from api.users.permissions import IsAdminRole, IsCourseCreatorRole
+from api.authorization import codenames
+from api.authorization.permissions import Perm
+from api.authorization.services import permission_service
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 
 _LEVEL_PARAMETER = OpenApiParameter(
@@ -85,8 +87,9 @@ _QUIZ_PARENT_RULES = (
             "their questions nested. This supports relational quiz management "
             "and admin quiz screens, not the Figma Course Builder assessment "
             f"save flow.\n\n{_FIGMA_ASSESSMENT_NOTE}\n\n"
-            "**Auth:** Course Creator/Writer with access to the parent course, "
-            "or Admin.\n\n"
+            "**Auth:** `courses.create` with access to the parent course, or "
+            "any course with `courses.view` (reads) / `courses.edit` (changes) - "
+            "Admin, Approver and Super Admin by default.\n\n"
             "**Prerequisites:** None.\n\n"
             "**Important:** Filter with `?level=` to scope to one level; "
             "results are paginated."
@@ -109,8 +112,9 @@ _QUIZ_PARENT_RULES = (
             "Returns a single quiz with its questions and options nested.\n\n"
             "Use this when opening an existing relational quiz. For the Figma "
             f"Course Builder quiz editor, use the assessment endpoints.\n\n{_FIGMA_ASSESSMENT_NOTE}\n\n"
-            "**Auth:** Course Creator/Writer with access to the parent course, "
-            "or Admin.\n\n"
+            "**Auth:** `courses.create` with access to the parent course, or "
+            "any course with `courses.view` (reads) / `courses.edit` (changes) - "
+            "Admin, Approver and Super Admin by default.\n\n"
             "**Prerequisites:** The quiz must exist in an accessible course.\n\n"
             "**Important:** A quiz outside the caller's course scope returns "
             "404, the same as an unknown id."
@@ -133,8 +137,9 @@ _QUIZ_PARENT_RULES = (
             "Use this only for relational quiz records. The Figma Course "
             "Builder should save its complete quiz through the assessment "
             f"PUT endpoints.\n\n{_FIGMA_ASSESSMENT_NOTE}\n\n"
-            "**Auth:** Course Creator/Writer with access to the parent course, "
-            "or Admin.\n\n"
+            "**Auth:** `courses.create` with access to the parent course, or "
+            "any course with `courses.view` (reads) / `courses.edit` (changes) - "
+            "Admin, Approver and Super Admin by default.\n\n"
             "**Prerequisites:** The selected lesson, module, or course must "
             "already exist and be accessible.\n\n"
             f"{_QUIZ_PARENT_RULES}\n\n"
@@ -193,8 +198,9 @@ _QUIZ_PARENT_RULES = (
             "the question endpoints, not inline replacement.\n\n"
             "Use this when saving relational quiz settings. For the Figma "
             f"Course Builder quiz editor, use assessment PUT endpoints.\n\n{_FIGMA_ASSESSMENT_NOTE}\n\n"
-            "**Auth:** Course Creator/Writer with access to the parent course, "
-            "or Admin.\n\n"
+            "**Auth:** `courses.create` with access to the parent course, or "
+            "any course with `courses.view` (reads) / `courses.edit` (changes) - "
+            "Admin, Approver and Super Admin by default.\n\n"
             "**Prerequisites:** The quiz and selected parent must be accessible.\n\n"
             f"{_QUIZ_PARENT_RULES}\n\n"
             "**Important:** Supplying `questions`, including an empty list, is "
@@ -233,8 +239,9 @@ _QUIZ_PARENT_RULES = (
             "Use this for small relational quiz adjustments after creation. "
             "For the Figma Course Builder quiz editor, use assessment PUT "
             f"endpoints.\n\n{_FIGMA_ASSESSMENT_NOTE}\n\n"
-            "**Auth:** Course Creator/Writer with access to the parent course, "
-            "or Admin.\n\n"
+            "**Auth:** `courses.create` with access to the parent course, or "
+            "any course with `courses.view` (reads) / `courses.edit` (changes) - "
+            "Admin, Approver and Super Admin by default.\n\n"
             "**Prerequisites:** The quiz and any newly selected parent must be "
             "accessible.\n\n"
             f"{_QUIZ_PARENT_RULES}\n\n"
@@ -267,8 +274,9 @@ _QUIZ_PARENT_RULES = (
             "Use this when removing an entire relational quiz. Figma Course "
             "Builder assessments are replaced by PUTting the desired "
             f"assessment question list.\n\n{_FIGMA_ASSESSMENT_NOTE}\n\n"
-            "**Auth:** Course Creator/Writer with access to the parent course, "
-            "or Admin.\n\n"
+            "**Auth:** `courses.create` with access to the parent course, or "
+            "any course with `courses.view` (reads) / `courses.edit` (changes) - "
+            "Admin, Approver and Super Admin by default.\n\n"
             "**Prerequisites:** The quiz must exist in an accessible course.\n\n"
             "**Important:** Deletion is immediate and cascades to every question "
             "and option in the quiz."
@@ -293,26 +301,35 @@ class QuizViewSet(ModelViewSet):
 
     queryset = Quiz.objects.all()
     serializer_class = QuizSerializer
-    permission_classes = [IsCourseCreatorRole | IsAdminRole]
+    permission_classes = [
+        Perm(codenames.COURSES_CREATE, codenames.COURSES_VIEW, codenames.COURSES_EDIT)
+    ]
     filterset_class = QuizFilter
     filter_backends = [DjangoFilterBackend, drf_filters.OrderingFilter]
     ordering_fields = ["title", "level", "created_datetime"]
 
-    def _is_admin(self):
-        return IsAdminRole().has_permission(self.request, self)
+    def _sees_every_quiz(self):
+        """View Course lets a caller read every quiz; changing one needs Edit Course."""
+
+        codename = (
+            codenames.COURSES_VIEW
+            if self.action in {"list", "retrieve"}
+            else codenames.COURSES_EDIT
+        )
+        return permission_service.user_has_permission(self.request.user, codename)
 
     def get_queryset(self):
         if getattr(self, "swagger_fake_view", False):
             return Quiz.objects.none()
         queryset = (
             Quiz.objects.all()
-            if self._is_admin()
+            if self._sees_every_quiz()
             else quiz_service.quizzes_accessible_to(user=self.request.user)
         )
         return queryset.prefetch_related("questions", "questions__options")
 
     def _validate_parent_access(self, serializer):
-        if self._is_admin():
+        if self._sees_every_quiz():
             return
         instance = serializer.instance
         level = serializer.validated_data.get("level", getattr(instance, "level", None))

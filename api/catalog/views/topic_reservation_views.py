@@ -15,11 +15,9 @@ from api.catalog.serializers import (
     TopicReservationRequestSerializer,
 )
 from api.catalog.services import topic_reservation_service
-from api.users.permissions import (
-    IsAdminRole,
-    IsCourseCreatorRole,
-    IsCreatorReviewerRole,
-)
+from api.authorization import codenames
+from api.authorization.permissions import Perm
+from api.authorization.services import permission_service
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 
 MANAGE_ACTIONS = {"approve", "reject"}
@@ -63,8 +61,8 @@ _RESERVATION_EXAMPLE = {
             "review queue for BR-007 topic requests).\n\n"
             "Called when the My Requests screen loads for a creator, or the "
             "topic-requests queue for Admin/Reviewer.\n\n"
-            "**Auth:** Course Creator/Writer (own requests), or Admin/"
-            "Creator Reviewer/Verifier (every request).\n\n"
+            "**Auth:** Own requests with `courses.create` (Course Creator and "
+            "Writer by default), or every request with `catalog.manage_topics` (Creator Reviewer, Verifier, Admin, Approver, Super Admin by default).\n\n"
             "**Prerequisites:** None beyond holding one of those roles.\n\n"
             "**Important:** `topic` is null until the request is approved - "
             "this endpoint is for proposing a topic that doesn't exist yet. "
@@ -91,8 +89,8 @@ _RESERVATION_EXAMPLE = {
             "Returns a single topic request.\n\n"
             "Called when opening a request's detail view - the Figma detail "
             "panel shows `rejection_reason` for a Rejected request.\n\n"
-            "**Auth:** The requesting creator, or Admin/Creator Reviewer/"
-            "Verifier.\n\n"
+            "**Auth:** The requesting creator (`courses.create`), or "
+            "`catalog.manage_topics` (Creator Reviewer, Verifier, Admin, Approver, Super Admin by default).\n\n"
             "**Prerequisites:** The request must exist and be visible to "
             "the caller.\n\n"
             "**Important:** A creator requesting someone else's request "
@@ -117,8 +115,8 @@ _RESERVATION_EXAMPLE = {
             "workflow (a request is decided via approve/reject, not "
             "edited) - exposed only because the viewset shares ModelViewSet "
             "CRUD.\n\n"
-            "**Auth:** The requesting creator, or Admin/Creator Reviewer/"
-            "Verifier.\n\n"
+            "**Auth:** The requesting creator (`courses.create`), or "
+            "`catalog.manage_topics` (Creator Reviewer, Verifier, Admin, Approver, Super Admin by default).\n\n"
             "**Prerequisites:** The request must exist and be visible to "
             "the caller.\n\n"
             "**Important:** Every field on `TopicReservationRequestSerializer` "
@@ -145,8 +143,8 @@ _RESERVATION_EXAMPLE = {
             "normal workflow (a request is decided via approve/reject, not "
             "edited) - exposed only because the viewset shares "
             "ModelViewSet CRUD.\n\n"
-            "**Auth:** The requesting creator, or Admin/Creator Reviewer/"
-            "Verifier.\n\n"
+            "**Auth:** The requesting creator (`courses.create`), or "
+            "`catalog.manage_topics` (Creator Reviewer, Verifier, Admin, Approver, Super Admin by default).\n\n"
             "**Prerequisites:** The request must exist and be visible to "
             "the caller.\n\n"
             "**Important:** Every field on `TopicReservationRequestSerializer` "
@@ -173,8 +171,8 @@ _RESERVATION_EXAMPLE = {
             "workflow (a request is decided via approve/reject, which "
             "preserves history) - exposed only because the viewset shares "
             "ModelViewSet CRUD.\n\n"
-            "**Auth:** The requesting creator, or Admin/Creator Reviewer/"
-            "Verifier.\n\n"
+            "**Auth:** The requesting creator (`courses.create`), or "
+            "`catalog.manage_topics` (Creator Reviewer, Verifier, Admin, Approver, Super Admin by default).\n\n"
             "**Prerequisites:** The request must exist and be visible to "
             "the caller.\n\n"
             "**Important:** Deleting an Approved request does not delete or "
@@ -200,7 +198,8 @@ _RESERVATION_EXAMPLE = {
             "Called from the 'Request topic' action on the Reservation "
             "screen when a creator wants a topic that isn't in the catalog "
             "yet.\n\n"
-            "**Auth:** Course Creator or Writer.\n\n"
+            "**Auth:** The `courses.create` permission — Course Creator and Writer "
+            "by default.\n\n"
             "**Prerequisites:** None beyond holding the Course Creator/"
             "Writer role.\n\n"
             "**Important:** No automatic duplicate-name check runs at "
@@ -245,7 +244,9 @@ class TopicReservationRequestViewSet(ModelViewSet):
     course_service.create_draft_course's automatic reservation. Proposing a brand-new
     Category has its own parallel flow - see CategoryRequestViewSet."""
 
-    permission_classes = [IsCourseCreatorRole | IsAdminRole | IsCreatorReviewerRole]
+    permission_classes = [
+        Perm(codenames.COURSES_CREATE, codenames.CATALOG_MANAGE_TOPICS)
+    ]
 
     def get_queryset(self):
         if getattr(self, "swagger_fake_view", False):
@@ -254,8 +255,8 @@ class TopicReservationRequestViewSet(ModelViewSet):
         queryset = TopicReservationRequest.objects.select_related(
             "requested_by", "category", "topic", "topic__category"
         )
-        if self.request.user.is_superuser or self.request.user.role in (
-            IsAdminRole.allowed_roles + IsCreatorReviewerRole.allowed_roles
+        if permission_service.user_has_permission(
+            self.request.user, codenames.CATALOG_MANAGE_TOPICS
         ):
             return queryset
         return queryset.filter(requested_by=self.request.user)
@@ -267,7 +268,7 @@ class TopicReservationRequestViewSet(ModelViewSet):
 
     def get_permissions(self):
         if self.action in MANAGE_ACTIONS:
-            return [(IsAdminRole | IsCreatorReviewerRole)()]
+            return [Perm(codenames.CATALOG_MANAGE_TOPICS)()]
         return super().get_permissions()
 
     @extend_schema(
@@ -281,7 +282,7 @@ class TopicReservationRequestViewSet(ModelViewSet):
             "to claim the topic.\n\n"
             "Called from the 'Approve' action on the topic-requests "
             "queue.\n\n"
-            "**Auth:** Admin or Creator Reviewer/Verifier.\n\n"
+            "**Auth:** `catalog.manage_topics` (Creator Reviewer, Verifier, Admin, Approver, Super Admin by default).\n\n"
             "**Prerequisites:** The request must be `PENDING`; `name` must "
             "not already be taken by another topic in the same "
             "`category`.\n\n"
@@ -365,7 +366,7 @@ class TopicReservationRequestViewSet(ModelViewSet):
             "only approvals notify the requester.\n\n"
             "Called from the 'Reject' action on the topic-requests "
             "queue.\n\n"
-            "**Auth:** Admin or Creator Reviewer/Verifier.\n\n"
+            "**Auth:** `catalog.manage_topics` (Creator Reviewer, Verifier, Admin, Approver, Super Admin by default).\n\n"
             "**Prerequisites:** The request must be `PENDING`.\n\n"
             "**Important:** No Topic is created - rejecting never reserves "
             "or releases anything. Whether the name duplicates an existing "

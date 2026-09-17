@@ -18,6 +18,10 @@ from api.users.enums import (
     UserRole,
 )
 
+#: Roles an invitation can create: staff, plus Creator Reviewers invited from
+#: the Teams screen. Pending invitees of either kind can be re-invited.
+INVITED_ROLES = STAFF_ROLES + (UserRole.CREATOR_REVIEWER,)
+
 User = get_user_model()
 logger = logging.getLogger(__name__)
 
@@ -130,14 +134,15 @@ class StaffService:
         email: str,
         first_name: str,
         last_name: str,
-        role: str,
+        access_role,
         request=None,
     ) -> User:
-        """Create a pending staff account and email an invitation link.
+        """Create a pending account in `access_role` and email an invitation link.
 
-        `role` is validated against INVITABLE_STAFF_ROLES by the serializer, so
-        by the time it reaches here it can only be one of the three positions
-        the invite dialog offers - never SUPER_ADMIN, and never a public role.
+        `access_role` is a staff role (built-in or custom) for the staff invite,
+        or the built-in Creator Reviewer role for the Teams invite. The caller
+        (the view) has already checked the inviter may assign it; the account's
+        workflow role is the access role's base role.
 
         The invitee is created inactive with an unusable password, so the row
         exists (reserving the email) but cannot authenticate until they accept.
@@ -150,6 +155,7 @@ class StaffService:
         mis-selected role before acceptance.
         """
 
+        role = access_role.base_role
         existing = User.objects.filter(email__iexact=email).first()
         user = None
         if existing is not None:
@@ -174,6 +180,7 @@ class StaffService:
                     first_name=first_name,
                     last_name=last_name,
                     role=role,
+                    access_role=access_role,
                     is_active=False,
                     created_by=invited_by,
                 )
@@ -186,7 +193,10 @@ class StaffService:
                 user.first_name = first_name
                 user.last_name = last_name
                 user.role = role
-                user.save(update_fields=["first_name", "last_name", "role"])
+                user.access_role = access_role
+                user.save(
+                    update_fields=["first_name", "last_name", "role", "access_role"]
+                )
 
             _token, raw_token = token_service.issue_token(
                 user=user, purpose=TokenPurpose.STAFF_INVITATION
@@ -201,9 +211,13 @@ class StaffService:
         activity_service.log_auth_activity(
             user=invited_by,
             action=UserActivityActionEnums.STAFF_INVITED,
-            summary=f"Invited {email} as {UserRole(role).label}.",
+            summary=f"Invited {email} as {access_role.name}.",
             request=request,
-            details={"invitee_email": email, "role": role},
+            details={
+                "invitee_email": email,
+                "role": role,
+                "access_role_id": str(access_role.id),
+            },
         )
         return user
 
@@ -318,6 +332,11 @@ class StaffService:
 
         self._assert_manageable(actor=actor, staff=staff, verb="reactivate")
 
+        if staff.erased_at is not None:
+            raise exceptions.ValidationError(
+                "This account was deleted and cannot be restored."
+            )
+
         if staff.is_active:
             raise exceptions.ValidationError("This staff member is already active.")
 
@@ -343,10 +362,10 @@ class StaffService:
 
     @staticmethod
     def is_pending_invite(user: User) -> bool:
-        """True if `user` is staff who were invited but never accepted."""
+        """True if `user` was invited (as staff or a Creator Reviewer) but never accepted."""
 
         return (
-            user.role in STAFF_ROLES
+            user.role in INVITED_ROLES
             and not user.is_active
             and not user.has_usable_password()
         )
@@ -399,7 +418,7 @@ class StaffService:
                 context={
                     "first_name": user.first_name,
                     "invited_by_name": invited_by.get_full_name() or invited_by.email,
-                    "role_label": UserRole(user.role).label,
+                    "role_label": user.access_role.name,
                     "invitation_link": link,
                     "expiry_minutes": settings.EMAIL_TOKEN_EXPIRY_MINUTES,
                 },

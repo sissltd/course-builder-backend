@@ -7,9 +7,14 @@ from django.db import models
 from django.utils.translation import gettext_lazy as _
 
 from api.wallet.enums import (
+    AdjustmentDirection,
     WithdrawalRequestStatus,
 )
-from core.mixins import DateHistoryModelMixin, UUIDPrimaryKeyModelMixin
+from core.mixins import (
+    DateHistoryModelMixin,
+    UserHistoryModelMixin,
+    UUIDPrimaryKeyModelMixin,
+)
 
 
 # This utility function is used in the migration file 0002_transaction_fee_transaction_recipient_account_name_and_more.py to backfill existing Transaction rows with unique references.
@@ -138,3 +143,77 @@ class WithdrawalRequest(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
         """Summarize the withdrawal request for admin/debugging readability."""
 
         return f"WithdrawalRequest({self.user_id}, {self.amount}, {self.status})"
+
+
+class WalletAdjustment(
+    UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMixin
+):
+    """An admin credit or debit to a creator's wallet ("Issue Refund").
+
+    The money itself moves as a matching pair of ledger transactions sharing
+    `reference`; this row records why, by whom, and the idempotency key that
+    stops a retried request moving the money twice.
+    """
+
+    wallet = models.ForeignKey(
+        Wallet,
+        verbose_name=_("Wallet"),
+        on_delete=models.PROTECT,
+        related_name="adjustments",
+        help_text=_("The wallet adjusted."),
+    )
+    user = models.ForeignKey(
+        "users.User",
+        verbose_name=_("User"),
+        on_delete=models.PROTECT,
+        related_name="wallet_adjustments",
+        help_text=_("The wallet's owner."),
+    )
+    direction = models.CharField(
+        verbose_name=_("Direction"),
+        max_length=10,
+        choices=AdjustmentDirection.choices,
+        help_text=_("CREDIT adds to the wallet; DEBIT takes from it."),
+    )
+    amount = models.DecimalField(
+        verbose_name=_("Amount"),
+        max_digits=12,
+        decimal_places=2,
+        help_text=_("Amount moved; always positive."),
+    )
+    reason = models.CharField(
+        verbose_name=_("Reason"),
+        max_length=500,
+        help_text=_("Why the adjustment was made; shown to the creator."),
+    )
+    reference = models.CharField(
+        verbose_name=_("Reference"),
+        max_length=100,
+        unique=True,
+        help_text=_("Ledger reference shared by the two transaction entries."),
+    )
+    idempotency_key = models.CharField(
+        verbose_name=_("Idempotency key"),
+        max_length=64,
+        unique=True,
+        help_text=_("Client-supplied key; a retry with the same key returns this row."),
+    )
+
+    class Meta:
+        verbose_name = _("Wallet adjustment")
+        verbose_name_plural = _("Wallet adjustments")
+        ordering = ["-created_datetime"]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(amount__gt=0),
+                name="wallet_adjustment_amount_positive",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["user", "-created_datetime"], name="wallet_adj_user_dt_idx"
+            ),
+        ]
+
+    def __str__(self):
+        return f"WalletAdjustment({self.user_id}, {self.direction}, {self.amount})"

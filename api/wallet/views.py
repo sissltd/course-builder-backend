@@ -15,7 +15,8 @@ from rest_framework.generics import (
 from rest_framework.views import APIView
 
 from api.payments.models.transaction_model import Transaction
-from api.users.permissions import IsAdminOrSuperAdminRole, IsCourseCreatorRole
+from api.authorization import codenames
+from api.authorization.permissions import Perm
 from api.wallet.filters import (
     AdminTransactionFilter,
     AdminWithdrawalRequestFilter,
@@ -43,8 +44,9 @@ _WALLET_OWNER_EXAMPLE = {
 }
 
 _ADMIN_AUTH_LINE = (
-    "**Auth:** Admin or Super Admin. The creator-facing wallet endpoints are "
-    "gated on the Course Creator role and 403 for admins, which is why this "
+    "**Auth:** The `creators.view_wallet` permission (View Wallet) — Admin "
+    "and Super Admin by default. The creator-facing wallet endpoints need "
+    "`earnings.manage_own`, which admins don't hold, which is why this "
     "parallel read exists."
 )
 
@@ -58,7 +60,7 @@ _ADMIN_AUTH_LINE = (
 class WalletDetailView(RetrieveAPIView):
     """The current user's wallet balance, auto-provisioned on first access."""
 
-    permission_classes = [IsCourseCreatorRole]
+    permission_classes = [Perm(codenames.EARNINGS_MANAGE_OWN)]
     serializer_class = WalletSerializer
 
     def get_object(self):
@@ -97,7 +99,7 @@ class WithdrawalRequestCreateView(CreateAPIView):
     move until that's confirmed.
     """
 
-    permission_classes = [IsCourseCreatorRole]
+    permission_classes = [Perm(codenames.EARNINGS_MANAGE_OWN)]
     serializer_class = WithdrawalRequestCreateSerializer
 
 
@@ -105,7 +107,7 @@ class WithdrawalConfirmView(APIView):
     """Step 2 of withdrawal: confirm the OTP sent for a pending
     WithdrawalRequest, creating the resulting Transaction."""
 
-    permission_classes = [IsCourseCreatorRole]
+    permission_classes = [Perm(codenames.EARNINGS_MANAGE_OWN)]
     serializer_class = WithdrawalConfirmSerializer  # for schema generation only
 
     @extend_schema(
@@ -183,7 +185,7 @@ class WithdrawalConfirmView(APIView):
 class AdminWalletListView(ListAPIView):
     """Every creator wallet, for the admin finance view."""
 
-    permission_classes = [IsAdminOrSuperAdminRole]
+    permission_classes = [Perm(codenames.CREATORS_VIEW_WALLET)]
     serializer_class = AdminWalletSerializer
     filter_backends = [drf_filters.OrderingFilter]
     ordering_fields = ["balance", "updated_datetime"]
@@ -254,7 +256,7 @@ class AdminWalletListView(ListAPIView):
 class AdminTransactionListView(ListAPIView):
     """The platform-wide transaction ledger, for admins."""
 
-    permission_classes = [IsAdminOrSuperAdminRole]
+    permission_classes = [Perm(codenames.CREATORS_VIEW_WALLET)]
     serializer_class = AdminTransactionSerializer
     filterset_class = AdminTransactionFilter
     filter_backends = [DjangoFilterBackend, drf_filters.OrderingFilter]
@@ -325,7 +327,7 @@ class AdminTransactionListView(ListAPIView):
 class AdminWithdrawalRequestListView(ListAPIView):
     """Every withdrawal request across all creators, for admins."""
 
-    permission_classes = [IsAdminOrSuperAdminRole]
+    permission_classes = [Perm(codenames.CREATORS_VIEW_WALLET)]
     serializer_class = AdminWithdrawalRequestSerializer
     filterset_class = AdminWithdrawalRequestFilter
     filter_backends = [DjangoFilterBackend, drf_filters.OrderingFilter]

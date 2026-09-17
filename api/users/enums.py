@@ -73,6 +73,11 @@ INVITABLE_STAFF_ROLES = (
 #: the Super Admin, which is staff too but is never handed out by invite.
 STAFF_ROLES = INVITABLE_STAFF_ROLES + (UserRole.SUPER_ADMIN,)
 
+#: (value, label) choices for fields that accept an invitable staff role.
+INVITABLE_STAFF_ROLE_CHOICES = [
+    (role.value, role.label) for role in INVITABLE_STAFF_ROLES
+]
+
 
 class UserActivityCategoryEnums(models.TextChoices):
     """High-level buckets used to group user activity events.
@@ -97,6 +102,7 @@ class UserActivityCategoryEnums(models.TextChoices):
     WALLET = "WALLET", "Wallet"
     PRIVACY = "PRIVACY", "Privacy"
     PAYMENTS = "PAYMENTS", "Payments"
+    ACHIEVEMENT = "ACHIEVEMENT", "Achievement"
 
 
 class UserActivityActionEnums(models.TextChoices):
@@ -174,6 +180,22 @@ class UserActivityActionEnums(models.TextChoices):
     BANK_ACCOUNT_ADDED = "BANK_ACCOUNT_ADDED", "Bank Account Added"
     BANK_ACCOUNT_DELETED = "BANK_ACCOUNT_DELETED", "Bank Account Deleted"
     BANK_ACCOUNT_UPDATED = "BANK_ACCOUNT_UPDATED", "Bank Account Updated"
+    BADGE_CREATED = "BADGE_CREATED", "Badge Created"
+    BADGE_UPDATED = "BADGE_UPDATED", "Badge Updated"
+    BADGE_DELETED = "BADGE_DELETED", "Badge Deleted"
+    BADGE_AWARDED = "BADGE_AWARDED", "Badge Awarded"
+    BADGE_REVOKED = "BADGE_REVOKED", "Badge Revoked"
+    ROLE_CREATED = "ROLE_CREATED", "Role Created"
+    ROLE_UPDATED = "ROLE_UPDATED", "Role Updated"
+    ROLE_DELETED = "ROLE_DELETED", "Role Deleted"
+    STAFF_ROLE_CHANGED = "STAFF_ROLE_CHANGED", "Staff Role Changed"
+    PASSWORD_RESET_SENT_BY_ADMIN = (
+        "PASSWORD_RESET_SENT_BY_ADMIN",
+        "Password Reset Sent By Admin",
+    )
+    ACCOUNT_ERASED = "ACCOUNT_ERASED", "Account Erased"
+    COURSE_VERSION_MIGRATED = "COURSE_VERSION_MIGRATED", "Course Version Migrated"
+    WALLET_ADJUSTED = "WALLET_ADJUSTED", "Wallet Adjusted"
 
 
 class KYCDocumentType(models.TextChoices):

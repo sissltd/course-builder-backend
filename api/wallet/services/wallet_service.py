@@ -23,11 +23,8 @@ from api.platform.enums import PaymentProcessors
 from api.platform.services import platform_settings_service
 from api.users.enums import UserActivityActionEnums, UserActivityCategoryEnums
 from api.users.models import User
-from api.users.permissions import (
-    IsAdminOrSuperAdminRole,
-    IsCourseCreatorRole,
-    require_role,
-)
+from api.authorization import codenames
+from api.authorization.services import permission_service
 from api.users.services.kyc_services import kyc_submission_service
 from api.wallet.enums import (
     TransactionStatus,
@@ -191,12 +188,12 @@ def list_transactions(*, user: User) -> QuerySet[Transaction]:
 def list_all_wallets(*, actor: User) -> QuerySet[Wallet]:
     """Return every creator wallet, for the admin finance view.
 
-    Creator-facing wallet endpoints are gated on IsCourseCreatorRole, so an
-    Admin is 403'd from all of them and has no way to answer "what is this
-    creator's balance?" - these admin readers exist to close that.
+    Creator-facing wallet endpoints are gated on `earnings.manage_own`, which
+    staff roles do not hold, so an Admin has no way to answer "what is this
+    creator's balance?" there - these admin readers exist to close that.
     """
 
-    require_role(actor, IsAdminOrSuperAdminRole.allowed_roles)
+    permission_service.require_permission(actor, codenames.CREATORS_VIEW_WALLET)
     return Wallet.objects.select_related("user").order_by("-updated_datetime")
 
 
@@ -208,7 +205,7 @@ def list_all_transactions(*, actor: User) -> QuerySet[Transaction]:
     transaction.
     """
 
-    require_role(actor, IsAdminOrSuperAdminRole.allowed_roles)
+    permission_service.require_permission(actor, codenames.CREATORS_VIEW_WALLET)
     return Transaction.objects.select_related(
         "course"
     )  # wallet field is now a GenericForeign key
@@ -223,7 +220,7 @@ def list_all_withdrawal_requests(*, actor: User) -> QuerySet[WithdrawalRequest]:
     COMPLETED or FAILED yet, so an admin can see the queue but not settle it.
     """
 
-    require_role(actor, IsAdminOrSuperAdminRole.allowed_roles)
+    permission_service.require_permission(actor, codenames.CREATORS_VIEW_WALLET)
     return WithdrawalRequest.objects.select_related(
         "user", "payout_account", "transaction"
     )
@@ -247,7 +244,7 @@ def create_payout_account(
     account demotes any previous default.
     """
 
-    require_role(user, IsCourseCreatorRole.allowed_roles)
+    permission_service.require_permission(user, codenames.EARNINGS_MANAGE_OWN)
     has_existing = BankAccount.objects.filter(user=user).exists()
     is_default = is_default or not has_existing
 
@@ -273,7 +270,7 @@ def delete_bank_account(*, user: User, bank_account_id) -> None:
     Raises NotFound if it doesn't exist or belongs to someone else.
     """
 
-    require_role(user, IsCourseCreatorRole.allowed_roles)
+    permission_service.require_permission(user, codenames.EARNINGS_MANAGE_OWN)
     account = BankAccount.objects.filter(user=user, pk=bank_account_id).first()
     if account is None:
         raise exceptions.NotFound("Bank account not found.")
@@ -292,7 +289,7 @@ def request_withdrawal(
     amount is below the minimum threshold, or exceeds the current balance.
     """
 
-    require_role(user, IsCourseCreatorRole.allowed_roles)
+    permission_service.require_permission(user, codenames.EARNINGS_MANAGE_OWN)
     kyc_submission_service.require_verified(user=user)
 
     minimum_withdrawal_threshold = (
@@ -346,16 +343,13 @@ def confirm_withdrawal(*, user: User, withdrawal_request_id, code: str) -> Trans
     since it may have changed in between. Raises NotFound if the request
     doesn't exist, isn't the caller's, or isn't awaiting confirmation.
 
-    No MFA step-up here: require_role below only ever admits
-    IsCourseCreatorRole.allowed_roles (COURSE_CREATOR/STAFF_WRITER) - an
-    ADMIN/SUPER_ADMIN account can never reach this function at all, so an
-    MFA-mandated-role check would be unreachable dead code. The financial
-    actions an Admin/Super Admin can actually perform in this codebase are
-    PlatformSettings threshold changes and category pricing, both gated by
-    IsMFAVerifiedForSession at the view layer instead.
+    No MFA step-up here: this moves the caller's own earnings to the caller's
+    own verified bank account, behind an emailed OTP, and needs
+    `earnings.manage_own` (Course Creator and Writer by default). Actions on
+    other people's money are gated separately, with MFA.
     """
 
-    require_role(user, IsCourseCreatorRole.allowed_roles)
+    permission_service.require_permission(user, codenames.EARNINGS_MANAGE_OWN)
     withdrawal_request = WithdrawalRequest.objects.filter(
         pk=withdrawal_request_id,
         user=user,

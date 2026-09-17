@@ -23,7 +23,10 @@ from api.platform.services import (
     platform_settings_service,
     reviewer_overview_service,
 )
-from api.users.permissions import IsAdminOrSuperAdminRole, IsMFAVerifiedForSession
+from api.authorization import codenames
+from api.authorization.permissions import Perm
+from api.authorization.services import permission_service
+from api.users.permissions import IsMFAVerifiedForSession
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 
 _SETTINGS_EXAMPLE = {
@@ -54,17 +57,17 @@ class PlatformSettingsView(APIView):
 
     GET is open to any authenticated user - the frontend needs to display
     live thresholds (e.g. "4-12 modules required") without hardcoding them.
-    PATCH is Admin/Super Admin only (excludes Approver - these thresholds
-    affect every course on the platform, a higher-stakes action than
-    ordinary admin-tier work) and additionally requires an MFA-verified
-    session - see IsMFAVerifiedForSession.
+    PATCH needs the `platform.edit_settings` permission (Admin and Super
+    Admin by default; not Approver - these thresholds affect every course on
+    the platform) and additionally an MFA-verified session - see
+    IsMFAVerifiedForSession.
     """
 
     serializer_class = PlatformSettingsUpdateSerializer  # for schema generation only
 
     def get_permissions(self):
         if self.request.method == "PATCH":
-            return [IsAdminOrSuperAdminRole(), IsMFAVerifiedForSession()]
+            return [Perm(codenames.PLATFORM_EDIT_SETTINGS)(), IsMFAVerifiedForSession()]
         return [IsAuthenticated()]
 
     @extend_schema(
@@ -110,9 +113,10 @@ class PlatformSettingsView(APIView):
             "resubmitting the whole form.\n\n"
             "Called from the admin Settings screen when a threshold is "
             "saved.\n\n"
-            "**Auth:** Admin or Super Admin. Approvers are excluded — these "
-            "values affect every course on the platform, which is a higher-"
-            "stakes change than the course approvals Approvers handle.\n\n"
+            "**Auth:** The `platform.edit_settings` permission — Admin and "
+            "Super Admin by default, not Approver: these values affect every "
+            "course on the platform. Also needs an MFA-verified session where "
+            "MFA is mandatory for the caller's role.\n\n"
             "**Prerequisites:** At least one settings field must be present in "
             "the body.\n\n"
             "**Important:** Changes take effect immediately and apply to the "
@@ -167,7 +171,9 @@ class PlatformSettingsView(APIView):
 class AdminOverviewView(APIView):
     """Aggregate counts and money totals for the admin home screen."""
 
-    permission_classes = [IsAdminOrSuperAdminRole]
+    permission_classes = [
+        Perm(codenames.DASHBOARD_VIEW, codenames.DASHBOARD_VIEW_LIMITED)
+    ]
     serializer_class = AdminOverviewSerializer  # for schema generation only
 
     @extend_schema(
@@ -178,9 +184,10 @@ class AdminOverviewView(APIView):
             "withdrawal requests by status, plus platform-wide wallet totals. "
             "It answers 'what needs my attention today?' in one call.\n\n"
             "Called when the admin dashboard loads.\n\n"
-            "**Auth:** Admin or Super Admin.\n\n"
-            "**Prerequisites:** None beyond holding the Admin or Super Admin "
-            "role.\n\n"
+            "**Auth:** `dashboard.view` (View Only — Admin and Super Admin by "
+            "default) or `dashboard.view_limited` (Limited Access). With Limited "
+            "Access, `financials_included` is false and every money figure is null.\n\n"
+            "**Prerequisites:** None.\n\n"
             "**Important:** Counts only — each figure has a dedicated endpoint "
             "behind it (`/review-queue/`, `/users/kyc-review/`, "
             "`/admin/withdrawals/`) and this deliberately does not duplicate "
@@ -255,6 +262,9 @@ class AdminOverviewView(APIView):
     def get(self, request):
         overview = admin_overview_service.get_overview(
             actor=request.user,
+            include_financials=permission_service.user_has_permission(
+                request.user, codenames.DASHBOARD_VIEW
+            ),
             period=request.query_params.get(
                 "period", admin_overview_service.DEFAULT_PERIOD
             ),
@@ -276,8 +286,9 @@ class CreatorOverviewView(APIView):
             "with lifetime-earned and pending-payout figures, and how many "
             "collaboration invites are waiting on them.\n\n"
             "Called when the course-builder home screen loads.\n\n"
-            "**Auth:** Course Creator or Writer (role enforced in the service "
-            "layer, so admins calling on behalf of a creator get a clean 403).\n\n"
+            "**Auth:** The `courses.create` permission — Course Creator and Writer "
+            "by default (enforced in the service layer, so a caller without it "
+            "gets a clean 403).\n\n"
             "**Prerequisites:** None beyond being signed in with a creator "
             "role.\n\n"
             "**Important:** Counts only - each figure has a dedicated "
@@ -475,7 +486,7 @@ class TestEmailView(APIView):
     (SMTP, Resend, or Cloudflare REST, per `EMAIL_PROVIDER`) before responding.
     """
 
-    permission_classes = [IsAuthenticated, IsAdminOrSuperAdminRole]
+    permission_classes = [Perm(codenames.PLATFORM_EDIT_SETTINGS)]
 
     @extend_schema(
         summary="Send test email",
@@ -487,7 +498,8 @@ class TestEmailView(APIView):
             "confirm delivery end-to-end.\n\n"
             "Used from staging to verify email credentials and rendering "
             "without going through a real signup flow.\n\n"
-            "**Auth:** Super Admin.\n\n"
+            "**Auth:** The `platform.edit_settings` permission — Admin and "
+            "Super Admin by default.\n\n"
             "**Prerequisites:** `EMAIL_HOST_USER` and `EMAIL_HOST_PASSWORD` "
             "must be configured when `EMAIL_PROVIDER=smtp`; `RESEND_API_KEY` "
             "when `EMAIL_PROVIDER=resend`; `CLOUDFLARE_API_TOKEN` and "

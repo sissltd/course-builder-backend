@@ -13,7 +13,8 @@ from api.users.enums import (
     UserActivityCategoryEnums,
 )
 from api.users.models import KYCVerification, User
-from api.users.permissions import IsAdminOrSuperAdminRole, require_role
+from api.authorization import codenames
+from api.authorization.services import permission_service
 from api.users.tasks import call_sissl_kyc_verification, call_youverify_kyc_verification
 from core.models import KYCOutboxEvent
 from shared.utils.encryption import encrypt_field
@@ -100,8 +101,8 @@ def _notify_admins_of_new_submission(verification: KYCVerification) -> None:
     # no NotificationPreference row yet (the common case - it's lazily
     # created) still gets notified, since only an explicit opt-out excludes
     # them.
-    admins = User.objects.filter(
-        role__in=IsAdminOrSuperAdminRole.allowed_roles
+    admins = permission_service.users_with_permission(
+        codenames.CREATORS_APPROVE_ACCOUNT
     ).exclude(notification_preference__kyc_submission_alert=False)
     if not admins:
         return
@@ -140,7 +141,7 @@ def approve_verification(
     activity, mirroring review_service.approve_course.
     """
 
-    require_role(reviewer, IsAdminOrSuperAdminRole.allowed_roles)
+    permission_service.require_permission(reviewer, codenames.CREATORS_APPROVE_ACCOUNT)
     if verification.status not in REVIEWABLE_STATUSES:
         raise exceptions.ValidationError(
             f"Submission cannot be approved from status '{verification.status}'."
@@ -181,7 +182,7 @@ def reject_verification(
     resubmit - see submit_verification) and logs the reviewer's activity.
     """
 
-    require_role(reviewer, IsAdminOrSuperAdminRole.allowed_roles)
+    permission_service.require_permission(reviewer, codenames.CREATORS_APPROVE_ACCOUNT)
     if not rejection_reason:
         raise exceptions.ValidationError(
             {"rejection_reason": "A rejection reason is required."}
@@ -231,7 +232,7 @@ def flag_verification(
     Deliberately saving the `flag_reason` in the verification rejection_reason field to make it visible to the user for corrective action.
     """
 
-    require_role(reviewer, IsAdminOrSuperAdminRole.allowed_roles)
+    permission_service.require_permission(reviewer, codenames.CREATORS_APPROVE_ACCOUNT)
 
     if verification.status not in REVIEWABLE_STATUSES:
         raise exceptions.ValidationError(

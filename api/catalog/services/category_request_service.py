@@ -16,13 +16,14 @@ from django.utils import timezone
 from django.utils.text import slugify
 from rest_framework import exceptions
 
+from api.authorization import codenames
+from api.authorization.services import permission_service
 from api.catalog.enums import CategoryRequestStatus
 from api.catalog.models import Category, CategoryRequest
 from api.catalog.services import category_service
 from api.notification.models import Notification
 from api.notification.services.email_service import send_templated_email
 from api.users.models import User
-from api.users.permissions import CanManageCategories, IsAdminRole
 
 
 def submit_request(
@@ -39,7 +40,12 @@ def submit_request(
         requested_by=user, name=name, description=description
     )
 
-    admins = list(User.objects.filter(role__in=IsAdminRole.allowed_roles))
+    # Whoever can decide the request hears about it. (Before permissions were
+    # stored this notified the admin tier, which included Approvers who could
+    # not decide it and left out Writers who could.)
+    admins = list(
+        permission_service.users_with_permission(codenames.CATALOG_MANAGE_CATEGORIES)
+    )
     if admins:
         Notification.emit_in_app_notification(
             receivers=admins,
@@ -138,9 +144,7 @@ def reject_request(*, request: CategoryRequest, actor: User) -> CategoryRequest:
 def require_admin(actor: User) -> None:
     """Service-level role gate, alongside the view's permission class."""
 
-    from api.users.permissions import require_role
-
-    require_role(actor, CanManageCategories.allowed_roles)
+    permission_service.require_permission(actor, codenames.CATALOG_MANAGE_CATEGORIES)
 
 
 def _notify_approved(request: CategoryRequest) -> None:

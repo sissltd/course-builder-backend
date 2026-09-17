@@ -18,7 +18,8 @@ from api.authentication.services import activity_service
 from api.users.enums import UserActivityActionEnums, UserActivityCategoryEnums
 from api.users.filters import AdminUserActivityLogFilter, UserActivityLogFilter
 from api.users.models import UserActivityLog
-from api.users.permissions import IsAdminOrSuperAdminRole
+from api.authorization import codenames
+from api.authorization.permissions import Perm
 from api.users.serializers.activity_log_serializer import UserActivityLogSerializer
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 
@@ -60,9 +61,9 @@ class UserActivityLogListView(ListAPIView):
         "`/users/me/activity-log/` cannot show them.\n\n"
         "Called from the admin Users screen when opening a user's history, "
         "and from the platform-wide audit view.\n\n"
-        "**Auth:** Admin or Super Admin.\n\n"
-        "**Prerequisites:** None beyond holding the Admin or Super Admin "
-        "role.\n\n"
+        "**Auth:** The `audit.view` permission — Admin and Super Admin by "
+        "default.\n\n"
+        "**Prerequisites:** None.\n\n"
         "**Important:** Unfiltered this is the whole platform's history and "
         "grows without bound — pass `?user=<uuid>` to scope it to one account, "
         "which is how the UI always calls it. Also filterable by `?category=` "
@@ -107,7 +108,7 @@ class AdminUserActivityLogListView(ListAPIView):
     agree).
     """
 
-    permission_classes = [IsAdminOrSuperAdminRole]
+    permission_classes = [Perm(codenames.AUDIT_VIEW)]
     serializer_class = UserActivityLogSerializer
     filterset_class = AdminUserActivityLogFilter
     filter_backends = [DjangoFilterBackend, drf_filters.OrderingFilter]

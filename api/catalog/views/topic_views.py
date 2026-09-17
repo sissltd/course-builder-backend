@@ -14,7 +14,8 @@ from api.catalog.filters import TopicFilter
 from api.catalog.models import Topic
 from api.catalog.serializers import TopicSerializer, TopicWriteSerializer
 from api.catalog.services import topic_reservation_service
-from api.users.permissions import IsAdminRole, IsCreatorReviewerRole
+from api.authorization import codenames
+from api.authorization.permissions import Perm
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 
 WRITE_ACTIONS = {"create", "update", "partial_update", "destroy"}
@@ -36,7 +37,8 @@ _TOPIC_EXAMPLE = {
 }
 
 _AUTH_LINE = (
-    "**Auth:** Admin or Creator Reviewer/Verifier. Everyone else has read "
+    "**Auth:** Writes need `catalog.manage_topics` (Creator Reviewer, "
+    "Verifier, Admin, Approver, Super Admin by default). Everyone else has read "
     "access only - creators browse topics under a category before creating "
     "a course."
 )
@@ -239,7 +241,7 @@ class TopicViewSet(ModelViewSet):
 
     def get_permissions(self):
         if self.action in WRITE_ACTIONS or self.action == "release_reservation":
-            return [(IsAdminRole | IsCreatorReviewerRole)()]
+            return [Perm(codenames.CATALOG_MANAGE_TOPICS)()]
         return super().get_permissions()
 
     @extend_schema(

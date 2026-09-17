@@ -1,6 +1,11 @@
 from django.urls import path
 from rest_framework.routers import DefaultRouter
 
+from api.courses.views.course_version_admin_views import (
+    AdminCourseVersionListView,
+    CourseVersionMigrationView,
+)
+
 from api.courses.views import (
     assessment_views,
     ai_generation_views,
@@ -229,5 +234,15 @@ urlpatterns = router.urls + [
         "courses/<uuid:course_pk>/thumbnail/",
         course_thumbnail_views.CourseThumbnailView.as_view(),
         name="course-thumbnail",
+    ),
+    path(
+        "admin/course-versions/",
+        AdminCourseVersionListView.as_view(),
+        name="admin-course-version-list",
+    ),
+    path(
+        "admin/course-versions/migrations/",
+        CourseVersionMigrationView.as_view(),
+        name="admin-course-version-migration",
     ),
 ]

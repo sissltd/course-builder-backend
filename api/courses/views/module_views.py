@@ -16,7 +16,8 @@ from api.courses.models import Course, Module
 from api.courses.serializers import ModuleSerializer, ModuleWriteSerializer
 from api.courses.serializers.ordering_serializer import ReorderSerializer
 from api.courses.services import module_lock_service, ordering_service
-from api.users.permissions import IsCourseCreatorRole
+from api.authorization import codenames
+from api.authorization.permissions import Perm
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 
 _MODULE_EXAMPLE = {
@@ -92,7 +93,7 @@ _MODULE_LOCKED_423 = OpenApiResponse(
             "module-level assessment nested inline. Backs the course "
             "builder's module list.\n\n"
             "Called when the course builder loads a course.\n\n"
-            "**Auth:** Course Creator/Writer with access to the course "
+            "**Auth:** The `courses.create` permission (Course Creator and Writer by default), with access to the course "
             "(creator or collaborator).\n\n"
             "**Prerequisites:** None beyond having access to the course.\n\n"
             "**Important:** Matches ModuleViewSet's convention across the "
@@ -118,7 +119,7 @@ _MODULE_LOCKED_423 = OpenApiResponse(
         description=(
             "Returns a single module with its lessons and assessment.\n\n"
             "Called when expanding a module in the course builder.\n\n"
-            "**Auth:** Course Creator/Writer with access to the course.\n\n"
+            "**Auth:** The `courses.create` permission (Course Creator and Writer by default), with access to the course.\n\n"
             "**Prerequisites:** The module must exist under the given "
             "course.\n\n"
             "**Important:** None."
@@ -144,7 +145,7 @@ _MODULE_LOCKED_423 = OpenApiResponse(
             "response so the client can immediately create lessons "
             "underneath it without a second round-trip.\n\n"
             "Called from the 'Add module' action in the course builder.\n\n"
-            "**Auth:** Course Creator/Writer with access to the course.\n\n"
+            "**Auth:** The `courses.create` permission (Course Creator and Writer by default), with access to the course.\n\n"
             "**Prerequisites:** The course must be `DRAFT`.\n\n"
             "**Important:** Adding a module to a non-Draft course returns "
             "400 - the whole structural tree is frozen once a course leaves "
@@ -187,7 +188,7 @@ _MODULE_LOCKED_423 = OpenApiResponse(
             "Overwrites a module's title, order, description, and learning "
             "objectives. Send the full object.\n\n"
             "Called from the module edit form.\n\n"
-            "**Auth:** Course Creator/Writer with access to the course.\n\n"
+            "**Auth:** The `courses.create` permission (Course Creator and Writer by default), with access to the course.\n\n"
             "**Prerequisites:** The parent course must be `DRAFT`.\n\n"
             "**Important:** Returns 423 if the module is currently locked "
             "by another user - acquire the lock first via "
@@ -217,7 +218,7 @@ _MODULE_LOCKED_423 = OpenApiResponse(
             "PATCHing `order`.\n\n"
             "Called from the module edit form and drag-to-reorder in the "
             "course builder.\n\n"
-            "**Auth:** Course Creator/Writer with access to the course.\n\n"
+            "**Auth:** The `courses.create` permission (Course Creator and Writer by default), with access to the course.\n\n"
             "**Prerequisites:** The parent course must be `DRAFT`.\n\n"
             "**Important:** Returns 423 if the module is currently locked "
             "by another user - acquire the lock first via "
@@ -254,7 +255,7 @@ _MODULE_LOCKED_423 = OpenApiResponse(
             "assessments. There is no undo.\n\n"
             "Called from the delete action on a module in the course "
             "builder.\n\n"
-            "**Auth:** Course Creator/Writer with access to the course.\n\n"
+            "**Auth:** The `courses.create` permission (Course Creator and Writer by default), with access to the course.\n\n"
             "**Prerequisites:** The parent course must be `DRAFT`.\n\n"
             "**Important:** None."
         ),
@@ -304,7 +305,7 @@ class ModuleViewSet(ModelViewSet):
     modules from the course.
     """
 
-    permission_classes = [IsCourseCreatorRole]
+    permission_classes = [Perm(codenames.COURSES_CREATE)]
 
     def get_queryset(self):
         if getattr(self, "swagger_fake_view", False):
@@ -393,7 +394,7 @@ class ModuleViewSet(ModelViewSet):
             "request, for the builder's drag-and-drop outline.\n\n"
             "Call this once when a drag gesture settles, instead of "
             "PATCHing each module individually.\n\n"
-            "**Auth:** Course creator or an Admin collaborator.\n\n"
+            "**Auth:** The `courses.create` permission (Course Creator and Writer by default), as the course creator or an Admin collaborator.\n\n"
             "**Prerequisites:** The course must be Draft.\n\n"
             "**Important:** The payload must list **every** module in the "
             "course, not just the ones that moved \u2014 a partial list "
@@ -457,7 +458,7 @@ class ModuleViewSet(ModelViewSet):
             "short-TTL edit lock on the module, so two collaborators don't "
             "clobber each other's changes (SCCS PRD Section 14). This is a "
             "simple REST lock with a heartbeat, not real-time presence.\n\n"
-            "**Auth:** Anyone with access to the module.\n\n"
+            "**Auth:** The `courses.create` permission (Course Creator and Writer by default), with access to the module.\n\n"
             "**Important:** Returns 423 Locked if someone else currently "
             "holds an unexpired lock."
         ),
@@ -484,7 +485,7 @@ class ModuleViewSet(ModelViewSet):
         description=(
             "Releases the caller's edit lock on the module, letting someone "
             "else acquire it immediately.\n\n"
-            "**Auth:** Anyone with access to the module.\n\n"
+            "**Auth:** The `courses.create` permission (Course Creator and Writer by default), with access to the module.\n\n"
             "**Important:** No-op if the module isn't currently locked."
         ),
         tags=["Creator — Modules"],
@@ -510,7 +511,7 @@ class ModuleViewSet(ModelViewSet):
         description=(
             "Extends the caller's existing edit lock, called periodically "
             "while actively editing so the lock doesn't expire mid-edit.\n\n"
-            "**Auth:** Anyone with access to the module.\n\n"
+            "**Auth:** The `courses.create` permission (Course Creator and Writer by default), with access to the module.\n\n"
             "**Important:** Returns 423 Locked if the caller doesn't "
             "currently hold an active lock (expired, or never acquired)."
         ),

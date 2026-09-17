@@ -22,7 +22,8 @@ from api.courses.services import (
     module_lock_service,
     ordering_service,
 )
-from api.users.permissions import IsCourseCreatorRole
+from api.authorization import codenames
+from api.authorization.permissions import Perm
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 
 _VIDEO_LESSON_REQUEST_EXAMPLE = {
@@ -180,7 +181,7 @@ _MODULE_LOCKED_423 = OpenApiResponse(
             "Returns every lesson in the module, each with its assessment "
             "nested inline if one is set.\n\n"
             "Called when expanding a module in the course builder.\n\n"
-            "**Auth:** Course Creator/Writer with access to the course.\n\n"
+            "**Auth:** The `courses.create` permission (Course Creator and Writer by default), with access to the course.\n\n"
             "**Prerequisites:** None beyond having access to the course.\n\n"
             "**Important:** Like ModuleViewSet, `list` never 404s on a "
             "module the caller can't reach - it returns an empty result "
@@ -204,7 +205,7 @@ _MODULE_LOCKED_423 = OpenApiResponse(
         description=(
             "Returns a single lesson with its assessment.\n\n"
             "Called when opening a lesson in the course builder.\n\n"
-            "**Auth:** Course Creator/Writer with access to the course.\n\n"
+            "**Auth:** The `courses.create` permission (Course Creator and Writer by default), with access to the course.\n\n"
             "**Prerequisites:** The lesson must exist under the given "
             "module.\n\n"
             "**Important:** None."
@@ -230,7 +231,7 @@ _MODULE_LOCKED_423 = OpenApiResponse(
             "`id` comes back in the response so the client can immediately "
             "set the lesson's assessment without a second round-trip.\n\n"
             "Called from the 'Add lesson' action in the course builder.\n\n"
-            "**Auth:** Course Creator/Writer with access to the course.\n\n"
+            "**Auth:** The `courses.create` permission (Course Creator and Writer by default), with access to the course.\n\n"
             "**Prerequisites:** The parent course must be `DRAFT`.\n\n"
             f"{_MEDIA_URL_NOTICE}\n\n"
             "**Important:** Set `lesson_type` to `VIDEO`, `QUIZ`, or `TEXT`; "
@@ -272,7 +273,7 @@ _MODULE_LOCKED_423 = OpenApiResponse(
         description=(
             "Overwrites a lesson's fields. Send the full object.\n\n"
             "Called from the lesson edit form.\n\n"
-            "**Auth:** Course Creator/Writer with access to the course.\n\n"
+            "**Auth:** The `courses.create` permission (Course Creator and Writer by default), with access to the course.\n\n"
             "**Prerequisites:** The parent course must be `DRAFT`.\n\n"
             f"{_MEDIA_URL_NOTICE}\n\n"
             "**Important:** `lesson_type` must be `VIDEO`, `QUIZ`, or `TEXT`. "
@@ -309,7 +310,7 @@ _MODULE_LOCKED_423 = OpenApiResponse(
             "`script` without touching anything else.\n\n"
             "Called from the lesson edit form and drag-to-reorder in the "
             "course builder.\n\n"
-            "**Auth:** Course Creator/Writer with access to the course.\n\n"
+            "**Auth:** The `courses.create` permission (Course Creator and Writer by default), with access to the course.\n\n"
             "**Prerequisites:** The parent course must be `DRAFT`.\n\n"
             f"{_MEDIA_URL_NOTICE}\n\n"
             "**Important:** When changing `lesson_type` to `VIDEO`, also send "
@@ -357,7 +358,7 @@ _MODULE_LOCKED_423 = OpenApiResponse(
             "undo.\n\n"
             "Called from the delete action on a lesson in the course "
             "builder.\n\n"
-            "**Auth:** Course Creator/Writer with access to the course.\n\n"
+            "**Auth:** The `courses.create` permission (Course Creator and Writer by default), with access to the course.\n\n"
             "**Prerequisites:** The parent course must be `DRAFT`.\n\n"
             "**Important:** Returns 423 if the parent module is currently "
             "locked by another user."
@@ -405,7 +406,7 @@ class LessonViewSet(ModelViewSet):
     Also enforces the parent module's edit lock, same as ModuleViewSet.
     """
 
-    permission_classes = [IsCourseCreatorRole]
+    permission_classes = [Perm(codenames.COURSES_CREATE)]
 
     def get_queryset(self):
         if getattr(self, "swagger_fake_view", False):
@@ -429,7 +430,7 @@ class LessonViewSet(ModelViewSet):
             "request, for the builder's drag-and-drop outline.\n\n"
             "Call this once when a drag gesture settles, instead of "
             "PATCHing each lesson individually.\n\n"
-            "**Auth:** Course Creator/Writer with access to the module.\n\n"
+            "**Auth:** The `courses.create` permission (Course Creator and Writer by default), with access to the module.\n\n"
             "**Prerequisites:** The parent course must be Draft and the "
             "module must not be locked by another user.\n\n"
             "**Important:** The payload must list **every** lesson in the "

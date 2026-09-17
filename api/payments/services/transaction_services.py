@@ -13,6 +13,10 @@ from shared.services.paystack_service import PaystackService
 logger = logging.getLogger(__name__)
 
 
+class InsufficientFundsError(Exception):
+    """A debit would take a creator wallet below zero."""
+
+
 class TransferRecipientError(Exception):
     """Could not generate transfer recipient code"""
 
@@ -87,6 +91,14 @@ def create_transaction(
     wallet = get_wallet_for_update(wallet_type_id, wallet_id)
     prefix = "DBT" if type == Transaction.TransactionType.DEBIT else "CRD"
     signed_amount = -amount if prefix == "DBT" else amount
+
+    # Checked on the locked row, so two concurrent debits cannot both pass.
+    # Only creator wallets are guarded; internal ledger accounts are allowed
+    # to run negative (the adjustments account absorbs credits it funds).
+    if isinstance(wallet, Wallet) and wallet.balance + Decimal(signed_amount) < 0:
+        raise InsufficientFundsError(
+            f"Wallet {wallet.pk} holds {wallet.balance}; cannot debit {amount}."
+        )
 
     wallet.balance += Decimal(signed_amount)
     wallet.save()

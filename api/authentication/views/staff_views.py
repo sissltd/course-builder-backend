@@ -21,7 +21,11 @@ from api.authentication.serializers.response_serializers import (
 from api.authentication.services.authentication_service import AuthenticationService
 from api.authentication.services.staff_service import StaffService
 from api.users.models import User
-from api.users.permissions import IsSuperAdminRole
+from api.authorization import codenames
+from api.authorization.permissions import Perm
+from api.authorization.models import Role
+from api.authorization.services import role_admin_service
+from api.authorization.services.role_registry import system_role_id
 from api.users.serializers import MeSerializer
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 
@@ -200,7 +204,7 @@ class SuperAdminBootstrapView(APIView):
 class StaffListView(APIView):
     """List every staff member and pending invitation for the Teams page."""
 
-    permission_classes = [IsSuperAdminRole]
+    permission_classes = [Perm(codenames.STAFF_VIEW)]
     serializer_class = StaffMemberSerializer  # schema generation only
 
     @extend_schema(
@@ -214,9 +218,9 @@ class StaffListView(APIView):
             "status pill.\n\n"
             "Called when the Teams page loads, and again after any invite, "
             "revoke, or reactivate action to refresh the list.\n\n"
-            "**Auth:** Super Admin.\n\n"
-            "**Prerequisites:** None beyond being signed in as the Super "
-            "Admin.\n\n"
+            "**Auth:** The `staff.view` permission (Staff: View Only) — Super "
+            "Admin by default.\n\n"
+            "**Prerequisites:** None.\n\n"
             "**Important:** Read `invitation_status`, not `is_active`, to "
             "decide what a row can do — `PENDING` and `REVOKED` are both "
             "inactive but offer different actions (resend vs reactivate). "
@@ -249,7 +253,7 @@ class StaffListView(APIView):
 class StaffDetailView(APIView):
     """Retrieve one staff member for the Team profile panel."""
 
-    permission_classes = [IsSuperAdminRole]
+    permission_classes = [Perm(codenames.STAFF_VIEW_DETAIL)]
     serializer_class = StaffDetailSerializer
 
     @extend_schema(
@@ -258,7 +262,8 @@ class StaffDetailView(APIView):
         description=(
             "Returns the full non-sensitive Team profile for an active, pending, "
             "or revoked staff member. Public course creators are not addressable "
-            "through this endpoint.\n\n**Auth:** Super Admin."
+            "through this endpoint.\n\n**Auth:** The `staff.view_detail` permission — "
+            "Super Admin by default."
         ),
         tags=["Admin — Teams"],
         responses={
@@ -277,10 +282,28 @@ class StaffDetailView(APIView):
         return Response(StaffDetailSerializer(staff).data)
 
 
-class InviteStaffView(APIView):
-    """Invite a new staff member in a chosen role. Super Admin only."""
+def _resolve_invite_role(*, actor, role, role_id) -> Role:
+    """The Role an invitation grants, checked against what `actor` may assign."""
 
-    permission_classes = [IsSuperAdminRole]
+    if role_id is None:
+        role_id = system_role_id(role)
+    access_role = (
+        Role.objects.filter(id=role_id, is_deleted=False)
+        .prefetch_related("grants")
+        .first()
+    )
+    if access_role is None:
+        from rest_framework.exceptions import ValidationError
+
+        raise ValidationError({"role_id": "Choose a live staff role."})
+    role_admin_service.assert_can_invite_to(actor=actor, role=access_role)
+    return access_role
+
+
+class InviteStaffView(APIView):
+    """Invite a new staff member in a chosen role. Needs `staff.add`."""
+
+    permission_classes = [Perm(codenames.STAFF_ADD)]
     serializer_class = StaffInvitationSerializer  # schema generation only
 
     @extend_schema(
@@ -296,8 +319,9 @@ class InviteStaffView(APIView):
             "staff** → staff accepts. Backs the 'Invite a staff' dialog; the "
             "invitee continues at "
             "`/api/v1/auth/staff/invitations/accept/`.\n\n"
-            "**Auth:** Super Admin. Approvers and Admins cannot invite — this "
-            "is deliberately the capability that sets the Super Admin apart.\n\n"
+            "**Auth:** The `staff.add` permission (Add Staff) — Super Admin by "
+            "default; Admins and Approvers cannot invite unless their role is "
+            "granted it.\n\n"
             "**Prerequisites:** A Super Admin account must exist (see "
             "`/api/v1/auth/superadmin/bootstrap/`) and the caller must be "
             "signed in as it. The email must not already belong to an existing "
@@ -413,8 +437,17 @@ class InviteStaffView(APIView):
     def post(self, request):
         serializer = StaffInvitationSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        access_role = _resolve_invite_role(
+            actor=request.user, role=data.get("role"), role_id=data.get("role_id")
+        )
         staff = staff_service.invite_staff(
-            invited_by=request.user, **serializer.validated_data, request=request
+            invited_by=request.user,
+            email=data["email"],
+            first_name=data["first_name"],
+            last_name=data["last_name"],
+            access_role=access_role,
+            request=request,
         )
         return Response(
             {
@@ -428,7 +461,7 @@ class InviteStaffView(APIView):
 class RevokeStaffView(APIView):
     """Withdraw a pending invitation or deactivate an active staff member."""
 
-    permission_classes = [IsSuperAdminRole]
+    permission_classes = [Perm(codenames.STAFF_FULL_ACCESS)]
 
     @extend_schema(
         summary="Revoke a staff member's access",
@@ -439,7 +472,8 @@ class RevokeStaffView(APIView):
             "no longer sign in. One action covers both because the Teams page "
             "presents them as one thing — 'remove this person'.\n\n"
             "Called from the row actions on the Teams page.\n\n"
-            "**Auth:** Super Admin.\n\n"
+            "**Auth:** The `staff.full_access` permission (Full Access) — Super "
+            "Admin by default.\n\n"
             "**Prerequisites:** The target must be an existing staff member "
             "who is currently active or pending.\n\n"
             "**Important:** This is reversible, not destructive — the account "
@@ -530,7 +564,7 @@ class RevokeStaffView(APIView):
 class ReactivateStaffView(APIView):
     """Restore a previously revoked staff member's access."""
 
-    permission_classes = [IsSuperAdminRole]
+    permission_classes = [Perm(codenames.STAFF_FULL_ACCESS)]
 
     @extend_schema(
         summary="Reactivate a revoked staff member",
@@ -540,7 +574,8 @@ class ReactivateStaffView(APIView):
             "sign in again immediately without a new invitation.\n\n"
             "Called from the row actions on the Teams page for rows showing "
             "the `REVOKED` status.\n\n"
-            "**Auth:** Super Admin.\n\n"
+            "**Auth:** The `staff.full_access` permission (Full Access) — Super "
+            "Admin by default.\n\n"
             "**Prerequisites:** The target must be an existing staff member "
             "who is currently inactive and who had accepted their invitation "
             "before being revoked.\n\n"

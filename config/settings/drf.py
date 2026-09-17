@@ -176,6 +176,10 @@ SPECTACULAR_SETTINGS = {
             ),
         },
         {
+            "name": "Creator — Achievements",
+            "description": "The signed-in creator's badges and progress towards each.",
+        },
+        {
             "name": "Creator — Platform Settings",
             "description": (
                 "Reading the live platform-wide thresholds (module counts, word "
@@ -274,6 +278,14 @@ SPECTACULAR_SETTINGS = {
             "description": ("The AI production funnel: job counts per stage and external provider load."),
         },
         {
+            "name": "Admin — Profile",
+            "description": (
+                "The signed-in admin's own account for the Settings › Account tab: "
+                "retrieve and update name, timezone and avatar (not email). Same "
+                "endpoint every role uses."
+            ),
+        },
+        {
             "name": "Admin — Overview",
             "description": ("Aggregate platform counts and wallet totals for the admin dashboard."),
         },
@@ -310,6 +322,25 @@ SPECTACULAR_SETTINGS = {
         {
             "name": "Admin — Activity Log",
             "description": ("The platform-wide audit trail of user activity across every account."),
+        },
+        {
+            "name": "Admin — Achievements",
+            "description": (
+                "Creating, configuring and deleting achievement badges, and "
+                "awarding or revoking them by hand."
+            ),
+        },
+        {
+            "name": "Admin — Teams",
+            "description": "The staff roster: invitations, roles, access and account deletion.",
+        },
+        {
+            "name": "Admin — Course Versions",
+            "description": "Course version labels and moving unpublished courses between them.",
+        },
+        {
+            "name": "Admin — Roles & Permissions",
+            "description": "The read-only catalogue of platform roles and what each may do.",
         },
         {
             "name": "Admin — Platform Settings",
@@ -429,6 +460,7 @@ SPECTACULAR_SETTINGS = {
         "WithdrawalRequestStatusEnum": "api.wallet.enums.WithdrawalRequestStatus",
         "TransactionTypeEnum": "api.wallet.enums.TransactionType",
         "UserRoleEnum": "api.users.enums.UserRole",
+        "InvitableStaffRoleEnum": "api.users.enums.INVITABLE_STAFF_ROLE_CHOICES",
         # MIE enums are exposed through admin and developer serializers;
         # pin their component names so runs stay deterministic.
         "DeveloperAccountStatusEnum": "api.mie.enums.DeveloperAccountStatus",
@@ -463,6 +495,10 @@ SPECTACULAR_SETTINGS = {
         # ExpertiseArea — exposed through onboarding serializers; pin to
         # avoid drf-spectacular's auto-generated name.
         "ExpertiseAreaEnum": "api.onboarding.enums.ExpertiseArea",
+        # Achievement badges: pinned so the criterion/source components keep
+        # stable names across schema runs.
+        "BadgeCriterionEnum": "api.achievements.enums.BadgeCriterion",
+        "AwardSourceEnum": "api.achievements.enums.AwardSource",
         # plagiarism_status uses QualityCheckStatus but the field name is
         # different; the same component is already named QualityCheckStatusEnum
         # above so no second override is needed.

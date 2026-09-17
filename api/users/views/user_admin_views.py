@@ -12,7 +12,8 @@ from rest_framework.viewsets import ReadOnlyModelViewSet
 
 from api.users.filters import UserAdminFilter
 from api.users.models import User
-from api.users.permissions import IsAdminOrSuperAdminRole
+from api.authorization import codenames
+from api.authorization.permissions import Perm
 from api.users.enums import QueueTrackFilter
 from api.users.serializers import (
     UserAdminSerializer,
@@ -61,8 +62,15 @@ _SUSPENDED_USER_EXAMPLE = {
 }
 
 _AUTH_LINE = (
-    "**Auth:** Admin or Super Admin. Approvers are excluded — they handle "
-    "course approvals, not account moderation."
+    "**Auth:** The Suspend Account permission for the target: "
+    "`creators.suspend` or `teams.suspend` for a Course Creator, "
+    "`teams.suspend` for anyone else. Admin and Super Admin hold both by "
+    "default; Approvers do not."
+)
+
+_VIEW_AUTH_LINE = (
+    "**Auth:** The `creators.view_profile` permission (View Profile) — Admin "
+    "and Super Admin by default."
 )
 
 _SCOPE_NOTE = (
@@ -85,7 +93,7 @@ _SCOPE_NOTE = (
             "who generate most moderation work.\n\n"
             "Called when the admin Users screen loads, and on every filter or "
             "search keystroke.\n\n"
-            f"{_AUTH_LINE}\n\n"
+            f"{_VIEW_AUTH_LINE}\n\n"
             "**Prerequisites:** None beyond holding the Admin or Super Admin "
             "role.\n\n"
             "**Important:** Results are paginated and ordered newest-first. "
@@ -118,7 +126,7 @@ _SCOPE_NOTE = (
             "list.\n\n"
             "Called when opening a user's detail panel from the admin Users "
             "screen, before deciding whether to suspend or reinstate them.\n\n"
-            f"{_AUTH_LINE}\n\n"
+            f"{_VIEW_AUTH_LINE}\n\n"
             "**Prerequisites:** None beyond holding the Admin or Super Admin "
             "role.\n\n"
             "**Important:** None."
@@ -140,21 +148,36 @@ _SCOPE_NOTE = (
 class UserAdminViewSet(ReadOnlyModelViewSet):
     """Admin roster over every user account, with moderation actions.
 
-    Read operations mirror KYCReviewViewSet's shape. The write actions
-    (suspend / deactivate / reinstate) delegate to user_admin_service, which
-    re-checks the role itself, so the rules hold even if this view is ever
-    reused behind a different permission class.
+    Read operations mirror KYCReviewViewSet's shape. Each action has its own
+    permission (see get_permissions); the write actions delegate to
+    user_admin_service, which re-checks it - for suspension, against the
+    target account - so the rules hold even if this view is reused.
     """
 
-    permission_classes = [IsAdminOrSuperAdminRole]
+    #: Suspending, deactivating and reinstating are "Suspend Account" in both
+    #: the Creators and Teams chip groups; which one applies depends on the
+    #: target account, decided in the service.
+    MODERATION_ACTIONS = ("suspend", "deactivate", "reinstate")
+    permission_classes = [Perm(codenames.CREATORS_VIEW_PROFILE)]
     filterset_class = UserAdminFilter
     filter_backends = [DjangoFilterBackend, drf_filters.OrderingFilter]
     ordering_fields = ["created_datetime", "last_login", "email"]
 
+    def get_permissions(self):
+        if self.action in self.MODERATION_ACTIONS:
+            return [Perm(codenames.CREATORS_SUSPEND, codenames.TEAMS_SUSPEND)()]
+        if self.action == "assign_track":
+            return [Perm(codenames.REVIEWERS_ASSIGN_TRACK)()]
+        return super().get_permissions()
+
     def get_queryset(self):
         if getattr(self, "swagger_fake_view", False):
             return User.objects.none()
-        return user_admin_service.list_users(actor=self.request.user)
+        if self.action in {"list", "retrieve"}:
+            return user_admin_service.list_users(actor=self.request.user)
+        # Actions resolve their target without the View Profile permission;
+        # each action's own permission is checked above and in the service.
+        return user_admin_service.user_lookup_queryset()
 
     def get_serializer_class(self):
         if self.action == "suspend":
@@ -266,7 +289,8 @@ class UserAdminViewSet(ReadOnlyModelViewSet):
             "read-only on their Account settings screen.\n\n"
             "Call this when allocating a reviewer to the Creator or AI "
             "track. Send `null` to clear the assignment.\n\n"
-            "**Auth:** Admin or Super Admin.\n\n"
+            "**Auth:** The `reviewers.assign_track` permission — Admin and "
+            "Super Admin by default.\n\n"
             "**Prerequisites:** The target user must exist.\n\n"
             "**Important:** This is the admin-controlled assignment, not "
             "the reviewer's own queue filter \u2014 reviewers set that "

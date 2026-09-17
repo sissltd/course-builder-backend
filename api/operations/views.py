@@ -6,7 +6,6 @@ from drf_spectacular.utils import (
     extend_schema,
 )
 from rest_framework import exceptions, status
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -29,7 +28,9 @@ from api.operations.services import (
     pipeline_service,
     recommendation_service,
 )
-from api.users.permissions import CanDecideMieIdeas, IsAdminOrSuperAdminRole
+from api.authorization import codenames
+from api.authorization.permissions import Perm
+from api.authorization.services import permission_service
 from includes.helpers.pagination import PageNumberAPIPagination
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 from shared.response.success import custom_success_response
@@ -45,7 +46,7 @@ _NO_DATA_NOTE = (
 class SystemHealthView(APIView):
     """Uptime and latency per monitored dependency."""
 
-    permission_classes = [IsAuthenticated, IsAdminOrSuperAdminRole]
+    permission_classes = [Perm(codenames.DASHBOARD_VIEW, codenames.DASHBOARD_VIEW_LIMITED)]
     serializer_class = SystemHealthSerializer  # schema generation only
 
     @extend_schema(
@@ -54,7 +55,9 @@ class SystemHealthView(APIView):
             "Returns per-service uptime, latency and current status over a "
             "rolling window, plus the summary tiles above the table.\n\n"
             "Called when the admin System Health screen loads.\n\n"
-            "**Auth:** Admin or Super Admin.\n\n"
+            "**Auth:** `dashboard.view` (View Only — Admin and Super Admin by "
+            "default) or `dashboard.view_limited` (Limited Access, which nulls "
+            "money figures where there are any).\n\n"
             "**Prerequisites:** Services must be registered and something "
             "must be writing `ServiceHealthSample` rows — without a probe "
             "feeding it, every service reports null uptime.\n\n"
@@ -102,7 +105,7 @@ class SystemHealthView(APIView):
 class PipelineOverviewView(APIView):
     """Production funnel and provider load."""
 
-    permission_classes = [IsAuthenticated, IsAdminOrSuperAdminRole]
+    permission_classes = [Perm(codenames.MIE_VIEW_PIPELINE)]
     serializer_class = PipelineOverviewSerializer  # schema generation only
 
     @extend_schema(
@@ -112,7 +115,8 @@ class PipelineOverviewView(APIView):
             "active/queued/completed/failed tiles, and last-known load and "
             "queue depth for each external provider.\n\n"
             "Called when the admin APE Pipeline screen loads.\n\n"
-            "**Auth:** Admin or Super Admin.\n\n"
+            "**Auth:** The `mie.view_pipeline` permission (View APE Pipeline) — "
+            "Admin and Super Admin by default.\n\n"
             "**Prerequisites:** None — an empty pipeline returns every "
             "stage at zero.\n\n"
             f"**Important:** {_NO_DATA_NOTE} Every stage is always present "
@@ -140,7 +144,7 @@ class PipelineOverviewView(APIView):
 class AdminAnalyticsView(APIView):
     """Catalogue, enrolment, cost, distribution and KPI figures."""
 
-    permission_classes = [IsAuthenticated, IsAdminOrSuperAdminRole]
+    permission_classes = [Perm(codenames.DASHBOARD_VIEW, codenames.DASHBOARD_VIEW_LIMITED)]
     serializer_class = AdminAnalyticsSerializer  # schema generation only
 
     @extend_schema(
@@ -152,7 +156,9 @@ class AdminAnalyticsView(APIView):
             "approved vs rejected, and the KPI scorecard.\n\n"
             "Called when the admin Analytics screen loads, and again "
             "whenever the period selector changes.\n\n"
-            "**Auth:** Admin or Super Admin.\n\n"
+            "**Auth:** `dashboard.view` (View Only — Admin and Super Admin by "
+            "default) or `dashboard.view_limited` (Limited Access, which nulls "
+            "money figures where there are any).\n\n"
             "**Prerequisites:** Enrolment and cost figures need "
             "`Enrollment` and `ProductionCost` rows; without them those "
             "tiles are null while the rest still report.\n\n"
@@ -185,6 +191,9 @@ class AdminAnalyticsView(APIView):
     )
     def get(self, request):
         data = analytics_service.get_analytics(
+            include_financials=permission_service.user_has_permission(
+                request.user, codenames.DASHBOARD_VIEW
+            ),
             period=request.query_params.get(
                 "period", analytics_service.DEFAULT_PERIOD
             )
@@ -236,9 +245,9 @@ _RECOMMENDATION_FILTERS = [
 ]
 
 _DECIDER_AUTH = (
-    "**Auth:** Writer or Super Admin. A plain Admin is refused — deciding "
-    "ideas is the Writer's job, and the Super Admin keeps it so the queue is "
-    "never blocked.\n\n"
+    "**Auth:** The `mie.approve_topic_proposals` permission (Approve MIE "
+    "Topics Proposals) — Writer and Super Admin by default; a plain Admin is "
+    "refused unless their role is granted it.\n\n"
 )
 
 
@@ -246,7 +255,7 @@ _DECIDER_AUTH = (
 class MieRecommendationsView(APIView):
     """The Recommendations screen: pending ideas, ranked and filterable."""
 
-    permission_classes = [CanDecideMieIdeas]
+    permission_classes = [Perm(codenames.MIE_APPROVE_TOPIC_PROPOSALS)]
     pagination_class = PageNumberAPIPagination
     serializer_class = MieRecommendationsSerializer  # schema generation only
 
@@ -311,7 +320,7 @@ class MieRecommendationsView(APIView):
 class MieRecommendationApproveView(APIView):
     """Accept one idea from the Recommendations table."""
 
-    permission_classes = [CanDecideMieIdeas]
+    permission_classes = [Perm(codenames.MIE_APPROVE_TOPIC_PROPOSALS)]
 
     @extend_schema(
         summary="Approve an idea",
@@ -356,7 +365,7 @@ class MieRecommendationApproveView(APIView):
 class MieRecommendationRejectView(APIView):
     """Decline one idea from the Recommendations table."""
 
-    permission_classes = [CanDecideMieIdeas]
+    permission_classes = [Perm(codenames.MIE_APPROVE_TOPIC_PROPOSALS)]
 
     @extend_schema(
         summary="Reject an idea",
@@ -429,7 +438,7 @@ class MieRecommendationRejectView(APIView):
 class MieRecommendationBulkDecisionView(APIView):
     """Decide a checkbox selection from the Recommendations table."""
 
-    permission_classes = [CanDecideMieIdeas]
+    permission_classes = [Perm(codenames.MIE_APPROVE_TOPIC_PROPOSALS)]
 
     @extend_schema(
         summary="Approve or reject selected ideas",

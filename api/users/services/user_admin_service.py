@@ -3,6 +3,8 @@ from django.db.models import QuerySet
 from rest_framework import exceptions
 
 from api.authentication.services import activity_service
+from api.authorization import codenames
+from api.authorization.services import permission_service
 from api.authentication.services.authentication_service import AuthenticationService
 from api.notification.models import Notification
 from api.users.enums import (
@@ -11,7 +13,6 @@ from api.users.enums import (
     UserRole,
 )
 from api.users.models import User
-from api.users.permissions import IsAdminOrSuperAdminRole, require_role
 
 #: Roles this service refuses to act on. Suspending a peer Admin - or the
 #: platform owner - is an employment decision, not a moderation one, and it
@@ -35,14 +36,24 @@ def list_users(*, actor: User) -> QuerySet[User]:
     actually needs to moderate are invisible on the Teams page.
     """
 
-    require_role(actor, IsAdminOrSuperAdminRole.allowed_roles)
-    return User.objects.all().order_by("-created_datetime")
+    permission_service.require_permission(actor, codenames.CREATORS_VIEW_PROFILE)
+    return user_lookup_queryset().order_by("-created_datetime")
+
+
+def user_lookup_queryset() -> QuerySet[User]:
+    """Every user account, unguarded - for resolving a moderation target.
+
+    Callers must check the permission for what they do with the row; the
+    moderation functions below do so against the target itself.
+    """
+
+    return User.objects.all()
 
 
 def get_user(*, actor: User, user_id) -> User:
     """Return one user account by id. Raises NotFound if it doesn't exist."""
 
-    require_role(actor, IsAdminOrSuperAdminRole.allowed_roles)
+    permission_service.require_permission(actor, codenames.CREATORS_VIEW_PROFILE)
     user = User.objects.filter(pk=user_id).first()
     if user is None:
         raise exceptions.NotFound("User not found.")
@@ -63,7 +74,7 @@ def suspend_user(*, actor: User, user: User, reason: str, request=None) -> User:
     Raises ValidationError if the account is already suspended.
     """
 
-    require_role(actor, IsAdminOrSuperAdminRole.allowed_roles)
+    _require_moderation_permission(actor=actor, user=user)
     _assert_moderatable(actor=actor, user=user, verb="suspend")
 
     if user.status == AccountStatus.SUSPENDED:
@@ -80,6 +91,8 @@ def suspend_user(*, actor: User, user: User, reason: str, request=None) -> User:
             title="Your account has been suspended",
             content=f"Your account has been suspended: {reason}",
             metadata={"reason": reason},
+            # Account status must reach the user even if in-app is off.
+            critical=True,
         )
         activity_service.log_auth_activity(
             user=actor,
@@ -102,7 +115,7 @@ def deactivate_user(*, actor: User, user: User, reason: str, request=None) -> Us
     reasoning as staff_service.revoke_staff).
     """
 
-    require_role(actor, IsAdminOrSuperAdminRole.allowed_roles)
+    _require_moderation_permission(actor=actor, user=user)
     _assert_moderatable(actor=actor, user=user, verb="deactivate")
 
     if user.status == AccountStatus.DEACTIVATED:
@@ -134,8 +147,12 @@ def reinstate_user(*, actor: User, user: User, request=None) -> User:
     staff_service.reactivate_staff).
     """
 
-    require_role(actor, IsAdminOrSuperAdminRole.allowed_roles)
+    _require_moderation_permission(actor=actor, user=user)
     _assert_moderatable(actor=actor, user=user, verb="reinstate")
+    if user.erased_at is not None:
+        raise exceptions.ValidationError(
+            "This account was deleted and cannot be restored."
+        )
 
     if user.status not in REINSTATABLE_STATUSES:
         raise exceptions.ValidationError(
@@ -157,6 +174,8 @@ def reinstate_user(*, actor: User, user: User, request=None) -> User:
             title="Your account has been reinstated",
             content="Your account is active again and you can sign in as usual.",
             metadata={},
+            # Account status must reach the user even if in-app is off.
+            critical=True,
         )
         activity_service.log_auth_activity(
             user=actor,
@@ -178,11 +197,26 @@ def assign_track(*, actor: User, user: User, track, request=None) -> User:
     Passing None clears the assignment.
     """
 
-    require_role(actor, IsAdminOrSuperAdminRole.allowed_roles)
+    permission_service.require_permission(actor, codenames.REVIEWERS_ASSIGN_TRACK)
 
     user.assigned_track = track
     user.save(update_fields=["assigned_track", "updated_datetime"])
     return user
+
+
+def _require_moderation_permission(*, actor: User, user: User) -> None:
+    """Suspend Account is a chip in both the Creators and Teams groups.
+
+    A Course Creator target accepts either; any other account needs the
+    Teams one.
+    """
+
+    allowed = (
+        (codenames.CREATORS_SUSPEND, codenames.TEAMS_SUSPEND)
+        if user.role == UserRole.COURSE_CREATOR
+        else (codenames.TEAMS_SUSPEND,)
+    )
+    permission_service.require_any_permission(actor, allowed)
 
 
 def _assert_moderatable(*, actor: User, user: User, verb: str) -> None:

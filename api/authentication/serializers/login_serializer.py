@@ -14,7 +14,8 @@ from api.authentication.services import (
 from api.notification.models import Notification
 from api.users.enums import UserActivityActionEnums, AccountStatus
 from api.users.models import User, UserActivityLog
-from api.users.permissions import IsAdminOrSuperAdminRole
+from api.authorization import codenames
+from api.authorization.services import permission_service
 
 MAX_FAILED_LOGIN_ATTEMPTS = 5
 LOCKOUT_DURATION_MINUTES = 15
@@ -117,8 +118,12 @@ class LoginSerializer(TokenObtainPairSerializer):
         # above is the entire login; `mfa_verified=true` is minted into the
         # token so IsMFAVerifiedForSession-gated admin endpoints stay
         # reachable without an enrollment step.
-        mfa_enforced = (
-            settings.MFA_ENFORCED and user.role in mfa_service.MFA_MANDATED_ROLES
+        # Anyone who has enrolled a device is challenged too: permissions that
+        # move money or erase accounts can be granted to any staff role, and
+        # they need a session that actually passed a second factor.
+        mfa_enforced = settings.MFA_ENFORCED and (
+            user.role in mfa_service.MFA_MANDATED_ROLES
+            or mfa_service.is_mfa_enabled(user=user)
         )
         if not mfa_enforced:
             return authentication_service.finish_login(
@@ -209,13 +214,18 @@ class LoginSerializer(TokenObtainPairSerializer):
             activity_datetime__gte=window_start,
         ).count()
         if lockout_count >= 2:
-            admins = User.objects.filter(role__in=IsAdminOrSuperAdminRole.allowed_roles)
-            Notification.emit_in_app_notification(
-                receivers=list(admins),
-                title="Repeated login lockouts",
-                content=(
-                    f"{user.email} has been locked out {lockout_count} times in "
-                    f"the last {REPEATED_LOCKOUT_WINDOW_HOURS} hours."
-                ),
-                metadata={"user_id": user.id, "lockout_count": lockout_count},
+            # Whoever can read the audit trail can investigate the lockouts.
+            admins = list(
+                permission_service.users_with_permission(codenames.AUDIT_VIEW)
             )
+            if admins:
+                Notification.emit_in_app_notification(
+                    receivers=admins,
+                    title="Repeated login lockouts",
+                    content=(
+                        f"{user.email} has been locked out {lockout_count} times in "
+                        f"the last {REPEATED_LOCKOUT_WINDOW_HOURS} hours."
+                    ),
+                    metadata={"user_id": user.id, "lockout_count": lockout_count},
+                    critical=True,
+                )

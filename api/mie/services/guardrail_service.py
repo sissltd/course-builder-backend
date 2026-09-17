@@ -23,13 +23,14 @@ from django.db.models import Count, Q
 from django.utils import timezone
 
 from api.authentication.services.activity_service import log_activity
+from api.authorization import codenames
+from api.authorization.services import permission_service
 from api.mie.enums import DeveloperAccountStatus, MieSourceType, SubmissionStatus
 from api.mie.models import CourseSubmission, DeveloperAccount
 from api.mie.services.developer_service import suspend_developer
 from api.notification.models import Notification
 from api.notification.services.email_service import send_templated_email
-from api.users.enums import UserActivityActionEnums, UserActivityCategoryEnums, UserRole
-from api.users.models import User
+from api.users.enums import UserActivityActionEnums, UserActivityCategoryEnums
 
 logger = logging.getLogger(__name__)
 
@@ -114,13 +115,16 @@ def _alert_in_app(details: dict) -> None:
     """
 
     try:
-        super_admins = list(User.objects.filter(role=UserRole.SUPER_ADMIN))
+        super_admins = list(
+            permission_service.users_with_permission(codenames.MIE_MANAGE_CONSOLE)
+        )
         if super_admins:
             Notification.emit_in_app_notification(
                 receivers=super_admins,
                 title=ALERT_TITLE,
                 content=_alert_text(details),
                 metadata=details,
+                critical=True,
             )
     except Exception:  # noqa: BLE001 - see docstring: never fail the decision
         logger.exception(
@@ -134,7 +138,9 @@ def _alert_by_email(details: dict) -> None:
 
     try:
         recipients = list(
-            User.objects.filter(role=UserRole.SUPER_ADMIN).values_list("email", flat=True)
+            permission_service.users_with_permission(
+                codenames.MIE_MANAGE_CONSOLE
+            ).values_list("email", flat=True)
         )
         if recipients:
             send_templated_email(
