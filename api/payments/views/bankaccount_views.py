@@ -11,6 +11,8 @@ from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.views import APIView
 
+from api.authorization import codenames
+from api.authorization.permissions import Perm
 from api.payments.docs.bankaccount_docs import (
     BANK_ACCOUNT_CREATE_DOCS,
     BANK_ACCOUNT_DELETE_DOCS,
@@ -37,12 +39,9 @@ from api.payments.services.bankaccount_services import (
 )
 from api.platform.enums import PaymentProcessors
 from api.platform.services.platform_settings_service import get_settings
-from api.authorization import codenames
-from api.authorization.permissions import Perm
 from shared.response.error import custom_error_response
 from shared.response.success import custom_success_response
 from shared.services.flutterwave_service import FlutterwaveService
-from shared.services.paystack_service import PaystackService
 from shared.utils.client_meta import client_meta
 
 User = get_user_model()
@@ -225,21 +224,6 @@ class VerifyBankAccountView(APIView):
                     message="Bank account verification failed",
                     technical_message=str(exc),
                 )
-        elif processor == PaymentProcessors.PAYSTACK:
-            try:
-                verification_result = PaystackService().resolve_bank(account_number=account_number, bank_code=bank_code)
-                return custom_success_response(
-                    status=status.HTTP_200_OK,
-                    message="Bank account verified successfully",
-                    data=verification_result,
-                )
-            except Exception as exc:
-                logger.error(exc)
-                return custom_error_response(
-                    status=status.HTTP_400_BAD_REQUEST,
-                    message="Bank account verification failed",
-                    technical_message=str(exc),
-                )
         else:
             return custom_error_response(
                 status=status.HTTP_400_BAD_REQUEST,
@@ -259,8 +243,6 @@ class BankListView(APIView):
         from api.platform.enums import PaymentProcessors
 
         match provider:
-            case PaymentProcessors.PAYSTACK:
-                banks_result = PaystackService.get_banks()
             case PaymentProcessors.FLUTTERWAVE:
                 banks_result = FlutterwaveService.get_banks()
             case _:

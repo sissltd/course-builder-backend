@@ -13,7 +13,6 @@ from api.platform.enums import PaymentProcessors
 from api.users.enums import UserActivityActionEnums, UserActivityCategoryEnums
 from core.models import TransferOutboxEvent
 from shared.services.flutterwave_service import FlutterwaveService
-from shared.services.paystack_service import PaystackService
 
 from .models import Wallet
 
@@ -22,12 +21,8 @@ logger = logging.getLogger(__name__)
 
 def _get_transfer_service(provider: PaymentProcessors):
     """Determine which transfer service to use based on the value of PlatformSettings.payment_processor."""
-    if provider == PaymentProcessors.PAYSTACK:
-        return PaystackService()
-    elif provider == PaymentProcessors.FLUTTERWAVE:
-        return FlutterwaveService()
-    else:
-        raise ValueError(f"Unsupported transfer provider: {provider}")
+
+    return FlutterwaveService()  # Deliberately using Flutterwave for all transfers
 
 
 @shared_task(bind=True, max_retries=3)
@@ -60,13 +55,9 @@ def dispatch_transfer_task(self, outbox_id, provider: PaymentProcessors = Paymen
             entry = TransferOutboxEvent.objects.select_for_update().get(id=outbox_id)
 
             if successful:
-                # Paystack queued it successfully
+                # Processor queued it successfully
                 entry.status = "SUBMITTED"
-                entry.transfer_code = (
-                    response_data.get("transfer_code")
-                    if provider == PaymentProcessors.PAYSTACK
-                    else response_data.get("id")
-                )
+                entry.transfer_code = response_data.get("id")
                 entry.save()
 
                 log_activity(

@@ -49,7 +49,7 @@ class Wallet(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, models.Model):
     currency = models.CharField(
         verbose_name=_("Currency"),
         max_length=3,
-        default="USD",
+        default="NGN",
         help_text=_("ISO 4217 currency code."),
     )
     transactions = GenericRelation(
