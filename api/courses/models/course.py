@@ -1,5 +1,6 @@
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
+from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 from api.courses.constants import COURSE_MEDIA_URL_MAX_LENGTH
@@ -196,6 +197,38 @@ class Course(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMi
     )
     rejected_at = models.DateTimeField(
         verbose_name=_("Rejected At"), null=True, blank=True
+    )
+    draft_started_at = models.DateTimeField(
+        verbose_name=_("Draft Started At"),
+        null=True,
+        blank=True,
+        default=timezone.now,
+        help_text=_(
+            "When this course first existed as a draft, for the minimum hold "
+            "time. A rejection returns a course to Draft but does not reset "
+            "this, so revisions can be resubmitted without waiting again."
+        ),
+    )
+    sla_red_alerted_at = models.DateTimeField(
+        verbose_name=_("SLA Red Alerted At"),
+        null=True,
+        blank=True,
+        help_text=_(
+            "When admins were alerted that this course breached the review "
+            "SLA. Set once per review cycle so the sweep cannot re-alert."
+        ),
+    )
+    flagged_at = models.DateTimeField(
+        verbose_name=_("Flagged At"),
+        null=True,
+        blank=True,
+        help_text=_(
+            "When this course was auto-flagged for sitting too long without "
+            "a review decision. Advisory only - it blocks nothing."
+        ),
+    )
+    flag_reason = models.CharField(
+        verbose_name=_("Flag Reason"), max_length=255, blank=True, default=""
     )
 
     class Meta:

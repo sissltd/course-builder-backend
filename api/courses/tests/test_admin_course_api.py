@@ -1,7 +1,9 @@
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
 
 from api.courses.enums import CourseStatus
+from api.courses.models import Course
 from api.courses.tests.factories import make_category, make_draft_course, make_user
 from api.reviews.enums import ReviewStage
 from api.users.enums import UserRole
@@ -33,6 +35,42 @@ class AdminCourseApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         ids = {item["id"] for item in response.data["data"]["results"]}
         self.assertEqual(ids, {str(self.draft.id), str(self.submitted.id)})
+
+    def _flag(self, course, reason="No review decision within the configured window."):
+        Course.objects.filter(pk=course.pk).update(
+            flagged_at=timezone.now(), flag_reason=reason
+        )
+
+    def test_flagged_filter_lists_only_flagged_courses(self):
+        self._flag(self.submitted)
+        self.client.force_authenticate(self.admin)
+
+        flagged = self.client.get("/api/v1/admin/courses/", {"flagged": "true"})
+        unflagged = self.client.get("/api/v1/admin/courses/", {"flagged": "false"})
+
+        self.assertEqual(flagged.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            {item["id"] for item in flagged.data["data"]["results"]},
+            {str(self.submitted.id)},
+        )
+        self.assertEqual(
+            {item["id"] for item in unflagged.data["data"]["results"]},
+            {str(self.draft.id)},
+        )
+
+    def test_list_rows_carry_the_flag_fields(self):
+        self._flag(self.submitted, reason="Stalled")
+        self.client.force_authenticate(self.admin)
+
+        response = self.client.get("/api/v1/admin/courses/")
+
+        rows = {item["id"]: item for item in response.data["data"]["results"]}
+        flagged_row = rows[str(self.submitted.id)]
+        self.assertIsNotNone(flagged_row["flagged_at"])
+        self.assertEqual(flagged_row["flag_reason"], "Stalled")
+        clean_row = rows[str(self.draft.id)]
+        self.assertIsNone(clean_row["flagged_at"])
+        self.assertEqual(clean_row["flag_reason"], "")
 
     def test_admin_list_filters_by_status_creator_and_search(self):
         self.client.force_authenticate(self.admin)

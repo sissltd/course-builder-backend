@@ -43,4 +43,11 @@ CELERY_BEAT_SCHEDULE = {
         "task": "api.operations.tasks.probe_service_health_task",
         "schedule": 300.0,
     },
+    # Its thresholds are set in hours, so five minutes is already far finer
+    # than the question being asked; a tighter cadence would only re-scan
+    # the same queue.
+    "reviews-run-sla-sweep": {
+        "task": "api.reviews.tasks.run_sla_sweep_task",
+        "schedule": 300.0,
+    },
 }

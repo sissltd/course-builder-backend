@@ -338,6 +338,16 @@ class ReviewerCourseListSerializer(CourseListSerializer):
         read_only=True,
         help_text="Course creation timestamp shown in Owner's Information.",
     )
+    flagged_at = serializers.DateTimeField(
+        read_only=True,
+        help_text=(
+            "Set when the course was auto-flagged for waiting too long "
+            "without a review decision, null otherwise. Advisory only."
+        ),
+    )
+    flag_reason = serializers.CharField(
+        read_only=True, help_text="Why the course was flagged; empty when not flagged."
+    )
 
     class Meta(CourseListSerializer.Meta):
         fields = CourseListSerializer.Meta.fields + [
@@ -352,6 +362,8 @@ class ReviewerCourseListSerializer(CourseListSerializer):
             "channel_summary",
             "source_label",
             "date_created",
+            "flagged_at",
+            "flag_reason",
         ]
         read_only_fields = fields
 
