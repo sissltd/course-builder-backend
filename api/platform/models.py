@@ -146,6 +146,20 @@ class PlatformSettings(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
         blank=True,
         default=80,
     )
+    auto_credit_duration_hours = models.PositiveIntegerField(
+        verbose_name=_("Auto Credit Duration Hours"),
+        default=24,
+        help_text=_(
+            "Number of hours after course approval before the creator's wallet is credited."
+        ),
+    )
+    withdrawal_require_verification = models.BooleanField(
+        verbose_name=_("Withdrawal Requires Verification"),
+        default=True,
+        help_text=_(
+            "Whether creators must complete identity verification before making withdrawals."
+        ),
+    )
 
     class Meta:
         verbose_name = _("Platform Settings")

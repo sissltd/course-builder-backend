@@ -5,7 +5,11 @@ from django.contrib.contenttypes.models import ContentType
 from django.db import transaction
 from django.db.models import QuerySet
 
+from api.courses.enums import CourseSourceType
+from api.courses.models import Course
 from api.payments.models.transaction_model import Transaction
+from api.payments.tasks import release_course_payment
+from api.platform.services.platform_settings_service import get_settings
 from api.users.models import User
 from api.wallet.models import Wallet
 from shared.services.paystack_service import PaystackService
@@ -113,7 +117,7 @@ def create_transaction(
         fee=fee or Decimal("0.00"),
         type=type,
         status=status,
-        description=description,
+        description=description or "",
         recipient_account_name=recipient_account_name or "",
         recipient_account_number=recipient_account_number or "",
         recipient_provider_name=recipient_provider_name or "",
@@ -175,3 +179,9 @@ def internal_transfer(
     except Exception as e:
         logger.error(f"Internal transfer failed: {e}")
         raise
+
+
+def effect_course_payment(course: Course) -> None:
+    if course.source_type == CourseSourceType.CREATOR_UPLOADED:
+        delay_seconds = get_settings().auto_credit_duration_hours * 3600  # convert hours to seconds
+        release_course_payment.apply_async(args=[course.id], countdown=delay_seconds)  # type: ignore
