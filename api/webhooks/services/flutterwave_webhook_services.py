@@ -41,35 +41,27 @@ class FlutterwaveWebhookServices:
 
     @staticmethod
     def parse_webhook_event(event_data):
-        try:
-            if not isinstance(event_data, dict):
-                raise NonRetryableWebhookError("Webhook payload must be a JSON object")
+        if not isinstance(event_data, dict):
+            raise NonRetryableWebhookError("Webhook payload must be a JSON object")
 
-            event_type = event_data.get("type")
-            data = event_data.get("data", {})
-            status = data.get("status", "").upper()
-            if not event_type:
-                raise NonRetryableWebhookError("Missing 'event' in webhook payload")
+        event_type = event_data.get("type")
+        data = event_data.get("data", {})
+        status = data.get("status", "").upper()
+        if not event_type:
+            raise NonRetryableWebhookError("Missing 'event' in webhook payload")
 
-            match event_type:
-                case "transfer.disburse":
-                    match status:
-                        case 'SUCCESSFUL':
-                            return FlutterwaveWebhookServices._handle_transfer_success(data)
-                        case _:
-                            return FlutterwaveWebhookServices._handle_transfer_failure(data)
-                case "transfer.failed" | "transfer.failure" | "transfer.reversed" | "transfer.reversal":
-                    return FlutterwaveWebhookServices._handle_transfer_failure(data)
-                case _:
-                    raise NonRetryableWebhookError(
-                        f"Unhandled event type: {event_type}"
-                    )
+        match event_type:
+            case "transfer.disburse":
+                match status:
+                    case "SUCCESSFUL":
+                        return FlutterwaveWebhookServices._handle_transfer_success(data)
+                    case _:
+                        return FlutterwaveWebhookServices._handle_transfer_failure(data)
+            case "transfer.failed" | "transfer.failure" | "transfer.reversed" | "transfer.reversal":
+                return FlutterwaveWebhookServices._handle_transfer_failure(data)
+            case _:
+                raise NonRetryableWebhookError(f"Unhandled event type: {event_type}")
 
-        except Exception as e:
-            logger.error(f"Error processing Flutterwave webhook event: {e!s}")
-            raise WebhookProcessingError(
-                f"Error processing Flutterwave webhook event: {e!s}"
-            )
 
     @staticmethod
     @django_transaction.atomic
@@ -123,6 +115,11 @@ class FlutterwaveWebhookServices:
     @staticmethod
     @django_transaction.atomic
     def _handle_transfer_failure(data):
+        """The transfer failed from the payment processor...
+
+        [1] Mark the transfer outbox as processed
+        [2] Reverse the internal transfer to the user's wallet: Debit the transit account and credit the originating wallet
+        """
         reference = data.get("reference")
         metadata = data.get('meta', {})
         msg = metadata.get("reason", "Transfer failed")
@@ -134,9 +131,7 @@ class FlutterwaveWebhookServices:
 
             transaction_services.internal_transfer(
                 amount=data.get("amount") / 100,  # Convert from kobo to naira
-                from_ledger=InternalAccount.objects.select_for_update().get(
-                    code_name=INTERNAL_TRANSIT_ACCOUNT_NAME
-                ),
+                from_ledger=InternalAccount.objects.select_for_update().get(code_name=INTERNAL_TRANSIT_ACCOUNT_NAME),
                 to_ledger=entry.wallet,
                 reference=reference,
                 description=f"Reversal of failed transfer for reference {reference} by {entry.user.email}",
