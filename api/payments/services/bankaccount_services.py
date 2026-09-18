@@ -3,10 +3,10 @@ import logging
 from django.utils import timezone
 
 from api.authentication.services.activity_service import log_activity
-from api.payments.models.bankaccount_models import BankAccount
-from api.users.enums import UserActivityActionEnums, UserActivityCategoryEnums
 from api.authorization import codenames
 from api.authorization.services import permission_service
+from api.payments.models.bankaccount_models import BankAccount
+from api.users.enums import UserActivityActionEnums, UserActivityCategoryEnums
 from shared.services.paystack_service import PaystackService
 from shared.utils.bank_account_check import check_account_name_matches_profile
 from shared.utils.encryption import encrypt_field

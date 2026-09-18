@@ -1,3 +1,5 @@
+import logging
+
 from django.db import transaction
 from django.db.models import QuerySet
 from django.utils import timezone
@@ -11,6 +13,7 @@ from api.authorization.services import permission_service
 from api.courses.enums import CourseSourceType, CourseStatus
 from api.courses.models import Course
 from api.notification.models import Notification, NotificationPreference
+from api.payments.services.transaction_services import effect_course_payment
 from api.reviews.enums import ReviewActionType, ReviewStage
 from api.reviews.models import ReviewAction, ReviewAssignment
 from api.reviews.services import quality_review_service
@@ -22,6 +25,8 @@ from api.users.enums import (
 from api.users.models import User
 from api.users.services import reviewer_availability_service
 from api.wallet.services import wallet_service
+
+logger = logging.getLogger(__name__)
 
 REVIEWABLE_STATUSES = (CourseStatus.SUBMITTED, CourseStatus.IN_REVIEW)
 
@@ -751,33 +756,22 @@ def approve_qa(
         assignment.claimed_at = assignment.claimed_at or timezone.now()
         assignment.completed_at = timezone.now()
         assignment.save()
-        if course.source_type == CourseSourceType.CREATOR_UPLOADED:
-            wallet_service.credit_wallet(
-                user=course.creator,
-                amount=course.creator_price_snapshot,
-                course=course,
-                description=f"Course '{course.title}' approved after QA verification",
+        transaction.on_commit(lambda: effect_course_payment(course=course))
+        try:
+            activity_service.log_activity(
+                user=reviewer,
+                category=UserActivityCategoryEnums.APPROVAL,
+                action=UserActivityActionEnums.COURSE_APPROVED,
+                summary=f"You QA-approved '{course.title}'.",
+                target=course,
             )
-            Notification.emit_in_app_notification(
-                receivers=[course.creator],
-                title="Course approved",
-                content=f"Your course '{course.title}' passed QA verification and has been approved.",
-                metadata={
-                    "course_id": course.id,
-                    "amount": course.creator_price_snapshot,
-                },
-            )
-        activity_service.log_activity(
-            user=reviewer,
-            category=UserActivityCategoryEnums.APPROVAL,
-            action=UserActivityActionEnums.COURSE_APPROVED,
-            summary=f"You QA-approved '{course.title}'.",
-            target=course,
-        )
-        if course.creator_id:
-            award_service.schedule_evaluation(
-                creator_id=course.creator_id, criterion=BadgeCriterion.COURSES_APPROVED
-            )
+            if course.creator_id:
+                award_service.schedule_evaluation(
+                    creator_id=course.creator_id, criterion=BadgeCriterion.COURSES_APPROVED
+                )
+        except Exception as e:
+            # Log the exception but do not prevent the transaction from committing
+            logger.error(f"Error occurred while logging activity or scheduling award: {e}")
     return action
 
 

@@ -65,7 +65,7 @@ SPECTACULAR_SETTINGS = {
     # endpoint carries exactly one.
     "TAGS": [
         {
-            "name": "Public — Bank Accounts",
+            "name": "Public — Bank Info",
             "description": (
                 "Bank lookup endpoints (no authentication required): the "
                 "supported-banks list and one-off account-number verification."
@@ -326,8 +326,7 @@ SPECTACULAR_SETTINGS = {
         {
             "name": "Admin — Achievements",
             "description": (
-                "Creating, configuring and deleting achievement badges, and "
-                "awarding or revoking them by hand."
+                "Creating, configuring and deleting achievement badges, and awarding or revoking them by hand."
             ),
         },
         {

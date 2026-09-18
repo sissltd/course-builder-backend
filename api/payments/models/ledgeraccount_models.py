@@ -21,6 +21,12 @@ class InternalAccount(
     - Transit Account: This account acts as a temporary holding place for funds that are in transit between different accounts or systems. It ensures that transactions are properly tracked and managed during the transfer process.
 
     - Paystack Account: This account is used for transactions related to Paystack, a payment processing platform. It allows for the management of funds that are processed through Paystack, ensuring that they are properly accounted for within the internal ledger system.
+    
+    - Flutterwave Account: This account is used for transactions related to Flutterwave, a payment processing platform. It allows for the management of funds that are processed through Flutterwave, ensuring that they are properly accounted for within the internal ledger system.
+    
+    - Course Payment Account: This account is used for transactions related to course payments. It allows for the management of funds that are processed for course payments, ensuring that they are properly accounted for within the internal ledger system.
+    
+    These accounts are all created with migrations to ensure they exist in the system before any transactions are processed. More could be added via admin actions if needed.
     """
 
     class Currency(models.TextChoices):

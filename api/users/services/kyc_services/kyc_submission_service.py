@@ -272,10 +272,15 @@ def flag_verification(
 
 
 
-def require_verified(*, user: User) -> None:
-    """Raise ValidationError if `user` has not completed KYC verification."""
+def require_verified(*, user: User, required: bool=True) -> None:
+    """Raise ValidationError if `user` has not completed KYC verification 
+    and the calling operation requires completed KYC verification. If the 
+    requires no KYC verification, the check for verification is skipped
+    
+    The default is deliberately set to `True`, so existing implemntations do not break
+    """
 
-    if not is_verified(user=user):
+    if required and not is_verified(user=user):
         raise exceptions.ValidationError(
             "Complete KYC verification before withdrawing funds."
         )
