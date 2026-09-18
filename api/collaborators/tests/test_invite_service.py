@@ -1,4 +1,5 @@
 from datetime import timedelta
+from unittest.mock import patch
 
 from django.test import TestCase
 from django.utils import timezone
@@ -59,7 +60,8 @@ class CreateInviteTests(TestCase):
             ).exists()
         )
 
-    def test_skips_notification_when_no_account_yet(self):
+    @patch("api.collaborators.services.invite_service.send_templated_email")
+    def test_sends_email_when_no_account_yet(self, send_email):
         invite = invite_service.create_invite(
             course=self.course,
             inviter=self.inviter,
@@ -68,6 +70,14 @@ class CreateInviteTests(TestCase):
         )
         self.assertFalse(Notification.objects.filter(title="Course collaboration invite").exists())
         self.assertIsNone(invite.invitee_user)
+        send_email.assert_called_once()
+        self.assertEqual(
+            send_email.call_args.kwargs["receivers"], ["ghost@example.com"]
+        )
+        self.assertEqual(
+            send_email.call_args.kwargs["template_name"],
+            "emails/collaboration_invitation",
+        )
 
     def test_raises_when_inviting_the_creator(self):
         with self.assertRaises(ValidationError):

@@ -37,7 +37,7 @@ _SETTINGS_EXAMPLE = {
     "course_lessons_per_module_min": 3,
     "course_lessons_per_module_max": 8,
     "course_learning_objectives_min": 5,
-    "course_learning_objectives_max": 5,
+    "course_learning_objectives_max": 10,
     "lesson_learning_objectives_min": 2,
     "lesson_learning_objectives_max": 5,
     "course_description_word_min": 100,

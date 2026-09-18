@@ -1,6 +1,8 @@
 import logging
 from datetime import timedelta
+from urllib.parse import urlencode
 
+from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 from rest_framework import exceptions
@@ -12,11 +14,13 @@ from api.collaborators.enums import (
 from api.collaborators.models import CollaboratorInvite, CourseCollaborator
 from api.courses.models import Course, Module
 from api.notification.models import Notification
+from api.notification.services.email_service import send_templated_email
 from api.users.models import User
 
 logger = logging.getLogger(__name__)
 
 INVITE_EXPIRY_DAYS = 14
+COLLABORATION_INVITE_SUBJECT = "You've been invited to collaborate on a course"
 
 
 def invite_is_expired(invite: CollaboratorInvite) -> bool:
@@ -73,8 +77,9 @@ def create_invite(
     Re-inviting an email that already has a PENDING invite for this course
     supersedes it: the old one is marked REVOKED so the fresh token and any
     changed role/module assignment are the only live offer. Notifies the
-    invitee in-app when their email maps to an account; otherwise the
-    notification waits until they sign up.
+    invitee in-app when their email maps to an account and by email in all
+    cases. Recipients without an account can sign up with the invited address
+    and then accept the pending invite.
     """
 
     if role == CollaboratorRole.ADMIN:
@@ -123,6 +128,29 @@ def create_invite(
             "Collaborator invite created for email without an account: %s (course=%s)",
             invite.email,
             course.id,
+        )
+
+    invitation_link = (
+        f"{settings.FRONTEND_URL.rstrip('/')}/auth/login?"
+        f"{urlencode({'invite_id': str(invite.id)})}"
+    )
+    try:
+        send_templated_email(
+            receivers=[invite.email],
+            subject=COLLABORATION_INVITE_SUBJECT,
+            template_name="emails/collaboration_invitation",
+            context={
+                "first_name": invitee.first_name if invitee else "there",
+                "inviter_name": inviter.get_full_name() or inviter.email,
+                "course_title": course.title,
+                "role_label": invite.get_role_display(),
+                "invitation_link": invitation_link,
+                "expires_at": invite.expires_at,
+            },
+        )
+    except Exception:  # noqa: BLE001 - invite creation must not be rolled back
+        logger.exception(
+            "collaboration invite %s created but notification email failed", invite.id
         )
 
     return invite

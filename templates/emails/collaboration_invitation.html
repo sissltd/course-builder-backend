@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en">
+  <body>
+    <p>Hello {{ first_name }},</p>
+    <p>
+      {{ inviter_name }} invited you to collaborate on the course
+      <strong>{{ course_title }}</strong> as a {{ role_label }}.
+    </p>
+    <p>
+      <a href="{{ invitation_link }}">Sign in or create an account to accept the invitation</a>
+    </p>
+    <p>This invitation expires on {{ expires_at|date:"F j, Y, P" }}.</p>
+    <p>Regards,<br>Soludesks</p>
+  </body>
+</html>

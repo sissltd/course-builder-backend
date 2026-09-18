@@ -1,0 +1,11 @@
+Hello {{ first_name }},
+
+{{ inviter_name }} invited you to collaborate on the course "{{ course_title }}" as a {{ role_label }}.
+
+Open this link to sign in or create an account with this email address and accept the invitation:
+{{ invitation_link }}
+
+This invitation expires on {{ expires_at|date:"F j, Y, P" }}.
+
+Regards,
+Soludesks
