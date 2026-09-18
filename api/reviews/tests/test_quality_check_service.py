@@ -36,6 +36,21 @@ class ValidateStructuralStandardsTests(TestCase):
             any(f.startswith("Course must") and "learning objectives" in f for f in failures)
         )
 
+    def test_allows_more_than_five_course_learning_objectives(self):
+        course = build_compliant_course()
+        course.learning_objectives.append("An additional objective")
+        course.save(update_fields=["learning_objectives"])
+
+        failures = quality_check_service.validate_structural_standards(course)
+
+        self.assertFalse(
+            any(
+                f.startswith("Course must") and "learning objectives" in f
+                for f in failures
+            ),
+            failures,
+        )
+
     def test_fails_when_lesson_learning_objectives_out_of_range(self):
         course = build_compliant_course()
         lesson = Lesson.objects.filter(module__course=course).first()

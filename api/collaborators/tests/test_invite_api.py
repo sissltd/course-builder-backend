@@ -1,4 +1,5 @@
 from datetime import timedelta
+from unittest.mock import patch
 
 from django.utils import timezone
 from rest_framework import status
@@ -56,7 +57,8 @@ class InviteLifecycleApiTests(APITestCase):
         invite = CollaboratorInvite.objects.get(id=response.data["id"])
         self.assertEqual(invite.status, CollaboratorInviteStatus.PENDING)
 
-    def test_invite_works_for_email_without_account(self):
+    @patch("api.collaborators.services.invite_service.send_templated_email")
+    def test_invite_works_for_email_without_account(self, send_email):
         self.client.force_authenticate(self.creator)
         response = self.client.post(
             "/api/v1/course-invites/",
@@ -65,6 +67,10 @@ class InviteLifecycleApiTests(APITestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertIsNone(response.data["invitee"])
+        send_email.assert_called_once()
+        self.assertEqual(
+            send_email.call_args.kwargs["receivers"], ["not-signed-up@example.com"]
+        )
 
     def test_invite_own_creator_rejected(self):
         self.client.force_authenticate(self.creator)

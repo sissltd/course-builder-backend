@@ -1116,7 +1116,7 @@ persisted as a status (a rejection immediately reopens the course as `DRAFT`).
 |---|---|---|
 | Modules per course | 4–12 | `course_module_count_min/max` |
 | Lessons per module | 3–8 | `course_lessons_per_module_min/max` |
-| Learning objectives per course | 5 | `course_learning_objectives_min/max` |
+| Learning objectives per course | 5-10 | `course_learning_objectives_min/max` |
 | Learning objectives per lesson | 2–5 | `lesson_learning_objectives_min/max` |
 | Lesson script length | 500–1500 words | `lesson_script_word_min/max` |
 | Lesson-level assessment | optional | — |

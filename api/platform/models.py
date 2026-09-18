@@ -43,7 +43,7 @@ class PlatformSettings(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
         verbose_name=_("Course Learning Objectives Min"), default=5
     )
     course_learning_objectives_max = models.PositiveIntegerField(
-        verbose_name=_("Course Learning Objectives Max"), default=5
+        verbose_name=_("Course Learning Objectives Max"), default=10
     )
     lesson_learning_objectives_min = models.PositiveIntegerField(
         verbose_name=_("Lesson Learning Objectives Min"), default=2

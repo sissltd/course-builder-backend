@@ -114,7 +114,8 @@ class CollaboratorInviteViewSet(ModelViewSet):
         description=(
             "Creates a PENDING invite for an email address. The email does "
             "not need an account yet - the recipient signs up with that "
-            "address and accepts. Re-inviting supersedes any prior pending "
+            "address and accepts. An invitation email is sent immediately. "
+            "Re-inviting supersedes any prior pending "
             "invite for the same course+email. Invites expire after 14 "
             "days.\n\n"
             f"{_AUTH_LINE}"
