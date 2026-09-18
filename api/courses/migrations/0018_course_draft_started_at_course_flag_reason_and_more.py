@@ -21,7 +21,7 @@ def backfill_draft_started_at(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('courses', '0016_aigenerationjob_recovery_telemetry'),
+        ('courses', '0017_module_collaboration_lock'),
     ]
 
     operations = [

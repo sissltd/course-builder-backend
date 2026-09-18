@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('platform', '0012_alter_platformsettings_liveness_threshold'),
+        ('platform', '0014_allow_more_course_learning_objectives'),
     ]
 
     operations = [
