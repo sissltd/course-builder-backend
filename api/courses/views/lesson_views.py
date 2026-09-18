@@ -5,7 +5,7 @@ from drf_spectacular.utils import (
     extend_schema,
     extend_schema_view,
 )
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from rest_framework import exceptions
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -488,6 +488,20 @@ class LessonViewSet(ModelViewSet):
         except Module.DoesNotExist as exc:
             raise exceptions.NotFound("Module not found.") from exc
 
+    def _validate_unique_order(self, *, module: Module, order: int, exclude_pk=None):
+        siblings = Lesson.objects.filter(module=module, order=order)
+        if exclude_pk is not None:
+            siblings = siblings.exclude(pk=exclude_pk)
+        if siblings.exists():
+            raise exceptions.ValidationError(
+                {
+                    "order": (
+                        "A lesson with this order already exists for this module. "
+                        "Use a different order or reorder the existing lessons."
+                    )
+                }
+            )
+
     @transaction.atomic
     def perform_create(self, serializer):
         module = self._get_module()
@@ -496,10 +510,26 @@ class LessonViewSet(ModelViewSet):
                 "Lessons can only be added while the course is Draft."
             )
         module_lock_service.check_not_locked(module=module, user=self.request.user)
-        requirements = serializer.validated_data.pop("requirements", [])
-        lesson = serializer.save(
-            module=module, created_by=self.request.user, updated_by=self.request.user
+        self._validate_unique_order(
+            module=module, order=serializer.validated_data["order"]
         )
+        requirements = serializer.validated_data.pop("requirements", [])
+        try:
+            with transaction.atomic():
+                lesson = serializer.save(
+                    module=module,
+                    created_by=self.request.user,
+                    updated_by=self.request.user,
+                )
+        except IntegrityError as exc:
+            raise exceptions.ValidationError(
+                {
+                    "order": (
+                        "A lesson with this order already exists for this module. "
+                        "Use a different order or reorder the existing lessons."
+                    )
+                }
+            ) from exc
         lesson_service.replace_requirements(
             lesson=lesson,
             requirements=requirements,
@@ -516,11 +546,28 @@ class LessonViewSet(ModelViewSet):
                 "Lessons can only be edited while the course is Draft."
             )
         module_lock_service.check_not_locked(module=module, user=self.request.user)
+        if "order" in serializer.validated_data:
+            self._validate_unique_order(
+                module=module,
+                order=serializer.validated_data["order"],
+                exclude_pk=serializer.instance.pk,
+            )
         requirements_marker = object()
         requirements = serializer.validated_data.pop(
             "requirements", requirements_marker
         )
-        lesson = serializer.save(updated_by=self.request.user)
+        try:
+            with transaction.atomic():
+                lesson = serializer.save(updated_by=self.request.user)
+        except IntegrityError as exc:
+            raise exceptions.ValidationError(
+                {
+                    "order": (
+                        "A lesson with this order already exists for this module. "
+                        "Use a different order or reorder the existing lessons."
+                    )
+                }
+            ) from exc
         if requirements is not requirements_marker:
             lesson_service.replace_requirements(
                 lesson=lesson,
