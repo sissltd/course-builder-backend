@@ -15,7 +15,9 @@ class Module(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMi
     locked_by/lock_expires_at implement a simple TTL-based editing lock (SCCS
     PRD Section 14: "module-level locking prevent conflicts") - a REST
     acquire/release/heartbeat flow via module_lock_service, not real-time
-    presence over WebSockets.
+    presence over WebSockets. collaboration_locked_by and
+    collaboration_locked_at are the creator-controlled persistent freeze for
+    collaborator editing.
     """
 
     course = models.ForeignKey(
@@ -68,6 +70,21 @@ class Module(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMi
         blank=True,
         help_text=_("When the current edit lock auto-expires."),
     )
+    collaboration_locked_by = models.ForeignKey(
+        "users.User",
+        verbose_name=_("Collaboration Locked By"),
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text=_("Course creator who has frozen collaborator editing."),
+    )
+    collaboration_locked_at = models.DateTimeField(
+        verbose_name=_("Collaboration Locked At"),
+        null=True,
+        blank=True,
+        help_text=_("When collaborator editing was frozen."),
+    )
 
     @property
     def is_locked(self) -> bool:
@@ -78,6 +95,12 @@ class Module(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMi
             and self.lock_expires_at
             and self.lock_expires_at > timezone.now()
         )
+
+    @property
+    def collaboration_locked(self) -> bool:
+        """Whether the course creator has persistently frozen collaborators."""
+
+        return self.collaboration_locked_by_id is not None
 
     class Meta:
         verbose_name = _("Module")

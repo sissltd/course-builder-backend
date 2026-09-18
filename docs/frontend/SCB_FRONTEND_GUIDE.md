@@ -228,6 +228,25 @@ expiry window) or their lock lapses mid-edit and someone else can take it.
 - `heartbeat` without holding the lock → **423 Locked**.
 - `unlock` is a no-op if not locked, so it is safe to call on unmount.
 
+### Persistent creator freeze
+
+The module editor also exposes a creator-controlled freeze for collaboration:
+
+```
+POST /api/v1/courses/{course_pk}/modules/{id}/collaboration-lock/
+POST /api/v1/courses/{course_pk}/modules/{id}/collaboration-unlock/
+```
+
+Only the course creator may call these endpoints. The freeze remains active
+until explicitly unlocked, does not use the heartbeat flow, and blocks
+collaborator writes while leaving reads available. The creator can continue
+editing the module. Module responses include:
+`collaboration_locked`, `collaboration_locked_at`, and
+`collaboration_locked_by`.
+
+The existing `lock`, `unlock`, and `heartbeat` endpoints remain the separate
+short-lived editor lease used to prevent simultaneous edits.
+
 ---
 
 ## 6. Course preview — built

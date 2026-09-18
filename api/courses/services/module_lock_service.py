@@ -10,6 +10,49 @@ from api.users.models import User
 DEFAULT_LOCK_TTL_MINUTES = 5
 
 
+def acquire_collaboration_lock(*, module: Module, user: User) -> Module:
+    """Persistently freeze collaborator writes on a module.
+
+    Only the course creator may manage this state. The creator remains able to
+    edit the module while collaborators are blocked by ``check_not_locked``.
+    """
+
+    if module.course.creator_id != user.id:
+        raise exceptions.PermissionDenied(
+            "Only the course creator can lock collaborator editing on a module."
+        )
+    if not module.collaboration_locked:
+        module.collaboration_locked_by = user
+        module.collaboration_locked_at = timezone.now()
+        module.save(
+            update_fields=[
+                "collaboration_locked_by",
+                "collaboration_locked_at",
+                "updated_datetime",
+            ]
+        )
+    return module
+
+
+def release_collaboration_lock(*, module: Module, user: User) -> Module:
+    """Remove the persistent collaborator freeze from a module."""
+
+    if module.course.creator_id != user.id:
+        raise exceptions.PermissionDenied(
+            "Only the course creator can unlock collaborator editing on a module."
+        )
+    module.collaboration_locked_by = None
+    module.collaboration_locked_at = None
+    module.save(
+        update_fields=[
+            "collaboration_locked_by",
+            "collaboration_locked_at",
+            "updated_datetime",
+        ]
+    )
+    return module
+
+
 def acquire_lock(
     *, module: Module, user: User, ttl_minutes: int = DEFAULT_LOCK_TTL_MINUTES
 ) -> Module:
@@ -55,8 +98,12 @@ def heartbeat_lock(
 
 
 def check_not_locked(*, module: Module, user: User) -> None:
-    """Raise ModuleLocked if `module` is locked by someone other than `user`.
-    Call before persisting edits to a module or any of its lessons."""
+    """Raise ModuleLocked when a collaborator cannot write to ``module``."""
+
+    if module.collaboration_locked and module.course.creator_id != user.id:
+        raise ModuleLocked(
+            "This module is locked by the course creator for collaborator editing."
+        )
 
     if module.is_locked and module.locked_by_id != user.id:
         raise ModuleLocked(

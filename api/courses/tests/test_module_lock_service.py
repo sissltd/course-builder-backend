@@ -145,3 +145,44 @@ class CheckNotLockedTests(TestCase):
 
         with self.assertRaises(ModuleLocked):
             module_lock_service.check_not_locked(module=module, user=other)
+
+
+class CollaborationLockTests(TestCase):
+    def test_creator_can_persistently_lock_and_unlock(self):
+        creator = make_user()
+        module = make_module(course=make_draft_course(creator=creator))
+
+        locked = module_lock_service.acquire_collaboration_lock(
+            module=module, user=creator
+        )
+
+        self.assertTrue(locked.collaboration_locked)
+        self.assertEqual(locked.collaboration_locked_by_id, creator.id)
+        self.assertIsNotNone(locked.collaboration_locked_at)
+
+        unlocked = module_lock_service.release_collaboration_lock(
+            module=locked, user=creator
+        )
+
+        self.assertFalse(unlocked.collaboration_locked)
+        self.assertIsNone(unlocked.collaboration_locked_by_id)
+        self.assertIsNone(unlocked.collaboration_locked_at)
+
+    def test_non_creator_cannot_manage_persistent_lock(self):
+        creator = make_user()
+        other = make_user()
+        module = make_module(course=make_draft_course(creator=creator))
+
+        with self.assertRaises(PermissionDenied):
+            module_lock_service.acquire_collaboration_lock(module=module, user=other)
+
+    def test_persistent_lock_blocks_collaborators_but_not_creator(self):
+        creator = make_user()
+        collaborator = make_user()
+        module = make_module(course=make_draft_course(creator=creator))
+        module_lock_service.acquire_collaboration_lock(module=module, user=creator)
+
+        with self.assertRaises(ModuleLocked):
+            module_lock_service.check_not_locked(module=module, user=collaborator)
+
+        module_lock_service.check_not_locked(module=module, user=creator)
