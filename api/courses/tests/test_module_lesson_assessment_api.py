@@ -231,6 +231,26 @@ class ModuleLessonAssessmentApiTests(APITestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
+    def test_duplicate_lesson_order_returns_validation_error(self):
+        module = Module.objects.create(course=self.course, title="M1", order=1)
+        Lesson.objects.create(module=module, title="Existing", order=1)
+        self.client.force_authenticate(self.creator)
+
+        response = self.client.post(
+            f"/api/v1/courses/{self.course.id}/modules/{module.id}/lessons/",
+            {
+                "title": "Duplicate order",
+                "order": 1,
+                "content_type": "TEXT",
+                "learning_objectives": ["Understand the topic"],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["errors"][0]["field_name"], "order")
+        self.assertEqual(module.lessons.count(), 1)
+
     def test_cannot_create_lesson_when_course_not_draft(self):
         module = Module.objects.create(course=self.course, title="M1", order=1)
         self.course.status = CourseStatus.SUBMITTED

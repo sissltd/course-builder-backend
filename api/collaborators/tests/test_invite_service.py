@@ -1,5 +1,6 @@
 from datetime import timedelta
 from unittest.mock import patch
+from urllib.parse import parse_qs, urlparse
 
 from django.test import TestCase
 from django.utils import timezone
@@ -77,6 +78,12 @@ class CreateInviteTests(TestCase):
         self.assertEqual(
             send_email.call_args.kwargs["template_name"],
             "emails/collaboration_invitation",
+        )
+        invitation_link = send_email.call_args.kwargs["context"]["invitation_link"]
+        query = parse_qs(urlparse(invitation_link).query)
+        self.assertEqual(
+            query["callbackUrl"],
+            [f"/creator/invitations?invite_id={invite.id}"],
         )
 
     def test_raises_when_inviting_the_creator(self):

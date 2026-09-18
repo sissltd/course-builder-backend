@@ -132,7 +132,7 @@ def create_invite(
 
     invitation_link = (
         f"{settings.FRONTEND_URL.rstrip('/')}/auth/login?"
-        f"{urlencode({'invite_id': str(invite.id)})}"
+        f"{urlencode({'callbackUrl': f'/creator/invitations?invite_id={invite.id}'})}"
     )
     try:
         send_templated_email(
