@@ -20,7 +20,7 @@ COURSE_PAYMENT_INTERNAL_ACCOUNT_CODENAME = "course_payment"
     bind=True,
     max_retries=3,
     default_retry_delay=10,
-    name="courses.release_course_payment",
+    name="payments.release_course_payment",
 )
 def release_course_payment(self, *args):
     """Schedule the release of course payment to the course creator, after the course is approved
@@ -29,16 +29,16 @@ def release_course_payment(self, *args):
     try:
         course = Course.objects.get(id=course_id)
     except Course.DoesNotExist as exc:
-        logger.error(f"[courses.release_course_payment] Course not found: {exc}")
+        logger.error(f"[payments.release_course_payment] Course not found: {exc}")
         return
     
-    if course.status != CourseStatus.APPROVED: #Just doing a second check
-        logger.error(f"[courses.release_course_payment] Course not approved: {course_id}")
+    if course.status != CourseStatus.APPROVED:  # Just doing a second check
+        logger.error(f"[payments.release_course_payment] Course not approved: {course_id}")
         return
 
     reference_str = f"course_payment_{course.id}"
     if Transaction.objects.filter(reference=reference_str).exists():
-        logger.warning(f"[courses.release_course_payment] Payout already processed for reference: {reference_str}")
+        logger.warning(f"[payments.release_course_payment] Payout already processed for reference: {reference_str}")
         return
 
     try:
@@ -59,11 +59,11 @@ def release_course_payment(self, *args):
         )
     except (InternalAccount.DoesNotExist, ObjectDoesNotExist) as exc:
         # DO NOT retry if internal accounts are missing; this requires developer intervention.
-        logger.critical(f"[courses.release_course_payment] Configuration Error: {exc}")
+        logger.critical(f"[payments.release_course_payment] Configuration Error: {exc}")
         raise
     except Exception as exc:
         # Retry on temporary infrastructure/database connection drops
-        logger.error(f"[courses.release_course_payment] Failed: {exc}")
+        logger.error(f"[payments.release_course_payment] Failed: {exc}")
         raise self.retry(exc=exc)
 
     try:
@@ -77,4 +77,4 @@ def release_course_payment(self, *args):
             },
         )
     except Exception as exc:
-        logger.error(f"[courses.release_course_payment] Failed to send notification: {exc}")
+        logger.error(f"[payments.release_course_payment] Failed to send notification: {exc}")

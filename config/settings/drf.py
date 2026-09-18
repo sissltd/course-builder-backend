@@ -54,6 +54,10 @@ REST_FRAMEWORK = {
 
 SPECTACULAR_SETTINGS = {
     "TITLE": "TSES COURSE BUILDER",  # project name
+    "SWAGGER_UI_SETTINGS": {
+        "filter": True,
+        "persistAuthorization": True,
+    },
     "VERSION": "1.0.0",
     "SORT_OPERATION_PARAMETERS": False,
     "SERVE_INCLUDE_SCHEMA": False,
@@ -438,9 +442,6 @@ SPECTACULAR_SETTINGS = {
     "SECURITY": [
         {"bearerAuth": []},
     ],
-    "SWAGGER_UI_SETTINGS": {
-        "persistAuthorization": True,
-    },
     "ENUM_NAME_OVERRIDES": {
         "CategoryStatusEnum": "api.catalog.enums.CategoryStatus",
         "CourseStatusEnum": "api.courses.enums.CourseStatus",
