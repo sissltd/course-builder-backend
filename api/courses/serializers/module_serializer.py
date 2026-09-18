@@ -38,6 +38,9 @@ class ModuleSerializer(serializers.ModelSerializer):
             "locked_by",
             "lock_expires_at",
             "is_locked",
+            "collaboration_locked_by",
+            "collaboration_locked_at",
+            "collaboration_locked",
         ]
         read_only_fields = fields
 

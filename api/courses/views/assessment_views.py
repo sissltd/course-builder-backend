@@ -12,6 +12,7 @@ from api.collaborators.services import collaborator_service
 from api.courses.enums import AssessmentLevel, CourseStatus
 from api.courses.models import Course, Lesson, Module
 from api.courses.serializers import AssessmentSerializer, AssessmentWriteSerializer
+from api.courses.services import module_lock_service
 from api.authorization import codenames
 from api.authorization.permissions import Perm
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
@@ -228,6 +229,9 @@ class LessonAssessmentView(APIView):
             raise exceptions.ValidationError(
                 "Assessments can only be edited while the course is Draft."
             )
+        module_lock_service.check_not_locked(
+            module=lesson.module, user=request.user
+        )
 
         assessment = getattr(lesson, "assessment", None)
         serializer = AssessmentWriteSerializer(instance=assessment, data=request.data)
@@ -352,6 +356,7 @@ class ModuleAssessmentView(APIView):
             raise exceptions.ValidationError(
                 "Assessments can only be edited while the course is Draft."
             )
+        module_lock_service.check_not_locked(module=module, user=request.user)
 
         assessment = getattr(module, "assessment", None)
         serializer = AssessmentWriteSerializer(instance=assessment, data=request.data)

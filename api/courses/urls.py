@@ -132,6 +132,16 @@ urlpatterns = router.urls + [
         name="course-module-heartbeat",
     ),
     path(
+        "courses/<uuid:course_pk>/modules/<uuid:pk>/collaboration-lock/",
+        module_views.ModuleViewSet.as_view({"post": "collaboration_lock"}),
+        name="course-module-collaboration-lock",
+    ),
+    path(
+        "courses/<uuid:course_pk>/modules/<uuid:pk>/collaboration-unlock/",
+        module_views.ModuleViewSet.as_view({"post": "collaboration_unlock"}),
+        name="course-module-collaboration-unlock",
+    ),
+    path(
         "courses/<uuid:course_pk>/modules/<uuid:module_pk>/lessons/",
         lesson_views.LessonViewSet.as_view({"get": "list", "post": "create"}),
         name="module-lesson-list",

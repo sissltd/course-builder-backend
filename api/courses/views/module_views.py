@@ -34,6 +34,9 @@ _MODULE_EXAMPLE = {
     "locked_by": None,
     "lock_expires_at": None,
     "is_locked": False,
+    "collaboration_locked_by": None,
+    "collaboration_locked_at": None,
+    "collaboration_locked": False,
 }
 
 _COURSE_PK_PARAMETER = OpenApiParameter(
@@ -385,6 +388,7 @@ class ModuleViewSet(ModelViewSet):
             raise exceptions.ValidationError(
                 "Modules can only be deleted while the course is Draft."
             )
+        module_lock_service.check_not_locked(module=instance, user=self.request.user)
         instance.delete()
 
     @extend_schema(
@@ -530,5 +534,72 @@ class ModuleViewSet(ModelViewSet):
     def heartbeat(self, request, *args, **kwargs):
         module = module_lock_service.heartbeat_lock(
             module=self.get_object(), user=request.user
+        )
+        return Response(ModuleSerializer(module).data)
+
+    @extend_schema(
+        summary="Lock a module for collaborators",
+        description=(
+            "Persistently prevents collaborators from editing this module "
+            "while leaving it readable. The course creator can continue to "
+            "edit the module and can unlock it later. This is separate from "
+            "the short-TTL editor lock used for concurrent editing.\n\n"
+            "**Auth:** The course creator only.\n\n"
+            "**Prerequisites:** The parent course must be Draft.\n\n"
+            "**Important:** The operation is idempotent and the persistent "
+            "lock does not expire or require a heartbeat."
+        ),
+        tags=["Creator — Modules"],
+        parameters=[_COURSE_PK_PARAMETER],
+        request=None,
+        responses={
+            200: OpenApiResponse(response=ModuleSerializer),
+            400: _DRAFT_ONLY_400,
+            403: OpenApiResponse(description="Only the course creator may manage this lock."),
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["not_found"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
+    @action(detail=True, methods=["post"], url_path="collaboration-lock")
+    def collaboration_lock(self, request, *args, **kwargs):
+        module = self.get_object()
+        if module.course.status != CourseStatus.DRAFT:
+            raise exceptions.ValidationError(
+                "Modules can only be locked while the course is Draft."
+            )
+        module = module_lock_service.acquire_collaboration_lock(
+            module=module, user=request.user
+        )
+        return Response(ModuleSerializer(module).data)
+
+    @extend_schema(
+        summary="Unlock a module for collaborators",
+        description=(
+            "Removes the persistent collaborator editing freeze from a module.\n\n"
+            "**Auth:** The course creator only.\n\n"
+            "**Prerequisites:** The parent course must be Draft."
+        ),
+        tags=["Creator — Modules"],
+        parameters=[_COURSE_PK_PARAMETER],
+        request=None,
+        responses={
+            200: OpenApiResponse(response=ModuleSerializer),
+            400: _DRAFT_ONLY_400,
+            403: OpenApiResponse(description="Only the course creator may manage this lock."),
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["not_found"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
+    @action(detail=True, methods=["post"], url_path="collaboration-unlock")
+    def collaboration_unlock(self, request, *args, **kwargs):
+        module = self.get_object()
+        if module.course.status != CourseStatus.DRAFT:
+            raise exceptions.ValidationError(
+                "Modules can only be unlocked while the course is Draft."
+            )
+        module = module_lock_service.release_collaboration_lock(
+            module=module, user=request.user
         )
         return Response(ModuleSerializer(module).data)

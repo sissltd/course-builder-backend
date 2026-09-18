@@ -74,6 +74,127 @@ class ModuleLockRoutingTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_423_LOCKED)
 
+    def test_creator_can_persistently_lock_and_unlock_collaborators(self):
+        self.client.force_authenticate(self.creator)
+
+        lock = self.client.post(f"{self.base}/collaboration-lock/")
+
+        self.assertEqual(lock.status_code, status.HTTP_200_OK)
+        self.assertTrue(lock.data["collaboration_locked"])
+        self.assertEqual(
+            str(lock.data["collaboration_locked_by"]), str(self.creator.id)
+        )
+
+        unlock = self.client.post(f"{self.base}/collaboration-unlock/")
+
+        self.assertEqual(unlock.status_code, status.HTTP_200_OK)
+        self.assertFalse(unlock.data["collaboration_locked"])
+
+    def test_only_creator_can_manage_persistent_collaboration_lock(self):
+        from api.collaborators.enums import CollaboratorRole
+        from api.collaborators.tests.factories import make_collaborator
+
+        make_collaborator(
+            course=self.course, user=self.other, role=CollaboratorRole.ADMIN
+        )
+        self.client.force_authenticate(self.other)
+
+        response = self.client.post(f"{self.base}/collaboration-lock/")
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_persistent_lock_blocks_collaborator_module_writes(self):
+        from api.collaborators.enums import CollaboratorRole
+        from api.collaborators.tests.factories import make_collaborator
+
+        make_collaborator(
+            course=self.course, user=self.other, role=CollaboratorRole.ADMIN
+        )
+        self.client.force_authenticate(self.creator)
+        self.client.post(f"{self.base}/collaboration-lock/")
+
+        self.client.force_authenticate(self.other)
+        response = self.client.patch(
+            f"{self.base}/",
+            {"title": "Blocked edit"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_423_LOCKED)
+
+    def test_creator_can_edit_persistently_locked_module(self):
+        self.client.force_authenticate(self.creator)
+        self.client.post(f"{self.base}/collaboration-lock/")
+
+        response = self.client.patch(
+            f"{self.base}/",
+            {"title": "Creator edit"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["title"], "Creator edit")
+
+    def test_persistent_lock_blocks_lesson_and_module_assessment_writes(self):
+        from api.collaborators.enums import CollaboratorRole
+        from api.collaborators.tests.factories import make_collaborator
+
+        lesson = Lesson.objects.create(
+            module=self.module, title="Lesson", order=1
+        )
+        make_collaborator(
+            course=self.course, user=self.other, role=CollaboratorRole.ADMIN
+        )
+        self.client.force_authenticate(self.creator)
+        self.client.post(f"{self.base}/collaboration-lock/")
+
+        self.client.force_authenticate(self.other)
+        lesson_response = self.client.patch(
+            f"{self.base}/lessons/{lesson.id}/",
+            {"title": "Blocked lesson edit"},
+            format="json",
+        )
+        assessment_response = self.client.put(
+            f"{self.base}/assessment/",
+            {
+                "title": "Blocked quiz",
+                "questions": [
+                    {
+                        "type": "SINGLE_CHOICE",
+                        "question": "Which answer is correct?",
+                        "points": 1,
+                        "options": ["A", "B"],
+                        "correct_index": 0,
+                    }
+                ],
+            },
+            format="json",
+        )
+        lesson_assessment_response = self.client.put(
+            f"{self.base}/lessons/{lesson.id}/assessment/",
+            {
+                "title": "Blocked lesson quiz",
+                "questions": [
+                    {
+                        "type": "SINGLE_CHOICE",
+                        "question": "Which answer is correct?",
+                        "points": 1,
+                        "options": ["A", "B"],
+                        "correct_index": 0,
+                    }
+                ],
+            },
+            format="json",
+        )
+
+        self.assertEqual(lesson_response.status_code, status.HTTP_423_LOCKED)
+        self.assertEqual(
+            assessment_response.status_code, status.HTTP_423_LOCKED
+        )
+        self.assertEqual(
+            lesson_assessment_response.status_code, status.HTTP_423_LOCKED
+        )
+
 
 class ModuleReorderTests(APITestCase):
     def setUp(self):

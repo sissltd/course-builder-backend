@@ -8,7 +8,9 @@ class ModuleLocked(exceptions.APIException):
     status_code differs from ValidationError/PermissionDenied."""
 
     status_code = status.HTTP_423_LOCKED
-    default_detail = "This module is currently being edited by another user."
+    default_detail = (
+        "This module is locked for editing by another user or the course creator."
+    )
     default_code = "locked"
 
 

@@ -121,7 +121,8 @@ This is where the Course Outline skeleton gets fleshed out. Each module gets:
 | Field | Model |
 |---|---|
 | `title`, `description` | `Module` |
-| `is_locked` | `Module.is_locked` — "prevent collaborators from editing this module" |
+| `is_locked` | `Module.is_locked` — short-lived editor lease |
+| `collaboration_locked` | Creator-controlled persistent freeze that prevents collaborator writes |
 | Module objectives | `ModuleLearningObjective` |
 | Lessons (add/reorder/delete) | `Lesson` |
 
