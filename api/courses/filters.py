@@ -131,6 +131,12 @@ class AdminCourseFilter(CourseFilter):
             "QA verification."
         ),
     )
+    flagged = django_filters.BooleanFilter(
+        field_name="flagged_at",
+        lookup_expr="isnull",
+        exclude=True,
+        label="True lists only courses auto-flagged as overdue for a decision.",
+    )
 
     class Meta(CourseFilter.Meta):
         fields = {

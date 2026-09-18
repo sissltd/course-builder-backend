@@ -380,7 +380,7 @@ ruff check .
 python manage.py check
 python manage.py makemigrations --check --dry-run
 python manage.py spectacular --file /tmp/openapi.yaml --validate
-python manage.py test
+python -m pytest -q --reuse-db
 ```
 
 CI runs these anyway. Finding a failure yourself takes minutes; finding it
@@ -872,7 +872,7 @@ The repository includes `.github/workflows/ci.yml` and `.github/workflows/cd.yml
 - `lint` — `ruff check` (gate) and `ruff format --check` (informational)
 - `security` — gitleaks, bandit, pip-audit (all informational until triaged)
 - `test` — `manage.py check`, migration drift check, `migrate` from zero, OpenAPI
-  schema validation (`drf-spectacular`), and `manage.py test`, against real
+  schema validation (`drf-spectacular`), and `pytest`, against real
   Postgres/Redis service containers
 - `docker-build` — builds `.docker/Dockerfile` to verify it still builds (no push)
 

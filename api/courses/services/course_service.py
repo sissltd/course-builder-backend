@@ -227,6 +227,15 @@ def submit_course(*, course: Course, actor: User) -> Course:
             f"Course cannot be submitted from status '{course.status}'."
         )
 
+    hold_hours = platform_settings_service.get_settings().draft_minimum_hold_hours
+    if hold_hours and course.draft_started_at:
+        releases_at = course.draft_started_at + timedelta(hours=hold_hours)
+        if timezone.now() < releases_at:
+            raise exceptions.ValidationError(
+                f"This course must stay in draft for {hold_hours} hours. It "
+                f"can be submitted from {releases_at:%Y-%m-%d %H:%M} UTC."
+            )
+
     failures = quality_check_service.validate_structural_standards(course)
     if failures:
         raise exceptions.ValidationError({"structural_standards": failures})
@@ -289,7 +298,21 @@ def start_review_cycle(*, course: Course) -> Course:
     with transaction.atomic():
         course.status = CourseStatus.SUBMITTED
         course.review_stage = ReviewStage.CONTENT
-        course.save(update_fields=["status", "review_stage", "updated_datetime"])
+        # A fresh cycle starts un-alerted and unflagged, for the same reason
+        # the seats below are cleared: nothing from the last pass carries over.
+        course.sla_red_alerted_at = None
+        course.flagged_at = None
+        course.flag_reason = ""
+        course.save(
+            update_fields=[
+                "status",
+                "review_stage",
+                "sla_red_alerted_at",
+                "flagged_at",
+                "flag_reason",
+                "updated_datetime",
+            ]
+        )
         ReviewAssignment.objects.filter(course=course).update(
             reviewer=None,
             claimed_at=None,

@@ -24,6 +24,18 @@ under the tags `Admin — Achievements`, `Creator — Achievements` and
 3. **`GET users/me/` has a new `role_label`** (e.g. `"Writer"`), so the Account
    tab can show the role pill without mapping enum values. It also returns
    `access_role` and `permissions` — see the Roles & Permissions handover.
+4. **Submitting a course can now fail with 400 on timing alone.** A course
+   must sit as a draft for `draft_minimum_hold_hours` (ships at **48**) before
+   `POST courses/{id}/submit/` will accept it. The message names the time it
+   becomes submittable. This is new: submission previously failed only on
+   structural grounds. It applies to first submission only — a course returned
+   for revision resubmits immediately. Admins can set the value to `0` to
+   switch the rule off entirely.
+5. **A new in-app notification, "Course overdue for review".** Admins who can
+   approve courses (and haven't switched off `sla_red_critical_alert`) get
+   this once per course when it passes the SLA red threshold without a
+   decision. `metadata` carries `course_id` and `hours_waiting`. Fires on a
+   5-minute sweep, not instantly on the threshold tick.
 
 Nothing was removed or renamed.
 
@@ -47,7 +59,7 @@ Nothing was removed or renamed.
 |---|---|---|
 | In-app Notifications | `in_app_enabled` | ✅ Enforced (see behaviour change 1) |
 | Email Notifications | — | ❌ **Hide.** No email preference exists. The only emails the platform sends today are transactional (payouts, security), which should not be switchable. |
-| Review SLA breach alert | `sla_breached` (also `sla_amber_warning`, `sla_red_critical_alert`) | ⚠️ Saved, but **no SLA alert is ever sent yet**. Show it only if product accepts a toggle that does nothing for now. |
+| Review SLA breach alert | `sla_red_critical_alert` | ✅ Now enforced. Switching it off opts that admin out of the review-overdue alert described under Platform below. `sla_amber_warning` and `sla_breached` remain saved but unread — no amber-tier or generic alert exists yet. |
 | Provider failover alert | — | ❌ Hide. Nothing detects or sends it. |
 | Multi-account fraud cluster detection | — | ❌ Hide. |
 | MIE daily production summary | — | ❌ Hide. (`mie_pipeline_alert` exists but nothing sends it either.) |
@@ -60,10 +72,27 @@ Nothing was removed or renamed.
 |---|---|---|
 | Topic reservation expiration | `topic_reservation_expiry_days` | ✅ One value, used for both draft auto-reservations and approved topic requests. The design shows two expiry rows; there is only one setting. |
 | Review SLA thresholds | `sla_amber_threshold_hours`, `sla_red_threshold_hours` | ✅ Used to order the review queue. |
-| Review SLA admin alert | — | ❌ Hide. No alert engine. |
-| Draft minimum topic limit | — | ❌ Hide. No such rule exists. |
-| Flagging rule | — | ❌ Hide. No configurable rule exists. |
+| Draft minimum hold time | `draft_minimum_hold_hours` | ✅ Hours a course must sit as a draft before it can be submitted. Default 48. `0` disables it. |
+| Review SLA - admin alert | `sla_red_threshold_hours` | ✅ The same field the queue sorts by. Once a course passes it, admins are alerted **once**. |
+| Flagging hour | `auto_flag_after_hours` | ✅ Default 48. `0` disables it. |
 | Course structure limits (modules, lessons, words, duration, objectives, final-assessment questions), minimum withdrawal | `course_*`, `lesson_*`, `minimum_withdrawal_threshold` | ✅ Not in this design, but live on the same endpoint. |
+
+**Draft minimum hold time** is counted from when the course was first created
+and is never reset, so a course sent back for revision can be resubmitted
+straight away — the hold is a cooling-off on new drafts, not on every
+revision. Submitting too early returns **400** with a message naming the time
+it becomes submittable.
+
+**Flagging** is advisory: `flagged_at` and `flag_reason` appear on the admin
+course rows, and `?flagged=true` filters to them (`?flagged=false` is the
+inverse). A flag blocks nothing, changes no status and reassigns no reviewer.
+It clears by itself once the course gets a decision or re-enters review.
+
+> **No off switch for the SLA alert.** The design gives this row an hours
+> input but no toggle, and the field behind it also drives review-queue
+> ordering — so setting it to `0` would corrupt sorting rather than silence
+> the alert. Today the alert can only be pushed further out, not turned off.
+> Raised with product.
 
 ### Payments — design element → field
 

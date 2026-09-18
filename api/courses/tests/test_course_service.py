@@ -18,6 +18,7 @@ from api.courses.tests.factories import (
 )
 from api.notification.models import Notification
 from api.notification.services import notification_preference_service
+from api.platform.services import platform_settings_service
 from api.users.enums import UserRole
 
 
@@ -226,6 +227,57 @@ class SubmitCourseTests(TestCase):
             course_service.submit_course(course=course, actor=course.creator)
 
         self.assertIn("structural_standards", ctx.exception.detail)
+
+    def test_a_draft_held_less_than_the_minimum_cannot_be_submitted(self):
+        platform_settings_service.update_settings(draft_minimum_hold_hours=48)
+        course = build_compliant_course()
+        course.draft_started_at = timezone.now() - timedelta(hours=1)
+        course.save(update_fields=["draft_started_at"])
+
+        with self.assertRaises(ValidationError) as ctx:
+            course_service.submit_course(course=course, actor=course.creator)
+
+        self.assertIn("must stay in draft", str(ctx.exception.detail))
+
+    def test_a_draft_past_the_minimum_submits(self):
+        platform_settings_service.update_settings(draft_minimum_hold_hours=48)
+        course = build_compliant_course()
+        course.draft_started_at = timezone.now() - timedelta(hours=49)
+        course.save(update_fields=["draft_started_at"])
+
+        course_service.submit_course(course=course, actor=course.creator)
+
+        self.assertEqual(course.status, CourseStatus.SUBMITTED)
+
+    def test_zero_disables_the_hold(self):
+        platform_settings_service.update_settings(draft_minimum_hold_hours=0)
+        course = build_compliant_course()
+        course.draft_started_at = timezone.now()
+        course.save(update_fields=["draft_started_at"])
+
+        course_service.submit_course(course=course, actor=course.creator)
+
+        self.assertEqual(course.status, CourseStatus.SUBMITTED)
+
+    def test_a_rejected_course_resubmits_without_waiting_again(self):
+        """The hold is a cooling-off on new drafts, not on every revision.
+
+        draft_started_at is set once at creation and never reset, so a course
+        sent back for changes goes round again immediately.
+        """
+
+        platform_settings_service.update_settings(draft_minimum_hold_hours=48)
+        course = build_compliant_course()
+        course.draft_started_at = timezone.now() - timedelta(hours=49)
+        course.save(update_fields=["draft_started_at"])
+        course_service.submit_course(course=course, actor=course.creator)
+        course.status = CourseStatus.DRAFT
+        course.rejected_at = timezone.now()
+        course.save(update_fields=["status", "rejected_at"])
+
+        course_service.submit_course(course=course, actor=course.creator)
+
+        self.assertEqual(course.status, CourseStatus.SUBMITTED)
 
     def test_happy_path_snapshots_price_transitions_status_and_notifies(self):
         category = make_category(

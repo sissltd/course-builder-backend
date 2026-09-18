@@ -141,13 +141,23 @@ COURSE_AI_CALLS_PER_MINUTE = config("COURSE_AI_CALLS_PER_MINUTE", default=20, ca
 # two never collide.
 #
 # During tests we deliberately use LocMemCache instead of Redis.  With
-# --parallel Django spawns several subprocesses that each run a subset of
-# tests; if they all share a single Redis database, one process calling
-# cache.clear() in setUp nukes the throttle counters of every other
-# process, causing spurious failures in ThrottleApiTests and related
-# classes.  LocMemCache is per-process by default, so each subprocess
-# gets an isolated cache and cache.clear() cannot leak across them.
-if "test" in sys.argv:
+# --parallel (manage.py test) or -n auto (pytest-xdist) several
+# subprocesses each run a subset of tests; if they all share a single Redis
+# database, one process calling cache.clear() in setUp nukes the throttle
+# counters of every other process, causing spurious failures in
+# ThrottleApiTests and related classes.  LocMemCache is per-process by
+# default, so each subprocess gets an isolated cache and cache.clear()
+# cannot leak across them.
+#
+# Detected two ways: "test" in sys.argv covers `manage.py test`, which
+# puts that literal string in argv. Pytest never does - it puts "pytest"
+# (or "py.test") in argv[0] instead, or nothing test-shaped at all when
+# invoked as `python -m pytest`. "pytest" in sys.modules is true from the
+# moment the pytest process starts, well before Django settings are
+# imported, regardless of how it was invoked (bare `pytest`,
+# `python -m pytest`, or an IDE test runner) - so it's the reliable check
+# for "are we running under pytest" here.
+if "test" in sys.argv or "pytest" in sys.modules:
     CACHES = {
         "default": {
             "BACKEND": "django.core.cache.backends.locmem.LocMemCache",

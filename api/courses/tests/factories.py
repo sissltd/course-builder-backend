@@ -5,6 +5,7 @@ thresholds (module/lesson counts, word counts, quiz counts) are derived once
 here rather than re-guessed in every test file.
 """
 
+from datetime import timedelta
 from decimal import Decimal
 from itertools import count
 
@@ -111,6 +112,10 @@ def make_draft_course(*, creator=None, category=None, **kwargs):
         "preview_video_url": "https://example.com/preview.mp4",
         "learning_objectives": [f"Course objective {i}" for i in range(1, 6)],
         "terms_accepted_at": timezone.now(),
+        # Past draft_minimum_hold_hours, so tests that submit a course they
+        # just built aren't blocked by it. Pass draft_started_at explicitly
+        # to exercise the hold rule itself.
+        "draft_started_at": timezone.now() - timedelta(days=30),
     }
     defaults.update(kwargs)
     return Course.objects.create(**defaults)
