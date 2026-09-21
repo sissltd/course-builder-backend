@@ -93,6 +93,75 @@ class CourseVersionMigrationTests(APITestCase):
         self.assertEqual(rows["0.9"]["published_count"], 1)
         self.assertFalse(rows["0.9"]["is_active"])
 
+    def test_admin_can_create_course_version(self):
+        response = self.client.post(
+            LIST_URL,
+            {"label": "3.0", "is_active": True},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["status"], 201)
+        self.assertEqual(response.data["data"]["label"], "3.0")
+        self.assertTrue(response.data["data"]["is_active"])
+        self.assertTrue(CourseVersion.objects.filter(label="3.0").exists())
+
+    def test_duplicate_course_version_label_is_rejected(self):
+        response = self.client.post(
+            LIST_URL,
+            {"label": self.old.label},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["errors"][0]["field_name"], "label")
+
+    def test_admin_can_update_course_version(self):
+        response = self.client.patch(
+            f"{LIST_URL}{self.old.id}/",
+            {"label": "0.9.1", "is_active": True},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["status"], 200)
+        self.assertEqual(response.data["data"]["label"], "0.9.1")
+        self.assertTrue(response.data["data"]["is_active"])
+        self.old.refresh_from_db()
+        self.assertEqual(self.old.label, "0.9.1")
+
+    def test_cannot_retire_the_last_active_version(self):
+        CourseVersion.objects.exclude(pk=self.old.id).update(is_active=False)
+        self.old.is_active = True
+        self.old.save(update_fields=["is_active"])
+
+        response = self.client.patch(
+            f"{LIST_URL}{self.old.id}/",
+            {"is_active": False},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("is_active", response.data["errors"][0]["field_name"])
+        self.old.refresh_from_db()
+        self.assertTrue(self.old.is_active)
+
+    def test_version_management_requires_admin_permission(self):
+        for role, expected in (
+            (UserRole.STAFF_APPROVER, status.HTTP_201_CREATED),
+            (UserRole.SUPER_ADMIN, status.HTTP_201_CREATED),
+            (UserRole.STAFF_WRITER, status.HTTP_403_FORBIDDEN),
+            (UserRole.CREATOR_REVIEWER, status.HTTP_403_FORBIDDEN),
+        ):
+            with self.subTest(role=role):
+                self.client.force_authenticate(make_user(role=role))
+                response = self.client.post(
+                    LIST_URL,
+                    {"label": f"4.{len(CourseVersion.objects.all())}"},
+                    format="json",
+                )
+                self.assertEqual(response.status_code, expected)
+
     def test_who_may_migrate(self):
         for role, expected in (
             (UserRole.STAFF_APPROVER, status.HTTP_200_OK),

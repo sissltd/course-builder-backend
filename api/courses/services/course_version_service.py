@@ -6,7 +6,7 @@ bulk, so they publish under it. Published courses are never touched: their
 snapshot records the version they went out under.
 """
 
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Count, Q, QuerySet
 from django.utils import timezone
 from rest_framework import exceptions
@@ -28,6 +28,109 @@ MIGRATABLE_STATUSES = (
     CourseStatus.QA_VERIFICATION,
     CourseStatus.APPROVED,
 )
+
+
+def create_course_version(
+    *, actor: User, label: str, is_active: bool = True, request=None
+) -> CourseVersion:
+    """Create a canonical version label for future course publications."""
+
+    permission_service.require_permission(
+        actor, codenames.COURSES_FORCE_VERSION_MIGRATION
+    )
+    label = label.strip()
+    if not label:
+        raise exceptions.ValidationError({"label": "This field may not be blank."})
+    try:
+        with transaction.atomic():
+            version = CourseVersion.objects.create(
+                label=label,
+                is_active=is_active,
+                created_by=actor,
+                updated_by=actor,
+            )
+    except IntegrityError as exc:
+        raise exceptions.ValidationError(
+            {"label": "A course version with this label already exists."}
+        ) from exc
+
+    activity_service.log_activity(
+        user=actor,
+        category=UserActivityCategoryEnums.COURSE,
+        action=UserActivityActionEnums.COURSE_VERSION_CREATED,
+        summary=f"Created course version {version.label}.",
+        request=request,
+        details={"version_id": str(version.id), "label": version.label},
+        target=version,
+    )
+    return version
+
+
+def update_course_version(
+    *,
+    actor: User,
+    version: CourseVersion,
+    label: str | None = None,
+    is_active: bool | None = None,
+    request=None,
+) -> CourseVersion:
+    """Update a canonical label without breaking published snapshots."""
+
+    permission_service.require_permission(
+        actor, codenames.COURSES_FORCE_VERSION_MIGRATION
+    )
+    changed_fields = []
+    old_label = version.label
+
+    if label is not None:
+        label = label.strip()
+        if not label:
+            raise exceptions.ValidationError(
+                {"label": "This field may not be blank."}
+            )
+        if label != version.label and version.published_snapshots.exists():
+            raise exceptions.ValidationError(
+                {"label": "A version used by published courses cannot be renamed."}
+            )
+        version.label = label
+        changed_fields.append("label")
+
+    if is_active is not None:
+        if not is_active and not CourseVersion.objects.filter(
+            is_active=True
+        ).exclude(pk=version.pk).exists():
+            raise exceptions.ValidationError(
+                {"is_active": "At least one active course version is required."}
+            )
+        version.is_active = is_active
+        changed_fields.append("is_active")
+
+    if changed_fields:
+        version.updated_by = actor
+        try:
+            with transaction.atomic():
+                version.save(
+                    update_fields=[*changed_fields, "updated_by", "updated_datetime"]
+                )
+        except IntegrityError as exc:
+            raise exceptions.ValidationError(
+                {"label": "A course version with this label already exists."}
+            ) from exc
+        activity_service.log_activity(
+            user=actor,
+            category=UserActivityCategoryEnums.COURSE,
+            action=UserActivityActionEnums.COURSE_VERSION_UPDATED,
+            summary=f"Updated course version {old_label}.",
+            request=request,
+            details={
+                "version_id": str(version.id),
+                "old_label": old_label,
+                "label": version.label,
+                "is_active": version.is_active,
+            },
+            target=version,
+        )
+    return version
 
 
 def list_versions(*, actor: User) -> QuerySet[CourseVersion]:

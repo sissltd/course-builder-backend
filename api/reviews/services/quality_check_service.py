@@ -1,3 +1,4 @@
+from api.courses.enums import LessonContentType
 from api.courses.models import Assessment, Course
 from api.platform.services import platform_settings_service
 
@@ -100,17 +101,18 @@ def validate_structural_standards(course: Course) -> list[str]:
                     f"(has {objective_count})."
                 )
 
-            script_words = _word_count(lesson.script)
-            if not (
-                platform_settings.lesson_script_word_min
-                <= script_words
-                <= platform_settings.lesson_script_word_max
-            ):
-                failures.append(
-                    f"Lesson '{lesson.title}' script must be between "
-                    f"{platform_settings.lesson_script_word_min} and {platform_settings.lesson_script_word_max} "
-                    f"words (has {script_words})."
-                )
+            if lesson.content_type == LessonContentType.TEXT:
+                script_words = _word_count(lesson.script)
+                if not (
+                    platform_settings.lesson_script_word_min
+                    <= script_words
+                    <= platform_settings.lesson_script_word_max
+                ):
+                    failures.append(
+                        f"Lesson '{lesson.title}' script must be between "
+                        f"{platform_settings.lesson_script_word_min} and {platform_settings.lesson_script_word_max} "
+                        f"words (has {script_words})."
+                    )
 
     description_words = _word_count(course.description)
     if not (

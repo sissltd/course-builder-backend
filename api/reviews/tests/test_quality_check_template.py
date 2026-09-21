@@ -1,6 +1,8 @@
 from rest_framework import status
 from rest_framework.test import APITestCase
 
+from api.courses.enums import LessonContentType
+from api.courses.models import Lesson
 from api.courses.tests.factories import build_compliant_course, make_user
 from api.reviews.models import CourseQualityCheck, QualityCheckCriterion
 from api.users.enums import UserRole
@@ -99,6 +101,20 @@ class CourseQualityCheckApiTests(APITestCase):
         by_label = {r["criterion"]["label"]: r for r in response.data}
         self.assertFalse(by_label["Course description"]["is_checked"])
         self.assertIn("description", by_label["Course description"]["warning_note"])
+
+    def test_video_lesson_does_not_fail_lesson_scripts(self):
+        course = build_compliant_course(creator=self.creator)
+        lesson = Lesson.objects.filter(module__course=course).first()
+        lesson.content_type = LessonContentType.VIDEO
+        lesson.script = ""
+        lesson.save(update_fields=["content_type", "script"])
+
+        self.client.force_authenticate(self.creator)
+        response = self.client.post(f"/api/v1/courses/{course.id}/quality-checks/")
+        by_label = {r["criterion"]["label"]: r for r in response.data}
+
+        self.assertTrue(by_label["Lesson scripts"]["is_checked"])
+        self.assertEqual(by_label["Lesson scripts"]["warning_note"], "")
 
     def test_get_returns_upserted_results(self):
         course = build_compliant_course(creator=self.creator)

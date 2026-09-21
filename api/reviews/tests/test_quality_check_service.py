@@ -1,5 +1,6 @@
 from django.test import TestCase
 
+from api.courses.enums import LessonContentType
 from api.courses.models import Assessment, Lesson, Module
 from api.reviews.services import quality_check_service
 from api.courses.tests.factories import build_compliant_course, make_questions
@@ -78,6 +79,17 @@ class ValidateStructuralStandardsTests(TestCase):
 
         failures = quality_check_service.validate_structural_standards(course)
         self.assertTrue(any("script" in f for f in failures))
+
+    def test_does_not_require_script_for_video_lesson(self):
+        course = build_compliant_course()
+        lesson = Lesson.objects.filter(module__course=course).first()
+        lesson.content_type = LessonContentType.VIDEO
+        lesson.script = ""
+        lesson.save(update_fields=["content_type", "script"])
+
+        failures = quality_check_service.validate_structural_standards(course)
+
+        self.assertFalse(any("script" in failure for failure in failures), failures)
 
     def test_fails_when_duration_out_of_range(self):
         course = build_compliant_course()
