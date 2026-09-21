@@ -27,6 +27,10 @@ QA_ACTIONS = ("qa_claim", "qa_approve", "qa_reject")
 RENAMED_GATES = {
     # The read-only roles catalogue became the Roles & Permissions list.
     "GET api/v1/admin/roles/ [RoleCatalogueView.get]": "GET api/v1/admin/roles/ [RoleListCreateView.get]",
+    # The docs views gained a no-cache wrapper without changing who passes.
+    "GET api/v1/docs/ [SpectacularSwaggerView.get]": "GET api/v1/docs/ [DocumentationSwaggerView.get]",
+    "GET api/v1/docs/reviewer-settings/ [SpectacularSwaggerView.get]": "GET api/v1/docs/reviewer-settings/ [DocumentationSwaggerView.get]",
+    "GET api/v1/redoc/ [SpectacularRedocView.get]": "GET api/v1/redoc/ [DocumentationRedocView.get]",
 }
 
 
