@@ -2,6 +2,7 @@ from django.urls import path
 from rest_framework.routers import DefaultRouter
 
 from api.courses.views.course_version_admin_views import (
+    AdminCourseVersionDetailView,
     AdminCourseVersionListView,
     CourseVersionMigrationView,
 )
@@ -249,6 +250,11 @@ urlpatterns = router.urls + [
         "admin/course-versions/",
         AdminCourseVersionListView.as_view(),
         name="admin-course-version-list",
+    ),
+    path(
+        "admin/course-versions/<uuid:pk>/",
+        AdminCourseVersionDetailView.as_view(),
+        name="admin-course-version-detail",
     ),
     path(
         "admin/course-versions/migrations/",

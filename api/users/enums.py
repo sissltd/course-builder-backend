@@ -194,6 +194,8 @@ class UserActivityActionEnums(models.TextChoices):
         "Password Reset Sent By Admin",
     )
     ACCOUNT_ERASED = "ACCOUNT_ERASED", "Account Erased"
+    COURSE_VERSION_CREATED = "COURSE_VERSION_CREATED", "Course Version Created"
+    COURSE_VERSION_UPDATED = "COURSE_VERSION_UPDATED", "Course Version Updated"
     COURSE_VERSION_MIGRATED = "COURSE_VERSION_MIGRATED", "Course Version Migrated"
     WALLET_ADJUSTED = "WALLET_ADJUSTED", "Wallet Adjusted"
 

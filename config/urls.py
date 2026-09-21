@@ -19,12 +19,12 @@ Including another URLconf
 from django.contrib import admin
 from django.http import JsonResponse
 from django.urls import include, path
-from drf_spectacular.views import (
-    SpectacularAPIView,
-    SpectacularRedocView,
-    SpectacularSwaggerView,
-)
 from config.reviewer_settings_schema_urls import REVIEWER_SETTINGS_SCHEMA_SETTINGS
+from config.schema_views import (
+    DocumentationRedocView,
+    DocumentationSchemaView,
+    DocumentationSwaggerView,
+)
 from shared.constants.environ import DJANGO_ENV
 
 
@@ -36,10 +36,10 @@ urlpatterns = [
     path("health/", health_check, name="health-check"),
     path("admin/", admin.site.urls),
     # OpenAPI schema and interactive docs
-    path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
+    path("api/schema/", DocumentationSchemaView.as_view(), name="schema"),
     path(
         "api/schema/reviewer-settings/",
-        SpectacularAPIView.as_view(
+        DocumentationSchemaView.as_view(
             urlconf="config.reviewer_settings_schema_urls",
             custom_settings=REVIEWER_SETTINGS_SCHEMA_SETTINGS,
         ),
@@ -47,17 +47,17 @@ urlpatterns = [
     ),
     path(
         "api/v1/docs/",
-        SpectacularSwaggerView.as_view(url_name="schema"),
+        DocumentationSwaggerView.as_view(url_name="schema"),
         name="swagger-ui",
     ),
     path(
         "api/v1/docs/reviewer-settings/",
-        SpectacularSwaggerView.as_view(url_name="reviewer-settings-schema"),
+        DocumentationSwaggerView.as_view(url_name="reviewer-settings-schema"),
         name="reviewer-settings-swagger-ui",
     ),
     path(
         "api/v1/redoc/",
-        SpectacularRedocView.as_view(url_name="schema"),
+        DocumentationRedocView.as_view(url_name="schema"),
         name="redoc",
     ),
     path("api/v1/", include("api.authentication.urls")),
