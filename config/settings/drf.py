@@ -54,6 +54,10 @@ REST_FRAMEWORK = {
 
 SPECTACULAR_SETTINGS = {
     "TITLE": "TSES COURSE BUILDER",  # project name
+    "SWAGGER_UI_SETTINGS": {
+        "filter": True,
+        "persistAuthorization": True,
+    },
     "VERSION": "1.0.0",
     "SORT_OPERATION_PARAMETERS": False,
     "SERVE_INCLUDE_SCHEMA": False,
@@ -65,7 +69,7 @@ SPECTACULAR_SETTINGS = {
     # endpoint carries exactly one.
     "TAGS": [
         {
-            "name": "Public — Bank Accounts",
+            "name": "Public — Bank Info",
             "description": (
                 "Bank lookup endpoints (no authentication required): the "
                 "supported-banks list and one-off account-number verification."
@@ -326,8 +330,7 @@ SPECTACULAR_SETTINGS = {
         {
             "name": "Admin — Achievements",
             "description": (
-                "Creating, configuring and deleting achievement badges, and "
-                "awarding or revoking them by hand."
+                "Creating, configuring and deleting achievement badges, and awarding or revoking them by hand."
             ),
         },
         {
@@ -439,9 +442,6 @@ SPECTACULAR_SETTINGS = {
     "SECURITY": [
         {"bearerAuth": []},
     ],
-    "SWAGGER_UI_SETTINGS": {
-        "persistAuthorization": True,
-    },
     "ENUM_NAME_OVERRIDES": {
         "CategoryStatusEnum": "api.catalog.enums.CategoryStatus",
         "CourseStatusEnum": "api.courses.enums.CourseStatus",

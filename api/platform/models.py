@@ -77,6 +77,26 @@ class PlatformSettings(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
         default=30,
         help_text=_("How long an approved topic reservation lasts (BR-007)."),
     )
+    draft_minimum_hold_hours = models.PositiveIntegerField(
+        verbose_name=_("Draft Minimum Hold Hours"),
+        default=48,
+        help_text=_(
+            "Hours a course must exist as a draft before its creator may "
+            "submit it. Counted from when the course was first created and "
+            "never reset, so a course returned for revision can be "
+            "resubmitted at once. 0 disables the rule."
+        ),
+    )
+    auto_flag_after_hours = models.PositiveIntegerField(
+        verbose_name=_("Auto Flag After Hours"),
+        default=48,
+        help_text=_(
+            "Hours a course may await a review decision before it is flagged "
+            "for admin attention. The flag is advisory - it blocks nothing - "
+            "and clears when the course next enters a review cycle. 0 "
+            "disables flagging."
+        ),
+    )
     sla_amber_threshold_hours = models.PositiveIntegerField(
         verbose_name=_("SLA Amber Threshold Hours"),
         default=24,
@@ -125,6 +145,20 @@ class PlatformSettings(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
         validators=[MinValueValidator(0), MaxValueValidator(100)],
         blank=True,
         default=80,
+    )
+    auto_credit_duration_hours = models.PositiveIntegerField(
+        verbose_name=_("Auto Credit Duration Hours"),
+        default=24,
+        help_text=_(
+            "Number of hours after course approval before the creator's wallet is credited."
+        ),
+    )
+    withdrawal_require_verification = models.BooleanField(
+        verbose_name=_("Withdrawal Requires Verification"),
+        default=True,
+        help_text=_(
+            "Whether creators must complete identity verification before making withdrawals."
+        ),
     )
 
     class Meta:

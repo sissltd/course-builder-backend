@@ -288,7 +288,7 @@ BANK_ACCOUNT_VERIFY_DOCS = {
         "**Prerequisites:** The caller must provide a valid bank code and "
         "account number."
     ),
-    "tags": ["Public — Bank Accounts"],
+    "tags": ["Public — Bank Info"],
     "request": BankAccountVerifySerializer,
     "examples": [
         OpenApiExample(
@@ -332,7 +332,7 @@ BANK_LIST_DOCS = {
         "bank selection dropdown during account creation.\n\n"
         "**Auth:** Public endpoint. No authentication is required."
     ),
-    "tags": ["Public — Bank Accounts"],
+    "tags": ["Public — Bank Info"],
     "responses": {
         200: inline_success_response(
             description="Banks retrieved successfully.",

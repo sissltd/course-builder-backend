@@ -65,7 +65,7 @@ class Transaction(
     )
     reference = models.CharField(
         verbose_name=_("Reference"),
-        max_length=32,
+        max_length=100,
         help_text=_(
             "This is non-unique, so the same reference can be associated with related transactions (e.g. a debit and credit pair)."
         ),

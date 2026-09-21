@@ -18,12 +18,16 @@ UPDATABLE_FIELDS = {
     "course_duration_max_minutes",
     "course_final_assessment_min_questions",
     "topic_reservation_expiry_days",
+    "draft_minimum_hold_hours",
+    "auto_flag_after_hours",
     "sla_amber_threshold_hours",
     "sla_red_threshold_hours",
     "mfa_enrollment_grace_period_days",
     "payment_processor",
     "kyc_provider",
     "liveness_threshold",
+    "auto_credit_duration_hours",   
+    "withdrawal_require_verification",
 }
 
 

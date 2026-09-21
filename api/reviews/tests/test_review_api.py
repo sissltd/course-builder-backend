@@ -1,4 +1,5 @@
 from decimal import Decimal
+from unittest.mock import patch
 from uuid import uuid4
 
 from django.db import connection
@@ -15,11 +16,12 @@ from api.courses.enums import (
     DistributionStatus,
 )
 from api.courses.models import CourseDistribution, CourseVersion
+from api.courses.services import course_service
+from api.courses.tests.factories import build_compliant_course, make_category, make_user
+from api.platform.services.platform_settings_service import get_settings
 from api.reviews.enums import ReviewActionType, ReviewStage
 from api.reviews.models import ReviewAction, ReviewAssignment
-from api.courses.services import course_service
 from api.reviews.services import review_service
-from api.courses.tests.factories import build_compliant_course, make_category, make_user
 from api.users.enums import UserRole
 from api.users.models import UserActivityLog
 from api.users.services import queue_preference_service, reviewer_availability_service
@@ -196,7 +198,8 @@ class ReviewQueueApiTests(APITestCase):
         wallet = wallet_service.get_or_create_wallet(user=self.creator)
         self.assertEqual(wallet.balance, Decimal("0.00"))
 
-    def test_qa_approval_credits_wallet_after_required_media_is_registered(self):
+    @patch("api.payments.services.transaction_services.release_course_payment.apply_async")
+    def test_qa_approval_schedules_payment_after_required_media_is_registered(self, apply_async):
         course = self._submitted_course()
         self._pass_content_review(course)
 
@@ -254,16 +257,13 @@ class ReviewQueueApiTests(APITestCase):
             self.client.post(f"/api/v1/review-queue/{course.id}/qa-claim/").status_code,
             status.HTTP_200_OK,
         )
-        response = self.client.post(
-            f"/api/v1/review-queue/{course.id}/qa-approve/", {}, format="json"
-        )
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(f"/api/v1/review-queue/{course.id}/qa-approve/", {}, format="json")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         course.refresh_from_db()
         self.assertEqual(course.status, CourseStatus.APPROVED)
-        self.assertEqual(
-            wallet_service.get_or_create_wallet(user=self.creator).balance,
-            Decimal("120.00"),
-        )
+        delay_seconds = get_settings().auto_credit_duration_hours * 3600
+        apply_async.assert_called_once_with(args=[course.id], countdown=delay_seconds)
 
     def test_double_approve_returns_400(self):
         course = self._submitted_course()

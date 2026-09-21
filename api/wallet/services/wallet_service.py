@@ -271,7 +271,9 @@ def request_withdrawal(
     """
 
     permission_service.require_permission(user, codenames.EARNINGS_MANAGE_OWN)
-    kyc_submission_service.require_verified(user=user)
+    platform_settings = platform_settings_service.get_settings()
+    require_kyc = platform_settings.withdrawal_require_verification
+    kyc_submission_service.require_verified(user=user, required=require_kyc)
 
     minimum_withdrawal_threshold = (
         platform_settings_service.get_settings().minimum_withdrawal_threshold

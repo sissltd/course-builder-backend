@@ -144,6 +144,33 @@ class PlatformSettingsApiTests(APITestCase):
         self.assertEqual(response.data["sla_amber_threshold_hours"], 12)
         self.assertEqual(response.data["sla_red_threshold_hours"], 36)
 
+    def test_hold_and_flag_hours_default_and_admin_can_patch(self):
+        settings_row = platform_settings_service.get_settings()
+        self.assertEqual(settings_row.draft_minimum_hold_hours, 48)
+        self.assertEqual(settings_row.auto_flag_after_hours, 48)
+
+        self._authenticate_mfa_verified(self.admin)
+        response = self.client.patch(
+            "/api/v1/platform-settings/",
+            {"draft_minimum_hold_hours": 24, "auto_flag_after_hours": 0},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["draft_minimum_hold_hours"], 24)
+        self.assertEqual(response.data["auto_flag_after_hours"], 0)
+
+    def test_negative_hold_hours_rejected(self):
+        self._authenticate_mfa_verified(self.admin)
+
+        response = self.client.patch(
+            "/api/v1/platform-settings/",
+            {"draft_minimum_hold_hours": -1},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
 
 class AdminOverviewApiTests(APITestCase):
     def setUp(self):

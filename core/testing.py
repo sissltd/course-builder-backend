@@ -140,7 +140,6 @@ def reseed_reference_data() -> None:
     from api.catalog.models import Category, Topic
     from api.courses.models import CourseVersion
     from api.payments.models.ledgeraccount_models import InternalAccount
-    from api.reviews.models import QualityCheckCriterion
 
     categories = {}
     # Category no longer carries a description; the seed tuples keep theirs
@@ -189,23 +188,50 @@ def reseed_reference_data() -> None:
             code_name=code_name,
             defaults={"name": name, "currency": "NGN"},
         )
-    criteria = [
-        ("Course information", "Course title"),
-        ("Course information", "Course description"),
-        ("Course information", "Learning objectives"),
-        ("Course information", "Preview video"),
-        ("Course Outline", "Module count"),
-        ("Course Outline", "Lessons per module"),
-        ("Course Modules", "Lesson scripts"),
-        ("Course Modules", "Lesson requirements"),
-        ("Version", "Version selected"),
-        ("Thumbnail", "Thumbnail set"),
-        ("Assessments", "Final assessment"),
-    ]
-    for section, label in criteria:
-        QualityCheckCriterion.objects.get_or_create(
-            section=section, label=label, defaults={"order_index": 0}
-        )
+    _replay_seed_migrations()
+
+
+#: Data migrations whose reference rows are restored by replaying the
+#: migration itself rather than by a copy of its data kept here. Order
+#: matters: the authorization grants attach to the roles seeded before them.
+#: Not every data migration belongs here - only those inserting reference
+#: rows. Backfills that reshape rows the tests create themselves do not.
+_SEED_MIGRATIONS = (
+    ("api.authorization.migrations.0002_seed_system_roles", "seed"),
+    ("api.authorization.migrations.0004_grant_new_admin_feature_permissions", "grant"),
+    ("api.operations.migrations.0002_seed_services_and_providers", "seed"),
+    ("api.operations.migrations.0003_seed_celery_ai_worker", "seed_worker_service"),
+    (
+        "api.reviews.migrations.0003_seed_default_quality_check_criteria",
+        "seed_default_criteria",
+    ),
+    (
+        "api.reviews.migrations.0005_retire_lesson_quiz_quality_criterion",
+        "retire_lesson_quiz_criterion",
+    ),
+)
+
+
+def _replay_seed_migrations() -> None:
+    """Re-apply seed migrations by calling their own `seed()` functions.
+
+    Copying their rows into this module instead would give the copy room to
+    drift from what the migration actually wrote - and for the system roles
+    that is the one thing which must not happen, because
+    SystemRoleSeedDriftTests detects a registry change with no migration by
+    comparing seeded rows against the live registry. A copy here seeded from
+    the registry would make that test pass by construction.
+
+    Safe to call repeatedly: every one of these seeds is get_or_create-based,
+    and none of them touch the schema_editor argument.
+    """
+
+    from importlib import import_module
+
+    from django.apps import apps as live_apps
+
+    for module_path, function_name in _SEED_MIGRATIONS:
+        getattr(import_module(module_path), function_name)(live_apps, None)
 
 
 def transaction_teardown_with_reseed(test_case) -> None:

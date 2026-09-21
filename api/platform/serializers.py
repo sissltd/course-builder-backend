@@ -28,6 +28,8 @@ class PlatformSettingsSerializer(serializers.ModelSerializer):
             "course_duration_max_minutes",
             "course_final_assessment_min_questions",
             "topic_reservation_expiry_days",
+            "draft_minimum_hold_hours",
+            "auto_flag_after_hours",
             "sla_amber_threshold_hours",
             "sla_red_threshold_hours",
             "mfa_enrollment_grace_period_days",
@@ -135,6 +137,23 @@ class PlatformSettingsUpdateSerializer(serializers.Serializer):
             "the topic returns to the pool."
         ),
     )
+    draft_minimum_hold_hours = serializers.IntegerField(
+        required=False,
+        min_value=0,
+        help_text=(
+            "Hours a course must sit as a draft before it can be submitted. "
+            "Counted from creation and never reset, so revisions resubmit "
+            "immediately. 0 disables the rule."
+        ),
+    )
+    auto_flag_after_hours = serializers.IntegerField(
+        required=False,
+        min_value=0,
+        help_text=(
+            "Hours a course may await a review decision before it is flagged "
+            "for admin attention. 0 disables flagging."
+        ),
+    )
     sla_amber_threshold_hours = serializers.IntegerField(required=False, min_value=1)
     sla_red_threshold_hours = serializers.IntegerField(required=False, min_value=1)
     mfa_enrollment_grace_period_days = serializers.IntegerField(
@@ -155,6 +174,15 @@ class PlatformSettingsUpdateSerializer(serializers.Serializer):
         min_value=0,
         max_value=100,
         help_text="Score (0 - 100) at or above which a 'real' liveness result passes.",
+    )
+    auto_credit_duration_hours = serializers.IntegerField(
+        required=False,
+        min_value=0,
+        help_text="Number of hours after course approval before the creator's wallet is credited.",
+    )
+    withdrawal_require_verification = serializers.BooleanField(
+        required=False,
+        help_text="Whether creators must complete identity verification before making withdrawals.",
     )
 
     def validate(self, attrs):

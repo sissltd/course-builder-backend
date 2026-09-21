@@ -49,7 +49,11 @@ from api.authorization.services import permission_service
 from api.users.models import User
 from api.users.services import queue_preference_service
 from shared.response.success import custom_success_response
-from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
+from includes.spectacular.responses import (
+    STANDARD_ERROR_RESPONSES,
+    ErrorEnvelopeSerializer,
+    inline_success_response,
+)
 
 OWNER_SCOPED_ACTIONS = {"retrieve", "update", "partial_update", "destroy"}
 
@@ -2280,31 +2284,77 @@ class AdminCourseViewSet(CourseReviewViewSet):
         ),
         tags=["Admin — Courses"],
         responses={
-            200: OpenApiResponse(
-                description="Candidate reviewers.",
+            200: inline_success_response(
+                description=(
+                    "Candidate reviewers for the seat, ordered by first name. "
+                    "Not paginated. `data` is an empty list when nobody "
+                    "qualifies."
+                ),
                 examples=[
                     OpenApiExample(
                         name="Success",
                         value={
-                            "success": True,
                             "status": 200,
+                            "success": True,
                             "message": "Retrieved successfully",
                             "data": [
                                 {
-                                    "id": "9f8e7d6c-5b4a-4321-8765-0fedcba98765",
-                                    "email": "ada@example.com",
+                                    "id": "49beae6c-98b4-47ae-8b25-74dbad830b5d",
+                                    "email": "ada.obi@example.com",
                                     "full_name": "Ada Obi",
                                     "role": "CREATOR_REVIEWER",
-                                    "seat": "SECOND_REVIEW",
+                                    "seat": "CONTENT",
+                                    "is_available": True,
+                                    "holds_seat": True,
+                                },
+                                {
+                                    "id": "9a19d956-26fe-40e6-95a2-6e00758eb9e6",
+                                    "email": "chidi.eze@example.com",
+                                    "full_name": "Chidi Eze",
+                                    "role": "CREATOR_REVIEWER",
+                                    "seat": "CONTENT",
                                     "is_available": True,
                                     "holds_seat": False,
-                                }
+                                },
+                                {
+                                    "id": "9b8b6b73-7b30-410c-a9e5-fedae09ddf31",
+                                    "email": "ngozi.okafor@example.com",
+                                    "full_name": "Ngozi Okafor",
+                                    "role": "CREATOR_REVIEWER",
+                                    "seat": "CONTENT",
+                                    "is_available": False,
+                                    "holds_seat": False,
+                                },
                             ],
                         },
                     )
                 ],
             ),
-            **STANDARD_ERROR_RESPONSES["validation"],
+            400: OpenApiResponse(
+                response=ErrorEnvelopeSerializer,
+                description=(
+                    "The course is not waiting on a seat: it is a Draft, "
+                    "Approved, Published or Archived."
+                ),
+                examples=[
+                    OpenApiExample(
+                        name="Course not in review",
+                        value={
+                            "errors": [
+                                {
+                                    "type": "validation_error",
+                                    "code": "invalid",
+                                    "message": (
+                                        "Course cannot be assigned from status "
+                                        "'DRAFT'."
+                                    ),
+                                    "field_name": None,
+                                }
+                            ]
+                        },
+                    )
+                ],
+            ),
             **STANDARD_ERROR_RESPONSES["auth"],
             **STANDARD_ERROR_RESPONSES["permission"],
             **STANDARD_ERROR_RESPONSES["not_found"],
@@ -2360,7 +2410,7 @@ class AdminCourseViewSet(CourseReviewViewSet):
             )
         ],
         responses={
-            200: OpenApiResponse(
+            200: inline_success_response(
                 description="The seat and who now holds it.",
                 examples=[
                     OpenApiExample(

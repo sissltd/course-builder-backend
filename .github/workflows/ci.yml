@@ -141,7 +141,7 @@ jobs:
       - name: OpenAPI contract validates
         run: python manage.py spectacular --file openapi-schema.yaml --validate
       - name: Run tests
-        run: python manage.py test
+        run: python -m pytest -q --reuse-db
       - name: Upload OpenAPI schema artifact
         if: always()
         uses: actions/upload-artifact@v4
