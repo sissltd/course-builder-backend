@@ -384,7 +384,8 @@ _AUTH_LINE_COURSE = (
             "request 400s if the topic is currently reserved by someone "
             "else. `duration_hours`/`duration_minutes`/`duration_seconds` "
             "are write-only inputs combined into `planned_duration_seconds` "
-            "on the stored course."
+            "on the stored course. `version` may be supplied now or selected "
+            "later through the Versioning step before submission."
         ),
         tags=["Creator — Courses"],
         request=CourseCreateSerializer,
@@ -399,6 +400,7 @@ _AUTH_LINE_COURSE = (
                     "difficulty_level": "BEGINNER",
                     "learning_objectives": ["Write basic Python scripts"],
                     "tags": ["python", "beginner"],
+                    "version": "3f2a1b4c-5d6e-4f70-8a9b-0c1d2e3f4a5b",
                     "duration_hours": 2,
                     "terms_accepted": True,
                 },
@@ -480,10 +482,22 @@ _AUTH_LINE_COURSE = (
             "**Prerequisites:** The course must be `DRAFT`.\n\n"
             "**Important:** Editing anything other than a Draft course "
             "returns 400 - resubmission after rejection means the course is "
-            "already back in Draft, so no separate 'unlock' step exists."
+            "already back in Draft, so no separate 'unlock' step exists. "
+            "Include `version` to select the active CourseVersion before "
+            "submission."
         ),
         tags=["Creator — Courses"],
         request=CourseUpdateSerializer,
+        examples=[
+            OpenApiExample(
+                name="Select version",
+                request_only=True,
+                value={
+                    "title": "Intro to Python (Updated)",
+                    "version": "3f2a1b4c-5d6e-4f70-8a9b-0c1d2e3f4a5b",
+                },
+            )
+        ],
         responses={
             200: OpenApiResponse(
                 response=CourseDetailSerializer,
@@ -508,7 +522,9 @@ _AUTH_LINE_COURSE = (
             "**Important:** Supplying `duration_hours`/`duration_minutes`/"
             "`duration_seconds` recombines all three into "
             "`planned_duration_seconds` (missing ones treated as 0 for that "
-            "call); omitting all three leaves the stored duration untouched."
+            "call); omitting all three leaves the stored duration untouched. "
+            "Send `version` with an active CourseVersion id to satisfy the "
+            "pre-submission version requirement."
         ),
         tags=["Creator — Courses"],
         request=CourseUpdateSerializer,
@@ -516,7 +532,10 @@ _AUTH_LINE_COURSE = (
             OpenApiExample(
                 name="Rename",
                 request_only=True,
-                value={"title": "Intro to Python (Updated)"},
+                value={
+                    "title": "Intro to Python (Updated)",
+                    "version": "3f2a1b4c-5d6e-4f70-8a9b-0c1d2e3f4a5b",
+                },
             ),
         ],
         responses={
