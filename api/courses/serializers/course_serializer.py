@@ -910,7 +910,13 @@ class CourseCreateSerializer(serializers.ModelSerializer):
         required=False, default=0, min_value=0, write_only=True
     )
     version = serializers.PrimaryKeyRelatedField(
-        queryset=CourseVersion.objects.filter(is_active=True), required=False
+        queryset=CourseVersion.objects.filter(is_active=True),
+        required=False,
+        help_text=(
+            "Id of the CourseVersion this course should publish under. "
+            "List the options at GET /api/v1/course-versions/. Only active "
+            "versions may be selected."
+        ),
     )
 
     class Meta:
@@ -994,9 +1000,6 @@ class CourseUpdateSerializer(serializers.ModelSerializer):
     duration_seconds = serializers.IntegerField(
         required=False, min_value=0, write_only=True
     )
-    version = serializers.PrimaryKeyRelatedField(
-        queryset=CourseVersion.objects.filter(is_active=True), required=False
-    )
 
     class Meta:
         model = Course
@@ -1014,7 +1017,6 @@ class CourseUpdateSerializer(serializers.ModelSerializer):
             "duration_hours",
             "duration_minutes",
             "duration_seconds",
-            "version",
         ]
         extra_kwargs = {"topic": {"required": False}}
 

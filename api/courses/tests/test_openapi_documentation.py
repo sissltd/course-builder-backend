@@ -50,3 +50,21 @@ class OpenApiDocumentationTests(SimpleTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("no-store", response["Cache-Control"])
         self.assertContains(response, 'url: "/api/schema/"')
+
+    def test_course_create_and_update_examples_include_version(self):
+        _, schema = self.get_schema()
+
+        create_example = schema["paths"]["/api/v1/courses/"]["post"]["requestBody"][
+            "content"
+        ]["application/json"]["examples"]["SampleRequest"]["value"]
+        update_path = schema["paths"]["/api/v1/courses/{id}/"]
+        replace_example = update_path["put"]["requestBody"]["content"][
+            "application/json"
+        ]["examples"]["SelectVersion"]["value"]
+        update_example = update_path["patch"]["requestBody"]["content"][
+            "application/json"
+        ]["examples"]["Rename"]["value"]
+
+        self.assertIn("version", create_example)
+        self.assertIn("version", replace_example)
+        self.assertIn("version", update_example)

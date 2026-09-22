@@ -178,8 +178,10 @@ PATCH /api/v1/courses/{id}/
 { "version": "3f2a1b4c-..." }
 ```
 
-The choice is honoured at publish time. If no version is set, the lowest
-active label is used automatically — so the step is optional.
+The choice is honoured at publish time. A draft may be created before the
+choice is made, but the creator must save an active version id before course
+submission. Submission returns a validation error until `course.version` is
+set.
 
 ---
 

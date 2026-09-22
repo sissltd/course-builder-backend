@@ -40,8 +40,9 @@ class CourseVersionListView(ListAPIView):
             "**Prerequisites:** None.\\n\\n"
             "**Important:** Frozen versions (`is_active=false`) are excluded, "
             "so anything returned here is safe to select. The response is not "
-            "paginated. A course's version is honoured at publish time; if "
-            "none is set, the lowest active label is used."
+            "paginated. Select one of these ids and send it as `version` on "
+            "course create or update. A version must be selected before a "
+            "course can be submitted."
         ),
         responses={
             200: OpenApiResponse(
