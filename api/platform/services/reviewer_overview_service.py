@@ -5,7 +5,7 @@ from django.db.models.functions import TruncDate
 from django.utils import timezone
 
 from api.courses.enums import AppealStatus, CourseStatus
-from api.courses.models import Course, CourseAppeal
+from api.courses.models import CourseAppeal
 from api.reviews.enums import ReviewActionType
 from api.reviews.models import ReviewAction
 from api.users.workflow import REVIEWER_WORKSPACE_ROLES, require_base_role
@@ -27,11 +27,24 @@ def get_overview(*, actor) -> dict:
 
     require_base_role(actor, REVIEWER_WORKSPACE_ROLES)
 
+    # Keep dashboard counts aligned with the review queue. The old direct
+    # status count included courses at seats this reviewer cannot claim, which
+    # made the dashboard show work that was absent from Pending.
+    from api.courses.services import course_service
+    from api.users.services import queue_preference_service
+
+    preference = queue_preference_service.get_or_create_preference(user=actor)
     queue_statuses = (CourseStatus.SUBMITTED, CourseStatus.IN_REVIEW)
     counted = {
         row["status"]: row["count"]
         for row in (
-            Course.objects.filter(status__in=queue_statuses)
+            course_service.get_review_queue(
+                status_in=queue_statuses,
+                sort_order=preference.default_sort_order,
+                track_filter=preference.effective_track_filter,
+                sla_user=actor,
+                seats_for=actor,
+            )
             .values("status")
             .annotate(count=Count("id"))
         )
