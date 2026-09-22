@@ -91,6 +91,26 @@ class ReviewerDashboardTileTests(APITestCase):
 
         self.assertEqual(response.data["courses_in_queue"], 2)
 
+    def test_queue_counts_match_courses_this_reviewer_can_claim(self):
+        first_review = make_draft_course()
+        first_review.status = CourseStatus.SUBMITTED
+        first_review.review_stage = ReviewStage.CONTENT
+        first_review.save(update_fields=["status", "review_stage"])
+
+        verification = make_draft_course()
+        verification.status = CourseStatus.SUBMITTED
+        verification.review_stage = ReviewStage.VERIFICATION
+        verification.save(update_fields=["status", "review_stage"])
+
+        overview = self.client.get(OVERVIEW)
+        pending = self.client.get("/api/v1/review-queue/pending/")
+
+        self.assertEqual(overview.status_code, status.HTTP_200_OK)
+        self.assertEqual(pending.status_code, status.HTTP_200_OK)
+        self.assertEqual(overview.data["queue"]["SUBMITTED"], 1)
+        self.assertEqual(overview.data["courses_in_queue"], 1)
+        self.assertEqual(pending.data["data"]["paginator"]["count"], 1)
+
     def test_escalations_resolved_counts_decided_appeals_only(self):
         _resolve_appeal(self.reviewer, AppealStatus.APPROVED)
         _resolve_appeal(self.reviewer, AppealStatus.REJECTED)
