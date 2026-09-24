@@ -100,11 +100,11 @@ def _filler_words(topic_word: str, count: int) -> str:
 
     sentences = (
         f"In this segment we work through the core ideas of {topic_word} step by step.",
-        f"Each concept is introduced with a short explanation and a worked example.",
-        f"Pay attention to how the pieces fit together before moving on.",
-        f"Try the exercise yourself before reading the solution that follows.",
-        f"By the end of this lesson you should be able to apply the pattern unaided.",
-        f"Common mistakes are highlighted so you can avoid them in your own work.",
+        "Each concept is introduced with a short explanation and a worked example.",
+        "Pay attention to how the pieces fit together before moving on.",
+        "Try the exercise yourself before reading the solution that follows.",
+        "By the end of this lesson you should be able to apply the pattern unaided.",
+        "Common mistakes are highlighted so you can avoid them in your own work.",
     )
     words: list[str] = []
     index = 0
@@ -367,6 +367,8 @@ class Command(BaseCommand):
             self.stdout.write(f"  {label:<32} {email}{suffix}")
 
         self.stdout.write("")
+
+        self.stdout.write("")
         self.stdout.write(self.style.MIGRATE_HEADING("COURSES (both left in DRAFT - not submitted)"))
         for label, course, created in (
             ("Course 1 (Amara solo)", course1, created1),
@@ -374,11 +376,13 @@ class Command(BaseCommand):
         ):
             state = "created" if created else "already existed"
             self.stdout.write(f"  {label}: '{course.title}'  id={course.id}  status={course.status} ({state})")
-        self.stdout.write(
-            f"    Collaboration: {creator2.email} is a CourseCollaborator "
-            f"(role={collaborator.role}) on '{course2.title}' with all "
-            f"{collaborator.assigned_modules.count()} modules assigned."
-        )
+            self.stdout.write(
+                "    Collaboration: {} is a CourseCollaborator "
+                "(role={}) on '{}' with all "
+                f"{collaborator.assigned_modules.count()} modules assigned.".format(
+                    creator2.email, collaborator.role, course2.title
+                )
+            )
 
         self.stdout.write("")
         self.stdout.write(self.style.MIGRATE_HEADING("HOW TO SUBMIT MANUALLY (as Amara Obi)"))
