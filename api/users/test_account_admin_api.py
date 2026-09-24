@@ -62,28 +62,59 @@ class SendPasswordResetTests(APITestCase):
         self.assertEqual(len(mail.outbox), 1)
         self.assertEqual(mail.outbox[0].to, [writer.email])
 
-    def test_admin_resets_non_staff_but_not_staff(self):
-        creator = make_user(role=UserRole.COURSE_CREATOR, status=AccountStatus.ACTIVE)
+    def test_admin_resets_any_team_member_or_creator_through_teams(self):
+        self.client.force_authenticate(self.admin)
+
+        for role in (
+            UserRole.COURSE_CREATOR,
+            UserRole.CREATOR_REVIEWER,
+            UserRole.STAFF_WRITER,
+            UserRole.QA_REVIEWER,
+        ):
+            with self.subTest(role=role):
+                target = make_user(role=role, status=AccountStatus.ACTIVE)
+                self.assertEqual(
+                    self.client.post(reset_url(target, "teams")).status_code,
+                    status.HTTP_200_OK,
+                )
+
+    def test_admin_without_staff_permission_is_refused_on_the_staff_route(self):
         writer = make_user(role=UserRole.STAFF_WRITER, status=AccountStatus.ACTIVE)
         self.client.force_authenticate(self.admin)
 
-        self.assertEqual(
-            self.client.post(reset_url(creator, "teams")).status_code,
-            status.HTTP_200_OK,
-        )
         self.assertEqual(
             self.client.post(reset_url(writer, "staff")).status_code,
             status.HTTP_403_FORBIDDEN,
         )
 
-    def test_wrong_audience_is_404(self):
-        creator = make_user(role=UserRole.COURSE_CREATOR, status=AccountStatus.ACTIVE)
-        self.client.force_authenticate(self.super_admin)
+    def test_an_admin_is_not_reachable_through_teams(self):
+        other_admin = make_user(role=UserRole.ADMIN, status=AccountStatus.ACTIVE)
+        self.client.force_authenticate(self.admin)
 
         self.assertEqual(
-            self.client.post(reset_url(creator, "staff")).status_code,
+            self.client.post(reset_url(other_admin, "teams")).status_code,
             status.HTTP_404_NOT_FOUND,
         )
+        self.assertFalse(
+            EmailVerificationToken.objects.filter(
+                user=other_admin, purpose=TokenPurpose.PASSWORD_RESET
+            ).exists()
+        )
+
+    def test_staff_route_reaches_every_account_including_admins(self):
+        self.client.force_authenticate(self.super_admin)
+
+        for role in (
+            UserRole.COURSE_CREATOR,
+            UserRole.CREATOR_REVIEWER,
+            UserRole.ADMIN,
+        ):
+            with self.subTest(role=role):
+                target = make_user(role=role, status=AccountStatus.ACTIVE)
+                self.assertEqual(
+                    self.client.post(reset_url(target, "staff")).status_code,
+                    status.HTTP_200_OK,
+                )
 
     def test_refusals_are_400(self):
         self.client.force_authenticate(self.admin)
@@ -189,14 +220,25 @@ class EraseAccountTests(APITestCase):
         )
         self.assertEqual(self.erase(self.creator).status_code, status.HTTP_409_CONFLICT)
 
-    def test_staff_accounts_go_through_the_staff_route(self):
-        writer = make_user(role=UserRole.STAFF_WRITER)
+    def test_team_members_are_erasable_through_either_route(self):
+        for audience in ("teams", "staff"):
+            with self.subTest(audience=audience):
+                reviewer = make_user(role=UserRole.CREATOR_REVIEWER)
+                self.assertEqual(
+                    self.erase(reviewer, audience=audience).status_code,
+                    status.HTTP_200_OK,
+                )
+
+    def test_admins_are_erasable_only_through_the_staff_route(self):
+        admin = make_user(role=UserRole.ADMIN)
 
         self.assertEqual(
-            self.erase(writer, audience="teams").status_code, status.HTTP_404_NOT_FOUND
+            self.erase(admin, audience="teams").status_code, status.HTTP_404_NOT_FOUND
         )
+        admin.refresh_from_db()
+        self.assertIsNone(admin.erased_at)
         self.assertEqual(
-            self.erase(writer, audience="staff").status_code, status.HTTP_200_OK
+            self.erase(admin, audience="staff").status_code, status.HTTP_200_OK
         )
 
     def test_admin_without_the_permission_is_refused(self):

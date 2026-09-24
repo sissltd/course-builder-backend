@@ -2,9 +2,9 @@
 
 ## What is MIE?
 
-MIE is a system that lets external course creators submit course ideas to Course Builder. Instead of building courses themselves, these creators act as "idea generators" -- they research what courses people want, submit their ideas, and get paid when their ideas are accepted and turned into real courses.
+MIE is a system that lets external course creators submit course ideas to Course Builder. Instead of building courses themselves, these creators act as "idea generators" -- they research what courses people want, submit their ideas, and get paid when a course built from one of their accepted ideas is published.
 
-Think of it like a suggestion box with a payment attached: creators suggest what courses to build, the platform decides which ones are worth building, and the creators get credited for their contributions.
+Think of it like a suggestion box with a payment attached: creators suggest what courses to build, the platform decides which ones are worth building, and the creators get paid for each of those courses that goes live.
 
 ---
 
@@ -63,7 +63,7 @@ The system automatically catches duplicate ideas before they reach the admin que
 
 ### Payout Plans
 
-Different creators can have different payment arrangements. Some get paid for every approved idea. Others get paid unless a specific idea is marked as excluded. Others never receive payouts (for example, when the creator is contributing for non-commercial reasons). Admins set the plan per creator.
+Different creators can have different payment arrangements. Some get paid for every course published from one of their ideas (approving an idea alone pays nothing). Others get paid the same way unless a specific idea is marked as excluded. Others never receive payouts (for example, when the creator is contributing for non-commercial reasons). Admins set the plan per creator.
 
 ### Rejection Reasons
 

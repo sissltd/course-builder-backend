@@ -23,7 +23,8 @@ from api.mie.tests.factories import (
     make_submission,
     make_system_developer,
 )
-from api.users.enums import UserRole
+from api.users.enums import UserActivityActionEnums, UserRole
+from api.users.models import UserActivityLog
 
 QUEUE_URL = "/api/v1/mie/admin/submissions/"
 REASONS_URL = "/api/v1/mie/admin/rejection-reasons/"
@@ -265,7 +266,7 @@ class DecisionTests(APITestCase):
             ],
         )
 
-    def test_reversal_unpublishes_resulting_course_but_keeps_link(self):
+    def test_reversal_leaves_published_resulting_course_untouched_and_keeps_link(self):
         course = make_draft_course(status=CourseStatus.PUBLISHED)
         submission = make_decided_submission(
             developer=self.account, approved=True, resulting_course=course
@@ -278,14 +279,31 @@ class DecisionTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         course.refresh_from_db()
         submission.refresh_from_db()
-        self.assertEqual(course.status, CourseStatus.NEEDS_REVISION)  # parked, not deleted
+        # Publication is one-way on the course side; the MIE never moves it.
+        self.assertEqual(course.status, CourseStatus.PUBLISHED)
         self.assertEqual(submission.resulting_course, course)  # link survives for relink
+        audit = UserActivityLog.objects.get(
+            object_id=str(submission.id), action=UserActivityActionEnums.COURSE_REJECTED
+        )
+        self.assertEqual(audit.details["resulting_course_id"], str(course.id))
 
         # Re-approval finds the same course again.
         reapproval = self._decide(submission, "approve")
         self.assertEqual(reapproval.status_code, status.HTTP_200_OK)
         submission.refresh_from_db()
         self.assertEqual(submission.resulting_course, course)
+
+    def test_decision_without_linked_course_logs_no_course_key(self):
+        submission = make_submission(developer=self.account)
+
+        self._decide(submission, "reject", {"rejection_reason": "Prohibited subject"})
+
+        audit = UserActivityLog.objects.get(
+            object_id=str(submission.id), action=UserActivityActionEnums.COURSE_REJECTED
+        )
+        self.assertEqual(
+            set(audit.details), {"submission_id", "reference"}
+        )
 
 
 class SignalAndBypassTests(APITestCase):

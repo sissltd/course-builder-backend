@@ -24,7 +24,8 @@ COURSES_DECIDE_APPEALS = "courses.decide_appeals"
 COURSES_MANAGE_QUALITY = "courses.manage_quality"
 REVIEWERS_ASSIGN_TRACK = "reviewers.assign_track"
 
-# Staff (invited staff accounts)
+# Staff and Teams: two chip groups over the same accounts (every staff role,
+# Creator Reviewers included). Teams chips never reach Admin or Super Admin.
 STAFF_VIEW = "staff.view"
 STAFF_VIEW_DETAIL = "staff.view_detail"
 STAFF_ADD = "staff.add"
@@ -39,7 +40,7 @@ CREATORS_APPROVE_ACCOUNT = "creators.approve_account"
 CREATORS_VIEW_PROFILE = "creators.view_profile"
 CREATORS_ISSUE_REFUND = "creators.issue_refund"
 
-# Teams (non-staff accounts: Creator Reviewers and creators)
+# Teams
 TEAMS_INVITE = "teams.invite"
 TEAMS_SUSPEND = "teams.suspend"
 TEAMS_DELETE_ACCOUNT = "teams.delete_account"

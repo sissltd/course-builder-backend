@@ -4,10 +4,19 @@ Everything here is reversible by design: approve/reject can be flipped
 in any direction at any time, and every flip records its immediate
 webhook event so the developer's queue reference suffix tracks reality.
 
-Payout semantics live on the submission, not in code paths: a bypassed
-submission is marked no-payout at approval time; whether wallet credit
-actually happens is the resulting-course production flow's concern (not
-built yet - MIE courses are ideas until produced).
+A decision never changes a linked `resulting_course`. That course lives by
+the course domain's lifecycle (draft hold, content review seats, QA
+verification, one-way publication - see courses.course_service), which has
+no path for an outside app to unpublish or park a course. Reversing an idea
+keeps the link, so a re-approval finds the same course rather than a
+duplicate, and records the linked course on the decision's audit row so
+admins can act on it through the course tools.
+
+Payout semantics live on the submission, not in code paths: a developer is
+paid per course that is produced from their idea and published, never per
+approval, and a bypassed submission is marked no-payout. Nothing here pays
+anyone; that belongs to the course side once an idea produces a course (the
+idea-to-course bridge is not built yet).
 """
 
 from django.contrib.contenttypes.models import ContentType
@@ -51,9 +60,8 @@ def decide_submission(
     (`mie.approve_topic_proposals`); the rest of the MIE console needs `mie.manage_console`.
 
     Reversal side effects:
-    * APPROVED -> REJECTED with a linked resulting_course flags that
-      course out of production (unpublished + flagged for review) rather
-      than deleting it, and keeps the link so re-approval relinks.
+    * APPROVED -> REJECTED leaves any linked resulting_course untouched
+      (see the module docstring) and keeps the link so re-approval relinks.
     * REJECTED -> APPROVED clears stale rejection metadata.
     """
 
@@ -72,12 +80,6 @@ def decide_submission(
         )
 
     with transaction.atomic():
-        # Inside the transaction: a decision that fails after this point
-        # must not leave the produced course unpublished with no matching
-        # rejection behind it.
-        if not approve:
-            _flag_resulting_course_if_any(submission)
-
         submission.status = new_status
         submission.decided_at = timezone.now()
         submission.decided_by = actor
@@ -110,10 +112,7 @@ def decide_submission(
             if approve
             else UserActivityActionEnums.COURSE_REJECTED,
             summary=_decision_summary(approve, submission.title),
-            details={
-                "submission_id": str(submission.id),
-                "reference": submission.public_reference,
-            },
+            details=_decision_details(submission),
             target=submission,
         )
 
@@ -230,9 +229,6 @@ def decide_submissions_bulk(
             submission.rejection_note = rejection_note or submission.rejection_note
 
     with transaction.atomic():
-        if not approve:
-            _flag_resulting_courses(submissions)
-
         CourseSubmission.objects.bulk_update(
             submissions,
             fields=[
@@ -272,11 +268,7 @@ def decide_submissions_bulk(
                     if approve
                     else UserActivityActionEnums.COURSE_REJECTED,
                     summary=_decision_summary(approve, submission.title),
-                    details={
-                        "submission_id": str(submission.id),
-                        "reference": submission.public_reference,
-                        "bulk": True,
-                    },
+                    details={**_decision_details(submission), "bulk": True},
                     activity_datetime=now,
                     content_type=content_type,
                     object_id=str(submission.id),
@@ -307,35 +299,20 @@ def _decision_summary(approve: bool, title: str) -> str:
     return f"You {verb} the idea '{title[:SUMMARY_TITLE_LIMIT]}'."
 
 
-def _flag_resulting_courses(submissions) -> None:
-    """Batch form of _flag_resulting_course_if_any: one SELECT, one UPDATE.
+def _decision_details(submission: CourseSubmission) -> dict:
+    """Audit-row details for a decision, naming the linked course if any.
 
-    No-op today, since nothing sets resulting_course yet, but it keeps the
-    bulk path honouring the same contract as the single one.
+    `resulting_course_id` appears only when a course is linked, so an idea
+    with no course logs exactly the keys it always has.
     """
 
-    from api.courses.enums import CourseStatus
-    from api.courses.models import Course
-
-    course_ids = [
-        submission.resulting_course_id
-        for submission in submissions
-        if submission.resulting_course_id
-    ]
-    if not course_ids:
-        return
-
-    courses = list(
-        Course.objects.filter(id__in=course_ids, status=CourseStatus.PUBLISHED)
-    )
-    if not courses:
-        return
-
-    now = timezone.now()
-    for course in courses:
-        course.status = CourseStatus.NEEDS_REVISION
-        course.updated_datetime = now
-    Course.objects.bulk_update(courses, fields=["status", "updated_datetime"])
+    details = {
+        "submission_id": str(submission.id),
+        "reference": submission.public_reference,
+    }
+    if submission.resulting_course_id:
+        details["resulting_course_id"] = str(submission.resulting_course_id)
+    return details
 
 
 def set_payout_bypass(*, actor, submission: CourseSubmission, bypass: bool) -> CourseSubmission:
@@ -361,24 +338,6 @@ def set_payout_bypass(*, actor, submission: CourseSubmission, bypass: bool) -> C
         payload=_bypass_payload(submission),
     )
     return submission
-
-
-def _flag_resulting_course_if_any(submission: CourseSubmission) -> None:
-    """Unpublish + park a produced course when its idea is reversed.
-
-    The link survives so a later re-approval finds it again instead of
-    creating a duplicate. No-op today (ideas have no course yet) but the
-    contract holds for when production exists.
-    """
-
-    from api.courses.enums import CourseStatus
-
-    course = submission.resulting_course
-    if course is None:
-        return
-    if course.status == CourseStatus.PUBLISHED:
-        course.status = CourseStatus.NEEDS_REVISION
-        course.save(update_fields=["status", "updated_datetime"])
 
 
 def _base_payload(submission: CourseSubmission) -> dict:

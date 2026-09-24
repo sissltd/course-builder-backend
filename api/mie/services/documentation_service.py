@@ -72,20 +72,21 @@ def _sample_reference(status: SubmissionStatus) -> str:
 
 PLAN_EXPLANATIONS = {
     MiePlanType.PAID_PER_SUBMISSION: (
-        "Every idea an admin approves credits the creator wallet. Nothing "
-        "you send is exempt unless your plan is changed."
+        "You are paid for each course that is produced from one of your "
+        "approved ideas and published. Approving an idea pays nothing on "
+        "its own. Nothing you send is exempt unless your plan is changed."
     ),
     MiePlanType.BYPASS_PER_SUBMISSION: (
-        "Approved ideas pay out by default, but a superadmin can mark an "
-        "individual submission payout_bypass=true, which excludes just "
-        "that idea. You are told the moment it happens via the "
+        "A course published from one of your approved ideas pays out by "
+        "default, but a superadmin can mark an individual submission "
+        "payout_bypass=true, which excludes just that idea. You are told the moment it happens via the "
         "SUBMISSION_PAYOUT_BYPASS_UPDATED webhook."
     ),
     MiePlanType.BYPASS_ACCOUNT: (
         "Nothing from this account pays out, by prior agreement. "
-        "Approvals still happen and courses are still produced - they "
-        "simply carry no wallet credit, and payout_bypass on individual "
-        "submissions is irrelevant to you."
+        "Approvals still happen and courses are still produced and "
+        "published - they simply carry no payment, and payout_bypass on "
+        "individual submissions is irrelevant to you."
     ),
 }
 
@@ -192,7 +193,7 @@ WEBHOOK_EVENT_DOCS = {
         "extra_fields": [],
     },
     WebhookEventType.SUBMISSION_DUPLICATE_EXISTING: {
-        "fires_when": "Ingestion found a published course with this exact title.",
+        "fires_when": "Ingestion found a course on the platform, in any status, with this exact title.",
         "resulting_status": SubmissionStatus.DUPLICATE_EXISTING,
         "extra_fields": [],
     },
@@ -525,10 +526,11 @@ def _integration_flow() -> list[dict]:
             "actor": "Platform",
             "what_happens": (
                 "An approved idea becomes a course produced by the "
-                "platform. If that course is later reversed by a rejection "
-                "it is unpublished and parked for review, never deleted, so "
-                "a subsequent re-approval relinks the same course instead "
-                "of duplicating it."
+                "platform. Every produced course passes the platform's own "
+                "review - content review, then QA verification - before it "
+                "is published. Publication is one-way: rejecting the idea "
+                "later does not unpublish its course, and the link is kept "
+                "so a subsequent re-approval never duplicates it."
             ),
             "your_move": (
                 "Nothing. Course production is not exposed on the developer "
@@ -542,8 +544,10 @@ def _integration_flow() -> list[dict]:
             "name": "Payout",
             "actor": "Platform",
             "what_happens": (
-                "Whether an approval carries wallet credit is governed by "
-                "your account plan_type and, where the plan allows it, the "
+                "You are paid when a course produced from your approved "
+                "idea is published - not when the idea is approved. Whether "
+                "that publication carries payment is governed by your "
+                "account plan_type and, where the plan allows it, the "
                 "per-submission payout_bypass flag. See plan_and_payouts."
             ),
             "your_move": (
@@ -812,7 +816,8 @@ def _plan_and_payouts(account) -> dict:
         ),
         "timing": (
             "Payout settlement is a platform-side wallet concern and is "
-            "not exposed on the developer API. Approval is the trigger; "
+            "not exposed on the developer API. Publication of the course "
+            "produced from your idea is the trigger, not approval; "
             "the credit itself is not something you can query here."
         ),
     }

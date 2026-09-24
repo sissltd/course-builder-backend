@@ -65,11 +65,11 @@ new roles.
 | Set Course Pricing at Approval; Publish Course | Creator Reviewer, Verifier, Approver, Admin |
 | Force Course Version Migration | Approver, Admin |
 | Decide appeals; manage quality checks; assign reviewer tracks | Admin |
-| Staff: View Only, View Staff Detail, Add Staff, Full Access, Delete Staff, Reset password | Super Admin only |
+| Staff: View Only, View Staff Detail, Add Staff, Full Access, Delete Staff, Reset password (any account, Admins included) | Super Admin only |
 | Creators: View Wallet, Suspend Account, Approve Account (KYC), View Profile | Admin |
 | Creators: Issue Refund | Super Admin only |
-| Teams: Invite Teams, Suspend Account, Reset Password | Admin |
-| Teams: Delete Account | Super Admin only |
+| Teams: Invite Teams, Suspend Account, Reset Password (any account except Admins) | Admin |
+| Teams: Delete Account (any account except Admins) | Super Admin only |
 | View APE Pipeline | Admin |
 | Approve MIE Topics Proposals | Writer |
 | Manage MIE console | Super Admin only |
@@ -143,9 +143,16 @@ The review seats are described in full in
 
 ### Staff and security
 
+**Staff and Teams are one group.** Everyone on the Teams page is staff,
+Creator Reviewers included, and anyone on it can be moved to any other
+staff role. The Staff and Teams permission groups both act on that same
+group; Admin and Super Admin accounts are managed through the Staff
+permissions only.
+
 | Action | Who |
 |---|---|
-| Invite, revoke or reactivate staff — including Admins | Super Admin |
+| Invite, revoke or reactivate staff — including Admins and Creator Reviewers | Super Admin |
+| Invite a Creator Reviewer (Invite Teams) | Admin, Super Admin |
 | Reset another user's MFA | Super Admin |
 
 ### Operations and MIE

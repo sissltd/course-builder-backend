@@ -18,10 +18,6 @@ from api.users.enums import (
     UserRole,
 )
 
-#: Roles an invitation can create: staff, plus Creator Reviewers invited from
-#: the Teams screen. Pending invitees of either kind can be re-invited.
-INVITED_ROLES = STAFF_ROLES + (UserRole.CREATOR_REVIEWER,)
-
 User = get_user_model()
 logger = logging.getLogger(__name__)
 
@@ -258,6 +254,8 @@ class StaffService:
     def list_staff(self):
         """Every staff account, newest first, for the Teams page.
 
+        Staff and team are one roster, so this includes Creator Reviewers -
+        invited or self-registered - alongside every other staff role.
         Includes pending invitees (inactive, never accepted) alongside active
         staff - the Teams page shows both, and callers tell them apart via the
         serializer's `invitation_status`.
@@ -362,10 +360,10 @@ class StaffService:
 
     @staticmethod
     def is_pending_invite(user: User) -> bool:
-        """True if `user` was invited (as staff or a Creator Reviewer) but never accepted."""
+        """True if `user` was invited to a staff (team) role but never accepted."""
 
         return (
-            user.role in INVITED_ROLES
+            user.role in STAFF_ROLES
             and not user.is_active
             and not user.has_usable_password()
         )

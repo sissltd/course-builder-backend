@@ -71,6 +71,47 @@ Superadmin decides (approve / reject) — reversible at any time
 New webhook event fired on every decision flip
 ```
 
+### 1.1 Where the MIE meets the course pipeline
+
+The MIE decides **ideas**; it never creates, edits, reviews, publishes or
+pays for a **course**. Its only contact with the courses app is:
+
+| Touchpoint | What it does | Where |
+|---|---|---|
+| Dedup | A new idea whose title matches any `Course` (any status, drafts included) is `DUPLICATE_EXISTING`. | `dedup_service.evaluate_title` |
+| `resulting_course` link | Nullable one-to-one to the course produced from an idea. **Nothing sets it today** - there is no idea-to-course bridge yet. | `CourseSubmission.resulting_course` |
+| Reversal | Rejecting an idea leaves any linked course exactly as it is and keeps the link; the decision's audit row carries `resulting_course_id`. | `submission_admin_service` |
+
+A course that is linked to an idea lives entirely by the course lifecycle,
+the same as any other course:
+
+```
+DRAFT ──(draft hold, platform setting draft_minimum_hold_hours, default 48h)──►
+submit (structural standards + course version required) ──► SUBMITTED
+  ──► First Review ──► Second Review ──► Verification   (3 different people)
+  ──► QA_VERIFICATION (media assets required) ──► APPROVED
+  ──► admin publish (pricing per channel) ──► PUBLISHED   (one-way)
+```
+
+A content-seat rejection returns the course to `DRAFT`. Publication is
+one-way - the courses app has no unpublish path - which is why the MIE does
+not unpublish or park a published course when its idea is reversed; an
+admin acts on that course through the course tools instead. Earlier
+versions of this service set such a course to `NEEDS_REVISION`, a status
+the course lifecycle has no way out of.
+
+**Developer payment is per published course, never per approval.** A
+developer is paid for each course that is produced from one of their
+approved ideas and then published successfully. Approving an idea pays
+nothing. `plan_type` and `payout_bypass` decide whether that publication
+carries payment for the developer. No code path pays the developer
+automatically today: the idea-to-course bridge that would link a published
+course back to its idea is not built yet.
+
+This is separate from the course's own creator payment, which the course
+pipeline handles (`creator_price_snapshot`, taken at submission and
+credited after QA approval).
+
 ---
 
 ## 2. Architecture
@@ -224,7 +265,7 @@ A course idea submitted by an external developer.
 | `decided_at` | DateTimeField | When the latest approve/reject decision was taken. |
 | `decided_by` | FK → User | Superadmin responsible for the latest decision. |
 | `payout_bypass` | BooleanField | Per-submission no-payout marker. |
-| `resulting_course` | OneToOne → Course | Nullable. SET_NULL on delete. `related_name="mie_submission"`. |
+| `resulting_course` | OneToOne → Course | Nullable. SET_NULL on delete. `related_name="mie_submission"`. Never assigned today; a decision never changes the linked course (§1.1). |
 
 **DB constraints:**
 
@@ -529,7 +570,7 @@ Three sequential checks, first match wins:
 | # | Check | Status set | Webhook event | Notes |
 |---|---|---|---|---|
 | 1 | Title matches a previously REJECTED submission | `PREVIOUSLY_REJECTED` | `SUBMISSION_PREVIOUSLY_REJECTED` | Inherits the rejection reason from the prior rejection. |
-| 2 | Title matches an existing platform Course | `DUPLICATE_EXISTING` | `SUBMISSION_DUPLICATE_EXISTING` | Checks `Course.objects.filter(title__iexact=...)`. |
+| 2 | Title matches an existing platform Course | `DUPLICATE_EXISTING` | `SUBMISSION_DUPLICATE_EXISTING` | Checks `Course.objects.filter(title__iexact=...)` - any status, drafts included. |
 | 3 | Title already PENDING_REVIEW in queue | `DUPLICATE_IN_QUEUE` | `SUBMISSION_DUPLICATE_IN_QUEUE` | Enforced by partial unique index. |
 | 4 | No match | `PENDING_REVIEW` | `SUBMISSION_QUEUED` | Normal path — idea enters the review queue. |
 
@@ -758,7 +799,7 @@ constants:
 {
   "plan": {
     "plan_type": "PAID_PER_SUBMISSION",
-    "explanation": "Each approved idea credits the creator wallet at approval time."
+    "explanation": "You are paid for each course that is produced from one of your approved ideas and published. Approving an idea pays nothing on its own. ..."
   },
   "authentication": {
     "api_key_header": "X-MIE-Api-Key",
@@ -849,8 +890,9 @@ Decisions are **not terminal** — a superadmin can flip `APPROVED` ↔
 1. Updates the submission status, `decided_at`, and `decided_by`.
 2. Records a new `WebhookEvent` (`SUBMISSION_APPROVED` or
    `SUBMISSION_REJECTED`).
-3. If rejecting from APPROVED with a `resulting_course`, flags the course
-   out of production (`NEEDS_REVISION`) — never deletes it.
+3. Leaves any `resulting_course` untouched and keeps the link, so a
+   re-approval finds the same course. The audit row's `details` gains
+   `resulting_course_id` when a course is linked (§1.1).
 4. If re-approving from REJECTED, clears stale rejection metadata.
 
 ### 9.4 Recommendation signals

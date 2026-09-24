@@ -94,7 +94,7 @@ Dedup outcomes at submission time:
 | `POST …/{id}/payout_bypass/` | `{ "payout_bypass": true|false }` — marks this one idea no-payout. Fires `SUBMISSION_PAYOUT_BYPASS_UPDATED` each way. Identical toggles → `400`. |
 | `GET/POST/PATCH /api/v1/mie/admin/rejection-reasons/` | The reason taxonomy. `?is_active=` filter. No delete — soft-deactivate via `"is_active": false`. |
 
-**Reversal behavior the FE should know:** flipping APPROVED → REJECTED after a course was produced unpublishes that course (never deletes) and keeps the link; re-approving relinks it. Re-approving a rejected idea clears its rejection metadata.
+**Reversal behavior the FE should know:** flipping APPROVED → REJECTED never changes a course linked to the idea — publication is one-way on the course side — and the link is kept, so re-approving finds the same course. Re-approving a rejected idea clears its rejection metadata. (No idea is linked to a course today; the API response is unchanged either way.)
 
 ---
 
@@ -107,7 +107,7 @@ Dedup outcomes at submission time:
 `PENDING` (cannot authenticate) · `APPROVED` (full access) · `REJECTED` (terminal; re-approve issues fresh key) · `SUSPENDED` (frozen, reversible)
 
 ### MiePlanType — payout arrangement (superadmin-set, shown in /me + docs)
-`PAID_PER_SUBMISSION` (each approval pays) · `BYPASS_PER_SUBMISSION` (pays unless that idea is bypassed) · `BYPASS_ACCOUNT` (never pays)
+`PAID_PER_SUBMISSION` (pays for each course published from an approved idea — approval alone pays nothing) · `BYPASS_PER_SUBMISSION` (same, unless that idea is bypassed) · `BYPASS_ACCOUNT` (never pays)
 
 ### WebhookEventType — what lands on the developer's webhook
 `SUBMISSION_QUEUED` · `SUBMISSION_DUPLICATE_IN_QUEUE` · `SUBMISSION_DUPLICATE_EXISTING` · `SUBMISSION_PREVIOUSLY_REJECTED` · `SUBMISSION_APPROVED` · `SUBMISSION_REJECTED` · `SUBMISSION_PAYOUT_BYPASS_UPDATED`

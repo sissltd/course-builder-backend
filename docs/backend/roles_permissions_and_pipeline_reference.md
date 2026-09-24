@@ -24,7 +24,7 @@
 | Role | Label | How obtained |
 |---|---|---|
 | `COURSE_CREATOR` | Course Creator | Public self-signup (`POST /auth/signup/`, default `signup_role`) |
-| `CREATOR_REVIEWER` | Creator Reviewer | Public self-signup — a **dedicated** endpoint, `ReviewerSignupView` (`api/authentication/views/auth_views.py:170`), forcing `role=CREATOR_REVIEWER`. Also open, like Course Creator. |
+| `CREATOR_REVIEWER` | Creator Reviewer | Public self-signup — a **dedicated** endpoint, `ReviewerSignupView` (`api/authentication/views/auth_views.py:170`), forcing `role=CREATOR_REVIEWER` — **or** an invitation: the Teams invite (`POST /users/admin/invitations/`, `teams.invite`) or the staff invite (`staff.add`). A staff role like the others below; the only one that can also be self-registered, so its built-in role keeps the public-role grant guard (`registry.PUBLIC_ROLES`). |
 | `STAFF_WRITER` | Writer | Super Admin invite only |
 | `STAFF_VERIFIER` | Verifier | Super Admin invite only |
 | `STAFF_APPROVER` | Approver | Super Admin invite only |
@@ -37,10 +37,21 @@
 # api/users/enums.py
 INVITABLE_STAFF_ROLES = (
     STAFF_WRITER, STAFF_VERIFIER, STAFF_APPROVER,
-    AI_REVIEWER, QA_REVIEWER, ADMIN,
+    AI_REVIEWER, QA_REVIEWER, ADMIN, CREATOR_REVIEWER,
 )
 STAFF_ROLES = INVITABLE_STAFF_ROLES + (SUPER_ADMIN,)   # the Teams-page roster
+PRIVILEGED_ROLES = (ADMIN, SUPER_ADMIN)                # Staff permissions only
 ```
+
+**Staff and Teams are the same thing.** One roster (`STAFF_ROLES`), one set
+of accounts. The permission catalogue still shows a **Staff** chip group and
+a **Teams** chip group (unchanged for the frontend), and each admin action
+still has a Staff route and a Teams route, but both routes reach the same
+accounts: every staff role, Creator Reviewers included, plus Course
+Creators. The one exception is `PRIVILEGED_ROLES` — Admin and Super Admin
+accounts are 404 on the Teams routes, so the Teams chips (held by Admins by
+default) never act on the tier that supervises them
+(`api/users/services/account_admin_service.py::resolve_target`).
 
 MIE developers (external partners, the crawler) are **not** platform users
 and hold no `UserRole` at all — they authenticate via API key or a
@@ -398,6 +409,12 @@ event-type map, the circuit-breaker rejection tally, the docs generator, the
 comments (`submission_admin_service.py`: "nothing sets resulting_course
 yet"). `CourseSourceType.DEVELOPER_API` is **never set anywhere** — it's a
 label with no writer. MIE never creates a `Course` row.
+
+A decision never changes a linked course either: publication is one-way on
+the course side (§7.6), so reversing an idea leaves any
+`resulting_course` as it is, keeps the link, and names it on the decision's
+audit row (`details.resulting_course_id`). It previously set a published
+course to `NEEDS_REVISION`, which no course flow can leave.
 
 **Practical consequence:** turning an approved idea into a real course is
 today a fully manual, unmodelled step — someone reads the approved idea and

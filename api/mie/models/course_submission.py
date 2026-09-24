@@ -166,9 +166,10 @@ class CourseSubmission(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
         blank=True,
         related_name="mie_submission",
         help_text=_(
-            "Course created when this idea was accepted. On reversal the "
-            "course is flagged/unpublished, never deleted, so re-approval "
-            "can relink instead of duplicating."
+            "Course produced from this idea. Reversing the idea leaves the "
+            "course untouched - publication is one-way on the course side - "
+            "and keeps this link, so re-approval relinks instead of "
+            "duplicating."
         ),
     )
 

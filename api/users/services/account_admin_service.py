@@ -1,9 +1,11 @@
 """Admin actions on someone else's account that don't change its status.
 
-Staff accounts and non-staff accounts are managed under different
-permissions (the Staff and Teams chip groups), so each action takes the
-audience it is being performed under and refuses a target from the other one
-as not found.
+Staff and Teams are one set of accounts. Each action is still exposed twice -
+under the Staff route and chips, and under the Teams route and chips - so a
+role can be granted either, but both routes reach the same accounts. The one
+exception is privileged accounts (Admin, Super Admin): those are managed only
+under the Staff permissions, so a Teams permission can never be used to act
+on the tier that supervises it.
 """
 
 from django.db import transaction
@@ -15,7 +17,7 @@ from api.authentication.services.authentication_service import AuthenticationSer
 from api.authorization import codenames
 from api.authorization.services import permission_service
 from api.users.enums import (
-    STAFF_ROLES,
+    PRIVILEGED_ROLES,
     AccountStatus,
     UserActivityActionEnums,
     UserActivityCategoryEnums,
@@ -33,10 +35,15 @@ RESET_PASSWORD_PERMISSION = {
 
 
 def resolve_target(*, audience: str, user_id) -> User:
-    """The account `user_id` if it belongs to `audience`, else 404."""
+    """The account `user_id`, else 404.
+
+    A privileged account is 404 under the Teams audience, as it is for an id
+    that does not exist, so the Teams routes cannot confirm which ids belong
+    to Admins.
+    """
 
     user = User.objects.filter(pk=user_id).first()
-    if user is None or (user.role in STAFF_ROLES) != (audience == STAFF):
+    if user is None or (audience == TEAMS and user.role in PRIVILEGED_ROLES):
         raise exceptions.NotFound("Account not found.")
     return user
 
