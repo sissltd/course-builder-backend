@@ -8,19 +8,16 @@ from api.authorization.services import permission_service
 from api.authentication.services.authentication_service import AuthenticationService
 from api.notification.models import Notification
 from api.users.enums import (
+    PRIVILEGED_ROLES,
     AccountStatus,
     UserActivityActionEnums,
     UserRole,
 )
 from api.users.models import User
 
-#: Roles this service refuses to act on. Suspending a peer Admin - or the
-#: platform owner - is an employment decision, not a moderation one, and it
-#: belongs to the Super Admin-only staff endpoints
-#: (authentication.staff_service.revoke_staff). Keeping the two apart means an
-#: Admin cannot disable the tier that supervises them, and the Super Admin seat
-#: stays unrevocable through every route, not just the staff one.
-PRIVILEGED_ROLES = (UserRole.ADMIN, UserRole.SUPER_ADMIN)
+# This service refuses to act on PRIVILEGED_ROLES: those belong to the staff
+# endpoints (authentication.staff_service.revoke_staff), and the Super Admin
+# seat stays unrevocable through every route, not just the staff one.
 
 #: Statuses a suspended/deactivated account can be restored from. A
 #: PENDING_VERIFICATION account is not "restorable" - it was never active, and

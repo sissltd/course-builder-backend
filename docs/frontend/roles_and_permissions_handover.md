@@ -100,9 +100,15 @@ achievements, the roles screen itself (`roles.view`, `roles.manage`) and a
 creator's own wallet. Render them below the design's groups, or behind a
 "More" toggle. Without them, a custom role can't be given those abilities.
 
-**Staff vs Teams.** Staff chips act on invited staff: Writer, Verifier,
-Approver, QA Reviewer, AI Reviewer and Admin. Teams chips act on everyone
-else, meaning Creator Reviewers and creators.
+**Staff and Teams are the same group.** Both chip groups stay on the screen
+exactly as before, but they act on the same accounts: every staff role
+(Writer, Verifier, Approver, QA Reviewer, AI Reviewer, Creator Reviewer,
+Admin) and creators. The only difference is that Admin and Super Admin
+accounts can be acted on through the Staff chips alone, never the Teams
+ones. Creator Reviewers now appear on the Teams page roster
+(`GET auth/staff/`) and can be revoked, reactivated, invited or moved to
+another role there, like any staff member. No request or response shape
+changes.
 
 ---
 
@@ -196,8 +202,8 @@ are signed out.
 | Send a staff member a password reset link | `POST auth/staff/{id}/send-password-reset/` | `staff.reset_password` |
 | Delete a staff account | `POST auth/staff/{id}/erase/` `{reason, confirm_email}` | `staff.delete` + MFA session |
 | Invite a Creator Reviewer (Invite Teams) | `POST users/admin/invitations/` `{email, first_name, last_name}` | `teams.invite` |
-| Send a non-staff user a reset link | `POST users/admin/{id}/send-password-reset/` | `teams.reset_password` |
-| Delete a non-staff account | `POST users/admin/{id}/erase/` `{reason, confirm_email}` | `teams.delete_account` + MFA session |
+| Send a team member or creator a reset link (not an Admin) | `POST users/admin/{id}/send-password-reset/` | `teams.reset_password` |
+| Delete a team member or creator account (not an Admin) | `POST users/admin/{id}/erase/` `{reason, confirm_email}` | `teams.delete_account` + MFA session |
 
 **Invitations**
 - The staff invite still accepts the old `role` value. Send exactly one of
@@ -228,8 +234,9 @@ are signed out.
 - Returns **409** while the wallet has a balance or a payout is in progress.
 - Reinstating or reactivating a deleted account is 400.
 
-**Wrong account type.** A staff id on a `users/admin/...` route, or a non-staff
-id on an `auth/staff/...` route, returns **404**.
+**Admins on the Teams routes.** An Admin or Super Admin id on a
+`users/admin/...` route returns **404**. Every other account works on both
+the `users/admin/...` and `auth/staff/...` routes.
 
 ---
 

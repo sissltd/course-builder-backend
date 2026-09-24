@@ -23,8 +23,9 @@ class DeveloperRegisterSerializer(serializers.Serializer):
         choices=MiePlanType.choices,
         default=MiePlanType.PAID_PER_SUBMISSION,
         help_text=(
-            "Payout arrangement: PAID_PER_SUBMISSION credits the creator "
-            "wallet per approval; BYPASS_PER_SUBMISSION allows per-idea "
+            "Payout arrangement: PAID_PER_SUBMISSION pays the developer for "
+            "each course published from one of their ideas (approval alone "
+            "pays nothing); BYPASS_PER_SUBMISSION allows per-idea "
             "no-payout marks; BYPASS_ACCOUNT never pays this developer."
         ),
     )
