@@ -34,13 +34,14 @@ class UserRole(models.TextChoices):
     * **Public** - COURSE_CREATOR is what public signup assigns. Anyone can
       obtain it by registering.
     * **Staff** - STAFF_WRITER / STAFF_VERIFIER / STAFF_APPROVER / AI_REVIEWER /
-      QA_REVIEWER are the roles offered in the "Invite a staff" dialog. They
-      are invitation-only: no public route assigns them. They mirror the
-      authoring and review pipelines and are deliberately kept distinct from
-      the public roles so a self-registered user is never mistaken for hired
-      staff in permissions, reporting, or the Teams page.
+      QA_REVIEWER / CREATOR_REVIEWER. "Staff" and "Teams" name the same group:
+      one roster, one set of accounts, managed through either the Staff or
+      the Teams permissions. CREATOR_REVIEWER is the one staff role that can
+      also be self-registered (the reviewer signup routes), which is why it
+      stays in registry.PUBLIC_ROLES for permission-grant purposes.
     * **Privileged** - ADMIN and SUPER_ADMIN. SUPER_ADMIN is bootstrap-only and
-      unique platform-wide; it is the only role that can invite staff.
+      unique platform-wide. Privileged accounts are managed only through the
+      Staff permissions, never the Teams ones.
     """
 
     COURSE_CREATOR = "COURSE_CREATOR", "Course Creator"
@@ -59,7 +60,9 @@ class UserRole(models.TextChoices):
 #: Admins - otherwise no API path grants it; Admins are MFA-mandated, so an
 #: invited one enrols like the Super Admin does. SUPER_ADMIN is absent by
 #: design - the seat is unique and claimable only through the bootstrap
-#: endpoint - and so are the public roles, which are not staff positions.
+#: endpoint - and so is COURSE_CREATOR, which is not a staff position.
+#: CREATOR_REVIEWER is last so the positions existing clients already list
+#: keep their order.
 INVITABLE_STAFF_ROLES = (
     UserRole.STAFF_WRITER,
     UserRole.STAFF_VERIFIER,
@@ -67,11 +70,18 @@ INVITABLE_STAFF_ROLES = (
     UserRole.AI_REVIEWER,
     UserRole.QA_REVIEWER,
     UserRole.ADMIN,
+    UserRole.CREATOR_REVIEWER,
 )
 
-#: Every role that counts as staff for the Teams page: the invitable roles plus
-#: the Super Admin, which is staff too but is never handed out by invite.
+#: Every staff (equivalently, team) role: the invitable roles plus the Super
+#: Admin, which is staff too but is never handed out by invite.
 STAFF_ROLES = INVITABLE_STAFF_ROLES + (UserRole.SUPER_ADMIN,)
+
+#: Staff roles managed only under the Staff permissions. Acting on a peer
+#: Admin - or the platform owner - is an employment decision, not moderation,
+#: so the Teams permissions (held by Admins by default) never reach these
+#: accounts: an Admin cannot disable the tier that supervises them.
+PRIVILEGED_ROLES = (UserRole.ADMIN, UserRole.SUPER_ADMIN)
 
 #: (value, label) choices for fields that accept an invitable staff role.
 INVITABLE_STAFF_ROLE_CHOICES = [

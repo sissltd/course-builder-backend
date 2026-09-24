@@ -194,6 +194,22 @@ class RoleCreateTests(RoleTestCase):
             ).exists()
         )
 
+    def test_a_role_can_be_based_on_creator_reviewer(self):
+        self.as_user(self.super_admin)
+
+        response = self.client.post(
+            ROLES_URL,
+            {
+                "name": "Senior Reviewer",
+                "base_role": UserRole.CREATOR_REVIEWER,
+                "permissions": [c.COURSES_APPROVE, c.COURSES_REJECT],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["data"]["base_role"], UserRole.CREATOR_REVIEWER)
+
     def test_invalid_payloads_are_400(self):
         self.as_user(self.super_admin)
         for payload in (
@@ -397,6 +413,21 @@ class RoleUpdateTests(RoleTestCase):
         self.assertEqual(refused.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(allowed.status_code, status.HTTP_200_OK)
 
+    def test_built_in_creator_reviewer_still_refuses_admin_level_permissions(self):
+        # Creator Reviewer is staff now, but still reachable by public
+        # signup, so its built-in role keeps the public-role guard.
+        self.as_user(self.super_admin)
+        reviewers = system_role(UserRole.CREATOR_REVIEWER)
+        current = list(reviewers.grants.values_list("codename", flat=True))
+
+        response = self.client.patch(
+            role_url(reviewers),
+            {"permissions": [*current, c.PLATFORM_EDIT_SETTINGS]},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
     def test_empty_body_is_400(self):
         self.as_user(self.super_admin)
 
@@ -520,6 +551,28 @@ class ChangeStaffRoleTests(RoleTestCase):
                     self.url(target), {"role_id": str(role.id)}, format="json"
                 )
                 self.assertEqual(response.status_code, expected)
+
+    def test_creator_reviewer_moves_between_team_and_staff_roles(self):
+        reviewer = make_user(role=UserRole.CREATOR_REVIEWER)
+        self.as_user(self.super_admin)
+
+        to_writer = self.client.post(
+            self.url(reviewer),
+            {"role_id": str(system_role(UserRole.STAFF_WRITER).id)},
+            format="json",
+        )
+        reviewer.refresh_from_db()
+        self.assertEqual(to_writer.status_code, status.HTTP_200_OK)
+        self.assertEqual(reviewer.role, UserRole.STAFF_WRITER)
+
+        back = self.client.post(
+            self.url(reviewer),
+            {"role_id": str(system_role(UserRole.CREATOR_REVIEWER).id)},
+            format="json",
+        )
+        reviewer.refresh_from_db()
+        self.assertEqual(back.status_code, status.HTTP_200_OK)
+        self.assertEqual(reviewer.role, UserRole.CREATOR_REVIEWER)
 
     def test_admin_without_full_access_is_refused(self):
         self.as_user(make_user(role=UserRole.ADMIN))

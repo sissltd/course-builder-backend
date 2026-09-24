@@ -156,6 +156,7 @@ class InviteStaffApiTests(APITestCase):
                 UserRole.STAFF_APPROVER,
                 UserRole.AI_REVIEWER,
                 UserRole.QA_REVIEWER,
+                UserRole.CREATOR_REVIEWER,
             ]
         ):
             with self.subTest(role=role):
@@ -499,6 +500,38 @@ class StaffListApiTests(APITestCase):
         emails = {row["email"] for row in response.data}
         self.assertNotIn("public@example.com", emails)
 
+    def test_creator_reviewers_are_on_the_team_roster(self):
+        # Staff and team are one roster: a self-registered reviewer and one
+        # still holding a Teams invitation both appear, alongside staff.
+        make_user(email="reviewer@example.com", role=UserRole.CREATOR_REVIEWER)
+        invited = make_user(
+            email="invited-reviewer@example.com",
+            role=UserRole.CREATOR_REVIEWER,
+            is_active=False,
+            password=None,
+        )
+        make_verification_token(
+            user=invited,
+            purpose=TokenPurpose.STAFF_INVITATION,
+            raw_token="invited-reviewer-token",
+        )
+        self.client.force_authenticate(self.super_admin)
+
+        response = self.client.get(STAFF_URL)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        by_email = {row["email"]: row for row in response.data}
+        self.assertEqual(
+            by_email["reviewer@example.com"]["role_label"], "Creator Reviewer"
+        )
+        self.assertEqual(
+            by_email["reviewer@example.com"]["invitation_status"], "ACTIVE"
+        )
+        self.assertEqual(
+            by_email["invited-reviewer@example.com"]["invitation_status"], "PENDING"
+        )
+        self.assertNotIn("public@example.com", by_email)
+
     def test_non_super_admin_cannot_list_staff(self):
         self.client.force_authenticate(self.active_staff)
 
@@ -590,6 +623,16 @@ class RevokeStaffApiTests(APITestCase):
         public_user.refresh_from_db()
         self.assertTrue(public_user.is_active)
 
+    def test_creator_reviewer_is_revocable_like_any_staff_member(self):
+        reviewer = make_user(role=UserRole.CREATOR_REVIEWER)
+
+        response = self.client.post(revoke_url(reviewer))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        reviewer.refresh_from_db()
+        self.assertFalse(reviewer.is_active)
+        self.assertEqual(reviewer.status, AccountStatus.DEACTIVATED)
+
     def test_revoking_twice_rejected(self):
         self.client.post(revoke_url(self.staff))
 
@@ -667,6 +710,17 @@ class ReactivateStaffApiTests(APITestCase):
         self.assertTrue(self.staff.is_active)
         self.assertEqual(self.staff.role, UserRole.STAFF_WRITER)
         self.assertEqual(self.staff.status, AccountStatus.ACTIVE)
+
+    def test_revoked_creator_reviewer_can_be_reactivated(self):
+        reviewer = make_user(role=UserRole.CREATOR_REVIEWER)
+        self.client.post(revoke_url(reviewer))
+
+        response = self.client.post(reactivate_url(reviewer))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["staff"]["invitation_status"], "ACTIVE")
+        reviewer.refresh_from_db()
+        self.assertTrue(reviewer.is_active)
 
     def test_reactivated_staff_can_log_in_again(self):
         self.client.post(revoke_url(self.staff))

@@ -309,10 +309,12 @@ class InviteStaffView(APIView):
     @extend_schema(
         summary="Invite a staff member",
         description=(
-            "Invites someone to join the team in one of three positions and "
-            "emails them a single-use invitation link. This is the only way a "
-            "staff account can come into existence — no public signup yields a "
-            "staff role. The invitee's account is created immediately in a "
+            "Invites someone to join the team in a staff position and emails "
+            "them a single-use invitation link. Staff and team are the same "
+            "roster, so a Creator Reviewer can be invited here too. Apart from "
+            "Creator Reviewers, who can also self-register through the reviewer "
+            "signup routes, this is the only way a staff account comes into "
+            "existence. The invitee's account is created immediately in a "
             "pending state (inactive, no usable password) so the email address "
             "is reserved, but it cannot authenticate until they accept.\n\n"
             "Step 2 of the staff flow: bootstrap super admin → **invite "
@@ -327,7 +329,8 @@ class InviteStaffView(APIView):
             "signed in as it. The email must not already belong to an existing "
             "user of any role.\n\n"
             "**Important:** `role` accepts only `STAFF_WRITER`, "
-            "`STAFF_VERIFIER`, or `STAFF_APPROVER`; anything else — including "
+            "`STAFF_VERIFIER`, `STAFF_APPROVER`, `AI_REVIEWER`, `QA_REVIEWER`, "
+            "`ADMIN` or `CREATOR_REVIEWER`; anything else — including "
             "`SUPER_ADMIN` — is rejected with 400, so this endpoint cannot "
             "mint a second Super Admin. Re-inviting someone whose invitation "
             "is still pending reissues the link, invalidates the previous one, "

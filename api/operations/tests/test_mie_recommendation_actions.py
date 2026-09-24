@@ -11,13 +11,14 @@ from django.test.utils import CaptureQueriesContext
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from api.courses.enums import DifficultyLevel
-from api.courses.tests.factories import make_category, make_user
+from api.courses.enums import CourseStatus, DifficultyLevel
+from api.courses.tests.factories import make_category, make_draft_course, make_user
 from api.mie.enums import SubmissionStatus
 from api.mie.models import CourseSubmission, WebhookEvent
 from api.mie.services.submission_admin_service import BULK_DECISION_LIMIT
 from api.mie.tests.factories import (
     make_approved_developer,
+    make_decided_submission,
     make_rejection_reason,
     make_submission,
 )
@@ -336,6 +337,33 @@ class MieRecommendationBulkDecisionTests(APITestCase):
         self.assertEqual(
             CourseSubmission.objects.filter(rejection_reason=self.reason).count(), 3
         )
+
+    def test_bulk_rejection_leaves_a_linked_published_course_untouched(self):
+        course = make_draft_course(status=CourseStatus.PUBLISHED)
+        linked = make_decided_submission(
+            developer=self.developer, approved=True, resulting_course=course
+        )
+        unlinked = make_submission(developer=self.developer, title="Unlinked idea")
+
+        response = self.client.post(
+            BULK_URL,
+            {
+                "ids": [str(linked.id), str(unlinked.id)],
+                "action": "reject",
+                "rejection_reason": "Duplicate of existing catalog",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        course.refresh_from_db()
+        linked.refresh_from_db()
+        self.assertEqual(course.status, CourseStatus.PUBLISHED)
+        self.assertEqual(linked.resulting_course, course)
+        linked_audit = UserActivityLog.objects.get(object_id=str(linked.id))
+        unlinked_audit = UserActivityLog.objects.get(object_id=str(unlinked.id))
+        self.assertEqual(linked_audit.details["resulting_course_id"], str(course.id))
+        self.assertNotIn("resulting_course_id", unlinked_audit.details)
 
     def test_bulk_rejection_needs_a_reason(self):
         ideas = self._ideas(2)

@@ -23,7 +23,9 @@ class DeveloperAccountStatus(models.TextChoices):
 class MiePlanType(models.TextChoices):
     """How payouts work for a developer's accepted submissions.
 
-    PAID_PER_SUBMISSION   - each approved idea credits the creator wallet.
+    PAID_PER_SUBMISSION   - the developer is paid for each course produced
+                            from one of their ideas and published; approval
+                            alone pays nothing.
     BYPASS_PER_SUBMISSION - payout is skipped only for submissions the
                             superadmin individually marks as bypassed.
     BYPASS_ACCOUNT        - nothing from this developer ever pays out;

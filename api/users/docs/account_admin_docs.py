@@ -12,13 +12,13 @@ from includes.spectacular.responses import (
 _AUDIENCE = {
     "staff": {
         "tag": "Admin — Teams",
-        "who": "a staff member (Writer, Verifier, Approver, QA Reviewer, AI Reviewer or Admin)",
+        "who": "any account (a team member such as a Writer, Verifier, Approver, QA Reviewer, AI Reviewer, Creator Reviewer or Admin, or a Course Creator)",
         "reset_auth": "The `staff.reset_password` permission — Super Admin by default.",
         "erase_auth": "The `staff.delete` permission (Delete Staff) — Super Admin by default",
     },
     "teams": {
         "tag": "Admin — Users",
-        "who": "a non-staff account (a Course Creator or Creator Reviewer)",
+        "who": "any account except an Admin (a team member such as a Writer, Verifier, Approver, QA Reviewer, AI Reviewer or Creator Reviewer, or a Course Creator)",
         "reset_auth": "The `teams.reset_password` permission — Admin and Super Admin by default.",
         "erase_auth": "The `teams.delete_account` permission (Delete Account) — Super Admin by default",
     },
@@ -37,8 +37,8 @@ def reset_docs(audience: str) -> dict:
             "pending invitation) and not yours or the Super Admin's.\n\n"
             "**Important:** The password does not change until they use the "
             "link, which also signs them out everywhere. A second request "
-            "within the resend cooldown is 400. An account of the other kind "
-            "(staff vs non-staff) is 404."
+            "within the resend cooldown is 400. Staff and Teams reach the same "
+            "accounts, except that an Admin account is 404 on the Teams route."
         ),
         "tags": [a["tag"]],
         "request": None,
@@ -80,7 +80,9 @@ def erase_docs(audience: str) -> dict:
             "**Important:** Irreversible. The account row stays so courses, "
             "payouts, reviews and audit logs remain intact, now attributed to "
             "an anonymous user. Claimed but undecided review seats are released "
-            "to the queue. Returns 409 while money remains on the account."
+            "to the queue. Returns 409 while money remains on the account. "
+            "Staff and Teams reach the same accounts, except that an Admin "
+            "account is 404 on the Teams route."
         ),
         "tags": [a["tag"]],
         "request": EraseAccountSerializer,
