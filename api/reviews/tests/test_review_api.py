@@ -80,6 +80,24 @@ class ReviewQueueApiTests(APITestCase):
         response = self.client.get("/api/v1/review-queue/", {"status": "SUBMITTED"})
         self.assertEqual(len(response.data["data"]["results"]), 1)
 
+    def test_track_filter_includes_open_category_courses(self):
+        """A creator course in an OPEN category must survive a single-track
+        queue filter - OPEN categories belong to both tracks, so the course
+        stays visible whichever track the reviewer is scoped to."""
+
+        open_category = make_category(track_preference=TrackPreference.OPEN)
+        course = self._submitted_course(category=open_category)
+        self.client.force_authenticate(self.reviewer)
+
+        for track in ("CREATOR_TRACK", "AI_TRACK"):
+            with self.subTest(track=track):
+                response = self.client.get(
+                    "/api/v1/review-queue/", {"track": track}
+                )
+                self.assertEqual(response.status_code, status.HTTP_200_OK)
+                ids = {r["id"] for r in response.data["data"]["results"]}
+                self.assertIn(str(course.id), ids)
+
     def test_queue_includes_approved_and_published_by_default_and_via_filter(self):
         submitted_course = self._submitted_course()
 
