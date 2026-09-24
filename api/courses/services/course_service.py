@@ -53,12 +53,31 @@ from api.users.models import User
 from api.authorization.services import permission_service
 from api.users.services import reviewer_availability_service
 
-#: Maps a reviewer's QueueTrackFilter preference onto the Category-level
-#: TrackPreference it should filter the queue by. ALL means "no filter".
-QUEUE_TRACK_FILTER_TO_CATEGORY_TRACK_PREFERENCE = {
-    QueueTrackFilter.CREATOR_TRACK: TrackPreference.CREATOR_PREFERRED,
-    QueueTrackFilter.AI_TRACK: TrackPreference.AI_PREFERRED,
-}
+def _category_track_q(track_filter) -> Q | None:
+    """Category-level TrackPreference constraint for a reviewer's
+    QueueTrackFilter preference. ALL means "no filter" (None).
+
+    OPEN categories belong to both tracks: a category marked open to every
+    track is exactly where a creator course would otherwise vanish under a
+    single-track filter, so each single track matches its own preferred
+    categories plus OPEN ones.
+    """
+
+    if track_filter == QueueTrackFilter.CREATOR_TRACK:
+        return Q(
+            category__track_preference__in=(
+                TrackPreference.CREATOR_PREFERRED,
+                TrackPreference.OPEN,
+            )
+        )
+    if track_filter == QueueTrackFilter.AI_TRACK:
+        return Q(
+            category__track_preference__in=(
+                TrackPreference.AI_PREFERRED,
+                TrackPreference.OPEN,
+            )
+        )
+    return None
 
 DRAFT_EDITABLE_FIELDS = {
     "title",
@@ -599,11 +618,9 @@ def get_review_queue(
     if track_filter == QueueTrackFilter.NONE:
         return queryset.none()
 
-    category_track_preference = QUEUE_TRACK_FILTER_TO_CATEGORY_TRACK_PREFERENCE.get(
-        track_filter
-    )
-    if category_track_preference is not None:
-        queryset = queryset.filter(category__track_preference=category_track_preference)
+    track_q = _category_track_q(track_filter)
+    if track_q is not None:
+        queryset = queryset.filter(track_q)
 
     # The date-scoped views narrow to a recent window, then sort oldest
     # first - they are a filter the design presents inside the same

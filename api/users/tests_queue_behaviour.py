@@ -168,7 +168,7 @@ class QueueFilteringTests(APITestCase):
         course.save(update_fields=["status", "submitted_at"])
         return course
 
-    def test_ai_filter_excludes_creator_courses(self):
+    def test_ai_filter_excludes_creator_preferred_courses(self):
         self._submitted(TrackPreference.AI_PREFERRED)
         self._submitted(TrackPreference.CREATOR_PREFERRED)
 
@@ -177,6 +177,37 @@ class QueueFilteringTests(APITestCase):
         )
 
         self.assertEqual(queue.count(), 1)
+
+    def test_single_track_filters_include_open_categories(self):
+        """OPEN categories belong to both tracks, so a course in one is
+        never hidden by a single-track queue filter."""
+
+        creator_course = self._submitted(TrackPreference.OPEN)
+        ai_course = self._submitted(TrackPreference.OPEN)
+
+        creator_queue = course_service.get_review_queue(
+            track_filter=QueueTrackFilter.CREATOR_TRACK
+        )
+        ai_queue = course_service.get_review_queue(
+            track_filter=QueueTrackFilter.AI_TRACK
+        )
+
+        self.assertEqual(
+            {c.id for c in creator_queue}, {creator_course.id, ai_course.id}
+        )
+        self.assertEqual(
+            {c.id for c in ai_queue}, {creator_course.id, ai_course.id}
+        )
+
+    def test_track_filter_still_matches_own_preferred_categories(self):
+        self._submitted(TrackPreference.CREATOR_PREFERRED)
+        self._submitted(TrackPreference.AI_PREFERRED)
+
+        creator_queue = course_service.get_review_queue(
+            track_filter=QueueTrackFilter.CREATOR_TRACK
+        )
+
+        self.assertEqual(creator_queue.count(), 1)
 
     def test_none_returns_an_empty_queue(self):
         self._submitted(TrackPreference.AI_PREFERRED)

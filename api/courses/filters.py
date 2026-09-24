@@ -9,13 +9,32 @@ from api.reviews.enums import ReviewActionType
 from api.users.enums import QueueTrackFilter
 
 
-#: Same mapping as course_service.QUEUE_TRACK_FILTER_TO_CATEGORY_TRACK_PREFERENCE
-#: - duplicated here rather than imported to avoid a filters.py -> services.py
-#: dependency; both are small, static, and unlikely to drift independently.
-_TRACK_FILTER_TO_CATEGORY_TRACK_PREFERENCE = {
-    QueueTrackFilter.CREATOR_TRACK: TrackPreference.CREATOR_PREFERRED,
-    QueueTrackFilter.AI_TRACK: TrackPreference.AI_PREFERRED,
-}
+def _track_filter_q(value) -> Q | None:
+    """Category-level constraint for a QueueTrackFilter value, or None for
+    "no filter" (ALL and anything unrecognised).
+
+    Mirrors course_service._category_track_q - duplicated here rather than
+    imported to avoid a filters.py -> services.py dependency. OPEN
+    categories belong to both tracks: a single-track filter matches its own
+    preferred categories plus OPEN ones, so an open category's courses
+    never vanish from a track-scoped queue.
+    """
+
+    if value == QueueTrackFilter.CREATOR_TRACK:
+        return Q(
+            category__track_preference__in=(
+                TrackPreference.CREATOR_PREFERRED,
+                TrackPreference.OPEN,
+            )
+        )
+    if value == QueueTrackFilter.AI_TRACK:
+        return Q(
+            category__track_preference__in=(
+                TrackPreference.AI_PREFERRED,
+                TrackPreference.OPEN,
+            )
+        )
+    return None
 
 
 class CourseFilter(django_filters.FilterSet):
@@ -107,12 +126,10 @@ class CourseReviewQueueFilter(django_filters.FilterSet):
         ).distinct()
 
     def filter_track(self, queryset, name, value):
-        category_track_preference = _TRACK_FILTER_TO_CATEGORY_TRACK_PREFERENCE.get(
-            value
-        )
-        if category_track_preference is None:
+        track_q = _track_filter_q(value)
+        if track_q is None:
             return queryset
-        return queryset.filter(category__track_preference=category_track_preference)
+        return queryset.filter(track_q)
 
 
 class AdminCourseFilter(CourseFilter):
