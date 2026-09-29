@@ -31,6 +31,7 @@ CUSTOM_APPS = [
     "api.platform",
     "api.operations",
     "api.achievements",
+    "api.support",
     "api.search",
     "core",
     "api.webhooks",

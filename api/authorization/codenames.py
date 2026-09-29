@@ -60,6 +60,7 @@ CATALOG_VIEW_TOPIC_QUEUE = "catalog.view_topic_queue"
 PLATFORM_EDIT_SETTINGS = "platform.edit_settings"
 AUDIT_VIEW = "audit.view"
 ACHIEVEMENTS_MANAGE = "achievements.manage"
+SUPPORT_MANAGE_REQUESTS = "support.manage_requests"
 ROLES_VIEW = "roles.view"
 ROLES_MANAGE = "roles.manage"
 
