@@ -403,8 +403,12 @@ class MFAEnforcementOffApiTests(APITestCase):
 
     a mandated-role account (freshly bootstrapped super admin included)
     logs in with just email + password, gets `mfa_verified=true` on the
-    token, and faces no challenge or enrollment flags.
+    token, and faces no challenge or enrollment flags. Accounts that have
+    enrolled a device are still challenged.
     """
+
+    def setUp(self):
+        cache.clear()
 
     def _login(self, email, password="testpass123"):
         return self.client.post(
@@ -425,6 +429,38 @@ class MFAEnforcementOffApiTests(APITestCase):
         self.assertNotIn("mfa_enrollment_overdue", response.data)
         access = AccessToken(response.data["access"])
         self.assertTrue(access.get("mfa_verified"))
+
+    def test_enrolled_user_still_gets_challenge_when_not_enforced(self):
+        user = make_user(role=UserRole.COURSE_CREATOR)
+        _enroll_and_confirm(user)
+
+        response = self._login(user.email)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data["mfa_required"])
+        self.assertIn("challenge_token", response.data)
+        self.assertNotIn("access", response.data)
+
+    def test_enrolled_user_verify_round_trip_when_not_enforced(self):
+        user = make_user(role=UserRole.ADMIN)
+        secret, _codes = _enroll_and_confirm(user)
+        challenge_token = self._login(user.email).data["challenge_token"]
+
+        wrong = self.client.post(
+            "/api/v1/auth/mfa/verify/",
+            {"challenge_token": challenge_token, "code": "000000"},
+            format="json",
+        )
+        self.assertEqual(wrong.status_code, status.HTTP_400_BAD_REQUEST)
+
+        response = self.client.post(
+            "/api/v1/auth/mfa/verify/",
+            {"challenge_token": challenge_token, "code": pyotp.TOTP(secret).now()},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("access", response.data)
+        self.assertIn("refresh", response.data)
 
     def test_admin_without_mfa_claim_allowed_when_not_enforced(self):
         admin = make_user(role=UserRole.ADMIN)
