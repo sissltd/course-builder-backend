@@ -55,6 +55,7 @@ PERMISSION_GROUPS = (
     PermissionGroup("review_pipeline", "Review pipeline", False),
     PermissionGroup("catalog", "Catalog", False),
     PermissionGroup("platform", "Platform", False),
+    PermissionGroup("support", "Support", False),
     PermissionGroup("earnings", "Earnings", False),
 )
 
@@ -337,6 +338,12 @@ _PERMISSIONS = (
         "platform",
     ),
     PermissionDef(
+        c.SUPPORT_MANAGE_REQUESTS,
+        "Manage Support Requests",
+        "Review and resolve contact messages, tickets and appeals from the Support page.",
+        "support",
+    ),
+    PermissionDef(
         c.ROLES_VIEW,
         "View Roles & Permissions",
         "View roles and what each may do.",
@@ -415,6 +422,7 @@ _DEFAULT_HOLDERS = {
     c.PLATFORM_EDIT_SETTINGS: (AD, SA),
     c.AUDIT_VIEW: (AD, SA),
     c.ACHIEVEMENTS_MANAGE: (W, AD, SA),
+    c.SUPPORT_MANAGE_REQUESTS: (AD, SA),
     c.ROLES_VIEW: (AD, SA),
     c.ROLES_MANAGE: (SA,),
     c.EARNINGS_MANAGE_OWN: (CC, W),

@@ -77,6 +77,13 @@ SELF_SERVICE_HANDLERS = {
     "SignupView.post",
     "DocumentationRedocView.get",
     "DocumentationSwaggerView.get",
+    # Support page: the public Contact-us form, and a signed-in user's own
+    # tickets/appeals (a suspended creator must still be able to appeal).
+    "SupportAppealListCreateView.get",
+    "SupportAppealListCreateView.post",
+    "SupportContactView.post",
+    "SupportTicketListCreateView.get",
+    "SupportTicketListCreateView.post",
     "SuperAdminBootstrapView.post",
     "TokenRefreshView.post",
     "TopicViewSet.list",

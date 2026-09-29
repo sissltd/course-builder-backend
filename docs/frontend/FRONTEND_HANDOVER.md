@@ -654,6 +654,21 @@ On approval all three price tiers start at the supplied rate.
 
 ---
 
+# Support (Help → Support)
+
+The three actions on the Support page. All bodies mirror the Figma forms; `web_link` is optional but, when sent, must be a full URL (`https://…`).
+
+| Action | Endpoint | Auth | Body |
+|---|---|---|---|
+| Contact us | `POST /api/v1/support/contact/` | public, 5/hour per IP (429 after) | `first_name`, `last_name`, `email`, `country` (2-letter ISO), `message` |
+| Create ticket | `POST /api/v1/support/tickets/` | signed in | `title`, `email`, `web_link?`, `description` |
+| Request appeal | `POST /api/v1/support/appeals/` | signed in (a suspended creator can still appeal) | `title`, `email`, `web_link?`, `description` |
+
+- `GET /api/v1/support/tickets/` and `GET /api/v1/support/appeals/` list the caller's own requests (paginated, `data.results`).
+- Every response is the same shape: `id`, `kind`, `first_name`, `last_name`, `email`, `country`, `title`, `web_link`, `message` (the form's Description), `status` (`OPEN`/`RESOLVED`), `due_at` (appeals only, 7 business days), `resolution_notes`, `resolved_at`, `submitted_by_email`, `created_datetime`.
+- Admin queue (`support.manage_requests`, Admin and Super Admin): `GET /api/v1/support/requests/?kind=&status=`, `GET …/{id}/`, `POST …/{id}/resolve/` with `{"notes": ""}`. Resolving is final; the submitter gets an in-app notification.
+- `POST /api/v1/course-appeals/` is unchanged and still means "dispute this one rejected course" (needs `course`). The Support-page appeal does not.
+
 # Errors
 
 Every non-2xx uses one envelope:

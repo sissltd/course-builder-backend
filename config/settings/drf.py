@@ -49,6 +49,8 @@ REST_FRAMEWORK = {
         # MIE open self-registration - per client IP, since no account exists
         # yet. Tight, because it creates rows pre-auth.
         "mie_register": "5/hour",
+        # Public Support "Contact us" form - per client IP, creates rows pre-auth.
+        "support_contact": "5/hour",
     },
 }
 
