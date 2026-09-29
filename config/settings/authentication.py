@@ -33,7 +33,9 @@ SUPERADMIN_BOOTSTRAP_ENABLED = DJANGO_ENV.lower() in {
 # development/staging-like environments. In dev and staging a freshly
 # bootstrapped super admin must simply log in with email + password - the
 # login response carries `mfa_verified=true` so MFA-gated admin endpoints
-# stay reachable without any enrollment ceremony.
+# stay reachable without any enrollment ceremony. This flag only governs
+# mandatory enrollment: users who have enrolled a device are always
+# challenged at login, in every environment.
 MFA_ENFORCED = DJANGO_ENV.lower() not in {
     "local",
     "development",

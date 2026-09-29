@@ -455,10 +455,14 @@ class LoginView(APIView):
             "leak account existence to anyone else. `workspace` tells the "
             "frontend which dashboard to route to based on role; `role` is "
             "also embedded in the access token's claims. The "
-            "`mfa_required`/`mfa_enrollment_required` fields only appear "
-            "where MFA is enforced (production); in dev/staging a "
-            "mandated-role super admin logs straight in and the token "
-            "carries `mfa_verified=true`."
+            "An account with MFA enabled always gets "
+            "`mfa_required=true` and a `challenge_token` instead of "
+            "tokens, in every environment; complete the login with "
+            "`POST /auth/mfa/verify/`. The `mfa_enrollment_required`/"
+            "`mfa_enrollment_overdue` fields only appear where MFA is "
+            "enforced (production); in dev/staging a mandated-role admin "
+            "without a device logs straight in and the token carries "
+            "`mfa_verified=true`."
         ),
         tags=["Auth — Session"],
         request=LoginSerializer,

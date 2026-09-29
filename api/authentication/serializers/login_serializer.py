@@ -112,29 +112,26 @@ class LoginSerializer(TokenObtainPairSerializer):
 
         request = self.context.get("request")
 
-        # MFA gate - only ADMIN/SUPER_ADMIN are ever required to have it, and
-        # only on deployments that enforce MFA (production). Where
-        # MFA_ENFORCED is off (dev/staging), a mandated role's password check
-        # above is the entire login; `mfa_verified=true` is minted into the
-        # token so IsMFAVerifiedForSession-gated admin endpoints stay
-        # reachable without an enrollment step.
-        # Anyone who has enrolled a device is challenged too: permissions that
-        # move money or erase accounts can be granted to any staff role, and
-        # they need a session that actually passed a second factor.
-        mfa_enforced = settings.MFA_ENFORCED and (
-            user.role in mfa_service.MFA_MANDATED_ROLES
-            or mfa_service.is_mfa_enabled(user=user)
-        )
-        if not mfa_enforced:
-            return authentication_service.finish_login(
-                user=user, request=request, mfa_verified=True
-            )
-
+        # MFA gate. Anyone who has enrolled a device is always challenged, in
+        # every environment: permissions that move money or erase accounts can
+        # be granted to any staff role, and they need a session that actually
+        # passed a second factor.
         if mfa_service.is_mfa_enabled(user=user):
             # Do not mint tokens yet - hand back a challenge instead.
             # POST /auth/mfa/verify/ completes the login on success.
             challenge_token = mfa_service.create_challenge(user=user)
             return {"mfa_required": True, "challenge_token": challenge_token}
+
+        # Only ADMIN/SUPER_ADMIN are ever *required* to enroll, and only on
+        # deployments that enforce MFA (production). Where MFA_ENFORCED is
+        # off (dev/staging), the password check above is the entire login;
+        # `mfa_verified=true` is minted into the token so
+        # IsMFAVerifiedForSession-gated admin endpoints stay reachable
+        # without an enrollment step.
+        if not settings.MFA_ENFORCED or user.role not in mfa_service.MFA_MANDATED_ROLES:
+            return authentication_service.finish_login(
+                user=user, request=request, mfa_verified=True
+            )
 
         data = authentication_service.finish_login(
             user=user, request=request, mfa_verified=False
