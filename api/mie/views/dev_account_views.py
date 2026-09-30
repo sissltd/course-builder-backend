@@ -14,7 +14,8 @@ from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 
 DOCUMENTATION_SECTIONS = (
     "meta, api, your_account, quickstart, integration_flow, authentication, "
-    "reference_scheme, submission_lifecycle, deduplication, plan_and_payouts, "
+    "reference_scheme, submission_lifecycle, deduplication, course_upload, "
+    "course_schema, media, course_lifecycle, plan_and_payouts, "
     "endpoints, webhooks, errors, rate_limits, pagination, go_live_checklist, faq"
 )
 

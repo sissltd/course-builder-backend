@@ -7,7 +7,13 @@ from api.mie.enums import DeveloperAccountStatus, MiePlanType, MieSourceType
 from api.mie.models import DeveloperAccount
 from api.mie.services.key_service import issue_credentials, revoke_key
 from api.mie.services.webhook_dispatcher import drop_events_for_rejected_account
-from api.users.enums import UserActivityActionEnums, UserActivityCategoryEnums
+from api.users.enums import (
+    AccountStatus,
+    UserActivityActionEnums,
+    UserActivityCategoryEnums,
+    UserRole,
+)
+from api.users.models import User
 from api.authorization import codenames
 from api.authorization.services import permission_service
 
@@ -144,3 +150,52 @@ def provision_system_account(
             target=account,
         )
     return account, raw_key
+
+
+LINKED_CREATOR_EMAIL_DOMAIN = "mie.invalid"
+"""Reserved TLD (RFC 2606): mail to a linked creator account can never be
+delivered, and the address can never collide with a real platform user."""
+
+
+def get_or_create_creator_user(*, developer: DeveloperAccount) -> User:
+    """The COURSE_CREATOR account that owns this developer's pushed courses.
+
+    Created once, on the first course push, and linked from the developer
+    row. It can never sign in: the password is unusable and the email sits
+    on a reserved domain, so neither password login, password reset nor
+    Google sign-in can reach it. It is never matched to an existing user by
+    email - an MIE registration must not be able to claim someone's
+    platform account and the courses behind it.
+
+    Call inside the push transaction. The developer row is locked so two
+    concurrent first pushes cannot each create an account.
+    """
+
+    developer = DeveloperAccount.objects.select_for_update().get(pk=developer.pk)
+    if developer.creator_user_id:
+        return developer.creator_user
+
+    creator = User.objects.create_user(
+        email=f"mie-{developer.id.hex}@{LINKED_CREATOR_EMAIL_DOMAIN}",
+        password=None,
+        first_name="MIE",
+        last_name=developer.email[: User._meta.get_field("last_name").max_length],
+        role=UserRole.COURSE_CREATOR,
+        status=AccountStatus.ACTIVE,
+        is_active=True,
+        terms_accepted_at=timezone.now(),
+    )
+    developer.creator_user = creator
+    developer.save(update_fields=["creator_user", "updated_datetime"])
+    log_activity(
+        user=creator,
+        category=UserActivityCategoryEnums.CONFIGURATION,
+        action=UserActivityActionEnums.ACCOUNT_CREATED,
+        summary=f"Linked creator account created for MIE developer {developer.email}.",
+        details={
+            "developer_account_id": str(developer.id),
+            "developer_email": developer.email,
+        },
+        target=developer,
+    )
+    return creator

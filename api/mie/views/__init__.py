@@ -1,5 +1,10 @@
 from .admin_developer_views import MieDeveloperAdminViewSet
 from .admin_submission_views import MieSubmissionAdminViewSet
+from .dev_course_views import (
+    MieCoursePushView,
+    MieCourseRequirementsView,
+    MieUploadPresignView,
+)
 from .dev_account_views import (
     MieDeveloperMeView,
     MieDocumentationDownloadView,
@@ -10,6 +15,9 @@ from .dev_submission_views import MieSubmissionIngestView, MieSubmissionQueueVie
 from .rejection_reason_views import RejectionReasonAdminViewSet
 
 __all__ = [
+    "MieCoursePushView",
+    "MieCourseRequirementsView",
+    "MieUploadPresignView",
     "MieDeveloperAdminViewSet",
     "MieDeveloperMeView",
     "MieDocumentationDownloadView",

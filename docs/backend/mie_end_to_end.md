@@ -27,11 +27,15 @@
 
 ## 1. Overview
 
-MIE is the external-developer course-idea pipeline for Course Builder.
+MIE is the external-developer course pipeline for Course Builder.
 External developers register, get approved by a superadmin, submit course
 ideas, and receive webhook notifications about every state change to their
 submissions. Admins review submissions, approve or reject them, and the
-system handles deduplication, payout tracking, and webhook delivery.
+system handles deduplication, payout tracking, and webhook delivery. For
+each approved idea the developer then writes the course and pushes it over
+the API; from there it runs the normal Course Creator review flow (see
+[1.1](#11-where-the-mie-meets-the-course-pipeline) and
+[8.5](#85-push-the-course-for-an-approved-idea)).
 
 **Who it serves:**
 
@@ -69,21 +73,35 @@ Superadmin decides (approve / reject) — reversible at any time
         │
         ▼
 New webhook event fired on every decision flip
+        │
+        ▼  (APPROVED only)
+Developer pushes the course (POST /api/v1/mie/v1/submissions/{id}/course/)
+        │   built + submitted in one transaction, or nothing stored
+        ▼
+Normal creator review flow ──► COURSE_REVISION_REQUESTED (back to DRAFT,
+        │                        developer pushes again)
+        ▼
+PUBLISHED ──► COURSE_PUBLISHED
 ```
 
 ### 1.1 Where the MIE meets the course pipeline
 
-The MIE decides **ideas**; it never creates, edits, reviews, publishes or
-pays for a **course**. Its only contact with the courses app is:
+The MIE decides **ideas**. For an approved idea, the developer writes the
+course and **pushes** it; the MIE hands it to the courses app through the
+creator's own service functions and then gets out of the way - it never
+reviews, publishes or pays for a course. Its contact with the courses app:
 
 | Touchpoint | What it does | Where |
 |---|---|---|
 | Dedup | A new idea whose title matches any `Course` (any status, drafts included) is `DUPLICATE_EXISTING`. | `dedup_service.evaluate_title` |
-| `resulting_course` link | Nullable one-to-one to the course produced from an idea. **Nothing sets it today** - there is no idea-to-course bridge yet. | `CourseSubmission.resulting_course` |
-| Reversal | Rejecting an idea leaves any linked course exactly as it is and keeps the link; the decision's audit row carries `resulting_course_id`. | `submission_admin_service` |
+| Course push | Builds the course for an APPROVED idea and submits it, all or nothing. Creates it through `course_service.create_draft_course` (source `DEVELOPER_API`), replaces it through `update_draft_course` after a rejection, submits through `course_service.submit_course(skip_draft_hold=True)`. | `course_push_service.push_course` |
+| Linked creator account | The no-login `COURSE_CREATOR` user that owns a developer's courses, so the unchanged creator flow works. Provisioned on the first push; never matched by email. | `developer_service.get_or_create_creator_user`, `DeveloperAccount.creator_user` |
+| `resulting_course` link | Set by the first accepted push; reused by every revision push. | `CourseSubmission.resulting_course` |
+| Course events | `COURSE_REVISION_REQUESTED` from `review_service.reject_course` / `reject_qa`, `COURSE_PUBLISHED` from `course_service.publish_course`. A no-op for any course that is not `DEVELOPER_API`. | `course_push_service.record_course_event` |
+| Reversal | Rejecting an idea leaves any linked course exactly as it is and keeps the link; the decision's audit row carries `resulting_course_id`. A reversed idea refuses further pushes (409). | `submission_admin_service`, `course_push_service` |
 
-A course that is linked to an idea lives entirely by the course lifecycle,
-the same as any other course:
+A pushed course lives entirely by the course lifecycle, the same as any
+other course (only the draft hold is skipped - the push submits at once):
 
 ```
 DRAFT ──(draft hold, platform setting draft_minimum_hold_hours, default 48h)──►
@@ -104,13 +122,16 @@ the course lifecycle has no way out of.
 developer is paid for each course that is produced from one of their
 approved ideas and then published successfully. Approving an idea pays
 nothing. `plan_type` and `payout_bypass` decide whether that publication
-carries payment for the developer. No code path pays the developer
-automatically today: the idea-to-course bridge that would link a published
-course back to its idea is not built yet.
+carries payment for the developer. The pushed course snapshots
+`creator_price_snapshot` at submit like any non-AI course, but no code path
+pays the developer automatically yet: `effect_course_payment` only schedules
+`CREATOR_UPLOADED` courses, and how a no-login developer withdraws is its
+own design (plan types, KYC).
 
-This is separate from the course's own creator payment, which the course
-pipeline handles (`creator_price_snapshot`, taken at submission and
-credited after QA approval).
+**What a push cannot carry**: `topic` (topic reservation is a creator
+dashboard flow; a pushed course is placed by its idea's category) and
+`QUIZ` content blocks (they point at an existing quiz row; a lesson quiz is
+the lesson's `assessment`).
 
 ---
 
@@ -831,6 +852,81 @@ constants:
 
 Every value is derived from live code — enum choices, route table,
 event-payload builder — so documentation can never drift from the API.
+The course-upload half (`course_upload`, `course_schema`, `media`,
+`course_lifecycle`) is database-free like the rest; live PlatformSettings
+limits and category/version ids are served by 8.7 instead.
+
+### 8.5 Push the course for an approved idea
+
+```
+POST /api/v1/mie/v1/submissions/{submission_id}/course/
+```
+
+`MieCoursePushView.post` → `course_push_service.push_course`, throttle scope
+`mie_course_push`. Body: `CoursePushSerializer` - the builder's own write
+serializers nested (`CourseCreateSerializer` minus `topic`, `modules[]` of
+`ModuleWriteSerializer` + `lessons[]` of `LessonWriteSerializer` +
+`content_blocks[]` of `LessonContentBlockSerializer` minus QUIZ, and
+`AssessmentWriteSerializer` for lesson, module and final quizzes). `order`
+defaults to list position; duplicates are a 400.
+
+In one transaction, with the submission row locked:
+
+1. Gate - the idea is the caller's (else 404), `APPROVED` (else 409
+   `idea_not_approved`), its course is absent or `DRAFT` (else 409
+   `course_in_review`), `title` equals the idea's title (trimmed,
+   case-insensitive), `category` is active and is the idea's category when
+   it has one, `terms_accepted` is true (400s).
+2. Linked creator account - `get_or_create_creator_user` (locks the
+   developer row).
+3. First push: `create_draft_course(source_type=DEVELOPER_API)`, stored
+   under the idea's title. Revision push: `update_draft_course` then delete
+   the old modules and final assessment (ReviewAction history stays;
+   ReviewFlag links to deleted lessons/modules are `SET_NULL`).
+4. Content: one `bulk_create` per table (modules, lessons, blocks,
+   requirements, assessments) - query count does not grow with course size.
+5. `submit_course(skip_draft_hold=True)`; a structural failure raises,
+   rolls everything back and returns every failure under
+   `structural_standards`.
+6. Link `resulting_course`; record `COURSE_SUBMITTED`.
+
+Returns 201 with `DevCourseSerializer` on the first push and on every
+accepted revision.
+
+### 8.6 Check the course for an approved idea
+
+```
+GET /api/v1/mie/v1/submissions/{submission_id}/course/
+```
+
+`course_push_service.course_status`. 404 for another developer's idea and
+for one with no course yet. `revision_feedback` (stage, feedback, flags
+named by module/lesson title) is filled only while the course is `DRAFT`
+after a rejection.
+
+### 8.7 Course requirements
+
+```
+GET /api/v1/mie/v1/course-requirements/
+```
+
+`course_push_service.course_requirements` - the live PlatformSettings
+structural limits, active categories, active course versions, choice
+values, payload caps and per-purpose upload rules. The developer docs point
+here for every number an admin can tune.
+
+### 8.8 Course media upload
+
+```
+POST /api/v1/mie/v1/uploads/presign/
+```
+
+Throttle scope `mie_upload`. The creator presign
+(`StorageService.request_upload`) restricted to `MIE_UPLOAD_PURPOSES`
+(preview video, lesson video, lesson image, thumbnail, subtitle - not the
+document import); `folder` is derived from the purpose. Adds `media_url =
+StorageService.public_url(file_key)`, the durable value to put in the
+push. Optional - any HTTPS URL is accepted in a push.
 
 ---
 
@@ -963,9 +1059,11 @@ systems.
 
 **Enum**: `WebhookEventType` in `api/mie/enums.py`
 
-Every event type maps 1:1 onto a `SubmissionStatus` transition (plus the
-payout-bypass update). Events are fired immediately on every transition,
-including automated dedup short-circuits.
+`SUBMISSION_*` events map onto `SubmissionStatus` transitions (plus the
+payout-bypass update); `COURSE_*` events track the course pushed for an
+approved idea and carry `submission.course` (`id`, `status`, `title`).
+Events are fired immediately on every transition, including automated
+dedup short-circuits.
 
 | Event Type | When fired | Webhook payload extras |
 |---|---|---|
@@ -976,11 +1074,17 @@ including automated dedup short-circuits.
 | `SUBMISSION_APPROVED` | Admin approves (or re-approves) | — |
 | `SUBMISSION_REJECTED` | Admin rejects (or re-rejects) | `rejection_reason`, `rejection_note` |
 | `SUBMISSION_PAYOUT_BYPASS_UPDATED` | Admin toggles per-submission bypass | `payout_bypass` |
+| `COURSE_SUBMITTED` | An accepted course push (first or revision) | `course` |
+| `COURSE_REVISION_REQUESTED` | A content-review or QA rejection sends the pushed course back to `DRAFT` | `course`, `course.revision_feedback` |
+| `COURSE_PUBLISHED` | The pushed course is published | `course` |
 
 The mapping from status to event type is defined in
 `submission_service.EVENT_TYPE_BY_STATUS` for ingestion events, and
 explicitly in `submission_admin_service.decide_submission()` and
-`set_payout_bypass()` for admin decisions.
+`set_payout_bypass()` for admin decisions. Course events are recorded by
+`course_push_service.record_course_event`, called from `push_course`,
+`review_service.reject_course` / `reject_qa` and
+`course_service.publish_course`.
 
 ---
 
@@ -1005,6 +1109,8 @@ No retry logic is needed on the client side.
 | `POST /api/v1/mie/v1/submissions/` | `mie_ingest` | 30/min/key |
 | `POST /api/v1/mie/v1/submissions/` | — (database-counted) | `MIE_SYSTEM_DAILY_SUBMISSION_CAP` per rolling 24h, **SYSTEM accounts only** — see [5.5](#55-system-accounts-the-mie-crawler) |
 | `POST /api/v1/mie/v1/register/` | `mie_register` | 5/hour/IP |
+| `POST /api/v1/mie/v1/submissions/{id}/course/` | `mie_course_push` | 20/hour/account |
+| `POST /api/v1/mie/v1/uploads/presign/` | `mie_upload` | 120/hour/account |
 
 ### 12.4 Webhook delivery retries
 
@@ -1061,6 +1167,7 @@ Standard DRF 400 responses for:
 | `developer_service.py` | Registration, approval, rejection, suspension logic |
 | `submission_service.py` | Ingestion, payload validation, event recording, race handling |
 | `submission_admin_service.py` | Approve/reject, demand signals, payout bypass |
+| `course_push_service.py` | Course push (gate, build, submit), status, live requirements, COURSE_* webhook events |
 | `dedup_service.py` | Three-stage title dedup engine |
 | `guardrail_service.py` | Rejection circuit breaker for SYSTEM accounts + its superadmin alerts |
 | `webhook_dispatcher.py` | Record-then-sweep delivery, signing, retry, partitioning |
@@ -1075,6 +1182,7 @@ Standard DRF 400 responses for:
 | `dev_registration_views.py` | `MieDeveloperRegistrationView` — public self-registration |
 | `dev_submission_views.py` | `MieSubmissionIngestView` (POST), `MieSubmissionQueueView` (GET) |
 | `dev_account_views.py` | `MieDeveloperMeView`, `MieDocumentationView` |
+| `dev_course_views.py` | `MieCoursePushView` (POST push, GET status), `MieCourseRequirementsView`, `MieUploadPresignView` |
 | `admin_developer_views.py` | `MieDeveloperAdminViewSet` — list, retrieve, create, approve, reject, suspend |
 | `admin_submission_views.py` | `MieSubmissionAdminViewSet` — list, retrieve, approve, reject, signals, payout_bypass |
 | `rejection_reason_views.py` | `RejectionReasonAdminViewSet` — CRUD for rejection taxonomy |
@@ -1089,6 +1197,7 @@ Standard DRF 400 responses for:
 | `developer_admin_serializer.py` | `DeveloperRegisterSerializer`, `DeveloperAccountAdminSerializer`, `DeveloperApprovalResponseSerializer`, `DeveloperActionResponseSerializer` |
 | `dev_me_serializer.py` | `DeveloperMeSerializer` — account snapshot with masked key |
 | `rejection_reason_serializer.py` | `RejectionReasonSerializer` |
+| `course_push_serializer.py` | `CoursePushSerializer` and its nested `PushModule/PushLesson/PushContentBlockSerializer` (the builder's write serializers, nested), `DevCourseSerializer` |
 
 ### Other files
 

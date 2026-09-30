@@ -6,7 +6,7 @@ Everything the FE needs to build the external-developer pipeline UI: the story, 
 
 ## The story in one paragraph
 
-External developers ("partners") send us **course ideas**. A developer registers with an email + webhook URL, waits for a superadmin to approve them (at which point they receive an API key **shown exactly once**), then submits ideas over the API. Each idea is deduplicated instantly against three things — previously rejected titles, existing course titles, and ideas already awaiting review — and lands in a queue. Superadmins review, score, and approve/reject ideas; **every state change fires a signed webhook** to the developer. Decisions are reversible at any time, and the developer's view always reflects live state.
+External developers ("partners") send us **course ideas**. A developer registers with an email + webhook URL, waits for a superadmin to approve them (at which point they receive an API key **shown exactly once**), then submits ideas over the API. Each idea is deduplicated instantly against three things — previously rejected titles, existing course titles, and ideas already awaiting review — and lands in a queue. Superadmins review, score, and approve/reject ideas; **every state change fires a signed webhook** to the developer. Decisions are reversible at any time, and the developer's view always reflects live state. For an **approved** idea, the developer then **pushes the finished course** over the API in the course builder's own schema; it becomes an ordinary course in the review queue (content review → QA → publish), owned by a no-login creator account linked to the developer.
 
 ---
 
@@ -20,6 +20,8 @@ STEP 2  Superadmin approves                POST /mie/admin/developers/{id}/appro
 STEP 3  Developer submits + tracks ideas   POST/GET /mie/v1/…              (API key)
 STEP 4  Developer reads account + docs     GET /mie/v1/me/, /documentation/
 STEP 5  Superadmin works the queue         /mie/admin/submissions/…        (admin JWT)
+STEP 6  Developer pushes the course        POST /mie/v1/submissions/{id}/course/  (API key, APPROVED ideas only)
+        └─ it then appears in the normal review queue like any creator course
 ```
 
 Swagger groups appear in exactly this order (tags: `MIE Developer — Onboarding`, `Admin — MIE Developers`, `MIE Developer — Submissions`, `MIE Developer — Account`, `Admin — MIE Submissions`).
@@ -94,7 +96,18 @@ Dedup outcomes at submission time:
 | `POST …/{id}/payout_bypass/` | `{ "payout_bypass": true|false }` — marks this one idea no-payout. Fires `SUBMISSION_PAYOUT_BYPASS_UPDATED` each way. Identical toggles → `400`. |
 | `GET/POST/PATCH /api/v1/mie/admin/rejection-reasons/` | The reason taxonomy. `?is_active=` filter. No delete — soft-deactivate via `"is_active": false`. |
 
-**Reversal behavior the FE should know:** flipping APPROVED → REJECTED never changes a course linked to the idea — publication is one-way on the course side — and the link is kept, so re-approving finds the same course. Re-approving a rejected idea clears its rejection metadata. (No idea is linked to a course today; the API response is unchanged either way.)
+**Reversal behavior the FE should know:** flipping APPROVED → REJECTED never changes a course linked to the idea — publication is one-way on the course side — and the link is kept, so re-approving finds the same course. Re-approving a rejected idea clears its rejection metadata. A reversed idea refuses further course pushes (`409 idea_not_approved`) until it is approved again.
+
+### STEP 6 — Developer pushes the course (API key or platform session)
+
+| | |
+|---|---|
+| `GET /api/v1/mie/v1/course-requirements/` | Live structural limits (module/lesson counts, word counts, durations, final-quiz minimum), active **category** and **course version** ids a push must use, choice values, payload caps, and per-purpose upload rules. |
+| `POST /api/v1/mie/v1/uploads/presign/` | Optional. Body: `filename`, `content_type`, `purpose` (`COURSE_PREVIEW_VIDEO` · `LESSON_VIDEO` · `LESSON_IMAGE` · `COURSE_THUMBNAIL` · `SUBTITLE`), `size`, and for media `width`/`height`/`codec`/`duration_seconds`. → `200 { upload_url, upload_headers, file_url, file_key, media_url, expires_in }`. **`media_url` is the durable value** to put in the course; `file_url` expires. Throttled 120/hour/account. |
+| `POST /api/v1/mie/v1/submissions/{id}/course/` | The whole course in one body: course fields (as `POST /courses/`, minus `topic`) + `modules[].lessons[].content_blocks[]` + `modules[].assessment` + optional `lessons[].assessment` + `final_assessment`. **All or nothing**: `201` = built and submitted; `400` = nothing stored, every failure listed (`structural_standards` for submit rules); `404` = not your idea; `409 idea_not_approved` / `409 course_in_review`. Title must equal the idea's title (trimmed, case-insensitive). Throttled 20/hour/account. |
+| `GET /api/v1/mie/v1/submissions/{id}/course/` | `{ submission_id, submission_reference, course_id, title, status, module_count, lesson_count, submitted_at, rejected_at, published_at, revision_feedback }`. `revision_feedback` (stage, feedback, flags with module/lesson titles) only while the course is `DRAFT` after a rejection. `404` until a course is pushed. |
+
+On the platform side the pushed course is an ordinary course: `source_type = DEVELOPER_API`, creator = the developer's linked account (email `mie-<id>@mie.invalid`, cannot sign in). Reviewer and admin screens need no special handling; a "Developer API" source badge is enough.
 
 ---
 
@@ -110,7 +123,7 @@ Dedup outcomes at submission time:
 `PAID_PER_SUBMISSION` (pays for each course published from an approved idea — approval alone pays nothing) · `BYPASS_PER_SUBMISSION` (same, unless that idea is bypassed) · `BYPASS_ACCOUNT` (never pays)
 
 ### WebhookEventType — what lands on the developer's webhook
-`SUBMISSION_QUEUED` · `SUBMISSION_DUPLICATE_IN_QUEUE` · `SUBMISSION_DUPLICATE_EXISTING` · `SUBMISSION_PREVIOUSLY_REJECTED` · `SUBMISSION_APPROVED` · `SUBMISSION_REJECTED` · `SUBMISSION_PAYOUT_BYPASS_UPDATED`
+`SUBMISSION_QUEUED` · `SUBMISSION_DUPLICATE_IN_QUEUE` · `SUBMISSION_DUPLICATE_EXISTING` · `SUBMISSION_PREVIOUSLY_REJECTED` · `SUBMISSION_APPROVED` · `SUBMISSION_REJECTED` · `SUBMISSION_PAYOUT_BYPASS_UPDATED` · `COURSE_SUBMITTED` · `COURSE_REVISION_REQUESTED` · `COURSE_PUBLISHED`
 
 ### WebhookDeliveryStatus — internal delivery bookkeeping (admin queue only)
 `PENDING` · `DELIVERED` · `FAILED`
@@ -154,7 +167,7 @@ Use `reference` as the correlation key everywhere (queue rows, webhook payloads)
     "submission": { "reference": "SCB-0d1c7b2e-A", "status": "APPROVED", "title": "…" }
   }
   ```
-  Rejections add `rejection_reason` + `rejection_note`; bypass events add `payout_bypass`.
+  Rejections add `rejection_reason` + `rejection_note`; bypass events add `payout_bypass`. `COURSE_*` events add `submission.course = { id, status, title }`, and `COURSE_REVISION_REQUESTED` also `course.revision_feedback`.
 
 ---
 
@@ -177,3 +190,5 @@ Machine codes worth branching on: `invalid_api_key`, `account_suspended`, `accou
 5. **`payout_bypass` is per-idea**; `plan_type` is per-developer. Both are visible to the developer — render them honestly.
 6. **`demand_score` / `estimated_monthly_earnings` are admin-only** inputs (Recommendations queue) — they never appear on dev-facing serializers.
 7. **Local/staging `SIGNING_KEY` must be ≥32 bytes** for session tokens (a short key logs a warning and weakens HMAC).
+8. **A course push is all or nothing** — on a `400` nothing was saved; show every listed failure at once.
+9. **The idea's status and its course's status are separate** — the idea stays `APPROVED` while the course moves `SUBMITTED` → … → `PUBLISHED`; render them side by side, never merged.

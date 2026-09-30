@@ -77,6 +77,9 @@ class WebhookEventType(models.TextChoices):
 
     Fired immediately on every transition including automated dedup
     short-circuits - devs never poll; the webhook is the only channel.
+    The SUBMISSION_* events track the idea; the COURSE_* events track the
+    course the developer pushed for an approved idea, through review and
+    publication.
     """
 
     SUBMISSION_QUEUED = "SUBMISSION_QUEUED", "Submission Queued"
@@ -98,6 +101,12 @@ class WebhookEventType(models.TextChoices):
         "SUBMISSION_PAYOUT_BYPASS_UPDATED",
         "Submission Payout Bypass Updated",
     )
+    COURSE_SUBMITTED = "COURSE_SUBMITTED", "Course Submitted"
+    COURSE_REVISION_REQUESTED = (
+        "COURSE_REVISION_REQUESTED",
+        "Course Revision Requested",
+    )
+    COURSE_PUBLISHED = "COURSE_PUBLISHED", "Course Published"
 
 
 class WebhookDeliveryStatus(models.TextChoices):

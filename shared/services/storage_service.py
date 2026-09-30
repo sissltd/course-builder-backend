@@ -89,6 +89,10 @@ MAX_FILE_SIZES = {
 
 MB = 1024 * 1024
 
+MIN_MEDIA_WIDTH = 1280
+MIN_MEDIA_HEIGHT = 720
+"""Smallest accepted resolution for course media that declares dimensions."""
+
 COURSE_UPLOAD_RULES = {
     "COURSE_THUMBNAIL": {
         "folder": "thumbnails",
@@ -325,9 +329,10 @@ class StorageService:
                     raise InvalidUploadMetadata(
                         f"width and height are required for {purpose} uploads."
                     )
-                if width < 1280 or height < 720:
+                if width < MIN_MEDIA_WIDTH or height < MIN_MEDIA_HEIGHT:
                     raise InvalidUploadMetadata(
-                        f"{purpose} requires a minimum resolution of 1280x720."
+                        f"{purpose} requires a minimum resolution of "
+                        f"{MIN_MEDIA_WIDTH}x{MIN_MEDIA_HEIGHT}."
                     )
             if "aspect_ratio" in rule:
                 ratio_width, ratio_height = rule["aspect_ratio"]
