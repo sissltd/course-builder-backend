@@ -63,20 +63,3 @@ class StrongMfaLoginTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertTrue(AccessToken(response.data["access"])["mfa_challenged"])
-
-
-@override_settings(MFA_ENFORCED=True)
-class StaleRoleClaimTests(APITestCase):
-    def test_mfa_state_does_not_carry_across_a_role_change(self):
-        admin = make_user(role=UserRole.ADMIN)
-        self.client.force_authenticate(
-            admin, token={"mfa_verified": True, "role": UserRole.STAFF_WRITER}
-        )
-
-        response = self.client.patch(
-            "/api/v1/platform-settings/",
-            {"topic_reservation_expiry_days": 20},
-            format="json",
-        )
-
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)

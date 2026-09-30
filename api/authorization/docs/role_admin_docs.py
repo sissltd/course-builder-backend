@@ -387,8 +387,7 @@ CHANGE_STAFF_ROLE_DOCS = {
         "don't already hold.\n\n"
         "**Important:** The member is signed out everywhere and notified. Any "
         "review seat they had claimed but not decided, which their new role "
-        "cannot sit, is released back to the queue. Moving to an Admin-based "
-        "role starts their MFA enrolment grace period."
+        "cannot sit, is released back to the queue."
     ),
     "tags": ["Admin — Teams"],
     "request": ChangeStaffRoleSerializer,

@@ -32,7 +32,6 @@ class PlatformSettingsSerializer(serializers.ModelSerializer):
             "auto_flag_after_hours",
             "sla_amber_threshold_hours",
             "sla_red_threshold_hours",
-            "mfa_enrollment_grace_period_days",
             "updated_datetime",
             "payment_processor",
             "kyc_provider",
@@ -156,9 +155,6 @@ class PlatformSettingsUpdateSerializer(serializers.Serializer):
     )
     sla_amber_threshold_hours = serializers.IntegerField(required=False, min_value=1)
     sla_red_threshold_hours = serializers.IntegerField(required=False, min_value=1)
-    mfa_enrollment_grace_period_days = serializers.IntegerField(
-        required=False, min_value=0
-    )
     payment_processor = serializers.ChoiceField(
         required=False,
         choices=PaymentProcessors.choices,
