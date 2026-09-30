@@ -50,6 +50,10 @@ SECTION_TITLES = {
     "reference_scheme": "The Reference Scheme",
     "submission_lifecycle": "Submission Lifecycle",
     "deduplication": "Deduplication",
+    "course_upload": "Pushing Your Course",
+    "course_schema": "Course Schema",
+    "media": "Course Media",
+    "course_lifecycle": "Course Lifecycle",
     "plan_and_payouts": "Plan And Payouts",
     "endpoints": "Endpoint Reference",
     "webhooks": "Webhooks",
@@ -61,7 +65,7 @@ SECTION_TITLES = {
 }
 
 # Sections that read better starting on a fresh page.
-PAGE_BREAK_BEFORE = {"endpoints", "webhooks", "errors"}
+PAGE_BREAK_BEFORE = {"course_upload", "endpoints", "webhooks", "errors"}
 
 
 def build_documentation_pdf(documentation: dict, *, account) -> bytes:
@@ -302,6 +306,8 @@ def _render_section(key: str, value, styles: dict) -> list:
 
     if key == "quickstart":
         return _render_quickstart(value, styles)
+    if key == "course_upload":
+        return _render_course_upload(value, styles)
     if key == "endpoints":
         return _render_endpoints(value, styles)
     if key == "webhooks":
@@ -330,6 +336,23 @@ def _render_quickstart(section: dict, styles: dict) -> list:
     if section.get("common_first_mistakes"):
         story.append(Paragraph("Common first mistakes", styles["h2"]))
         story += _bullets(section["common_first_mistakes"], styles)
+    return story
+
+
+def _render_course_upload(section: dict, styles: dict) -> list:
+    """The rules as generic tables, then the walkthrough as numbered steps
+    with their curl, then the mistakes list - the order a developer acts in."""
+
+    rules = {
+        key: value
+        for key, value in section.items()
+        if key not in ("steps", "common_mistakes")
+    }
+    story = _render_generic(rules, styles)
+    story += _render_quickstart({"steps": section.get("steps", [])}, styles)
+    if section.get("common_mistakes"):
+        story.append(Paragraph("Common mistakes", styles["h2"]))
+        story += _bullets(section["common_mistakes"], styles)
     return story
 
 
@@ -382,6 +405,9 @@ def _render_endpoints(endpoints: list, styles: dict) -> list:
             )
         )
 
+        if endpoint.get("path_parameters"):
+            story.append(Paragraph("Path parameters", styles["h3"]))
+            story.append(_dict_table(endpoint["path_parameters"], styles))
         if endpoint.get("request_body"):
             story.append(Paragraph("Request body", styles["h3"]))
             story.append(_dict_table(endpoint["request_body"], styles))
@@ -446,6 +472,10 @@ def _render_webhooks(section: dict, styles: dict) -> list:
                                 (
                                     "Extra fields",
                                     ", ".join(event["extra_submission_fields"]) or "none",
+                                ),
+                                (
+                                    "Extra course fields",
+                                    ", ".join(event.get("extra_course_fields", [])) or "none",
                                 ),
                             ],
                             styles,

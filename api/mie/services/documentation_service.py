@@ -17,6 +17,10 @@ Layout of the returned object, in the order a developer reads it:
     reference_scheme     SCB-xxxxxxxx-S and what the suffix means
     submission_lifecycle every status, what enters it, what leaves it
     deduplication        the three ordered checks, in order
+    course_upload        pushing the course for an approved idea, end to end
+    course_schema        every field of the push body
+    media                where course media can live; uploading to us
+    course_lifecycle     every status a pushed course passes through
     plan_and_payouts     what this account's plan means commercially
     endpoints            every route, with request/response examples
     webhooks             delivery, signing, retries, event catalogue
@@ -38,18 +42,40 @@ from api.mie.enums import (
     WebhookDeliveryStatus,
     WebhookEventType,
 )
-from api.courses.enums import DifficultyLevel
+from api.courses.constants import COURSE_MEDIA_URL_MAX_LENGTH
+from api.courses.enums import (
+    CourseStatus,
+    DifficultyLevel,
+    LessonContentType,
+    QuestionType,
+)
+from api.courses.serializers.assessment_serializer import (
+    MAXIMUM_CHOICE_OPTIONS,
+    MINIMUM_CHOICE_OPTIONS,
+)
 from api.mie.models.course_submission import (
     CONFIDENCE_NOTE_MAX_LENGTH,
     DESCRIPTION_MAX_LENGTH,
 )
+from api.mie.serializers.course_push_serializer import (
+    MAX_PUSH_BLOCKS_PER_LESSON,
+    MAX_PUSH_LESSONS_PER_MODULE,
+    MAX_PUSH_MODULES,
+)
 from api.mie.services import webhook_dispatcher
+from api.mie.services.course_push_service import MIE_UPLOAD_PURPOSES
 from api.mie.services.key_service import API_KEY_PREFIX
 from api.mie.services.reference import REFERENCE_SUFFIXES
 from api.mie.services.submission_service import EVENT_TYPE_BY_STATUS
+from api.reviews.enums import ReviewStage
 from shared.constants.authentication import SUPPORT_EMAIL
+from shared.services.storage_service import (
+    COURSE_UPLOAD_RULES,
+    MIN_MEDIA_HEIGHT,
+    MIN_MEDIA_WIDTH,
+)
 
-DOCUMENTATION_VERSION = "2.0.0"
+DOCUMENTATION_VERSION = "3.0.0"
 """Bump when the shape of this document changes, not when values change."""
 
 API_ROOT = "/api/v1"
@@ -57,6 +83,112 @@ API_ROOT = "/api/v1"
 SAMPLE_SUBMISSION_ID = "0d1c7b2e-6f5a-4a3f-9a2b-1f4e8c9d0a11"
 SAMPLE_SHORT_ID = SAMPLE_SUBMISSION_ID.replace("-", "")[:8]
 SAMPLE_TITLE = "Build a Production-Grade Rust Course"
+SAMPLE_COURSE_ID = "7c9e6679-7425-40de-944b-e07fc1f90ae7"
+SAMPLE_CATEGORY_ID = "3f2b9c1e-5d4a-4e8f-9b7c-2a1d0e6f4c3b"
+SAMPLE_VERSION_ID = "b6e2d1a4-9c8f-4a3e-8d2b-1f0e9c8b7a6d"
+SAMPLE_REVISION_FEEDBACK = {
+    "stage": ReviewStage.CONTENT.value,
+    "rejected_at": "2026-09-02T11:20:00+00:00",
+    "feedback": {
+        "summary": "Module 2 needs worked examples and a longer preview video.",
+    },
+    "flags": [
+        {
+            "flag_type": "script_length",
+            "title": "Script too short",
+            "system_message": "306/500 words below minimum",
+            "reviewer_note": "Expand the walkthrough with a second example.",
+            "module_title": "Async services",
+            "lesson_title": "Tokio in one hour",
+        }
+    ],
+}
+
+SAMPLE_COURSE_PUSH = {
+    "title": SAMPLE_TITLE,
+    "description": (
+        "<what the course teaches, who it is for and what they need first - "
+        "within the description word range from /course-requirements/>"
+    ),
+    "category": SAMPLE_CATEGORY_ID,
+    "version": SAMPLE_VERSION_ID,
+    "difficulty_level": DifficultyLevel.ADVANCED.value,
+    "preview_video_url": "https://videos.studio.io/rust/preview.mp4",
+    "thumbnail_url": "https://videos.studio.io/rust/cover.jpg",
+    "learning_objectives": [
+        "Design ownership-safe APIs",
+        "Profile and optimise async services",
+        "Ship a production Rust service",
+    ],
+    "tags": ["rust", "backend"],
+    "duration_hours": 6,
+    "terms_accepted": True,
+    "modules": [
+        {
+            "title": "Ownership in practice",
+            "description": "Borrowing, lifetimes and the patterns that avoid fighting them.",
+            "learning_objectives": ["Explain ownership", "Refactor borrow errors"],
+            "lessons": [
+                {
+                    "title": "Why ownership exists",
+                    "lesson_type": LessonContentType.TEXT.value,
+                    "script": "<the lesson text, within the script word range>",
+                    "learning_objectives": ["Describe a move", "Describe a borrow"],
+                    "duration_minutes": 12,
+                    "lesson_requirement": "Comfortable reading Rust function signatures.",
+                },
+                {
+                    "title": "Borrowing walkthrough",
+                    "lesson_type": LessonContentType.VIDEO.value,
+                    "video_url": "https://www.youtube.com/watch?v=abc123",
+                    "learning_objectives": ["Borrow immutably", "Borrow mutably"],
+                    "duration_minutes": 15,
+                    "content_blocks": [
+                        {"block_type": "HEADING_1", "text_content": "Borrowing"},
+                        {"block_type": "PARAGRAPH", "text_content": "Watch, then try the exercise."},
+                        {"block_type": "IMAGE", "media_url": "https://videos.studio.io/rust/borrow.png"},
+                    ],
+                    "assessment": {
+                        "title": "Quick check",
+                        "questions": [
+                            {
+                                "type": QuestionType.SINGLE_CHOICE.value,
+                                "question": "Can two mutable borrows of one value coexist?",
+                                "options": ["Yes", "No"],
+                                "correct_index": 1,
+                                "points": 1,
+                            }
+                        ],
+                    },
+                },
+            ],
+            "assessment": {
+                "title": "Ownership check",
+                "questions": [
+                    {
+                        "type": QuestionType.MULTIPLE_CHOICE.value,
+                        "question": "Which of these move a String?",
+                        "options": ["take(s)", "len(&s)", "let t = s;"],
+                        "correct_indices": [0, 2],
+                        "points": 2,
+                    },
+                    {
+                        "type": QuestionType.ESSAY.value,
+                        "question": "When would you reach for Rc<RefCell<T>>?",
+                        "expected_answer": "Shared ownership with interior mutability in single-threaded code.",
+                        "points": 3,
+                    },
+                ],
+            },
+        },
+        "<... more modules, within the module range from /course-requirements/>",
+    ],
+    "final_assessment": {
+        "title": "Final exam",
+        "questions": ["<at least the final-assessment minimum from /course-requirements/>"],
+    },
+}
+"""A full push body. Placeholders in <angle brackets> stand for content."""
 
 
 def _sample_reference(status: SubmissionStatus) -> str:
@@ -165,8 +297,10 @@ SUBMISSION_STATUS_DOCS = {
         "terminal": False,
         "next": ["REJECTED"],
         "action": (
-            "Record the approval. Note this is reversible - a later "
-            "SUBMISSION_REJECTED for the same reference supersedes it."
+            "Write the course and push it to POST "
+            "/mie/v1/submissions/<id>/course/ - see course_upload. Note the "
+            "approval is reversible - a later SUBMISSION_REJECTED for the "
+            "same reference supersedes it, and blocks further pushes."
         ),
     },
     SubmissionStatus.REJECTED: {
@@ -227,6 +361,93 @@ WEBHOOK_EVENT_DOCS = {
         "resulting_status": None,
         "extra_fields": ["payout_bypass"],
     },
+    WebhookEventType.COURSE_SUBMITTED: {
+        "fires_when": (
+            "A course you pushed for this idea was accepted and submitted for "
+            "review - on the first push and on every accepted revision."
+        ),
+        "resulting_status": None,
+        "extra_fields": ["course"],
+    },
+    WebhookEventType.COURSE_REVISION_REQUESTED: {
+        "fires_when": (
+            "A reviewer - in content review or QA verification - sent your "
+            "course back to DRAFT. course.revision_feedback says what to "
+            "fix; push the corrected course to the same idea."
+        ),
+        "resulting_status": None,
+        "extra_fields": ["course"],
+        "extra_course_fields": ["revision_feedback"],
+    },
+    WebhookEventType.COURSE_PUBLISHED: {
+        "fires_when": (
+            "Your course passed content review and QA verification and was "
+            "published. Publication is one-way."
+        ),
+        "resulting_status": None,
+        "extra_fields": ["course"],
+    },
+}
+
+COURSE_STATUS_BY_EVENT = {
+    WebhookEventType.COURSE_SUBMITTED: CourseStatus.SUBMITTED,
+    WebhookEventType.COURSE_REVISION_REQUESTED: CourseStatus.DRAFT,
+    WebhookEventType.COURSE_PUBLISHED: CourseStatus.PUBLISHED,
+}
+"""The course status each COURSE_* event announces, for the samples."""
+
+COURSE_STATUS_DOCS = {
+    CourseStatus.DRAFT: {
+        "meaning": (
+            "A reviewer sent the course back. Nothing is in review until you "
+            "push again."
+        ),
+        "your_move": (
+            "Read revision_feedback (webhook or GET .../course/), fix the "
+            "course, and push it again to the same idea."
+        ),
+    },
+    CourseStatus.SUBMITTED: {
+        "meaning": "Accepted and waiting for a content reviewer to pick it up.",
+        "your_move": "Nothing. Pushing again now returns 409.",
+    },
+    CourseStatus.IN_REVIEW: {
+        "meaning": "A content reviewer is working through it.",
+        "your_move": "Nothing. Pushing again now returns 409.",
+    },
+    CourseStatus.NEEDS_REVISION: {
+        "meaning": (
+            "Legacy review state. The review flow now returns rejected "
+            "courses to DRAFT instead, so a pushed course should not reach it."
+        ),
+        "your_move": "Treat it like DRAFT: read the feedback and push again.",
+    },
+    CourseStatus.QA_VERIFICATION: {
+        "meaning": (
+            "Content review passed; a QA reviewer is checking media, "
+            "accessibility and quizzes."
+        ),
+        "your_move": "Nothing. Pushing again now returns 409.",
+    },
+    CourseStatus.APPROVED: {
+        "meaning": "Passed every review seat and waiting to be published.",
+        "your_move": "Nothing. Pushing again now returns 409.",
+    },
+    CourseStatus.PUBLISHED: {
+        "meaning": "Live. Publication is one-way and cannot be replaced.",
+        "your_move": "Nothing. COURSE_PUBLISHED has fired.",
+    },
+    CourseStatus.ARCHIVED: {
+        "meaning": "Taken out of circulation by the platform.",
+        "your_move": f"Contact {SUPPORT_EMAIL} if you did not expect it.",
+    },
+    CourseStatus.REJECTED: {
+        "meaning": (
+            "Never stored on a course - a rejection returns the course to "
+            "DRAFT. Listed for completeness."
+        ),
+        "your_move": "Nothing; you will see DRAFT instead.",
+    },
 }
 
 
@@ -252,6 +473,10 @@ def build_documentation(account, *, request=None) -> dict:
         "reference_scheme": _reference_scheme(),
         "submission_lifecycle": _submission_lifecycle(),
         "deduplication": _deduplication(),
+        "course_upload": _course_upload(account, base_url),
+        "course_schema": _course_schema(),
+        "media": _media(base_url),
+        "course_lifecycle": _course_lifecycle(),
         "plan_and_payouts": _plan_and_payouts(account),
         "endpoints": _endpoints(base_url),
         "webhooks": _webhooks(account),
@@ -284,11 +509,13 @@ def _meta() -> dict:
         ),
         "audience": (
             "External developers integrating with the MIE (Market "
-            "Intelligence Engine) course-idea pipeline."
+            "Intelligence Engine): submitting course ideas, and pushing the "
+            "finished course for each approved one."
         ),
         "read_this_if": (
-            "You want to submit course ideas programmatically and react to "
-            "their outcomes without polling us or emailing support."
+            "You want to submit course ideas programmatically, push the "
+            "courses you write for the approved ones, and follow both "
+            "through review without polling us or emailing support."
         ),
     }
 
@@ -406,6 +633,22 @@ def _quickstart(account, base_url: str) -> dict:
                     f'  -H "{API_KEY_HEADER}: {key_example}"'
                 ),
             },
+            {
+                "step": 6,
+                "title": "Push the course once the idea is approved",
+                "detail": (
+                    "When SUBMISSION_APPROVED arrives, write the course and "
+                    "push it to the idea. The course_upload section walks "
+                    "through it end to end."
+                ),
+                "curl": (
+                    f"curl -sS -X POST {base_url}{API_ROOT}/mie/v1/submissions/"
+                    f"{SAMPLE_SUBMISSION_ID}/course/ \\\n"
+                    f'  -H "{API_KEY_HEADER}: {key_example}" \\\n'
+                    '  -H "Content-Type: application/json" \\\n'
+                    "  --data @course.json"
+                ),
+            },
         ],
         "common_first_mistakes": [
             "Treating HTTP 201 as 'queued'. It means 'received and "
@@ -415,6 +658,8 @@ def _quickstart(account, base_url: str) -> dict:
             "Verifying the webhook signature against re-serialized JSON. "
             "Sign the raw request bytes, byte for byte.",
             "Assuming APPROVED and REJECTED are final. Both are reversible.",
+            "Pushing a course before the idea is APPROVED. It returns 409 "
+            "and stores nothing.",
         ],
     }
 
@@ -522,25 +767,59 @@ def _integration_flow() -> list[dict]:
         },
         {
             "stage": 7,
-            "name": "Production",
-            "actor": "Platform",
+            "name": "Course upload",
+            "actor": "You",
             "what_happens": (
-                "An approved idea becomes a course produced by the "
-                "platform. Every produced course passes the platform's own "
-                "review - content review, then QA verification - before it "
-                "is published. Publication is one-way: rejecting the idea "
-                "later does not unpublish its course, and the link is kept "
-                "so a subsequent re-approval never duplicates it."
+                "You write the course for the approved idea and push it in "
+                "one request, in the platform's course schema. It is built "
+                "and checked against the same structural rules a creator's "
+                "course faces at submit; if anything fails, nothing is "
+                "stored and every failure is returned."
             ),
             "your_move": (
-                "Nothing. Course production is not exposed on the developer "
-                "API surface."
+                "Read /mie/v1/course-requirements/, host or upload your "
+                "media, then POST /mie/v1/submissions/<id>/course/. See "
+                "course_upload."
             ),
             "you_can_authenticate": True,
-            "webhook_fired": None,
+            "webhook_fired": WebhookEventType.COURSE_SUBMITTED.value,
         },
         {
             "stage": 8,
+            "name": "Course review",
+            "actor": "Platform reviewers",
+            "what_happens": (
+                "Your course goes through the platform's content review "
+                "seats and then QA verification, like every course. A "
+                "rejection at any seat returns it to DRAFT with the "
+                "reviewer's feedback."
+            ),
+            "your_move": (
+                f"On {WebhookEventType.COURSE_REVISION_REQUESTED.value}, fix "
+                "the course and push the complete course again to the same "
+                "idea. Otherwise, wait."
+            ),
+            "you_can_authenticate": True,
+            "webhook_fired": (
+                f"{WebhookEventType.COURSE_REVISION_REQUESTED.value} "
+                "(when sent back)"
+            ),
+        },
+        {
+            "stage": 9,
+            "name": "Publication",
+            "actor": "Platform",
+            "what_happens": (
+                "The approved course is published. Publication is one-way: "
+                "rejecting the idea later does not unpublish its course, "
+                "and the link between idea and course is kept."
+            ),
+            "your_move": "Record the publication.",
+            "you_can_authenticate": True,
+            "webhook_fired": WebhookEventType.COURSE_PUBLISHED.value,
+        },
+        {
+            "stage": 10,
             "name": "Payout",
             "actor": "Platform",
             "what_happens": (
@@ -820,6 +1099,17 @@ def _plan_and_payouts(account) -> dict:
             "produced from your idea is the trigger, not approval; "
             "the credit itself is not something you can query here."
         ),
+        "course_price": (
+            "The amount a course pays is fixed when it is submitted: the "
+            "category's price for the course's difficulty_level at that "
+            "moment. A later price change does not move it."
+        ),
+        "settlement_status": (
+            "Automatic settlement for courses pushed over this API is not "
+            "live yet. Published courses are recorded against your "
+            f"account with their price; contact {SUPPORT_EMAIL} about "
+            "settlement until it is."
+        ),
     }
 
 
@@ -1049,6 +1339,233 @@ def _endpoints(base_url: str) -> list[dict]:
             ],
         },
         {
+            "name": "Course requirements",
+            "method": "GET",
+            "path": f"{API_ROOT}/mie/v1/course-requirements/",
+            "url": f"{prefix}/mie/v1/course-requirements/",
+            "auth": f"{API_KEY_HEADER} (or Bearer session token)",
+            "rate_limit": "None",
+            "purpose": (
+                "Everything a course push is checked against, live: the "
+                "structural limits, the active category and course version "
+                "ids a push must reference, the allowed choice values, the "
+                "payload caps, and the upload rules per media purpose."
+            ),
+            "success_status": 200,
+            "response_example": {
+                "structural_rules": {
+                    "course_learning_objectives": {"min": 5, "max": 10},
+                    "modules_per_course": {"min": 4, "max": 12},
+                    "lessons_per_module": {"min": 3, "max": 8},
+                    "lesson_learning_objectives": {"min": 2, "max": 5},
+                    "text_lesson_script_words": {"min": 500, "max": 1500},
+                    "course_description_words": {"min": 100, "max": 500},
+                    "course_duration_minutes": {"min": 120, "max": 480},
+                    "final_assessment_min_questions": 15,
+                    "module_assessment_required": True,
+                    "preview_video_required": True,
+                    "course_version_required": True,
+                },
+                "categories": [
+                    {
+                        "id": SAMPLE_CATEGORY_ID,
+                        "name": "Software Engineering",
+                        "slug": "software-engineering",
+                    }
+                ],
+                "course_versions": [{"id": SAMPLE_VERSION_ID, "label": "v1"}],
+                "choices": {
+                    "difficulty_level": DifficultyLevel.values,
+                    "lesson_type": LessonContentType.values,
+                    "content_block_type": ["HEADING_1", "PARAGRAPH", "IMAGE", "..."],
+                    "question_type": QuestionType.values,
+                },
+                "quiz_rules": {
+                    "choice_options": {
+                        "min": MINIMUM_CHOICE_OPTIONS,
+                        "max": MAXIMUM_CHOICE_OPTIONS,
+                    }
+                },
+                "payload_limits": {
+                    "modules": MAX_PUSH_MODULES,
+                    "lessons_per_module": MAX_PUSH_LESSONS_PER_MODULE,
+                    "content_blocks_per_lesson": MAX_PUSH_BLOCKS_PER_LESSON,
+                    "media_url_max_length": COURSE_MEDIA_URL_MAX_LENGTH,
+                    "request_body_max_bytes": settings.DATA_UPLOAD_MAX_MEMORY_SIZE,
+                },
+                "upload_purposes": ["<one entry per purpose - see media>"],
+            },
+            "errors": [
+                {"status": 401, "when": "Missing, invalid, suspended, or inactive credentials."},
+            ],
+            "notes": [
+                "The structural numbers in the example are illustrative. Read them from this endpoint - admins can change them without notice.",
+                "Categories and versions are the only valid values for `category` and `version` in a push.",
+            ],
+        },
+        {
+            "name": "Upload course media to our storage",
+            "method": "POST",
+            "path": f"{API_ROOT}/mie/v1/uploads/presign/",
+            "url": f"{prefix}/mie/v1/uploads/presign/",
+            "auth": f"{API_KEY_HEADER} (or Bearer session token)",
+            "rate_limit": _rate("mie_upload"),
+            "purpose": (
+                "Optional. A signed URL to PUT one media file into our "
+                "storage, and the durable `media_url` to reference it by in "
+                "a course push."
+            ),
+            "request_body": {
+                "filename": "string, required. The file name with its extension, e.g. 'preview.mp4'.",
+                "content_type": "string, required. The file's MIME type; must be allowed for the purpose.",
+                "purpose": f"string, required, one of {list(MIE_UPLOAD_PURPOSES)}. Selects the rules.",
+                "size": "integer, required. Exact size in bytes; signed into the upload.",
+                "width": "integer. Required for videos and thumbnails.",
+                "height": "integer. Required for videos and thumbnails.",
+                "codec": "string. Required for videos; must be the purpose's codec.",
+                "duration_seconds": "integer. Required for COURSE_PREVIEW_VIDEO.",
+            },
+            "request_example": {
+                "filename": "preview.mp4",
+                "content_type": "video/mp4",
+                "purpose": "COURSE_PREVIEW_VIDEO",
+                "size": 48000000,
+                "width": 1920,
+                "height": 1080,
+                "codec": "h264",
+                "duration_seconds": 90,
+            },
+            "success_status": 200,
+            "response_example": {
+                "upload_url": "https://<storage-host>/uploads/courses/9f1c...mp4?X-Amz-Signature=...",
+                "upload_headers": {
+                    "Content-Type": "video/mp4",
+                    "x-amz-meta-upload-purpose": "COURSE_PREVIEW_VIDEO",
+                    "x-amz-meta-width": "1920",
+                    "x-amz-meta-height": "1080",
+                    "x-amz-meta-duration-seconds": "90",
+                    "x-amz-meta-codec": "h264",
+                },
+                "file_url": "https://<storage-host>/uploads/courses/9f1c...mp4?X-Amz-Expires=600&...",
+                "file_key": "uploads/courses/9f1c2e7a4b5d4c3e8f9a0b1c2d3e4f5a.mp4",
+                "media_url": "https://<storage-host>/uploads/courses/9f1c2e7a4b5d4c3e8f9a0b1c2d3e4f5a.mp4",
+                "expires_in": 600,
+            },
+            "response_fields": {
+                "upload_url": "PUT the raw file bytes here.",
+                "upload_headers": "Send every one of these headers with the PUT, unchanged.",
+                "file_url": "Temporary read link. Do not store it.",
+                "file_key": "Storage key of the object.",
+                "media_url": "Durable. This is what goes into your course push.",
+                "expires_in": "Seconds before upload_url stops working.",
+            },
+            "errors": [
+                {"status": 400, "when": "The file breaks a rule for its purpose - type, extension, size, resolution, aspect ratio, codec or duration - or a required field is missing."},
+                {"status": 401, "when": "Missing, invalid, suspended, or inactive credentials."},
+                {"status": 429, "when": "Upload rate limit exceeded. Wait the seconds in Retry-After."},
+            ],
+            "notes": [
+                "Using our storage is optional - any HTTPS URL works in a push.",
+                "Declare the real size and media properties. They are signed into the upload and recorded for QA.",
+            ],
+        },
+        {
+            "name": "Push the course for an approved idea",
+            "method": "POST",
+            "path": f"{API_ROOT}/mie/v1/submissions/<submission_id>/course/",
+            "url": f"{prefix}/mie/v1/submissions/{SAMPLE_SUBMISSION_ID}/course/",
+            "auth": f"{API_KEY_HEADER} (or Bearer session token)",
+            "rate_limit": _rate("mie_course_push"),
+            "purpose": (
+                "Build the course for one of your approved ideas and submit "
+                "it for review, in one all-or-nothing request. Also how you "
+                "send a revision after a reviewer returns the course."
+            ),
+            "path_parameters": {
+                "submission_id": "UUID of your approved idea - the `id` from the submit response or your queue.",
+            },
+            "request_body": {
+                "course fields": "title, description, category, version, difficulty_level, preview_video_url, thumbnail_url, learning_objectives, tags, duration_*, terms_accepted - see course_schema.course.",
+                "modules": "The module tree - see course_schema.module, .lesson, .content_block.",
+                "final_assessment": "The final exam - see course_schema.assessment and .question.",
+            },
+            "request_example": SAMPLE_COURSE_PUSH,
+            "success_status": 201,
+            "response_example": {
+                "submission_id": SAMPLE_SUBMISSION_ID,
+                "submission_reference": _sample_reference(SubmissionStatus.APPROVED),
+                "course_id": SAMPLE_COURSE_ID,
+                "title": SAMPLE_TITLE,
+                "status": CourseStatus.SUBMITTED.value,
+                "module_count": 6,
+                "lesson_count": 30,
+                "submitted_at": "2026-09-30T10:00:00Z",
+                "rejected_at": None,
+                "published_at": None,
+                "revision_feedback": None,
+            },
+            "response_fields": {
+                "submission_id": "Your idea's id.",
+                "submission_reference": "Your idea's public reference.",
+                "course_id": "The course's id. Stable across revisions.",
+                "status": "The course's status - SUBMITTED after a successful push.",
+                "module_count / lesson_count": "What was built.",
+                "submitted_at / rejected_at / published_at": "Timestamps of the latest submit, rejection and publication.",
+                "revision_feedback": "Null here; filled while the course is DRAFT after a rejection.",
+            },
+            "errors": [
+                {"status": 400, "when": "A field is invalid (reported by field path), the title or category does not match the idea, terms_accepted is not true, or the course fails the structural check (reported under structural_standards). Nothing was stored."},
+                {"status": 401, "when": "Missing, invalid, suspended, or inactive credentials."},
+                {"status": 404, "when": "The idea does not exist or is not yours."},
+                {"status": 409, "when": "idea_not_approved - the idea is not APPROVED; course_in_review - its course is in review or published."},
+                {"status": 429, "when": "Course push rate limit exceeded. Wait the seconds in Retry-After."},
+            ],
+            "notes": [
+                "All or nothing: a failed push leaves no trace on our side.",
+                "Every accepted push fires COURSE_SUBMITTED and returns 201 - the first one and every revision.",
+                "A revision replaces the whole course. Always send all of it.",
+                f"The request body may be up to {settings.DATA_UPLOAD_MAX_MEMORY_SIZE // (1024 * 1024)} MB - far more than the largest course the structural limits allow.",
+            ],
+        },
+        {
+            "name": "Check the course for an approved idea",
+            "method": "GET",
+            "path": f"{API_ROOT}/mie/v1/submissions/<submission_id>/course/",
+            "url": f"{prefix}/mie/v1/submissions/{SAMPLE_SUBMISSION_ID}/course/",
+            "auth": f"{API_KEY_HEADER} (or Bearer session token)",
+            "rate_limit": "None",
+            "purpose": (
+                "Where your course stands in review, and - while it is back "
+                "in DRAFT - the reviewer's feedback. Your reconciliation "
+                "path for missed COURSE_* webhooks."
+            ),
+            "path_parameters": {
+                "submission_id": "UUID of your idea.",
+            },
+            "success_status": 200,
+            "response_example": {
+                "submission_id": SAMPLE_SUBMISSION_ID,
+                "submission_reference": _sample_reference(SubmissionStatus.APPROVED),
+                "course_id": SAMPLE_COURSE_ID,
+                "title": SAMPLE_TITLE,
+                "status": CourseStatus.DRAFT.value,
+                "module_count": 6,
+                "lesson_count": 30,
+                "submitted_at": "2026-09-01T10:00:00Z",
+                "rejected_at": "2026-09-02T11:20:00Z",
+                "published_at": None,
+                "revision_feedback": SAMPLE_REVISION_FEEDBACK,
+            },
+            "errors": [
+                {"status": 401, "when": "Missing, invalid, suspended, or inactive credentials."},
+                {"status": 404, "when": "The idea is not yours, or no course has been pushed for it yet."},
+            ],
+            "notes": [
+                "revision_feedback is null unless the course is DRAFT after a rejection.",
+                "Status meanings are in course_lifecycle.",
+            ],
+        },
+        {
             "name": "Your account",
             "method": "GET",
             "path": f"{API_ROOT}/mie/v1/me/",
@@ -1183,7 +1700,12 @@ def _webhooks(account) -> dict:
                 "event_id": "UUID, unique per event. Your idempotency key.",
                 "type": f"One of {WebhookEventType.values}.",
                 "occurred_at": "ISO-8601 timestamp of when the event was recorded.",
-                "submission": "Object describing the submission at that moment.",
+                "submission": (
+                    "Object describing the submission at that moment. On "
+                    "COURSE_* events it also carries `course` - the course's "
+                    "id, status and title, plus `revision_feedback` on "
+                    "COURSE_REVISION_REQUESTED."
+                ),
             },
         },
         "verification": {
@@ -1284,6 +1806,13 @@ def _webhooks(account) -> dict:
                 "SUBMISSION_APPROVED. Deduplicate on event_id, but let the "
                 "newest event win per submission."
             ),
+            "course_events": (
+                "Idea and course events share the submission. Track the "
+                "idea's state from SUBMISSION_* events and the course's "
+                "state from COURSE_* events separately - a COURSE_PUBLISHED "
+                "does not change the idea's status, and a SUBMISSION_REJECTED "
+                "does not change the course's."
+            ),
         },
         "account_state_effects": [
             {
@@ -1317,6 +1846,7 @@ def _webhooks(account) -> dict:
             f"Responds within {webhook_dispatcher.READ_TIMEOUT_SECONDS} seconds. Queue the work; do not process inline.",
             "Idempotent on event_id.",
             "Accepts POST with a JSON body and returns 2xx on success.",
+            "Returns 2xx for event types it does not recognise. New types are added as the API grows; an unknown type must never fail the delivery.",
         ],
         "events": _webhook_event_catalogue(),
     }
@@ -1341,6 +1871,14 @@ def _webhook_event_catalogue() -> list[dict]:
             submission["rejection_note"] = "The existing Rust course covers this ground."
         if "payout_bypass" in docs["extra_fields"]:
             submission["payout_bypass"] = True
+        if "course" in docs["extra_fields"]:
+            submission["course"] = {
+                "id": SAMPLE_COURSE_ID,
+                "status": COURSE_STATUS_BY_EVENT[event_type].value,
+                "title": SAMPLE_TITLE,
+            }
+        if "revision_feedback" in docs.get("extra_course_fields", []):
+            submission["course"]["revision_feedback"] = SAMPLE_REVISION_FEEDBACK
 
         catalogue.append(
             {
@@ -1350,6 +1888,7 @@ def _webhook_event_catalogue() -> list[dict]:
                 "resulting_status": status.value if status else None,
                 "status_unchanged": status is None,
                 "extra_submission_fields": docs["extra_fields"],
+                "extra_course_fields": docs.get("extra_course_fields", []),
                 "sample_body": {
                     "event_id": "8f14e45f-ceea-4e78-9a1b-2c3d4e5f6a7b",
                     "type": event_type.value,
@@ -1384,7 +1923,14 @@ def _errors() -> dict:
             {
                 "status": 400,
                 "type": "validation_error",
-                "when": "The request body is malformed or fails field validation.",
+                "when": (
+                    "The request body is malformed or fails field validation. "
+                    "On a course push this also covers a title or category "
+                    "that does not match the idea, and the structural check "
+                    "at submit - one error per failed rule, each with "
+                    "field_name `structural_standards`. Nested field errors "
+                    "name their path, e.g. `modules.0.lessons.2.title`."
+                ),
                 "retry": "No. Fix the payload.",
                 "example": {
                     "errors": [
@@ -1446,6 +1992,28 @@ def _errors() -> dict:
                 },
             },
             {
+                "status": 409,
+                "type": "client_error",
+                "when": (
+                    "The request conflicts with current state. On the course "
+                    "push: `idea_not_approved` - the idea is not APPROVED; "
+                    "`course_in_review` - its course is in review or "
+                    "published and cannot be replaced until a reviewer "
+                    "sends it back."
+                ),
+                "retry": "Not until the state changes - wait for the matching webhook.",
+                "example": {
+                    "errors": [
+                        {
+                            "type": "client_error",
+                            "code": "idea_not_approved",
+                            "message": "A course can only be pushed for an approved idea. This idea is PENDING_REVIEW.",
+                            "field_name": None,
+                        }
+                    ]
+                },
+            },
+            {
                 "status": 429,
                 "type": "client_error",
                 "when": "A rate limit was exceeded. Read the Retry-After header.",
@@ -1482,7 +2050,9 @@ def _errors() -> dict:
             "Retry 429 (after Retry-After) and 5xx with exponential "
             "backoff and jitter. Never blind-retry a 4xx - and remember "
             "submission POSTs are not idempotent, so a retried timeout can "
-            "create a second submission."
+            "create a second submission. A course push is safe to retry "
+            "after a timeout: it either did nothing, or it succeeded and the "
+            "retry gets 409 course_in_review - check GET .../course/."
         ),
     }
 
@@ -1516,6 +2086,22 @@ def _rate_limits() -> dict:
                     "rather than bursting into 429s. There is no batch "
                     "endpoint - one idea per request."
                 ),
+            },
+            {
+                "endpoint": f"POST {API_ROOT}/mie/v1/submissions/<submission_id>/course/",
+                "limit": _rate("mie_course_push"),
+                "why": "Each push builds and submits a whole course in one transaction.",
+                "advice": (
+                    "A 400 still counts. Validate against "
+                    "/mie/v1/course-requirements/ before pushing rather than "
+                    "iterating against the endpoint."
+                ),
+            },
+            {
+                "endpoint": f"POST {API_ROOT}/mie/v1/uploads/presign/",
+                "limit": _rate("mie_upload"),
+                "why": "Sized for a full course with a video on every lesson.",
+                "advice": "Presign when you are ready to PUT; an unused URL still counts.",
             },
             {
                 "endpoint": f"POST {API_ROOT}/mie/v1/submissions/",
@@ -1619,6 +2205,30 @@ def _go_live_checklist() -> list[dict]:
             "item": "429 handling respects Retry-After",
             "why": "Hammering through a throttle just extends it.",
         },
+        {
+            "item": "Course pushes are only sent after SUBMISSION_APPROVED",
+            "why": "Anything earlier is a 409 and counts against the push rate limit.",
+        },
+        {
+            "item": "The course title is the idea's title, byte for byte in intent",
+            "why": "A reworded title is a 400; the idea's title is the key.",
+        },
+        {
+            "item": "Category and version ids are read from /course-requirements/ at run time",
+            "why": "They are the only valid values, and admins can retire them.",
+        },
+        {
+            "item": "Every revision push sends the complete course",
+            "why": "A push replaces the course; anything left out is deleted.",
+        },
+        {
+            "item": "Media URLs stay reachable for the life of the course",
+            "why": "Reviewers and learners play them from where you put them; our storage keeps them for you.",
+        },
+        {
+            "item": "COURSE_REVISION_REQUESTED and COURSE_PUBLISHED are handled",
+            "why": "They are the only signals that you need to act, or that you are done.",
+        },
     ]
 
 
@@ -1703,6 +2313,71 @@ def _faq() -> list[dict]:
             ),
         },
         {
+            "question": "Can I push a course before my idea is approved?",
+            "answer": (
+                "No. The push checks the idea first and returns 409 "
+                "idea_not_approved for anything but APPROVED. Wait for "
+                "SUBMISSION_APPROVED."
+            ),
+        },
+        {
+            "question": "Does my course need videos?",
+            "answer": (
+                "Only the 60-120 second preview video. Lessons can be text "
+                "only: use lesson_type TEXT with a script. A VIDEO lesson "
+                "needs a video_url or embedded_link."
+            ),
+        },
+        {
+            "question": "Can I host videos on YouTube, Vimeo or my own CDN?",
+            "answer": (
+                "Yes. Every media field takes any HTTPS URL, and "
+                "embedded_link takes a player's embed link. If you would "
+                "rather we host them, use POST /mie/v1/uploads/presign/."
+            ),
+        },
+        {
+            "question": "My push came back 400 with a long list. Was anything saved?",
+            "answer": (
+                "No. A push is all or nothing. Fix every item in the list - "
+                "field errors by path, submission rules under "
+                "structural_standards - and push again."
+            ),
+        },
+        {
+            "question": "A reviewer rejected my course. What do I do?",
+            "answer": (
+                "Read revision_feedback on the COURSE_REVISION_REQUESTED "
+                "webhook, or on GET /mie/v1/submissions/<id>/course/. Fix "
+                "the course and push the complete course again to the same "
+                "idea. It goes back into review from the first seat."
+            ),
+        },
+        {
+            "question": "Can I change my course while it is in review?",
+            "answer": (
+                "No. From submission until a reviewer sends it back, a push "
+                "returns 409 course_in_review. After publication it can "
+                "never be replaced."
+            ),
+        },
+        {
+            "question": "Can I use a different title for the course?",
+            "answer": (
+                "No. The course is the idea that was approved, so it carries "
+                "the idea's title. Differences in case and surrounding "
+                "spaces are fine."
+            ),
+        },
+        {
+            "question": "Why is topic not accepted?",
+            "answer": (
+                "A course's topic is reserved by its creator from the "
+                "creator dashboard. A pushed course is filed under its "
+                "idea's category and priced by category and difficulty."
+            ),
+        },
+        {
             "question": "Someone else submitted my title first. What now?",
             "answer": (
                 "Dedup is platform-wide, not per developer, so their queued "
@@ -1712,6 +2387,512 @@ def _faq() -> list[dict]:
             ),
         },
     ]
+
+
+def _course_upload(account, base_url: str) -> dict:
+    """The complete guide to pushing a course for an approved idea."""
+
+    key_example = (
+        f"{account.api_key_prefix}..." if account.api_key_prefix else f"{API_KEY_PREFIX}..."
+    )
+    prefix = f"{base_url}{API_ROOT}"
+    push_path = f"{API_ROOT}/mie/v1/submissions/<submission_id>/course/"
+    return {
+        "summary": (
+            "Once an idea is APPROVED, you write the course yourself and push "
+            "it to us in one request, in the same schema our course builder "
+            "uses. From that moment it is an ordinary course on the "
+            "platform: it goes through content review, then QA "
+            "verification, then publication - exactly the path a course "
+            "written by one of our own creators takes. The only difference "
+            "is that it reached us over the API."
+        ),
+        "when_you_can_push": {
+            "rule": (
+                "Only for your own idea, and only while that idea is "
+                f"{SubmissionStatus.APPROVED.value}. We check the idea's "
+                "status before we read the rest of your request."
+            ),
+            "not_yet_approved": (
+                f"{SubmissionStatus.PENDING_REVIEW.value}, "
+                f"{SubmissionStatus.REJECTED.value} and every dedup outcome "
+                "return 409 idea_not_approved. Nothing is stored."
+            ),
+            "not_yours": (
+                "An idea id that is not yours returns 404 - the same as one "
+                "that does not exist."
+            ),
+            "reversals": (
+                "If an admin reverses the approval after you pushed, your "
+                "course is left exactly where it is in review, but you "
+                "cannot push a revision until the idea is approved again."
+            ),
+        },
+        "matching_rules": [
+            {
+                "field": "title",
+                "rule": (
+                    "Must be the approved idea's title, compared the way "
+                    "dedup compares titles: trimmed, case-insensitive. The "
+                    "course is stored under the idea's title exactly as the "
+                    "idea has it."
+                ),
+                "on_mismatch": "400 on `title`, with the expected title in the message.",
+            },
+            {
+                "field": "category",
+                "rule": (
+                    "An active category id from GET /mie/v1/course-requirements/. "
+                    "When your idea was filed under a category, it must be "
+                    "that category."
+                ),
+                "on_mismatch": "400 on `category`.",
+            },
+            {
+                "field": "terms_accepted",
+                "rule": (
+                    "Must be true: you accept the category's Terms and "
+                    "Conditions for this course, as a creator does."
+                ),
+                "on_mismatch": "400 on `terms_accepted`.",
+            },
+        ],
+        "one_course_per_idea": (
+            "Each approved idea has exactly one course. The first accepted "
+            "push creates it; every later accepted push replaces that same "
+            "course. A different idea is a different course."
+        ),
+        "all_or_nothing": (
+            "A push is one transaction. Your course is built, checked "
+            "against every structural rule, and submitted for review - or, "
+            "if anything fails, nothing at all is stored and every failure "
+            "comes back in one 400 so you can fix them together. There is "
+            "never a half-built course on our side."
+        ),
+        "what_submit_checks": (
+            "The same structural check a creator's course faces when they "
+            "press Submit: learning objective counts, module and lesson "
+            "counts, script length for TEXT lessons, description length, "
+            "total duration, a preview video, a course version, accepted "
+            "terms, a quiz on every module and a final assessment with "
+            "enough questions. The limits are tunable by our admins, so read "
+            "them live from GET /mie/v1/course-requirements/ rather than "
+            "hard-coding them. Failures come back under the "
+            "`structural_standards` field."
+        ),
+        "revisions": {
+            "how_it_works": (
+                "When a reviewer - in content review or in QA verification - "
+                "sends your course back, it returns to DRAFT and "
+                f"{WebhookEventType.COURSE_REVISION_REQUESTED.value} fires "
+                "with the reviewer's feedback and every issue they flagged, "
+                "named by module and lesson title. Fix the course and push "
+                "the whole thing again to the same idea."
+            ),
+            "replacement_is_total": (
+                "A revision push replaces the course entirely: every course "
+                "field, every module, lesson, block and quiz. Always send "
+                "the complete course, never only the parts that changed."
+            ),
+            "while_in_review": (
+                "While the course is SUBMITTED, IN_REVIEW, QA_VERIFICATION, "
+                "APPROVED or PUBLISHED, a push returns 409 course_in_review. "
+                "Wait for the revision webhook."
+            ),
+            "history": (
+                "Reviewer feedback from earlier rounds is kept on our side; "
+                "replacing the content does not erase it."
+            ),
+        },
+        "ownership": (
+            "On your first push we create a platform creator account that "
+            "owns your courses on our side. You never sign in to it and "
+            "never need to know it exists - it cannot sign in at all. It is "
+            "what lets your course run through the same review, QA and "
+            "publishing tools as every other course."
+        ),
+        "not_accepted": [
+            "`topic` - a pushed course is placed by its idea's category and "
+            "priced by category and difficulty.",
+            "QUIZ content blocks - put a lesson's quiz in the lesson's "
+            "`assessment` instead.",
+            "Any id, owner or status field - we assign those.",
+        ],
+        "steps": [
+            {
+                "step": 1,
+                "title": "Wait for the approval",
+                "detail": (
+                    f"Handle {WebhookEventType.SUBMISSION_APPROVED.value}. "
+                    "Keep the submission `id` - it is the path parameter for "
+                    "every course call."
+                ),
+                "curl": None,
+            },
+            {
+                "step": 2,
+                "title": "Read the live requirements",
+                "detail": (
+                    "Pick a category id and a course version id, and read "
+                    "the current structural limits and upload rules."
+                ),
+                "curl": (
+                    f"curl -sS {prefix}/mie/v1/course-requirements/ \\\n"
+                    f'  -H "{API_KEY_HEADER}: {key_example}"'
+                ),
+            },
+            {
+                "step": 3,
+                "title": "Put your media somewhere reachable (optional)",
+                "detail": (
+                    "Use any HTTPS URL you already have, or upload to our "
+                    "storage: presign, PUT the bytes, keep `media_url`. See "
+                    "the `media` section."
+                ),
+                "curl": (
+                    f"curl -sS -X POST {prefix}/mie/v1/uploads/presign/ \\\n"
+                    f'  -H "{API_KEY_HEADER}: {key_example}" \\\n'
+                    '  -H "Content-Type: application/json" \\\n'
+                    "  -d '{\"filename\": \"preview.mp4\", \"content_type\": \"video/mp4\", "
+                    "\"purpose\": \"COURSE_PREVIEW_VIDEO\", \"size\": 48000000, "
+                    "\"width\": 1920, \"height\": 1080, \"codec\": \"h264\", "
+                    "\"duration_seconds\": 90}'"
+                ),
+            },
+            {
+                "step": 4,
+                "title": "Push the course",
+                "detail": (
+                    "One POST with the whole course. 201 means built and "
+                    "submitted for review. Keep `course_id`."
+                ),
+                "curl": (
+                    f"curl -sS -X POST {prefix}/mie/v1/submissions/"
+                    f"{SAMPLE_SUBMISSION_ID}/course/ \\\n"
+                    f'  -H "{API_KEY_HEADER}: {key_example}" \\\n'
+                    '  -H "Content-Type: application/json" \\\n'
+                    "  --data @course.json"
+                ),
+            },
+            {
+                "step": 5,
+                "title": "Fix and resend on a 400",
+                "detail": (
+                    "Nothing was stored. Every problem is listed - field "
+                    "errors by field path, submission rules under "
+                    "`structural_standards`. Fix them all and push again."
+                ),
+                "curl": None,
+            },
+            {
+                "step": 6,
+                "title": "Follow it through review",
+                "detail": (
+                    f"Handle {WebhookEventType.COURSE_REVISION_REQUESTED.value} "
+                    "(fix and push again) and "
+                    f"{WebhookEventType.COURSE_PUBLISHED.value} (done). "
+                    f"GET {push_path} shows the current state at any time."
+                ),
+                "curl": (
+                    f"curl -sS {prefix}/mie/v1/submissions/"
+                    f"{SAMPLE_SUBMISSION_ID}/course/ \\\n"
+                    f'  -H "{API_KEY_HEADER}: {key_example}"'
+                ),
+            },
+        ],
+        "common_mistakes": [
+            "Pushing before SUBMISSION_APPROVED. It returns 409 and stores nothing.",
+            "Rewording the title. It must be the idea's title - fix typos in "
+            "the idea before it is approved, not in the course.",
+            "Sending only the changed module on a revision. The push "
+            "replaces the whole course; anything you leave out is gone.",
+            "Leaving out `duration_minutes` on lessons. The course's total "
+            "duration is the sum of its lessons, and it is checked.",
+            "Storing `file_url` from a presign. It expires in minutes; store "
+            "`media_url`.",
+            "Marking a lesson VIDEO without a `video_url` or "
+            "`embedded_link`. Use TEXT for a lesson without video.",
+        ],
+    }
+
+
+def _course_schema() -> dict:
+    """Field-by-field reference for the push body."""
+
+    question_types = ", ".join(QuestionType.values)
+    return {
+        "summary": (
+            "The push body is the course builder's own schema, nested: the "
+            "course's fields at the top level, `modules` holding "
+            "`lessons`, each lesson holding optional `content_blocks` and an "
+            "optional quiz, each module holding its quiz, and a "
+            "`final_assessment`. Unknown keys are ignored."
+        ),
+        "limits_note": (
+            "Numeric limits in the structural rules (word counts, how many "
+            "modules, lessons, objectives, questions, total minutes) are "
+            "tunable by our admins and are served live by GET "
+            "/mie/v1/course-requirements/. The limits listed here are the "
+            "fixed ones."
+        ),
+        "course": {
+            "title": "string, required. Must be the approved idea's title (trimmed, case-insensitive).",
+            "description": (
+                "string, required. What the course teaches and who it is "
+                "for. Word count is checked at submit."
+            ),
+            "category": "UUID, required. An active category id; the idea's category if it has one.",
+            "version": "UUID, required at submit. An active course version id from the requirements endpoint.",
+            "difficulty_level": f"string, optional, one of {', '.join(DifficultyLevel.values)}. Sets the category price used.",
+            "preview_video_url": (
+                "URL, required at submit. A 60-120 second overview video "
+                f"(BR-015). Up to {COURSE_MEDIA_URL_MAX_LENGTH} characters."
+            ),
+            "thumbnail_url": f"URL, optional. The course cover image. Up to {COURSE_MEDIA_URL_MAX_LENGTH} characters.",
+            "learning_objectives": "list of non-empty strings. Count is checked at submit.",
+            "tags": "list of non-empty strings, optional.",
+            "duration_hours / duration_minutes / duration_seconds": (
+                "integers >= 0, optional. Your planned length, for display. "
+                "The duration checked at submit is the sum of the lessons' "
+                "duration_minutes, not this."
+            ),
+            "terms_accepted": "boolean, required, must be true.",
+            "modules": f"list, required, 1 to {MAX_PUSH_MODULES} items. See `module`.",
+            "final_assessment": "object, required at submit. See `assessment`; needs the minimum question count.",
+        },
+        "module": {
+            "title": "string, required.",
+            "order": (
+                "integer, optional. 1-based position; defaults to the list "
+                "position. Must be unique within the course."
+            ),
+            "description": "string, optional.",
+            "learning_objectives": "list of non-empty strings.",
+            "lessons": (
+                f"list, required, 1 to {MAX_PUSH_LESSONS_PER_MODULE} items. "
+                "See `lesson`. The per-module count is checked at submit."
+            ),
+            "assessment": "object, required at submit. The module quiz. See `assessment`.",
+        },
+        "lesson": {
+            "title": "string, required.",
+            "order": "integer, optional. 1-based; defaults to the list position; unique within the module.",
+            "lesson_type": (
+                f"string, one of {', '.join(LessonContentType.values)}; "
+                f"defaults to {LessonContentType.TEXT.value}. VIDEO requires "
+                "`video_url` or `embedded_link`. TEXT lessons have their "
+                "`script` word count checked at submit."
+            ),
+            "script": "string. The lesson's text or narration. Required in practice for TEXT lessons.",
+            "video_url": f"URL, optional. The lesson video, on any HTTPS host or our storage. Up to {COURSE_MEDIA_URL_MAX_LENGTH} characters.",
+            "embedded_link": "URL, optional. An embeddable player link (YouTube, Vimeo, Wistia...).",
+            "video_script_file": "string, optional. A subtitle (.srt) file URL or storage key.",
+            "learning_objectives": "list of non-empty strings. Count is checked at submit.",
+            "duration_minutes": "integer >= 0. Summed into the course duration checked at submit.",
+            "lesson_requirement": (
+                "string, optional. What the learner needs before this "
+                "lesson. Send this or `requirements`, not both."
+            ),
+            "requirements": "list of {text, order}, optional. The same, as separate lines.",
+            "content_blocks": f"list, optional, up to {MAX_PUSH_BLOCKS_PER_LESSON} items. See `content_block`.",
+            "assessment": "object, optional. A lesson quiz; no question minimum.",
+        },
+        "content_block": {
+            "order": "integer, optional. 1-based; defaults to the list position; unique within the lesson.",
+            "block_type": (
+                "string, required. Text blocks (HEADING_1, HEADING_2, "
+                "PARAGRAPH, NUMBERED_LIST, BULLETED_LIST, BLOCKQUOTE) need "
+                "`text_content`; media blocks (IMAGE, VIDEO, EMBED) need "
+                "`media_url`; DIVIDER carries nothing. QUIZ is not accepted."
+            ),
+            "text_content": "string. Only on text blocks.",
+            "media_url": f"string. Only on media blocks; any URL or our `media_url`. Up to {COURSE_MEDIA_URL_MAX_LENGTH} characters.",
+        },
+        "assessment": {
+            "title": "string, required, up to 255 characters.",
+            "questions": "list of questions, required. See `question`.",
+        },
+        "question": {
+            "type": f"string, one of {question_types}; defaults to {QuestionType.MULTIPLE_CHOICE.value}.",
+            "question": "string, required.",
+            "points": "integer >= 0, optional, defaults to 0.",
+            "options": (
+                f"list of {MINIMUM_CHOICE_OPTIONS}-{MAXIMUM_CHOICE_OPTIONS} "
+                "non-empty strings. Required for choice questions; not "
+                "allowed on ESSAY."
+            ),
+            "correct_index": "integer, the 0-based correct option for SINGLE_CHOICE.",
+            "correct_indices": "list of 0-based indexes for MULTIPLE_CHOICE.",
+            "expected_answer": "string, required for ESSAY only.",
+            "explanation": "string, optional. Shown after answering.",
+        },
+        "example": SAMPLE_COURSE_PUSH,
+    }
+
+
+def _media(base_url: str) -> dict:
+    """Where course media can live, and how to use our storage."""
+
+    return {
+        "summary": (
+            "Every media field in a push is a URL. Where the file lives is "
+            "up to you: your own host or CDN, a video platform, or our "
+            "storage. Video is optional per lesson; the course preview "
+            "video is the one media item every course needs."
+        ),
+        "what_needs_media": [
+            {
+                "item": "Course preview video (`preview_video_url`)",
+                "required": True,
+                "note": "60-120 seconds (BR-015). Checked at submit.",
+            },
+            {
+                "item": "Course thumbnail (`thumbnail_url`)",
+                "required": False,
+                "note": "Recommended - it is the course's cover image.",
+            },
+            {
+                "item": "Lesson video (`video_url` or `embedded_link`)",
+                "required": False,
+                "note": (
+                    "Only a VIDEO lesson needs one. A TEXT lesson is text "
+                    "only, so a course can be entirely text apart from its "
+                    "preview video."
+                ),
+            },
+            {
+                "item": "Images and video inside the lesson body (`content_blocks[].media_url`)",
+                "required": False,
+                "note": "IMAGE, VIDEO and EMBED blocks each need one.",
+            },
+        ],
+        "hosting_options": [
+            {
+                "option": "Your own host or CDN",
+                "how": (
+                    "Put the file's HTTPS URL straight into the field. It "
+                    "must stay reachable for as long as the course is live - "
+                    "reviewers watch it, and learners will."
+                ),
+            },
+            {
+                "option": "A video platform",
+                "how": (
+                    "Use the platform's embeddable link in a lesson's "
+                    "`embedded_link` or an EMBED block, or its watch URL in "
+                    "`video_url`."
+                ),
+            },
+            {
+                "option": "Our storage",
+                "how": (
+                    "Presign, PUT the bytes, then use the returned "
+                    "`media_url`. The files are private; the platform issues "
+                    "short-lived playback URLs from them."
+                ),
+            },
+        ],
+        "our_storage": {
+            "endpoint": f"POST {API_ROOT}/mie/v1/uploads/presign/",
+            "steps": [
+                "POST the file's name, content_type, purpose, size in bytes and - "
+                "for videos and thumbnails - width, height and codec "
+                "(preview videos also duration_seconds).",
+                "PUT the raw file bytes to `upload_url`, sending every header "
+                "in `upload_headers` exactly as given, before `expires_in` "
+                "seconds pass. The declared size is signed into the upload.",
+                "On a 2xx from storage, put `media_url` into your course push.",
+            ],
+            "put_example": (
+                "curl -sS -X PUT '<upload_url>' \\\n"
+                "  -H 'Content-Type: video/mp4' \\\n"
+                "  -H 'x-amz-meta-upload-purpose: COURSE_PREVIEW_VIDEO' \\\n"
+                "  -H 'x-amz-meta-width: 1920' \\\n"
+                "  -H 'x-amz-meta-height: 1080' \\\n"
+                "  -H 'x-amz-meta-duration-seconds: 90' \\\n"
+                "  -H 'x-amz-meta-codec: h264' \\\n"
+                "  --data-binary @preview.mp4"
+            ),
+            "size_must_match": (
+                "The `size` you declared is signed into the upload as its "
+                "Content-Length, which your HTTP client sets from the body. "
+                "If the file is not exactly that many bytes, storage "
+                "rejects the PUT - presign again with the real size."
+            ),
+            "keep": (
+                "`media_url` - durable. Not `file_url`: that is a temporary "
+                "read link that expires with the upload URL."
+            ),
+            "rules_per_purpose": [
+                {
+                    "purpose": purpose,
+                    "content_types": sorted(COURSE_UPLOAD_RULES[purpose]["content_types"]),
+                    "extensions": sorted(COURSE_UPLOAD_RULES[purpose]["extensions"]),
+                    "max_size": _human_bytes(COURSE_UPLOAD_RULES[purpose]["max_size"]),
+                    "min_resolution": (
+                        f"{MIN_MEDIA_WIDTH}x{MIN_MEDIA_HEIGHT}"
+                        if COURSE_UPLOAD_RULES[purpose].get("dimensions")
+                        else None
+                    ),
+                    "aspect_ratio": (
+                        "{}:{}".format(*COURSE_UPLOAD_RULES[purpose]["aspect_ratio"])
+                        if "aspect_ratio" in COURSE_UPLOAD_RULES[purpose]
+                        else None
+                    ),
+                    "codec": COURSE_UPLOAD_RULES[purpose].get("codec"),
+                    "duration_seconds": (
+                        "{}-{}".format(*COURSE_UPLOAD_RULES[purpose]["duration_range"])
+                        if "duration_range" in COURSE_UPLOAD_RULES[purpose]
+                        else None
+                    ),
+                }
+                for purpose in MIE_UPLOAD_PURPOSES
+            ],
+            "external_media_note": (
+                "These rules apply to files uploaded to our storage. Media "
+                "you host yourself is not inspected on upload, but reviewers "
+                "and QA verification hold it to the same standard - a "
+                "blurry or broken video is a revision request."
+            ),
+        },
+    }
+
+
+def _course_lifecycle() -> dict:
+    """Every status a pushed course can be in, from the developer's side."""
+
+    return {
+        "summary": (
+            "Your idea and your course have separate statuses. The idea "
+            "stays APPROVED; the course moves through review. Course moves "
+            "arrive as COURSE_* webhooks, and GET "
+            f"{API_ROOT}/mie/v1/submissions/<submission_id>/course/ always "
+            "shows where it stands."
+        ),
+        "path": (
+            "push -> SUBMITTED -> IN_REVIEW (content review seats) -> "
+            "QA_VERIFICATION -> APPROVED -> PUBLISHED. A rejection at any "
+            "review seat or in QA returns it to DRAFT, and your next push "
+            "starts the review again from the first seat."
+        ),
+        "statuses": [
+            {"status": status.value, "label": status.label, **COURSE_STATUS_DOCS[status]}
+            for status in CourseStatus
+        ],
+        "events": [
+            {
+                "event": event_type.value,
+                "course_status": COURSE_STATUS_BY_EVENT[event_type].value,
+                "fires_when": WEBHOOK_EVENT_DOCS[event_type]["fires_when"],
+            }
+            for event_type in COURSE_STATUS_BY_EVENT
+        ],
+        "not_announced": (
+            "Moves inside review (a reviewer claiming the course, passing a "
+            "seat, QA approval) fire no webhook. Use GET .../course/ if you "
+            "want to show finer progress."
+        ),
+    }
 
 
 # ── Small helpers ────────────────────────────────────────────────────
@@ -1743,3 +2924,7 @@ def _plural(amount: float, unit: str) -> str:
 
 def _iso(value):
     return value.isoformat() if value else None
+
+
+def _human_bytes(size: int) -> str:
+    return f"{size // (1024 * 1024)} MB"

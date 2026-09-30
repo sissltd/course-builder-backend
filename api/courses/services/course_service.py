@@ -222,16 +222,25 @@ def delete_draft_course(*, course: Course, actor: User) -> None:
     course.delete()
 
 
-def submit_course(*, course: Course, actor: User) -> Course:
+def submit_course(
+    *, course: Course, actor: User, skip_draft_hold: bool = False
+) -> Course:
     """Transition a Draft course to Submitted.
 
     - Only the owning creator may submit (ownership is also enforced by the
       IsCourseOwner object permission, this is a service-level defense in depth).
     - The course must currently be Draft (BR-001: no bypassing review).
+    - The draft minimum hold applies unless `skip_draft_hold` is set. Only
+      the MIE course push sets it: that course was written outside the
+      builder and arrives finished, so there is no drafting period to hold.
     - Runs quality_check_service.validate_structural_standards(); any
       failures abort the transition with an aggregated ValidationError.
-    - Creator-uploaded courses snapshot the current topic/category price.
-      AI-generated courses remain unpaid and keep this field null.
+    - Every course except an AI-generated one snapshots the current
+      topic/category price; AI-generated courses keep this field null.
+      Only CREATOR_UPLOADED courses are then paid out automatically
+      (transaction_services.effect_course_payment) - a DEVELOPER_API
+      course carries its price for the developer payout, which is not
+      built yet.
     """
 
     permission_service.require_any_permission(
@@ -247,7 +256,7 @@ def submit_course(*, course: Course, actor: User) -> Course:
         )
 
     hold_hours = platform_settings_service.get_settings().draft_minimum_hold_hours
-    if hold_hours and course.draft_started_at:
+    if hold_hours and course.draft_started_at and not skip_draft_hold:
         releases_at = course.draft_started_at + timedelta(hours=hold_hours)
         if timezone.now() < releases_at:
             raise exceptions.ValidationError(
@@ -541,6 +550,15 @@ def publish_course(
             award_service.schedule_evaluation(
                 creator_id=course.creator_id, criterion=BadgeCriterion.COURSES_PUBLISHED
             )
+        # Local import: api.mie imports this module, so a module-level
+        # import would be circular. A no-op unless the course was pushed
+        # through the MIE.
+        from api.mie.enums import WebhookEventType
+        from api.mie.services import course_push_service
+
+        course_push_service.record_course_event(
+            course=course, event_type=WebhookEventType.COURSE_PUBLISHED
+        )
     return course
 
 
