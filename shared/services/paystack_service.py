@@ -158,8 +158,7 @@ class PaystackService:
     @staticmethod
     def get_bank_name(bank_code):
         banks_resp = PaystackService.get_banks()
-        bank_list = banks_resp["data"]
-        bank = next(bank for bank in bank_list if bank["code"] == bank_code)
+        bank = next(bank for bank in banks_resp if bank["code"] == bank_code)
         bank_name = bank["name"]
         return bank_name
 
