@@ -40,6 +40,7 @@ _ME_EXAMPLE = {
     "created_datetime": "2026-07-12T09:30:11.204Z",
     "updated_datetime": "2026-07-12T09:30:11.204Z",
     "has_completed_onboarding": False,
+    "mfa_enabled": False,
 }
 
 _TOKEN_PAIR_EXAMPLE = {
@@ -77,9 +78,6 @@ _LOGIN_RESPONSE_SCHEMA = {
         "workspace": {"type": "string"},
         "mfa_required": {"type": "boolean"},
         "challenge_token": {"type": "string"},
-        "mfa_enrollment_required": {"type": "boolean"},
-        "mfa_grace_period_ends_at": {"type": "string", "format": "date-time"},
-        "mfa_enrollment_overdue": {"type": "boolean"},
     },
 }
 
@@ -454,15 +452,12 @@ class LoginView(APIView):
             "who already knows the password can trigger that, it doesn't "
             "leak account existence to anyone else. `workspace` tells the "
             "frontend which dashboard to route to based on role; `role` is "
-            "also embedded in the access token's claims. The "
-            "An account with MFA enabled always gets "
+            "also embedded in the access token's claims. MFA is opt-in for "
+            "every role: an account that has enabled it always gets "
             "`mfa_required=true` and a `challenge_token` instead of "
             "tokens, in every environment; complete the login with "
-            "`POST /auth/mfa/verify/`. The `mfa_enrollment_required`/"
-            "`mfa_enrollment_overdue` fields only appear where MFA is "
-            "enforced (production); in dev/staging a mandated-role admin "
-            "without a device logs straight in and the token carries "
-            "`mfa_verified=true`."
+            "`POST /auth/mfa/verify/`. Every other account, admins "
+            "included, logs straight in."
         ),
         tags=["Auth — Session"],
         request=LoginSerializer,

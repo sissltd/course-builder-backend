@@ -424,10 +424,9 @@ def finish_login(
     UserSession, and assembles the same response shape either way, so a
     client can't tell which path was taken from the shape of the response.
 
-    `mfa_verified` is embedded as a token claim consumed by
-    IsMFAVerifiedForSession - True only when this login actually completed
-    an MFA challenge (or the role never required one), never merely because
-    the account happens to be inside its enrollment grace period.
+    `mfa_verified` is embedded as a token claim: True when this login
+    completed an MFA challenge or the account never enrolled one. Nothing
+    server-side reads it now - IsStrongMFASession reads `mfa_challenged`.
 
     `mfa_challenged` is stricter: True only when this login passed an MFA
     challenge. IsStrongMFASession reads it for money and identity actions,

@@ -26,7 +26,6 @@ from api.catalog.serializers import (
 from api.catalog.services import category_service
 from api.authorization import codenames
 from api.authorization.permissions import Perm
-from api.users.permissions import IsMFAVerifiedForSession
 from includes.spectacular.responses import (
     STANDARD_ERROR_RESPONSES,
     ErrorEnvelopeSerializer,
@@ -413,10 +412,7 @@ class CategoryViewSet(ModelViewSet):
     """Admin Writer-managed course categories (SCCS PRD Section 7).
 
     Every endpoint under /categories/ needs `catalog.manage_categories`
-    (Writer, Admin and Super Admin by default). Create/update/delete
-    additionally require an MFA-verified session (IsMFAVerifiedForSession),
-    since categories carry creator pricing, a financial policy change.
-    Approvers, reviewers, and public Course Creators are deliberately
+    (Writer, Admin and Super Admin by default). Approvers, reviewers, and public Course Creators are deliberately
     excluded; creators pick a category via GET /categories/picker/, which
     serves only ACTIVE categories in a minimal payload (US-101).
     """
@@ -456,7 +452,7 @@ class CategoryViewSet(ModelViewSet):
 
     def get_permissions(self):
         if self.action in WRITE_ACTIONS or self.action in ("archive", "unarchive"):
-            return [Perm(codenames.CATALOG_MANAGE_CATEGORIES)(), IsMFAVerifiedForSession()]
+            return [Perm(codenames.CATALOG_MANAGE_CATEGORIES)()]
         if self.action in ADMIN_READ_ACTIONS:
             return [Perm(codenames.CATALOG_MANAGE_CATEGORIES)()]
         return super().get_permissions()
@@ -544,8 +540,7 @@ class CategoryViewSet(ModelViewSet):
             "new courses under it, without deleting anything.\n\n"
             "Use this instead of delete when a category is being retired "
             "but its courses must stay. Reversible via unarchive.\n\n"
-            "**Auth:** The `catalog.manage_categories` permission — Writer, Admin and Super Admin by default, with an MFA-verified session "
-            "where MFA is mandatory for the caller's role.\n\n"
+            "**Auth:** The `catalog.manage_categories` permission — Writer, Admin and Super Admin by default.\n\n"
             "**Prerequisites:** The category must not already be archived.\n\n"
             "**Important:** Existing courses, payouts and price snapshots "
             "are untouched \u2014 archiving only removes the category from "
@@ -579,8 +574,7 @@ class CategoryViewSet(ModelViewSet):
         description=(
             "Returns an archived category to ACTIVE so creators can use it "
             "again.\n\n"
-            "**Auth:** The `catalog.manage_categories` permission — Writer, Admin and Super Admin by default, with an MFA-verified session "
-            "where MFA is mandatory for the caller's role.\n\n"
+            "**Auth:** The `catalog.manage_categories` permission — Writer, Admin and Super Admin by default.\n\n"
             "**Prerequisites:** The category must currently be archived.\n\n"
             "**Important:** Restores to ACTIVE, not to whatever status it "
             "held before archiving \u2014 an INACTIVE category that was "

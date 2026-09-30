@@ -1,7 +1,6 @@
 import logging
 from datetime import timedelta
 
-from django.conf import settings
 from django.utils import timezone
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
@@ -122,30 +121,11 @@ class LoginSerializer(TokenObtainPairSerializer):
             challenge_token = mfa_service.create_challenge(user=user)
             return {"mfa_required": True, "challenge_token": challenge_token}
 
-        # Only ADMIN/SUPER_ADMIN are ever *required* to enroll, and only on
-        # deployments that enforce MFA (production). Where MFA_ENFORCED is
-        # off (dev/staging), the password check above is the entire login;
-        # `mfa_verified=true` is minted into the token so
-        # IsMFAVerifiedForSession-gated admin endpoints stay reachable
-        # without an enrollment step.
-        if not settings.MFA_ENFORCED or user.role not in mfa_service.MFA_MANDATED_ROLES:
-            return authentication_service.finish_login(
-                user=user, request=request, mfa_verified=True
-            )
-
-        data = authentication_service.finish_login(
-            user=user, request=request, mfa_verified=False
+        # MFA is opt-in for every role: an account that never enrolled a
+        # device is authenticated by the password check above alone.
+        return authentication_service.finish_login(
+            user=user, request=request, mfa_verified=True
         )
-        if mfa_service.is_within_grace_period(user=user):
-            data["mfa_enrollment_required"] = True
-            data["mfa_grace_period_ends_at"] = user.mfa_grace_period_ends_at
-        else:
-            # Grace period has lapsed - login itself still succeeds (no
-            # support-desk lockout spiral), but mfa_verified=False means
-            # IsMFAVerifiedForSession-gated actions stay blocked until
-            # they enroll.
-            data["mfa_enrollment_overdue"] = True
-        return data
 
     def _register_failed_attempt(self, user: User) -> None:
         """Increment failed_login_attempts and, at the threshold, lock the

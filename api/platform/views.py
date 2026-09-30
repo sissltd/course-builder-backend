@@ -26,7 +26,6 @@ from api.platform.services import (
 from api.authorization import codenames
 from api.authorization.permissions import Perm
 from api.authorization.services import permission_service
-from api.users.permissions import IsMFAVerifiedForSession
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 
 _SETTINGS_EXAMPLE = {
@@ -59,15 +58,14 @@ class PlatformSettingsView(APIView):
     live thresholds (e.g. "4-12 modules required") without hardcoding them.
     PATCH needs the `platform.edit_settings` permission (Admin and Super
     Admin by default; not Approver - these thresholds affect every course on
-    the platform) and additionally an MFA-verified session - see
-    IsMFAVerifiedForSession.
+    the platform).
     """
 
     serializer_class = PlatformSettingsUpdateSerializer  # for schema generation only
 
     def get_permissions(self):
         if self.request.method == "PATCH":
-            return [Perm(codenames.PLATFORM_EDIT_SETTINGS)(), IsMFAVerifiedForSession()]
+            return [Perm(codenames.PLATFORM_EDIT_SETTINGS)()]
         return [IsAuthenticated()]
 
     @extend_schema(
@@ -115,8 +113,7 @@ class PlatformSettingsView(APIView):
             "saved.\n\n"
             "**Auth:** The `platform.edit_settings` permission — Admin and "
             "Super Admin by default, not Approver: these values affect every "
-            "course on the platform. Also needs an MFA-verified session where "
-            "MFA is mandatory for the caller's role.\n\n"
+            "course on the platform.\n\n"
             "**Prerequisites:** At least one settings field must be present in "
             "the body.\n\n"
             "**Important:** Changes take effect immediately and apply to the "

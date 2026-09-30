@@ -28,9 +28,9 @@
 | `STAFF_WRITER` | Writer | Super Admin invite only |
 | `STAFF_VERIFIER` | Verifier | Super Admin invite only |
 | `STAFF_APPROVER` | Approver | Super Admin invite only |
-| `AI_REVIEWER` | AI Reviewer | Super Admin invite only. **No view anywhere gates on `IsAiReviewerRole`** — the role exists, the permission class exists, nothing consumes it (`api/users/permissions.py:69-78`, docstring says so explicitly). |
+| `AI_REVIEWER` | AI Reviewer | Super Admin invite only. **No view anywhere gates on `IsAiReviewerRole`** — the role exists, the permission class exists, nothing consumes it (no `IsAiReviewerRole` class remains). |
 | `QA_REVIEWER` | QA Reviewer | Super Admin invite only |
-| `ADMIN` | Admin | **Super Admin invite** (`api/users/enums.py:61-67`, `INVITABLE_STAFF_ROLES`). This is new: before this session's work, `ADMIN` had no API path at all and could only be set via Django admin or a direct DB write. Admins are MFA-mandated (`api/authentication/services/mfa_service.py:37`), so an invited Admin enrols MFA the same way the Super Admin does. |
+| `ADMIN` | Admin | **Super Admin invite** (`api/users/enums.py:61-67`, `INVITABLE_STAFF_ROLES`). This is new: before this session's work, `ADMIN` had no API path at all and could only be set via Django admin or a direct DB write. MFA is opt-in for every role, so an invited Admin may enrol MFA themselves but is not required to. |
 | `SUPER_ADMIN` | Super Admin | One-time bootstrap endpoint, env-gated (`SUPERADMIN_BOOTSTRAP_ENABLED`), DB-constrained to exactly one row (`api/authentication/views/staff_views.py:71-197`). Never invited. |
 
 ```python
@@ -109,13 +109,10 @@ anonymous. See §6.9.
 - `IsStrongMFASession` requires the token claim `mfa_challenged` (set only by
   the MFA verify flow) and a `role` claim equal to `user.role`. It's used on
   role writes, change-role, erase and wallet adjustments.
-- `api/users/permissions.py::IsMFAVerifiedForSession` is unchanged, except that
-  it now also rejects a token minted under a different role.
 
 **Workflow checks that stay on `User.role`** (not permissions):
 
 - `review_service.SEAT_ROLES` / `QA_SEAT_ROLES`, and four-eyes
-- `mfa_service.MFA_MANDATED_ROLES`
 - `STAFF_ROLES` / `INVITABLE_STAFF_ROLES`
 - login workspace routing, signup roles
 - `api/users/workflow.py` (`EARNING_ROLES`, `REVIEWER_WORKSPACE_ROLES`,
@@ -188,16 +185,12 @@ against it.
 
 ## 5. MFA
 
-`IsMFAVerifiedForSession` gates, composed with a role class:
-
-| Surface | Gate |
-|---|---|
-| `PATCH /platform/settings/` | `IsAdminOrSuperAdminRole & IsMFAVerifiedForSession` (`platform/views.py:65-68`) |
-| Category create/update/delete/archive/unarchive | `CanManageCategories & IsMFAVerifiedForSession` (`category_views.py:455-457`) |
-
-`MFA_MANDATED_ROLES = (ADMIN, SUPER_ADMIN)` only. Approver, Writer, Verifier,
-QA Reviewer, AI Reviewer are never MFA-mandated even though some of them can
-reach admin-tier-gated endpoints (Approver via `IsAdminRole`).
+MFA is opt-in for every role, admins included. No role is required to enrol,
+there is no enrolment grace period, and anyone may turn their own MFA off
+(`POST /auth/mfa/disable/`). An account that enrols a device is challenged at
+login in every environment. The one MFA gate on actions is
+`IsStrongMFASession` (see section 2), which needs a session that passed a
+challenge and is inert where `MFA_ENFORCED` is off.
 
 ---
 
@@ -323,7 +316,7 @@ never written by anything.
 | Action | Gate |
 |---|---|
 | Category read | any authenticated (public browse) |
-| Category create/update/delete/archive/unarchive | `CanManageCategories & IsMFAVerifiedForSession` |
+| Category create/update/delete/archive/unarchive | `CanManageCategories` |
 | Category counts, deletion-impact, picker (admin reads) | `CanManageCategories` |
 | Category **requests** (file) | `IsCourseCreatorRole | CanManageCategories` |
 | Category requests (approve/reject) | `get_permissions()` narrows to `CanManageCategories()` (`category_request_views.py:80-81`) — **changed this session**: previously the view admitted Approver (`IsAdminRole`) while the service required `CanManageCategories`, so an Approver passed the gate and was then 403'd by the service, and a Writer was blocked at the gate despite being allowed by the service. Now one rule everywhere. |
@@ -605,8 +598,8 @@ not as findings:
 | Concern | File |
 |---|---|
 | Role enum, invitable/staff lists | `api/users/enums.py` |
-| All permission classes | `api/users/permissions.py` |
-| MFA session-claim gate | `api/users/permissions.py::IsMFAVerifiedForSession`, `api/authentication/services/mfa_service.py` |
+| All permission classes | `api/authorization/permissions.py` |
+| MFA session-claim gate | `api/authorization/permissions.py::IsStrongMFASession`, `api/authentication/services/mfa_service.py` |
 | Course ownership helpers | `api/courses/views/course_views.py` (top of file) |
 | Collaborator scoping | `api/collaborators/services/collaborator_service.py` |
 | Content review chain | `api/reviews/services/review_service.py`, `api/courses/services/course_service.py` |

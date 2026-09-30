@@ -57,8 +57,8 @@ class UserRole(models.TextChoices):
 
 #: Roles a Super Admin may hand out via the "Invite a staff" dialog, in the
 #: order the dropdown shows them. ADMIN is here so a Super Admin can appoint
-#: Admins - otherwise no API path grants it; Admins are MFA-mandated, so an
-#: invited one enrols like the Super Admin does. SUPER_ADMIN is absent by
+#: Admins - otherwise no API path grants it. MFA is opt-in, so an invited
+#: Admin may enrol themselves but is not required to. SUPER_ADMIN is absent by
 #: design - the seat is unique and claimable only through the bootstrap
 #: endpoint - and so is COURSE_CREATOR, which is not a staff position.
 #: CREATOR_REVIEWER is last so the positions existing clients already list
