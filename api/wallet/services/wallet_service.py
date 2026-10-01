@@ -14,14 +14,14 @@ from api.authentication.services.activity_service import log_activity
 from api.authorization import codenames
 from api.authorization.services import permission_service
 from api.courses.models import Course
-from api.notification.models import Notification
+
+# from api.platform.services import platform_settings_service
 from api.payments.models.bankaccount_models import BankAccount
 from api.payments.models.ledgeraccount_models import InternalAccount
 from api.payments.models.transaction_model import Transaction, generate_reference
 from api.payments.services.transaction_services import (
     internal_transfer,
 )
-from api.platform.enums import PaymentProcessors
 from api.platform.services import platform_settings_service
 from api.users.enums import UserActivityActionEnums, UserActivityCategoryEnums
 from api.users.models import User
@@ -38,59 +38,11 @@ from api.wallet.models import (
 )
 from api.wallet.tasks import dispatch_transfer_task
 from core.models import TransferOutboxEvent
-from shared.services.flutterwave_service import FlutterwaveService
-from shared.utils.encryption import encrypt_field
+from shared.services.email_service import EmailService
 
 logger = logging.getLogger(__name__)
 
 WITHDRAWAL_OTP_SUBJECT = "Confirm your withdrawal"
-
-class RecipientCreationError(Exception):
-    """Raised when there is an error creating a transfer recipient."""
-
-
-def _update_account_recipient_code(account: BankAccount, recipient_code: str, provider: PaymentProcessors):
-    """Update the recipient code for a bank account based on the payment processor.
-    A failure is logged, but not allowed disrupt the follow of operation
-    """
-    try:
-        if provider == PaymentProcessors.FLUTTERWAVE:
-            account.flutterwave_recipient_code = recipient_code
-        else:
-            logger.warning(f"Unsupported payment processor: {provider}")
-        account.save(update_fields=["paystack_recipient_code", "flutterwave_recipient_code", "updated_datetime"])
-    except Exception as e:
-        # Log the error but do not interrupt the main flow of withdrawal confirmation
-        logger.error(f"Error updating account recipient code for account {account.id}: {e}")
-
-
-def _transfer_processor_and_recipient_code(account: BankAccount) -> tuple[str, str]:
-    """Attempts to get the payment processor to user for a an outgoing transfer and the recipient code.
-    The processor is obtained from the PlatformSettings singleton, updatable by the admin
-
-    We first check the recipient payout/bank account record, based on the payment process.
-    If the record has the desired recipient code, we return it; otherwise we attempt to
-    generate the code and update the record accordingly.
-
-    We do return a NoneType; if we fail to get the recipient code, we raise an exception.
-    This makes it easier for the caller to interprete the result
-    """
-    payment_processor = platform_settings_service.get_settings().payment_processor
-    if payment_processor == PaymentProcessors.FLUTTERWAVE:
-        recipient_code = account.flutterwave_recipient_code
-        if not recipient_code:
-            recipient_code = FlutterwaveService().get_recipient_id(
-                account_number=account.account_number,
-                bank_code=account.bank_code,
-                account_name=account.account_name,
-            )
-            if not recipient_code:
-                logger.error(f"Failed to create Flutterwave transfer recipient for account {account.id}")
-                raise RecipientCreationError("Failed to create Flutterwave transfer recipient.")
-            _update_account_recipient_code(account, recipient_code, payment_processor)
-    else:
-        raise ValueError(f"Unsupported payment processor: {payment_processor}")
-    return payment_processor, recipient_code
 
 
 def get_or_create_wallet(*, user: User) -> Wallet:
@@ -128,9 +80,7 @@ def get_wallet_totals(*, wallet: Wallet) -> dict:
     }
 
 
-def credit_wallet(
-    *, user: User, amount: Decimal, course: Course | None = None, description: str = ""
-) -> Transaction:
+def credit_wallet(*, user: User, amount: Decimal, course: Course | None = None, description: str = "") -> Transaction:
     """Credit `amount` to `user`'s wallet, creating a COMPLETED Transaction.
 
     Uses select_for_update() inside an atomic transaction so concurrent
@@ -187,9 +137,7 @@ def list_all_transactions(*, actor: User) -> QuerySet[Transaction]:
     """
 
     permission_service.require_permission(actor, codenames.CREATORS_VIEW_WALLET)
-    return Transaction.objects.select_related(
-        "course"
-    )  # wallet field is now a GenericForeign key
+    return Transaction.objects.select_related("course")  # wallet field is now a GenericForeign key
 
 
 def list_all_withdrawal_requests(*, actor: User) -> QuerySet[WithdrawalRequest]:
@@ -202,65 +150,10 @@ def list_all_withdrawal_requests(*, actor: User) -> QuerySet[WithdrawalRequest]:
     """
 
     permission_service.require_permission(actor, codenames.CREATORS_VIEW_WALLET)
-    return WithdrawalRequest.objects.select_related(
-        "user", "payout_account", "transaction"
-    )
+    return WithdrawalRequest.objects.select_related("user", "payout_account", "transaction")
 
 
-def create_payout_account(
-    *,
-    user: User,
-    account_type: str,
-    bank_name: str,
-    account_number: str,
-    account_name: str,
-    bank_code: str,
-    is_default: bool = False,
-) -> BankAccount:
-    """Add a payout account for `user`.
-
-    The first account a user adds automatically becomes their default
-    (matching the design, where the first-added account shows as selected
-    on Settings -> Payment); explicitly passing is_default=True on a later
-    account demotes any previous default.
-    """
-
-    permission_service.require_permission(user, codenames.EARNINGS_MANAGE_OWN)
-    has_existing = BankAccount.objects.filter(user=user).exists()
-    is_default = is_default or not has_existing
-
-    with transaction.atomic():
-        if is_default:
-            BankAccount.objects.filter(user=user, is_default=True).update(
-                is_default=False
-            )
-        return BankAccount.objects.create(
-            user=user,
-            account_type=account_type,
-            bank_name=bank_name,
-            account_number=encrypt_field(account_number),
-            account_name=account_name,
-            is_default=is_default,
-            bank_code=bank_code,
-        )
-
-
-def delete_bank_account(*, user: User, bank_account_id) -> None:
-    """Remove one of `user`'s bank accounts.
-
-    Raises NotFound if it doesn't exist or belongs to someone else.
-    """
-
-    permission_service.require_permission(user, codenames.EARNINGS_MANAGE_OWN)
-    account = BankAccount.objects.filter(user=user, pk=bank_account_id).first()
-    if account is None:
-        raise exceptions.NotFound("Bank account not found.")
-    account.delete()
-
-
-def request_withdrawal(
-    *, user: User, amount: Decimal, payout_account_id
-) -> WithdrawalRequest:
+def request_withdrawal(*, user: User, amount: Decimal, payout_account_id) -> WithdrawalRequest:
     """Validate and create a PENDING_CONFIRMATION WithdrawalRequest, emailing
     an OTP the user must submit via confirm_withdrawal.
 
@@ -275,13 +168,9 @@ def request_withdrawal(
     require_kyc = platform_settings.withdrawal_require_verification
     kyc_submission_service.require_verified(user=user, required=require_kyc)
 
-    minimum_withdrawal_threshold = (
-        platform_settings_service.get_settings().minimum_withdrawal_threshold
-    )
+    minimum_withdrawal_threshold = platform_settings_service.get_settings().minimum_withdrawal_threshold
     if amount < minimum_withdrawal_threshold:
-        raise exceptions.ValidationError(
-            f"Minimum withdrawal amount is {minimum_withdrawal_threshold}."
-        )
+        raise exceptions.ValidationError(f"Minimum withdrawal amount is {minimum_withdrawal_threshold}.")
 
     wallet = get_or_create_wallet(user=user)
     if amount > wallet.balance:
@@ -304,16 +193,12 @@ def request_withdrawal(
         length=settings.WITHDRAWAL_OTP_LENGTH,
         expiry_minutes=settings.WITHDRAWAL_OTP_EXPIRY_MINUTES,
     )
-    Notification.emit_email_notification(
-        receivers=[user],
-        subject=WITHDRAWAL_OTP_SUBJECT,
-        template_name="emails/withdrawal_otp",
-        context={
-            "first_name": user.first_name,
-            "code": raw_code,
-            "amount": amount,
-            "expiry_minutes": settings.WITHDRAWAL_OTP_EXPIRY_MINUTES,
-        },
+
+    EmailService.send_withdrawal_otp_email(
+        user_email=user.email,
+        first_name=user.first_name,
+        code=raw_code,
+        amount=amount,
     )
     return withdrawal_request
 
@@ -341,34 +226,22 @@ def confirm_withdrawal(*, user: User, withdrawal_request_id, code: str) -> Trans
     if withdrawal_request is None:
         raise exceptions.NotFound("Withdrawal request not found.")
 
-    token_service.verify_token(
-        user=user, purpose=TokenPurpose.WITHDRAWAL_CONFIRMATION, token=code
-    )
+    token_service.verify_token(user=user, purpose=TokenPurpose.WITHDRAWAL_CONFIRMATION, token=code)
 
     try:
         wallet = Wallet.objects.get(pk=withdrawal_request.wallet_id)
         if withdrawal_request.amount > wallet.balance:
-            raise exceptions.ValidationError(
-                "Withdrawal amount exceeds available balance."
-            )
+            raise exceptions.ValidationError("Withdrawal amount exceeds available balance.")
 
         payout_account = withdrawal_request.payout_account
-        recipient_code = payout_account.paystack_recipient_code
         account_number = payout_account.account_number
         bank_name = payout_account.bank_name
         account_name = payout_account.account_name
         reference = generate_reference()
     except Exception as exc:
-        logger.error(
-            f"Error preparing withdrawal confirmation for user {user.email}: {exc}"
-        )
+        logger.error(f"Error preparing withdrawal confirmation for user {user.email}: {exc}")
         raise
 
-    try:
-        processor, recipient_code = _transfer_processor_and_recipient_code(payout_account)
-    except RecipientCreationError as e:
-        logger.error(f"Error creating transfer recipient for user {user.email}: {e}")
-        raise exceptions.ValidationError(str(e))
     try:
         with transaction.atomic():
             # move the amount from the user's wallet into the suspense(transit) account before initiating the transfer to ensure funds are reserved and to prevent double spending in case of retries
@@ -390,26 +263,26 @@ def confirm_withdrawal(*, user: User, withdrawal_request_id, code: str) -> Trans
                 recipient_provider_name=bank_name,
             )
 
+            platform_settings = platform_settings_service.get_settings()
+            processor = platform_settings.payment_processor
             outbox_entry = TransferOutboxEvent.objects.create(
                 user=user,
                 amount=withdrawal_request.amount,
-                recipient_code=recipient_code,
                 status="PENDING",
                 reference=reference,
                 wallet=debit_wallet,
                 reason="Wallet Withdrawal",
                 transfer_request=withdrawal_request,
                 transfer_processor=processor,
+                bank_details=payout_account,
             )
 
             try:
                 transaction.on_commit(
-                    lambda: dispatch_transfer_task.delay(outbox_entry.id, provider=processor)  # type: ignore
+                    lambda: dispatch_transfer_task.delay(outbox_entry.id)  # type: ignore
                 )
             except Exception as task_exc:
-                logger.error(
-                    f"Error dispatching Paystack transfer task for withdrawal {withdrawal_request.id}: {task_exc}"
-                )
+                logger.error(f"Error dispatching transfer task for withdrawal {withdrawal_request.id}: {task_exc}")
                 raise
 
             txn = Transaction.objects.get(
@@ -443,9 +316,7 @@ def confirm_withdrawal(*, user: User, withdrawal_request_id, code: str) -> Trans
 
         except Exception as audit_exc:
             # Log the audit error but do not interrupt the main flow of withdrawal confirmation
-            logger.error(
-                f"Error logging audit event for withdrawal initiation: {audit_exc}"
-            )
+            logger.error(f"Error logging audit event for withdrawal confirmation: {audit_exc}")
 
     except Exception as exc:
         logger.error(f"Error initiating withdrawal for user {user.email}: {exc}")

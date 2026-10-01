@@ -291,7 +291,7 @@ def send_templated_email_task(
 
 
 # This is a shared task for sending email generally to users
-@shared_task(bind=True, max_retries=3, default_retry_delay=30)
+@shared_task(bind=True, max_retries=3, default_retry_delay=10)
 def send_email_task(
     self,
     subject: str,

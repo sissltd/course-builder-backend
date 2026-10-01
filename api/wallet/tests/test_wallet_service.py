@@ -32,6 +32,29 @@ def _approve_kyc(user):
     )
 
 
+def _create_payout_account(
+    user,
+    account_type,
+    bank_name,
+    account_number,
+    account_name,
+    bank_code,
+    is_default=True,
+):
+    from api.payments.models import BankAccount
+    from shared.utils.encryption import encrypt_field
+
+    return BankAccount.objects.create(
+        user=user,
+        account_type=account_type,
+        bank_name=bank_name,
+        account_number=encrypt_field(account_number),
+        account_name=account_name,
+        is_default=is_default,
+        bank_code=bank_code,
+    )
+
+
 class GetOrCreateWalletTests(TestCase):
     def test_creates_zero_balance_wallet_once_and_is_idempotent(self):
         user = make_user()
@@ -73,7 +96,7 @@ class GetWalletTotalsTests(TestCase):
         self.creator = make_user(role=UserRole.COURSE_CREATOR)
 
         self.flutterwave_recipient_patcher = patch(
-            "shared.services.flutterwave_service.FlutterwaveService.get_recipient_id", return_value="RCP_TEST_123"
+            "shared.services.payment_services.FlutterwaveService.get_recipient_id", return_value="RCP_TEST_123"
         )
         self.transfer_task_patcher = patch("api.wallet.services.wallet_service.dispatch_transfer_task.delay")
 
@@ -91,13 +114,13 @@ class GetWalletTotalsTests(TestCase):
         user = make_user()
         _approve_kyc(user)
         wallet_service.credit_wallet(user=user, amount=Decimal("100.00"))
-        payout_account = wallet_service.create_payout_account(
+        payout_account = _create_payout_account(
             user=user,
             account_type="LOCAL",
             bank_name="Access Bank",
             account_number="1234567890",
             account_name="Test User",
-            bank_code="058"
+            bank_code="058",
         )
         withdrawal_request = wallet_service.request_withdrawal(
             user=user, amount=Decimal("60.00"), payout_account_id=payout_account.id
@@ -163,13 +186,13 @@ class RequestWithdrawalTests(TestCase):
     def setUp(self):
         self.user = make_user()
         wallet_service.credit_wallet(user=self.user, amount=Decimal("100.00"))
-        self.payout_account = wallet_service.create_payout_account(
+        self.payout_account = _create_payout_account(
             user=self.user,
             account_type="LOCAL",
             bank_name="Access Bank",
             account_number="1234567890",
             account_name="Test User",
-            bank_code="058"
+            bank_code="058",
         )
 
     def test_raises_when_kyc_not_verified(self):
@@ -235,13 +258,13 @@ class ConfirmWithdrawalTests(TestCase):
         self.user = make_user()
         _approve_kyc(self.user)
         wallet_service.credit_wallet(user=self.user, amount=Decimal("100.00"))
-        self.payout_account = wallet_service.create_payout_account(
+        self.payout_account = _create_payout_account(
             user=self.user,
             account_type="LOCAL",
             bank_name="Access Bank",
             account_number="1234567890",
             account_name="Test User",
-            bank_code="058"
+            bank_code="058",
         )
         self.withdrawal_request = wallet_service.request_withdrawal(
             user=self.user,
@@ -252,7 +275,7 @@ class ConfirmWithdrawalTests(TestCase):
 
         # setting processor to Flutterwave and mocking the dispatch_transfer_task.delay to avoid actual task execution during tests and mocking the get_recipient_id method to return a test recipient code. This ensures that the tests can run without relying on external services and can focus on the logic of confirming withdrawals and handling wallet balances.
         self.flutterwave_recipient_patcher = patch(
-            "shared.services.flutterwave_service.FlutterwaveService.get_recipient_id",
+            "shared.services.payment_services.FlutterwaveService.get_recipient_id",
             return_value="RCP_TEST_123",
         )
         self.transfer_task_patcher = patch("api.wallet.services.wallet_service.dispatch_transfer_task.delay")
@@ -308,73 +331,6 @@ class ConfirmWithdrawalTests(TestCase):
                 withdrawal_request_id=self.withdrawal_request.id,
                 code=self.code,
             )
-
-    def test_payout_account_with_existing_recipient_code(self):
-        """When the payout account has the appropriate recipient code for the
-        configured processor, the wrapped function should return it and not
-        call any of the update or get_recipient_id methods.
-        """
-
-        self.payout_account.flutterwave_recipient_code = "RCP_EXISTING_123"
-        self.payout_account.save(update_fields=["flutterwave_recipient_code"])
-
-        with (
-            patch(
-                "api.wallet.services.wallet_service._transfer_processor_and_recipient_code",
-                wraps=wallet_service._transfer_processor_and_recipient_code,
-            ) as spy,
-            patch("api.wallet.services.wallet_service._update_account_recipient_code") as update_recipient_code_mock,
-            patch("shared.services.flutterwave_service.FlutterwaveService.get_recipient_id") as get_recipient_id_mock,
-        ):
-            wallet_service.confirm_withdrawal(
-                user=self.user,
-                withdrawal_request_id=self.withdrawal_request.id,
-                code=self.code,
-            )
-
-        spy.assert_called_once_with(self.payout_account)
-        # an existing recipient code means neither of these should be hit
-        update_recipient_code_mock.assert_not_called()
-        get_recipient_id_mock.assert_not_called()
-
-        # confirm the wrapped (real) function itself returns a plain 2-tuple
-        result = wallet_service._transfer_processor_and_recipient_code(self.payout_account)
-        self.assertIsInstance(result, tuple)
-        self.assertEqual(len(result), 2)
-        self.assertEqual(result, (PaymentProcessors.FLUTTERWAVE, "RCP_EXISTING_123"))
-
-    def test_payout_account_creates_recipient_code_when_missing(self):
-        """When the payout account has no recipient code for the configured processor, the wrapped function should call
-        the appropriate service to create one and update the payout account with it
-        """
-
-        self.assertFalse(self.payout_account.flutterwave_recipient_code)
-
-        with (
-            patch(
-                "api.wallet.services.wallet_service._update_account_recipient_code",
-                wraps=wallet_service._update_account_recipient_code,
-            ) as update_recipient_code_mock,
-            patch(
-                "shared.services.flutterwave_service.FlutterwaveService.get_recipient_id",
-                return_value="RCP_NEW_123",
-            ) as fltw_get_recipient_id_mock,
-            patch(
-                "shared.services.paystack_service.PaystackService.create_transfer_recipient"
-            ) as pstck_recipient_code_mock,
-        ):
-            wallet_service.confirm_withdrawal(
-                user=self.user,
-                withdrawal_request_id=self.withdrawal_request.id,
-                code=self.code,
-            )
-
-        update_recipient_code_mock.assert_called_once()  # payout acct is updated bcos it previously had no recipient code
-
-        # The processor is Flutterwave, so the get_recipient_id method should be called to create a new recipient code,
-        # while the Paystack method should not be called.
-        fltw_get_recipient_id_mock.assert_called_once()
-        pstck_recipient_code_mock.assert_not_called()
 
     def test_confirm_withdrawal(self):
         wallet_service.confirm_withdrawal(
