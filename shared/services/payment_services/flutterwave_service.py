@@ -6,17 +6,15 @@ from decimal import Decimal
 import requests
 from decouple import config
 
-# from django_redis import get_redis_connection
+from api.payments.models.bankaccount_models import BankAccount
 from shared.constants.environ import DJANGO_ENV
 from shared.redis.redis_service import RedisService
 from shared.utils.bank_account_check import check_account_name_matches_profile
 
-# redis = get_redis_connection("default")
-
 logger = logging.getLogger(__name__)
 
 
-class FlutterwaveRecipientError(Exception):
+class TransferRecipientError(Exception):
     """Custom exception for Flutterwave recipient-related errors."""
 
 
@@ -140,6 +138,12 @@ class FlutterwaveService:
             "Content-Type": "application/json",
         }
 
+    def _set_bankaccount_recipient_code(self, bank_account_id, recipient_code):
+        bank_account = BankAccount.objects.filter(id=bank_account_id, is_deleted=False).first()
+        if bank_account:
+            bank_account.flutterwave_recipient_code = recipient_code
+            bank_account.save(update_fields=["flutterwave_recipient_code", "updated_datetime"])
+    
     def resolve_bank(self, account_number, bank_code):
 
         payload = {
@@ -207,7 +211,7 @@ class FlutterwaveService:
         if response_data.get("status") != "success":
             msg = f"Flutterwave business logic failed: {response_data.get('message')}"
             logger.warning(msg)
-            raise FlutterwaveRecipientError(msg)
+            raise TransferRecipientError(msg)
 
         data_container = response_data.get("data", [])
         cursor = data_container.get("cursor", {})
@@ -216,7 +220,21 @@ class FlutterwaveService:
         has_more = cursor.get("has_more_items", False)
         return recipients, has_more, cursor.get("next")
 
-    def get_recipient_id(self, account_number, bank_code, account_name):
+    def get_recipient_id(self, account_number, bank_code, account_name, bank_account_id=None)->str:
+        """Calls Flutterwave transfer recipient creation endpoint and returns the recipient ID. 
+        If the recipient does not exist, a new recipient is created via the Flutterwave API. If the recipient record already exists with Flutterwave (we get a 409), we retrieve it via the `fetch_recipient_id` method which calls the Flutterwave API to fetch the existing recipient ID.
+
+        If a bank account ID is provided and the bank account already has a Flutterwave recipient code,
+        that code is returned directly without making an API call. If the provided bank account does not have a flutterwave recipient code, the generated recipient code will be stored and returned.
+
+        Raises:
+            TransferRecipientError: If the recipient creation or fetching fails.
+        """
+        
+        bank_account = BankAccount.objects.filter(id=bank_account_id).first() if bank_account_id else None
+        if bank_account and bank_account.flutterwave_recipient_code:
+            return bank_account.flutterwave_recipient_code
+
         payload = {
             "type": "bank_ngn",
             "bank": {"account_number": account_number, "code": bank_code},
@@ -239,16 +257,22 @@ class FlutterwaveService:
                 id_, name = self.fetch_recipient_id(account_number, bank_code)
             except Exception as e:
                 logger.warning(f"Error fetching existing recipient ID after conflict: {e}")
-                raise FlutterwaveRecipientError(f"Failed to fetch existing recipient ID after conflict: {e}")
+                raise TransferRecipientError(f"Failed to fetch existing recipient ID after conflict: {e}")
 
         else:
-            raise FlutterwaveRecipientError(f"Unexpected response from Flutterwave: {resp_json}")
+            raise TransferRecipientError(f"Unexpected response from Flutterwave: {resp_json}")
 
         # Check if the resolved recipient name matches the provided account name
         if DJANGO_ENV == "production" and name is not None:
             resolved_names = {n.lower() for n in name.split()}
             if not check_account_name_matches_profile(resolved_names, account_name):
-                raise FlutterwaveRecipientError("Resolved recipient name does not match the provided account name.")
+                raise TransferRecipientError("Resolved recipient name does not match the provided account name.")
+
+        if id_ is not None:
+            try:
+                self._set_bankaccount_recipient_code(bank_account_id, id_)
+            except Exception as e:
+                logger.warning(f"Failed to set bank account recipient code: {e}")
 
         return id_
 
@@ -256,8 +280,19 @@ class FlutterwaveService:
         # Generate a unique X-Trace-Id for each request
         return f"{reference}-{int(time.time() * 1000)}"
 
-    def initiate_transfer(
-        self, amount_naira: Decimal, recipient_code: str, reference: str, currency="NGN", reason=None
+    def _extract_error_message(self, response_data):
+        """Flutterwaves format for validation errors is different for that of non-validation errors.
+        We check for non-validation errors first, and if none are found, we look for validation errors.
+        """
+        non_validation_error = response_data.get('message')
+        validation_error = []
+        for error in response_data.get('error', {}).get("validation_errors", []):
+            msg = f"{error.get('field_name')}: {error.get('message')}"
+            validation_error.append(msg)
+        return non_validation_error or validation_error
+    
+    def initiate_transfer1(
+        self, amount_naira: Decimal, account_number:str, bank_code:str, account_name:str, reference: str, reason:str|None=None, bankaccount_id=None
     ):
 
         url = f"{self.BASE_URL}/transfers"
@@ -271,7 +306,7 @@ class FlutterwaveService:
                 "X-Scenario-Key": "scenario:successful",
             }
         )
-
+        recipient_code = self.get_recipient_id(account_number, bank_code, account_name, bank_account_id=bankaccount_id)
         try:
             amount_kobo = int(Decimal(str(amount_naira)) * 100)  # Convert from Naira to Kobo
         except (ValueError, TypeError):
@@ -302,6 +337,61 @@ class FlutterwaveService:
             logger.error(f"Error initiating Flutterwave transfer: {e}")
             return False, {"message": f"Error initiating Flutterwave transfer: {e}"}
 
+    def initiate_transfer(
+            self, amount_naira: Decimal, account_number:str, bank_code:str, account_name:str, reference: str, reason:str|None=None, bankaccount_id=None
+        ):
+            logger.warning(f"Initiating Flutterwave transfer for reference: {bankaccount_id}: {account_name}")
+            url = f"{self.BASE_URL}/direct-transfers"
+            headers = self._headers()
+            headers.update(
+                {
+                    "X-Trace-Id": self._get_x_trace_id(reference),
+                    "X-Idempotency-Key": reference,
+                    "accept": "application/json",
+                    "content-type": "application/json",
+                    "X-Scenario-Key": "scenario:successful",
+                }
+            )
+            try:
+                amount_kobo = int(Decimal(str(amount_naira)) * 100)  # Convert from Naira to Kobo
+            except (ValueError, TypeError):
+                logger.error(f"Invalid amount for Paystack transfer: {amount_naira}")
+                return False, {"message": f"Invalid amount for Paystack transfer: {amount_naira}"}
+    
+            payload = {
+                "action": "instant",
+                "type": "bank",
+                "reference": reference,
+                "meta": {"reason": reason},
+                "payment_instruction": {
+                    "source_currency": "NGN",
+                    "destination_currency": "NGN",
+                    "amount": {"applies_to": "source_currency", "value": amount_kobo},
+                    "recipient": {
+                        "bank": {
+                            "account_number": account_number,
+                            "code": bank_code,
+                        }
+                    },
+                },
+                "narration": reason,
+            }
+    
+            try:
+                response = requests.post(url, json=payload, headers=headers, timeout=10)
+                response_data = response.json()
+                if response.status_code in (200, 201) and response_data.get("status") == "success":
+                    return True, response_data.get("data", {})
+    
+                message = self._extract_error_message(response_data)
+                logger.error(f"Flutterwave initiate transfer failed: {message}")
+                return False, {"message": f"Flutterwave initiate transfer failed: {message}"}
+            except requests.exceptions.RequestException as e:
+                logger.error(f"Error initiating Flutterwave transfer: {e}")
+                return False, {"message": f"Error initiating Flutterwave transfer: {e}"}
+    
+    
+    
     @classmethod
     def get_banks(cls):
         from shared.redis.redis_service import RedisService
@@ -326,3 +416,11 @@ class FlutterwaveService:
         data = [{"name": bnk["name"], "code": bnk["code"]} for bnk in bank_list]
         RedisService.set_cached_banks(data)
         return data
+
+    @staticmethod
+    def get_bank_name(bank_code):
+        banks_resp = FlutterwaveService.get_banks()
+        bank_list = banks_resp
+        bank = next(bank for bank in bank_list if bank["code"] == bank_code)
+        bank_name = bank["name"]
+        return bank_name

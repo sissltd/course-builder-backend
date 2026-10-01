@@ -7,7 +7,8 @@ from api.authorization import codenames
 from api.authorization.services import permission_service
 from api.payments.models.bankaccount_models import BankAccount
 from api.users.enums import UserActivityActionEnums, UserActivityCategoryEnums
-from shared.services.paystack_service import PaystackService
+from shared.constants.environ import DJANGO_ENV
+from shared.services.payment_services.provider import get_payment_provider
 from shared.utils.bank_account_check import check_account_name_matches_profile
 from shared.utils.encryption import encrypt_field
 
@@ -34,22 +35,23 @@ def create_bank_account(user, validated_data, ip, ua):
     """
     Create a new bank account for a user.
     """
-
-    account_name = validated_data.get("account_name", "")
     account_number = validated_data.get("account_number", "")
     bank_code = validated_data.get("bank_code", "")
 
-    if not check_account_name_matches_profile({user.first_name, user.last_name}, account_name):
+    # A workaround for Flutterwave's inability to resolve account names in non-production environments
+    if DJANGO_ENV.lower() in {"development", "staging"}:
+        validated_data["account_name"] = f"{user.first_name} {user.last_name}"
+
+    if not check_account_name_matches_profile(
+        {user.first_name, user.last_name}, validated_data.get("account_name", "")
+    ):
         raise AccountDetailsError("Account name does not match user profile.")
 
     existing_accounts = BankAccount.objects.filter(user=user)
     if bank_code:
         existing_accounts = existing_accounts.filter(bank_code=bank_code)
     else:
-        existing_accounts = existing_accounts.filter(
-            bank_name=validated_data.get("bank_name", "")
-        )
-
+        existing_accounts = existing_accounts.filter(bank_name=validated_data.get("bank_name", ""))
     existing_account = existing_accounts.filter(
         account_number=encrypt_field(account_number)
     ).first()
@@ -66,8 +68,10 @@ def create_bank_account(user, validated_data, ip, ua):
         existing_account.refresh_from_db()
         return existing_account
 
+    provider = get_payment_provider()
     validated_data["account_number"] = encrypt_field(account_number)
-    validated_data["bank_name"] = PaystackService.get_bank_name(bank_code)
+    validated_data["bank_name"] = provider.get_bank_name(bank_code)
+
     account = BankAccount.objects.create(
         user=user,
         **validated_data,

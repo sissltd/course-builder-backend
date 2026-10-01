@@ -44,7 +44,7 @@ class PublicEndpointsIgnoreStaleTokenTests(APITestCase):
         # banks-list calls out to Paystack/Flutterwave depending on settings; stub both.
         patches = [
             patch(
-                "api.payments.views.bankaccount_views.FlutterwaveService.get_banks",
+                "shared.services.payment_services.flutterwave_service.FlutterwaveService.get_banks",
                 return_value=[{"name": "Access Bank", "code": "044"}],
             ),
         ]

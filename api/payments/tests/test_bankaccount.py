@@ -126,7 +126,7 @@ class BankAccountCreateTests(APITestCase):
             side_effect=lambda value: value,
         )
         self.paystack_recipient_patcher = patch(
-            "shared.services.paystack_service.PaystackService.create_transfer_recipient",
+            "shared.services.payment_services.PaystackService.create_transfer_recipient",
             return_value=(True, {"recipient_code": "RCP_TEST_123"}),
         )
         self.decrypt_patcher.start()
@@ -317,7 +317,7 @@ class VerifyBankAccountViewTests(APITestCase):
     def setUp(self):
         self.creator = make_user(role=UserRole.COURSE_CREATOR)
         self.paystack_recipient_patcher = patch(
-            "shared.services.paystack_service.PaystackService.create_transfer_recipient",
+            "shared.services.payment_services.PaystackService.create_transfer_recipient",
             return_value=(True, {"recipient_code": "RCP_TEST_123"}),
         )
         self.paystack_recipient_patcher.start()
@@ -328,7 +328,7 @@ class VerifyBankAccountViewTests(APITestCase):
     def test_public_can_verify_bank_account(self):
         with (
             patch(
-                "api.payments.views.bankaccount_views.FlutterwaveService.resolve_bank",
+                "shared.services.payment_services.flutterwave_service.FlutterwaveService.resolve_bank",
                 return_value={"account_name": "Test User"},
             ),
         ):
@@ -353,7 +353,7 @@ class VerifyBankAccountViewTests(APITestCase):
     def test_verify_returns_custom_error_when_provider_fails(self):
         with (
             patch(
-                "api.payments.views.bankaccount_views.FlutterwaveService.resolve_bank",
+                "shared.services.payment_services.flutterwave_service.FlutterwaveService.resolve_bank",
                 side_effect=Exception("provider down"),
             ),
         ):
@@ -373,11 +373,11 @@ class BankListViewTests(APITestCase):
     def test_public_can_fetch_bank_names_and_codes(self):
         with (
             patch(
-                "api.payments.views.bankaccount_views.get_settings",
+                "shared.services.payment_services.provider.get_settings",
                 return_value=SimpleNamespace(payment_processor=PaymentProcessors.FLUTTERWAVE),
             ),
             patch(
-                "api.payments.views.bankaccount_views.FlutterwaveService.get_banks",
+                "shared.services.payment_services.flutterwave_service.FlutterwaveService.get_banks",
                 return_value=[
                     {"name": "GTBank", "code": "058"},
                     {"name": "Access Bank", "code": "044"},
