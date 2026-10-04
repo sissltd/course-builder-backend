@@ -1,8 +1,6 @@
-import re
 from decimal import Decimal
 from unittest.mock import patch
 
-from django.core import mail
 from rest_framework import status
 from rest_framework.test import APITestCase
 
@@ -26,13 +24,37 @@ def _approve_kyc(user):
     )
 
 
+def _create_payout_account(
+    user,
+    account_type,
+    bank_name,
+    account_number,
+    account_name,
+    bank_code,
+    is_default=True,
+):
+
+    from api.payments.models import BankAccount
+    from shared.utils.encryption import encrypt_field
+
+    return BankAccount.objects.create(
+        user=user,
+        account_type=account_type,
+        bank_name=bank_name,
+        account_number=encrypt_field(account_number),
+        account_name=account_name,
+        is_default=is_default,
+        bank_code=bank_code,
+    )
+
+
 class WalletApiTests(APITestCase):
     def setUp(self):
         self.creator = make_user(role=UserRole.COURSE_CREATOR)
         self.admin = make_user(role=UserRole.ADMIN)
 
         self.flutterwave_recipient_patcher = patch(
-            "shared.services.flutterwave_service.FlutterwaveService.get_recipient_id", return_value="RCP_TEST_123"
+            "shared.services.payment_services.FlutterwaveService.get_recipient_id", return_value="RCP_TEST_123"
         )
         self.transfer_task_patcher = patch("api.wallet.services.wallet_service.dispatch_transfer_task.delay")
 
@@ -76,12 +98,13 @@ class WalletApiTests(APITestCase):
 
 class WithdrawalApiTests(APITestCase):
     def setUp(self):
+
         self.creator = make_user(role=UserRole.COURSE_CREATOR)
         _approve_kyc(self.creator)
         wallet_service.credit_wallet(user=self.creator, amount=Decimal("100.00"))
 
         self.flutterwave_recipient_patcher = patch(
-            "shared.services.flutterwave_service.FlutterwaveService.get_recipient_id",
+            "shared.services.payment_services.FlutterwaveService.get_recipient_id",
             return_value="RCP_TEST_123",
         )
         self.decrypt_patcher = patch(
@@ -94,7 +117,7 @@ class WithdrawalApiTests(APITestCase):
         self.decrypt_patcher.start()
         self.transfer_task_patcher.start()
 
-        self.payout_account = wallet_service.create_payout_account(
+        self.payout_account = _create_payout_account(
             user=self.creator,
             account_type="LOCAL",
             bank_name="Access Bank",
@@ -110,17 +133,16 @@ class WithdrawalApiTests(APITestCase):
         self.decrypt_patcher.stop()
 
     def test_withdrawal_above_threshold_succeeds_and_confirm_completes_it(self):
-        request_response = self.client.post(
-            "/api/v1/withdrawals/",
-            {"amount": "60.00", "payout_account": str(self.payout_account.id)},
-            format="json",
-        )
+        with patch("api.wallet.services.wallet_service.EmailService.send_withdrawal_otp_email") as send_otp_email:
+            request_response = self.client.post(
+                "/api/v1/withdrawals/",
+                {"amount": "60.00", "payout_account": str(self.payout_account.id)},
+                format="json",
+            )
         self.assertEqual(request_response.status_code, status.HTTP_201_CREATED)
         withdrawal_request_id = request_response.data["id"]
-        match = re.search(r"\b(\d{6})\b", str(mail.outbox[-1].body))
-        if match is None:
-            self.fail("Expected withdrawal OTP email to contain a 6-digit code.")
-        code = match.group(1)
+        send_otp_email.assert_called_once()
+        code = send_otp_email.call_args.kwargs["code"]
 
         confirm_response = self.client.post(
             f"/api/v1/withdrawals/{withdrawal_request_id}/confirm/",
@@ -141,7 +163,7 @@ class WithdrawalApiTests(APITestCase):
     def test_withdrawal_without_kyc_rejected(self):
         other_creator = make_user(role=UserRole.COURSE_CREATOR)
         wallet_service.credit_wallet(user=other_creator, amount=Decimal("100.00"))
-        other_payout_account = wallet_service.create_payout_account(
+        other_payout_account = _create_payout_account(
             user=other_creator,
             account_type="LOCAL",
             bank_name="Access Bank",
@@ -210,7 +232,7 @@ class AdminWalletApiTests(APITestCase):
         self.assertEqual(rows[0]["user"]["email"], other.email)
 
     def test_admin_sees_withdrawal_requests_with_destination_account(self):
-        payout_account = wallet_service.create_payout_account(
+        payout_account = _create_payout_account(
             user=self.creator,
             account_type="LOCAL",
             bank_name="Access Bank",

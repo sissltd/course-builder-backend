@@ -30,6 +30,7 @@ from api.wallet.serializers import (
     WalletSerializer,
     WithdrawalConfirmSerializer,
     WithdrawalRequestCreateSerializer,
+    WithdrawalRequestSerializer,
 )
 from api.wallet.services import wallet_service
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
@@ -67,30 +68,61 @@ class WalletDetailView(RetrieveAPIView):
         return wallet_service.get_or_create_wallet(user=self.request.user)
 
 
-@extend_schema_view(
-    get=extend_schema(
-        summary="List my payout accounts",
-        tags=["Creator — Wallet"],
+@extend_schema(
+    summary="Request a withdrawal",
+    description=(
+        "Creates a pending withdrawal request for one of the creator's payout "
+        "accounts and emails an OTP for confirmation. No funds move until the "
+        "OTP is verified through the withdrawal confirmation endpoint.\n\n"
+        "**Auth:** The `earnings.manage_own` permission (Manage Own Earnings) "
+        "— Course Creator and Writer by default.\n\n"
+        "**Prerequisites:** The creator must have completed the required KYC "
+        "verification, have enough available wallet balance, and provide a "
+        "payout account that belongs to them. The amount must meet the "
+        "configured minimum withdrawal threshold.\n\n"
+        "**Important:** This endpoint only creates the request and sends the "
+        "OTP; it does not debit the wallet. Submit the code to `POST "
+        "/api/v1/withdrawals/{withdrawal_request_id}/confirm/` before the "
+        "request can produce a withdrawal transaction.\n\n"
+        "**Note:** Flutterwave does not allow testing with live bank account "
+        "details. In the test environment, use the provided test bank account details.\n"
+        "bank_code: 044; account number 0690000031, 0690000032, 0690000033, or 0690000034"
     ),
-    post=extend_schema(
-        summary="Add a payout account",
-        tags=["Creator — Wallet"],
-    ),
-)
-
-
-@extend_schema_view(
-    delete=extend_schema(
-        summary="Remove a payout account",
-        tags=["Creator — Wallet"],
-    ),
-)
-
-@extend_schema_view(
-    post=extend_schema(
-        summary="Request a withdrawal",
-        tags=["Creator — Wallet"],
-    ),
+    tags=["Creator — Wallet"],
+    request=WithdrawalRequestCreateSerializer,
+    examples=[
+        OpenApiExample(
+            name="Request",
+            request_only=True,
+            value={
+                "amount": "60.00",
+                "payout_account": "6c31f8a0-92db-4e57-b14a-83f7c0d25e69",
+            },
+        )
+    ],
+    responses={
+        201: OpenApiResponse(
+            response=WithdrawalRequestSerializer,
+            description="The pending withdrawal request awaiting OTP confirmation.",
+            examples=[
+                OpenApiExample(
+                    name="Created",
+                    value={
+                        "id": "b8e0a25d-4713-49cf-8a6b-05d29e13c7f4",
+                        "amount": "60.00",
+                        "payout_account": "6c31f8a0-92db-4e57-b14a-83f7c0d25e69",
+                        "status": "PENDING_CONFIRMATION",
+                        "created_datetime": "2026-09-30T09:12:50.404Z",
+                    },
+                )
+            ],
+        ),
+        **STANDARD_ERROR_RESPONSES["validation"],
+        **STANDARD_ERROR_RESPONSES["auth"],
+        **STANDARD_ERROR_RESPONSES["permission"],
+        **STANDARD_ERROR_RESPONSES["not_found"],
+        **STANDARD_ERROR_RESPONSES["server"],
+    },
 )
 class WithdrawalRequestCreateView(CreateAPIView):
     """Step 1 of withdrawal: request an amount against a payout account.
