@@ -5,7 +5,7 @@ Celery-based audit-log writing. Email is sent inline (via
 ``shared.tasks.dispatch_email``, which routes to the ``EMAIL_PROVIDER``
 configured in .env - SMTP by default, ``resend`` to switch) because on
 Dokploy the web process and the Celery worker may hit different Redis
-instances, making ``.delay()`` delivery unreliable for critical messages.
+instances, making ``.delay()`` delivery unreliable for critical messages..
 
 Example:
     from shared.celery.celery_service import CeleryService
