@@ -46,7 +46,7 @@ Nothing was removed or renamed.
 | Tab | Endpoint(s) | Notes |
 |---|---|---|
 | **Account** | `GET` / `PATCH users/me/` | Editable: `first_name`, `last_name`, `timezone` (IANA name), `avatar_url`. Upload the avatar first with `POST uploads/presign/` using `folder: "profiles"`, then PATCH the file key into `avatar_url`. `email` is read-only here; changing it is on the Security tab. Role pill: `role_label`. |
-| **Notifications** | `GET` / `PATCH users/me/notification-preferences/` | See the field map below. |
+| **Notifications** | `GET` / `PATCH users/me/notification-preferences/` | See [NOTIFICATIONS_FRONTEND_HANDOVER.md](NOTIFICATIONS_FRONTEND_HANDOVER.md), Part 4 — it supersedes the field map below. |
 | **Permissions** | `GET admin/roles/`, `GET admin/permissions/` and role writes | See Part 2. |
 | **Platform** | `GET` / `PATCH platform-settings/` | PATCH needs `platform.edit_settings` (Admin and Super Admin by default) and an MFA-verified session. See the field map below. |
 | **Payments** | Same `platform-settings/` | `payment_processor`: `PAYSTACK` or `FLUTTERWAVE`. |
@@ -54,6 +54,11 @@ Nothing was removed or renamed.
 | **Security** | `POST auth/change-email/` `{new_email, password}` → user confirms via emailed link (`POST auth/change-email/confirm/` `{token}`) · `POST auth/change-password/` `{current_password, new_password}` · `auth/mfa/*` · `GET auth/sessions/` | There is no `confirm_password` field, so check "Re-enter password" on the client. |
 
 ### Notifications — design element → field
+
+> **Superseded (2026-10-05).** The current map, including the new
+> `course_update` field, is in
+> [NOTIFICATIONS_FRONTEND_HANDOVER.md](NOTIFICATIONS_FRONTEND_HANDOVER.md),
+> Part 4. Only the Course update row below has changed.
 
 | Design element | Field | Status |
 |---|---|---|
@@ -64,7 +69,7 @@ Nothing was removed or renamed.
 | Multi-account fraud cluster detection | — | ❌ Hide. |
 | MIE daily production summary | — | ❌ Hide. (`mie_pipeline_alert` exists but nothing sends it either.) |
 | Daily financial alert | — | ❌ Hide. |
-| Course update (Preferences) | — | ❌ Hide. |
+| Course update (Preferences) | `course_update` | ✅ New. Admins are told when someone else submits, approves, rejects or publishes a course. |
 
 ### Platform — design element → field
 
@@ -100,8 +105,12 @@ It clears by itself once the course gets a decision or re-enters review.
 |---|---|---|
 | Payment provider dropdown | `payment_processor` | ✅ |
 | Saved provider account card | — | ❌ No platform provider account is modelled; provider credentials live in server config. Hide or show static text. |
-| Payment auto-credit duration | — | ❌ Hide. Creators are credited immediately at QA approval; there is no hold period. |
-| Creator verification toggle | — | ❌ Hide. KYC is always required before withdrawal and cannot be switched off. |
+| Payment auto-credit duration | `auto_credit_duration_hours` | ✅ Hours after QA approval before a creator-uploaded course's payment is credited. Default 24, `0` = straight away. |
+| Creator verification toggle | `withdrawal_require_verification` | ✅ Default `true`. `false` lets creators withdraw without completing KYC. |
+
+> Both payment fields are on the same `platform-settings/` endpoint. Until
+> 2026-10-05, `GET` didn't return them, although `PATCH` accepted them. Read
+> them from `GET` now.
 
 ---
 
@@ -216,5 +225,5 @@ Each badge has a `criterion`, a `required_count`, and an `auto_award` flag.
   badges are kept. A creator could create and delete drafts to earn one.
   Counting only submitted courses would close this.
 - **The fields marked ❌ above** need backend work before they can do
-  anything: email preferences, the alert engines, auto-credit hold, the
-  optional-KYC toggle, draft topic limit and flagging rules.
+  anything: email preferences, the alert engines, draft topic limit and
+  flagging rules.

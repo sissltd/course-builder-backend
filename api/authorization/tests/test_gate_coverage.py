@@ -61,6 +61,8 @@ SELF_SERVICE_HANDLERS = {
     "MieUploadPresignView.post",
     "MyAuditLogExportView.get",
     "NotificationListView.get",
+    "NotificationMarkAllReadView.post",
+    "NotificationUnreadCountView.get",
     "NotificationPreferenceView.get",
     "NotificationPreferenceView.patch",
     "NotificationReadToggleView.post",

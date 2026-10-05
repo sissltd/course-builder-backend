@@ -12,6 +12,7 @@ from api.authorization import codenames
 from api.authorization.services import permission_service
 from api.courses.enums import CourseSourceType, CourseStatus
 from api.courses.models import Course
+from api.courses.services import course_update_alert_service
 from api.notification.models import Notification, NotificationPreference
 from api.payments.services.transaction_services import effect_course_payment
 from api.reviews.enums import ReviewActionType, ReviewStage
@@ -566,6 +567,12 @@ def reject_course(
             content=f"Your course '{course.title}' was rejected and returned to Draft for revision.",
             metadata={"course_id": course.id, "feedback": feedback},
         )
+        course_update_alert_service.notify_course_status_change(
+            course=course,
+            actor=reviewer,
+            title="Course rejected",
+            content=f"'{course.title}' was rejected and returned to Draft.",
+        )
         _notify_mie_revision(course=course, review_action=review_action)
         activity_service.log_activity(
             user=reviewer,
@@ -776,6 +783,12 @@ def approve_qa(
         assignment.completed_at = timezone.now()
         assignment.save()
         transaction.on_commit(lambda: effect_course_payment(course=course))
+        course_update_alert_service.notify_course_status_change(
+            course=course,
+            actor=reviewer,
+            title="Course approved",
+            content=f"'{course.title}' passed QA and was approved.",
+        )
         try:
             activity_service.log_activity(
                 user=reviewer,
@@ -830,6 +843,12 @@ def reject_qa(*, course: Course, reviewer: User, feedback: dict) -> ReviewAction
                     "stage": ReviewStage.QA,
                 },
             )
+        course_update_alert_service.notify_course_status_change(
+            course=course,
+            actor=reviewer,
+            title="Course rejected in QA",
+            content=f"'{course.title}' failed QA and was returned to Draft.",
+        )
         _notify_mie_revision(course=course, review_action=action)
         activity_service.log_activity(
             user=reviewer,
