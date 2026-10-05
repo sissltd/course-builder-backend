@@ -27,6 +27,7 @@ from api.courses.enums import (
     DistributionChannel,
     DistributionStatus,
 )
+from api.courses.services import course_update_alert_service
 from api.courses.models import (
     Course,
     CourseDistribution,
@@ -301,6 +302,12 @@ def submit_course(
             content=f"Your course '{course.title}' has been submitted for review.",
             metadata={"course_id": course.id},
         )
+        course_update_alert_service.notify_course_status_change(
+            course=course,
+            actor=actor,
+            title="Course submitted",
+            content=f"'{course.title}' was submitted for review.",
+        )
         activity_service.log_activity(
             user=course.creator,
             category=UserActivityCategoryEnums.SUBMISSION,
@@ -525,6 +532,12 @@ def publish_course(
             snapshot=_build_course_snapshot(course),
             created_by=actor,
             updated_by=actor,
+        )
+        course_update_alert_service.notify_course_status_change(
+            course=course,
+            actor=actor,
+            title="Course published",
+            content=f"'{course.title}' was published.",
         )
         now = course.published_at
         CourseDistribution.objects.filter(course=course).update(

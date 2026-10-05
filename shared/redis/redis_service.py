@@ -63,23 +63,29 @@ class RedisService:
         return get_async_redis_client()
 
     @staticmethod
-    async def publish_user_notification(user_id: UUID, message: str) -> None:
+    async def publish_user_notification(user_id: UUID, payload) -> None:
         """
-        Publish a user notification to Redis channel.
+        Publish a JSON-serialisable payload to the user's notification channel.
+
+        The payload goes out as-is, so a subscriber's SSE event has exactly
+        the shape that was published. Never raises: a failure is logged.
         """
+        client = None
         try:
             client = RedisService.get_async_redis_client()
             if client is None:
                 logger.debug("Skipping notification publishing because the default cache has no Redis URL")
                 return
             channel = f"user:notifications:{user_id}"
-            payload = json.dumps({"message": message})
-            await client.publish(channel, payload)
+            await client.publish(channel, json.dumps(payload))
             logger.info(
                 f"Published notification to user {user_id} on channel {channel}"
             )
         except Exception as e:
             logger.error(f"Error publishing notification for user {user_id}: {e}")
+        finally:
+            if client is not None:
+                await client.aclose()
 
     # --- Generic Redis Operations ---
     @staticmethod

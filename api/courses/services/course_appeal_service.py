@@ -52,8 +52,12 @@ def submit_appeal(
         description=description,
     )
 
+    # exclude() rather than filter(creator_feedback=True): the preference row
+    # is created lazily, and an admin without one must still be told.
     admins = list(
-        permission_service.users_with_permission(codenames.COURSES_DECIDE_APPEALS)
+        permission_service.users_with_permission(
+            codenames.COURSES_DECIDE_APPEALS
+        ).exclude(notification_preference__creator_feedback=False)
     )
     if admins:
         Notification.emit_in_app_notification(

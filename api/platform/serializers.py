@@ -36,6 +36,8 @@ class PlatformSettingsSerializer(serializers.ModelSerializer):
             "payment_processor",
             "kyc_provider",
             "liveness_threshold",
+            "auto_credit_duration_hours",
+            "withdrawal_require_verification",
         ]
         read_only_fields = fields
 

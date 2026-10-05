@@ -13,6 +13,7 @@ UPDATABLE_FIELDS = {
     "mie_recommendation_alert",
     "mie_pipeline_alert",
     "in_app_enabled",
+    "course_update",
 }
 
 #: Nullable fields where an explicit null is meaningful ("clear the override,
