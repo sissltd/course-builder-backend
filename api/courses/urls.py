@@ -69,6 +69,11 @@ urlpatterns = router.urls + [
         name="course-ai-generation-retry",
     ),
     path(
+        "course-ai-generations/<uuid:pk>/stream/",
+        ai_generation_views.AIGenerationStreamView.as_view(),
+        name="course-ai-generation-stream",
+    ),
+    path(
         "courses/<uuid:course_pk>/ai-assists/",
         ai_generation_views.AIAssistListCreateView.as_view(),
         name="course-ai-assist-list",

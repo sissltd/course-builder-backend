@@ -81,6 +81,45 @@ class RedisService:
         except Exception as e:
             logger.error(f"Error publishing notification for user {user_id}: {e}")
 
+    @staticmethod
+    async def publish_ai_generation_progress(
+        job_id: UUID, user_id: UUID, payload: dict
+    ) -> None:
+        """Publish a best-effort progress event on the owner's Redis channel."""
+        try:
+            client = RedisService.get_async_redis_client()
+        except Exception:
+            logger.exception("Unable to create AI generation Redis client")
+            return
+        if client is None:
+            logger.debug(
+                "Skipping AI generation progress publish because the default "
+                "cache has no Redis URL"
+            )
+            return
+
+        channel = f"user:ai-generations:{user_id}"
+        message = json.dumps(
+            {"job_id": str(job_id), "payload": payload},
+            default=str,
+        )
+        try:
+            await client.publish(channel, message)
+            logger.debug("Published AI generation progress for job %s", job_id)
+        except Exception:
+            logger.exception(
+                "Error publishing AI generation progress for job %s", job_id
+            )
+        finally:
+            try:
+                await client.aclose()
+            except Exception:
+                logger.debug(
+                    "Error closing AI generation Redis client for job %s",
+                    job_id,
+                    exc_info=True,
+                )
+
     # --- Generic Redis Operations ---
     @staticmethod
     def set(key: str, value: str, expiry_seconds: int | None = None) -> bool:

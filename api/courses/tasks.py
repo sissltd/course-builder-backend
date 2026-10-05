@@ -41,6 +41,7 @@ def _task_for_kind(kind):
 
 @shared_task
 def recover_ai_generation_jobs():
+
     """Redispatch jobs lost before a worker could claim them."""
 
     now = timezone.now()
@@ -57,7 +58,7 @@ def recover_ai_generation_jobs():
             updated_datetime__lt=queue_cutoff,
         )
         | Q(
-            status=AIGenerationStatus.RUNNING,
+            status__in=ai_generation_service.EXECUTING_JOB_STATUSES,
             last_heartbeat_at__lt=heartbeat_cutoff,
         )
     ).filter(dispatch_attempts__lt=ai_generation_service.MAX_DISPATCH_ATTEMPTS)
@@ -88,7 +89,13 @@ def recover_ai_generation_jobs():
 def _fail_job(*, job, exc):
     """Record a terminal failure on the job and its in-flight progress items."""
 
+    if ai_generation_service.check_cancelled(job):
+        return
     ai_generation_service.fail_job(job=job, message=str(exc))
+    ai_generation_service.publish_ai_generation_progress(
+        job=job,
+        payload={"type": "failed", "stage": "Generation failed", "error_message": str(exc)},
+    )
 
 
 def _start_job(*, job, task_id, stage):
@@ -102,21 +109,40 @@ def _start_job(*, job, task_id, stage):
 def _reschedule_for_provider_capacity(*, task, job, exc):
     """Release the worker until the local provider budget opens again."""
 
-    job.stage = "Waiting for AI provider capacity..."
-    job.save(update_fields=["stage", "updated_datetime"])
+    stage = "Waiting for AI provider capacity..."
+    if not ai_generation_service.queue_job_for_retry(job=job, stage=stage):
+        return
     async_result = task.apply_async(
         args=(str(job.id),), countdown=exc.retry_after_seconds
     )
+    job.stage = stage
     job.celery_task_id = async_result.id or ""
     job.save(update_fields=["celery_task_id", "updated_datetime"])
+    ai_generation_service.publish_ai_generation_progress(
+        job=job,
+        payload={
+            "type": "waiting",
+            "stage": job.stage,
+            "retry_after_seconds": exc.retry_after_seconds,
+        },
+    )
 
 
 def _retry_provider_failure(*, task, job, exc):
     """Retry only transient provider failures; client errors are terminal."""
 
+    if ai_generation_service.check_cancelled(job):
+        return
     if not exc.retryable:
         _fail_job(job=job, exc=exc)
         raise exc
+    retry_stage = "Retrying AI provider request..."
+    if not ai_generation_service.queue_job_for_retry(job=job, stage=retry_stage):
+        return
+    ai_generation_service.publish_ai_generation_progress(
+        job=job,
+        payload={"type": "waiting", "stage": retry_stage},
+    )
     try:
         raise task.retry(
             exc=exc, countdown=min(120, 10 * (2**task.request.retries))
@@ -153,6 +179,14 @@ def generate_ai_course(self, job_id):
                 job, "content_objectives", AIGenerationItemStatus.RUNNING
             )
             ai_generation_service.heartbeat(job=job)
+            ai_generation_service.publish_ai_generation_progress(
+                job=job,
+                payload={
+                    "type": "item_running",
+                    "key": "content_objectives",
+                    "stage": "Creating content...",
+                },
+            )
             outline, usage = provider.generate_course_outline(
                 title=payload["course_title"],
                 description=payload["description"],
@@ -162,10 +196,26 @@ def generate_ai_course(self, job_id):
             ai_generation_service.mark_item(
                 job, "content_objectives", AIGenerationItemStatus.COMPLETED
             )
+            ai_generation_service.publish_ai_generation_progress(
+                job=job,
+                payload={
+                    "type": "item_done",
+                    "key": "content_objectives",
+                    "stage": "Creating content...",
+                },
+            )
             if ai_generation_service.check_cancelled(job):
                 return
             ai_generation_service.mark_item(
                 job, "content_outlines", AIGenerationItemStatus.RUNNING
+            )
+            ai_generation_service.publish_ai_generation_progress(
+                job=job,
+                payload={
+                    "type": "item_running",
+                    "key": "content_outlines",
+                    "stage": "Creating content...",
+                },
             )
             course = ai_generation_service.materialize_structure(
                 job=job, generated=outline
@@ -176,6 +226,14 @@ def generate_ai_course(self, job_id):
             )
             ai_generation_service.mark_item(
                 job, "content_lessons", AIGenerationItemStatus.COMPLETED
+            )
+            ai_generation_service.publish_ai_generation_progress(
+                job=job,
+                payload={
+                    "type": "item_done",
+                    "key": "content_lessons",
+                    "stage": "Creating content...",
+                },
             )
 
         job.stage = "Preparing course details..."
@@ -189,50 +247,97 @@ def generate_ai_course(self, job_id):
         ai_generation_service.mark_item(
             job, "details_lessons", AIGenerationItemStatus.RUNNING
         )
+        ai_generation_service.publish_ai_generation_progress(
+            job=job,
+            payload={
+                "type": "item_running",
+                "key": "details_lessons",
+                "stage": job.stage,
+            },
+        )
         if ai_generation_service.check_cancelled(job):
             return
 
         modules = course.modules.order_by("order").prefetch_related("lessons")
+        total_modules = modules.count()
         for module in modules:
             if ai_generation_service.check_cancelled(job):
                 return
             if ai_generation_service.module_content_is_materialized(module=module):
                 continue
             ai_generation_service.heartbeat(job=job)
+            ai_generation_service.publish_ai_generation_progress(
+                job=job,
+                payload={
+                    "type": "item_running",
+                    "key": "details_lessons",
+                    "stage": f"Generating module {module.order} of {total_modules}...",
+                },
+            )
             generated, module_usage = provider.generate_module_content(
                 course=course, module=module
             )
+            if ai_generation_service.check_cancelled(job):
+                return
             ai_generation_service.materialize_module_content(
                 job=job, module=module, generated=generated
             )
             ai_generation_service.add_usage(job=job, usage=module_usage)
+            ai_generation_service.publish_ai_generation_progress(
+                job=job,
+                payload={
+                    "type": "item_done",
+                    "key": "details_lessons",
+                    "stage": f"Generated module {module.order}.",
+                },
+            )
 
         if ai_generation_service.check_cancelled(job):
             return
         if not ai_generation_service.final_assessment_is_materialized(course=course):
             ai_generation_service.heartbeat(job=job)
+            ai_generation_service.publish_ai_generation_progress(
+                job=job,
+                payload={
+                    "type": "item_running",
+                    "key": "details_lessons",
+                    "stage": "Generating final assessment...",
+                },
+            )
             final_assessment, final_usage = provider.generate_final_assessment(
                 course=course
             )
+            if ai_generation_service.check_cancelled(job):
+                return
             ai_generation_service.materialize_final_assessment(
                 job=job, generated=final_assessment
             )
             ai_generation_service.add_usage(job=job, usage=final_usage)
+            ai_generation_service.publish_ai_generation_progress(
+                job=job,
+                payload={
+                    "type": "item_done",
+                    "key": "details_lessons",
+                    "stage": "Course details ready",
+                },
+            )
         ai_generation_service.mark_item(
             job, "details_lessons", AIGenerationItemStatus.COMPLETED
         )
-        job.status = AIGenerationStatus.COMPLETED
-        job.stage = "Course details ready"
-        job.result = {"course_id": str(course.id), "builder_ready": True}
-        job.completed_at = timezone.now()
-        job.save(
-            update_fields=[
-                "status",
-                "stage",
-                "result",
-                "completed_at",
-                "updated_datetime",
-            ]
+        completed = ai_generation_service.complete_job(
+            job=job,
+            stage="Course details ready",
+            result={"course_id": str(course.id), "builder_ready": True},
+        )
+        if not completed:
+            return
+        ai_generation_service.publish_ai_generation_progress(
+            job=job,
+            payload={
+                "type": "completed",
+                "course_id": str(course.id),
+                "stage": "Course details ready",
+            },
         )
     except AIProviderRateLimited as exc:
         _reschedule_for_provider_capacity(task=self, job=job, exc=exc)
@@ -267,15 +372,23 @@ def generate_ai_assist(self, job_id):
             instruction=payload["instruction"],
             context={"title": job.course.title, "description": job.course.description},
         )
-        job.status = AIGenerationStatus.COMPLETED
-        job.stage = "Ready to apply"
-        job.provider = provider.name
-        job.model = getattr(provider, "text_model", "")
-        job.result = {"suggestion": suggestion}
-        job.input_tokens = usage.get("input_tokens", 0)
-        job.output_tokens = usage.get("output_tokens", 0)
-        job.completed_at = timezone.now()
-        job.save()
+        if ai_generation_service.check_cancelled(job):
+            return
+        completed = ai_generation_service.complete_job(
+            job=job,
+            stage="Ready to apply",
+            provider=provider.name,
+            model=getattr(provider, "text_model", ""),
+            result={"suggestion": suggestion},
+            input_tokens=usage.get("input_tokens", 0),
+            output_tokens=usage.get("output_tokens", 0),
+        )
+        if not completed:
+            return
+        ai_generation_service.publish_ai_generation_progress(
+            job=job,
+            payload={"type": "completed", "stage": "Ready to apply"},
+        )
     except AIProviderRateLimited as exc:
         _reschedule_for_provider_capacity(task=self, job=job, exc=exc)
     except AIProviderError as exc:
@@ -301,23 +414,37 @@ def generate_ai_thumbnail(self, job_id):
         job=job, task_id=self.request.id or "", stage="Creating thumbnail..."
     ):
         return
+    if ai_generation_service.check_cancelled(job):
+        return
     provider = get_course_ai_provider()
     try:
         ai_generation_service.heartbeat(job=job)
         image = provider.generate_thumbnail(prompt=job.request_payload["prompt"])
+        if ai_generation_service.check_cancelled(job):
+            return
         key = StorageService.upload_bytes(
             image,
             folder=f"courses/{job.course_id}/thumbnails",
             content_type="image/png",
             acl="public-read",
         )
-        job.status = AIGenerationStatus.COMPLETED
-        job.stage = "Ready to apply"
-        job.result = {"file_key": key, "url": StorageService.public_url(key)}
-        job.provider = provider.name
-        job.model = getattr(provider, "image_model", "")
-        job.completed_at = timezone.now()
-        job.save()
+        if ai_generation_service.check_cancelled(job):
+            StorageService.delete_file(key)
+            return
+        completed = ai_generation_service.complete_job(
+            job=job,
+            stage="Ready to apply",
+            result={"file_key": key, "url": StorageService.public_url(key)},
+            provider=provider.name,
+            model=getattr(provider, "image_model", ""),
+        )
+        if not completed:
+            StorageService.delete_file(key)
+            return
+        ai_generation_service.publish_ai_generation_progress(
+            job=job,
+            payload={"type": "completed", "stage": "Ready to apply"},
+        )
     except AIProviderRateLimited as exc:
         _reschedule_for_provider_capacity(task=self, job=job, exc=exc)
     except AIProviderError as exc:
