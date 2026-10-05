@@ -78,6 +78,12 @@ class MeSerializer(serializers.ModelSerializer):
     is_verified = serializers.SerializerMethodField(
         help_text="Whether the creator's latest KYC submission is approved."
     )
+    mfa_enabled = serializers.SerializerMethodField(
+        help_text=(
+            "Whether the user has turned on MFA (an enrolled, confirmed "
+            "authenticator device). MFA is opt-in for every role."
+        )
+    )
     role_label = serializers.SerializerMethodField(
         help_text="Display name for the role, e.g. `Writer`. Safe to render as-is."
     )
@@ -127,10 +133,19 @@ class MeSerializer(serializers.ModelSerializer):
             "member_since",
             "has_completed_onboarding",
             "is_verified",
+            "mfa_enabled",
             "badges",
             "category",
         ]
         read_only_fields = fields
+
+    @extend_schema_field(OpenApiTypes.BOOL)
+    def get_mfa_enabled(self, obj) -> bool:
+        """Return whether the user has an enabled MFA device. One query."""
+
+        from api.authentication.services import mfa_service
+
+        return mfa_service.is_mfa_enabled(user=obj)
 
     @extend_schema_field(OpenApiTypes.BOOL)
     def get_has_completed_onboarding(self, obj) -> bool:

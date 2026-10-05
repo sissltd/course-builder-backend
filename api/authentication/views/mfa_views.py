@@ -263,8 +263,7 @@ class MFARecoveryCodesRegenerateView(APIView):
 
 
 class MFADisableView(APIView):
-    """Self-service disable - 403 for ADMIN/SUPER_ADMIN, since MFA is
-    mandatory for those roles (see mfa_service.disable)."""
+    """Self-service disable, open to every role: MFA is opt-in."""
 
     permission_classes = [IsAuthenticated]
     serializer_class = MFACodeSerializer
@@ -274,8 +273,8 @@ class MFADisableView(APIView):
         description=(
             "Disables MFA for the current user after confirming a live "
             "TOTP code, deleting the device and its recovery codes.\n\n"
-            "**Auth:** Any authenticated user, except Admin/Super Admin - "
-            "MFA is mandatory for those roles.\n\n"
+            "**Auth:** Any authenticated user. MFA is opt-in for every role, "
+            "admins included, so anyone may turn their own off.\n\n"
             "**Prerequisites:** The user must have an enabled MFA "
             "device.\n\n"
             "**Important:** Disabling means the account no longer prompts "
@@ -316,7 +315,8 @@ class MFADisableView(APIView):
 
 class MFAAdminResetView(APIView):
     """Super-Admin-only: reset another user's MFA device (lost-device
-    recovery). Forces re-enrollment; does not grant a fresh grace period."""
+    recovery). Deletes the device and recovery codes; the user logs in with
+    just a password until they choose to enroll again."""
 
     permission_classes = [Perm(codenames.STAFF_FULL_ACCESS)]
 
@@ -330,9 +330,8 @@ class MFAAdminResetView(APIView):
             "default.\n\n"
             "**Prerequisites:** `user_id` must belong to an existing "
             "user.\n\n"
-            "**Important:** Does not grant a fresh MFA grace period - if "
-            "the target's role requires MFA, they must re-enroll before "
-            "resuming normal access."
+            "**Important:** MFA is opt-in, so the target simply logs in "
+            "with a password until they choose to enroll again."
         ),
         tags=["Admin — MFA"],
         request=None,

@@ -37,11 +37,9 @@ from api.payments.services.bankaccount_services import (
     set_default_bank_account,
     suspend_bank_account,
 )
-from api.platform.enums import PaymentProcessors
-from api.platform.services.platform_settings_service import get_settings
 from shared.response.error import custom_error_response
 from shared.response.success import custom_success_response
-from shared.services.flutterwave_service import FlutterwaveService
+from shared.services.payment_services.provider import get_payment_provider
 from shared.utils.client_meta import client_meta
 
 User = get_user_model()
@@ -93,7 +91,7 @@ class BankAccountListCreateView(APIView):
         except Exception as e:
             logger.error(f"Error creating bank account: {e}")
             return custom_error_response(
-                message="An error occurred while creating the bank account.",
+                message=f"An error occurred while creating the bank account: {e}.",
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
         return custom_success_response(
@@ -206,28 +204,20 @@ class VerifyBankAccountView(APIView):
                 message="Both account number and bank code are required",
             )
 
-        processor = get_settings().payment_processor
-        if processor == PaymentProcessors.FLUTTERWAVE:
-            try:
-                verification_result = FlutterwaveService().resolve_bank(
-                    account_number=account_number, bank_code=bank_code
-                )
-                return custom_success_response(
-                    status=status.HTTP_200_OK,
-                    message="Bank account verified successfully",
-                    data=verification_result,
-                )
-            except Exception as exc:
-                logger.error(exc)
-                return custom_error_response(
-                    status=status.HTTP_400_BAD_REQUEST,
-                    message="Bank account verification failed",
-                    technical_message=str(exc),
-                )
-        else:
+        processor = get_payment_provider()
+        try:
+            verification_result = processor.resolve_bank(account_number=account_number, bank_code=bank_code)
+            return custom_success_response(
+                status=status.HTTP_200_OK,
+                message="Bank account verified successfully",
+                data=verification_result,
+            )
+        except Exception as exc:
+            logger.error(exc)
             return custom_error_response(
                 status=status.HTTP_400_BAD_REQUEST,
-                message="Unsupported payment processor",
+                message="Bank account verification failed",
+                technical_message=str(exc),
             )
 
 
@@ -239,18 +229,8 @@ class BankListView(APIView):
     def get(self, request):
         """Returns a list of bank names and codes, as returned from Paystack. This uses Redis cache with a 24 hour expiry to minimize calls to Paystack API. The endpoint is public and requires no authentication."""
 
-        provider = get_settings().payment_processor
-        from api.platform.enums import PaymentProcessors
-
-        match provider:
-            case PaymentProcessors.FLUTTERWAVE:
-                banks_result = FlutterwaveService.get_banks()
-            case _:
-                logger.error(f"Unsupported payment processor: {provider}")
-                return custom_error_response(
-                    message=f"Unsupported payment processor: {provider}",
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                )
+        processor = get_payment_provider()
+        banks_result = processor.get_banks()
 
         return custom_success_response(
             message="Processed successfully",

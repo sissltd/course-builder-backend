@@ -566,6 +566,7 @@ def reject_course(
             content=f"Your course '{course.title}' was rejected and returned to Draft for revision.",
             metadata={"course_id": course.id, "feedback": feedback},
         )
+        _notify_mie_revision(course=course, review_action=review_action)
         activity_service.log_activity(
             user=reviewer,
             category=UserActivityCategoryEnums.APPROVAL,
@@ -575,6 +576,24 @@ def reject_course(
         )
 
     return review_action
+
+
+def _notify_mie_revision(*, course: Course, review_action: ReviewAction) -> None:
+    """Tell the MIE developer behind a pushed course that it is back in
+    DRAFT, with the feedback. A no-op for every other course.
+
+    Local import: api.mie imports course_service, which imports this module,
+    so a module-level import here would be circular.
+    """
+
+    from api.mie.enums import WebhookEventType
+    from api.mie.services import course_push_service
+
+    course_push_service.record_course_event(
+        course=course,
+        event_type=WebhookEventType.COURSE_REVISION_REQUESTED,
+        review_action=review_action,
+    )
 
 
 def _create_review_flags(*, review_action: ReviewAction, flags: list[dict]) -> None:
@@ -811,6 +830,7 @@ def reject_qa(*, course: Course, reviewer: User, feedback: dict) -> ReviewAction
                     "stage": ReviewStage.QA,
                 },
             )
+        _notify_mie_revision(course=course, review_action=action)
         activity_service.log_activity(
             user=reviewer,
             category=UserActivityCategoryEnums.APPROVAL,

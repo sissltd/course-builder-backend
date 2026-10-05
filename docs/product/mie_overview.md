@@ -2,9 +2,9 @@
 
 ## What is MIE?
 
-MIE is a system that lets external course creators submit course ideas to Course Builder. Instead of building courses themselves, these creators act as "idea generators" -- they research what courses people want, submit their ideas, and get paid when a course built from one of their accepted ideas is published.
+MIE is a system that lets external course creators submit course ideas to Course Builder and then deliver the courses themselves. They research what courses people want and submit their ideas; once the platform approves an idea, they write the course and send it to us over the API. It then goes through exactly the same review, quality checks and publishing as any course written on the platform, and they get paid when it is published.
 
-Think of it like a suggestion box with a payment attached: creators suggest what courses to build, the platform decides which ones are worth building, and the creators get paid for each of those courses that goes live.
+Think of it like a commissioning desk: creators pitch what courses to build, the platform decides which ones are worth building, the creators build them to the platform's standards, and they get paid for each course that goes live.
 
 ---
 
@@ -42,7 +42,7 @@ If none of the above applies, the idea goes into the review queue for a human to
 
 Platform admins see all submissions in a dashboard. They can:
 
-- **Approve** ideas -- the creator gets paid according to their plan
+- **Approve** ideas -- the creator may now write and send the course (approval itself pays nothing)
 - **Reject** ideas -- with a reason and optional note, and the creator is notified
 - **Set recommendation scores** -- a demand score (0--100) and estimated monthly earnings to help prioritize which ideas to pursue first
 - **Toggle payout settings** per individual idea if needed
@@ -52,6 +52,18 @@ Decisions are reversible. An approved idea can later be rejected, and vice versa
 ### Step 5 -- Notifications
 
 Every decision -- approvals, rejections, duplicates, and payout changes -- is immediately sent to the creator's webhook URL. The creator never has to guess or check a dashboard; they always know the status of their ideas in real time.
+
+### Step 6 -- Sending the Course
+
+Once an idea is approved -- and only then -- the creator sends the finished course, in the same format the platform's own course builder uses: modules, lessons, quizzes and a final exam. Videos are optional per lesson (a lesson can be text only); only the short preview video is required. Videos can live anywhere the creator likes -- their own site, a video platform, or the platform's own storage.
+
+The course title must be the approved idea's title, so every course traces back to exactly one approved idea. The course is checked against the platform's quality rules on arrival; if anything is missing, nothing is saved and the creator gets the full list of what to fix.
+
+### Step 7 -- Review and Publication
+
+The course then follows the normal path every course takes: content review by three different reviewers, a quality check of media and accessibility, and publication. If a reviewer sends it back, the creator is notified with the feedback, fixes the course and sends it again. When it is published, the creator is notified.
+
+Paying creators automatically for published courses is not live yet; published courses are recorded against the creator with their price.
 
 ---
 
@@ -71,7 +83,7 @@ A shared vocabulary of rejection reasons (managed by admins) ensures that feedba
 
 ### Webhooks
 
-Webhooks are real-time notifications. Instead of the creator checking the platform to see what happened to their idea, the platform pushes a message to the creator's server the instant something changes. Every state change -- from initial submission through approval or rejection -- triggers a webhook.
+Webhooks are real-time notifications. Instead of the creator checking the platform to see what happened to their idea, the platform pushes a message to the creator's server the instant something changes. Every state change -- from initial submission through approval or rejection -- triggers a webhook, and so does every step that matters for their course: received for review, sent back for changes, and published.
 
 ### Reference Numbers
 

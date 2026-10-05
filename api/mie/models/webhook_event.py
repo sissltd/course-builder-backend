@@ -26,7 +26,10 @@ class WebhookEvent(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
         verbose_name=_("Event Type"),
         max_length=40,
         choices=WebhookEventType.choices,
-        help_text=_("What happened; maps 1:1 onto SubmissionStatus transitions."),
+        help_text=_(
+            "What happened: an idea transition (SUBMISSION_*) or a move of "
+            "the course pushed for it (COURSE_*)."
+        ),
     )
     payload = models.JSONField(
         verbose_name=_("Payload"),

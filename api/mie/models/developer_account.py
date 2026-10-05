@@ -124,6 +124,21 @@ class DeveloperAccount(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
         blank=True,
         help_text=_("When the latest approve/reject/suspend decision was taken."),
     )
+    creator_user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        verbose_name=_("Linked Creator Account"),
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="mie_developer_account",
+        help_text=_(
+            "No-login COURSE_CREATOR account that owns the courses this "
+            "developer pushes, so they run the normal creator review, QA and "
+            "publish flow. Provisioned on the first course push; never "
+            "linked by email, so a registration cannot claim an existing "
+            "platform account."
+        ),
+    )
 
     class Meta:
         verbose_name = _("Developer Account")

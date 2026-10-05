@@ -90,7 +90,7 @@ class TransferOutboxEvent(
     )  # Unique reference for idempotency and tracking
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     amount = models.DecimalField(max_digits=12, decimal_places=2)
-    recipient_code = models.CharField(max_length=100)
+    recipient_code = models.CharField(max_length=100, null=True, blank=True)
     transfer_code = models.CharField(max_length=100, null=True, blank=True)
     transfer_processor = models.CharField(max_length=20, choices=PaymentProcessors.choices, null=True, blank=True)
     status = models.CharField(
@@ -113,6 +113,7 @@ class TransferOutboxEvent(
         null=True,
         blank=True,
     )
+    bank_details = models.ForeignKey("payments.BankAccount", on_delete=models.PROTECT, null=True, blank=True)
 
     def __str__(self):
         return f"Transfer {self.reference} - {self.status}"

@@ -23,9 +23,19 @@ from api.mie.enums import (
     WebhookDeliveryStatus,
     WebhookEventType,
 )
+from api.courses.enums import CourseStatus, LessonContentType, QuestionType
+from api.courses.models import LessonContentBlock
+from api.mie.serializers.course_push_serializer import (
+    CoursePushSerializer,
+    PushContentBlockSerializer,
+    PushLessonSerializer,
+    PushModuleSerializer,
+)
 from api.mie.services import documentation_pdf_service, documentation_service
+from api.mie.services.course_push_service import MIE_UPLOAD_PURPOSES
 from api.mie.services.reference import REFERENCE_SUFFIXES
 from api.mie.services.submission_service import EVENT_TYPE_BY_STATUS
+from shared.services.storage_service import COURSE_UPLOAD_RULES
 
 
 def _account(**overrides):
@@ -248,6 +258,97 @@ class ContentTests(SimpleTestCase):
 
     def test_base_url_falls_back_to_a_placeholder_without_a_request(self):
         self.assertIn("<your-api-host>", self.doc["api"]["base_url"])
+
+
+class CourseUploadDocumentationTests(SimpleTestCase):
+    """The course-push half of the document must track the code too."""
+
+    def setUp(self):
+        self.doc = documentation_service.build_documentation(_account())
+
+    def test_every_course_status_is_explained(self):
+        rows = self.doc["course_lifecycle"]["statuses"]
+
+        self.assertEqual({row["status"] for row in rows}, set(CourseStatus.values))
+        for row in rows:
+            with self.subTest(status=row["status"]):
+                self.assertTrue(row["meaning"])
+                self.assertTrue(row["your_move"])
+
+    def test_every_course_event_names_the_status_it_announces(self):
+        course_events = {
+            member.value
+            for member in WebhookEventType
+            if member.value.startswith("COURSE_")
+        }
+
+        documented = {row["event"] for row in self.doc["course_lifecycle"]["events"]}
+        self.assertEqual(documented, course_events)
+        for event in self.doc["webhooks"]["events"]:
+            if event["type"] in course_events:
+                with self.subTest(event=event["type"]):
+                    self.assertIn("course", event["sample_body"]["submission"])
+
+    def test_the_schema_lists_every_accepted_choice(self):
+        schema = self.doc["course_schema"]
+
+        for lesson_type in LessonContentType.values:
+            self.assertIn(lesson_type, schema["lesson"]["lesson_type"])
+        for question_type in QuestionType.values:
+            self.assertIn(question_type, schema["question"]["type"])
+        for block_type in LessonContentBlock.BlockType.values:
+            with self.subTest(block_type=block_type):
+                self.assertIn(block_type, schema["content_block"]["block_type"])
+
+    def test_the_schema_documents_every_push_field(self):
+        schema = self.doc["course_schema"]
+        levels = {
+            "course": CoursePushSerializer(),
+            "module": PushModuleSerializer(),
+            "lesson": PushLessonSerializer(),
+            "content_block": PushContentBlockSerializer(),
+        }
+        for level, serializer in levels.items():
+            documented = " ".join(schema[level])
+            for field in serializer.fields:
+                if field == "content_type":
+                    continue  # deprecated alias of lesson_type
+                with self.subTest(level=level, field=field):
+                    self.assertIn(field, documented)
+
+    def test_upload_rules_are_read_from_the_storage_rules(self):
+        rules = {
+            row["purpose"]: row for row in self.doc["media"]["our_storage"]["rules_per_purpose"]
+        }
+
+        self.assertEqual(set(rules), set(MIE_UPLOAD_PURPOSES))
+        for purpose in MIE_UPLOAD_PURPOSES:
+            with self.subTest(purpose=purpose):
+                self.assertEqual(
+                    rules[purpose]["extensions"],
+                    sorted(COURSE_UPLOAD_RULES[purpose]["extensions"]),
+                )
+
+    def test_course_endpoints_are_listed_with_their_rate_limits(self):
+        rates = settings.REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"]
+        paths = {endpoint["path"] for endpoint in self.doc["endpoints"]}
+
+        for path in (
+            "/api/v1/mie/v1/course-requirements/",
+            "/api/v1/mie/v1/uploads/presign/",
+            "/api/v1/mie/v1/submissions/<submission_id>/course/",
+        ):
+            self.assertIn(path, paths)
+        rendered = " ".join(row["limit"] for row in self.doc["rate_limits"]["limits"])
+        self.assertIn(rates["mie_course_push"].split("/")[0], rendered)
+        self.assertIn(rates["mie_upload"].split("/")[0], rendered)
+
+    def test_the_flow_runs_from_upload_to_publication(self):
+        names = [stage["name"] for stage in self.doc["integration_flow"]]
+
+        for expected in ("Course upload", "Course review", "Publication"):
+            self.assertIn(expected, names)
+        self.assertLess(names.index("Course upload"), names.index("Publication"))
 
 
 class PdfRenderingTests(SimpleTestCase):

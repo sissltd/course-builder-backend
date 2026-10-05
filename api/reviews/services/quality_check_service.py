@@ -1,5 +1,7 @@
+from django.db.models import Sum
+
 from api.courses.enums import LessonContentType
-from api.courses.models import Assessment, Course
+from api.courses.models import Assessment, Course, Lesson
 from api.platform.services import platform_settings_service
 
 
@@ -13,14 +15,14 @@ def get_course_duration_minutes(course: Course) -> int:
     """Sum Lesson.duration_minutes across all of the course's modules.
 
     Computed on read rather than denormalized on Course, so it can never go
-    stale relative to the underlying lesson data.
+    stale relative to the underlying lesson data. One aggregate query,
+    whatever the size of the course.
     """
 
-    return sum(
-        lesson.duration_minutes
-        for module in course.modules.all()
-        for lesson in module.lessons.all()
-    )
+    total = Lesson.objects.filter(module__course=course).aggregate(
+        total=Sum("duration_minutes")
+    )["total"]
+    return total or 0
 
 
 def validate_structural_standards(course: Course) -> list[str]:

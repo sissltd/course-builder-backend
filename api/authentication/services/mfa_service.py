@@ -12,7 +12,7 @@ from rest_framework import exceptions
 
 from api.authentication.models import MFAChallenge, MFADevice, MFARecoveryCode
 from api.authentication.services import activity_service
-from api.users.enums import UserActivityActionEnums, UserActivityCategoryEnums, UserRole
+from api.users.enums import UserActivityActionEnums, UserActivityCategoryEnums
 from api.users.models import User
 from shared.utils.encryption import decrypt_field, encrypt_field
 
@@ -30,12 +30,6 @@ MFA_CHALLENGE_LIFETIME_MINUTES = 5
 #: smaller than password entropy per guess, so the lockout is tighter too.
 MFA_MAX_FAILED_ATTEMPTS = 5
 MFA_LOCKOUT_DURATION_MINUTES = 30
-
-#: Roles MFA is mandatory for - enforced at login (challenge required once
-#: enrolled) and via grace-period tracking (User.mfa_grace_period_ends_at)
-#: until then.
-MFA_MANDATED_ROLES = (UserRole.ADMIN, UserRole.SUPER_ADMIN)
-
 
 def _hash_challenge_token(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
@@ -175,16 +169,8 @@ def regenerate_recovery_codes(*, user: User, code: str, request=None) -> list[st
 
 
 def disable(*, user: User, code: str, request=None) -> None:
-    """Self-service disable. Mandatory-MFA roles can never disable outright -
-    for them, "reset" means re-enrolling via enroll(), which overwrites the
-    secret; this endpoint stays available only for roles MFA isn't
-    mandatory for."""
-
-    if user.role in MFA_MANDATED_ROLES:
-        raise exceptions.PermissionDenied(
-            "MFA is required for this role and cannot be disabled. "
-            "Re-enroll to replace your device instead."
-        )
+    """Self-service disable, open to every role: MFA is opt-in, so the
+    account holder may turn it off again with a live code."""
 
     device = get_device(user=user)
     if device is None or not device.is_enabled:
@@ -205,10 +191,9 @@ def disable(*, user: User, code: str, request=None) -> None:
 
 
 def admin_reset(*, acting_admin: User, target_user: User, request=None) -> None:
-    """Super-Admin-initiated reset for a user who lost their device. Their
-    mfa_grace_period_ends_at is left untouched (already set) - this forces
-    re-enrollment, not a fresh grace window, so it can't be used to
-    perpetually dodge enrollment."""
+    """Super-Admin-initiated reset for a user who lost their device: deletes
+    their device and recovery codes, so they log in with just a password
+    until they choose to enroll again."""
 
     MFADevice.objects.filter(user=target_user).delete()
     MFARecoveryCode.objects.filter(user=target_user).delete()
@@ -322,13 +307,7 @@ def _try_recovery_code(*, user: User, code: str, request=None) -> bool:
     return False
 
 
-# >>>>>>>>>>>>>>>>>>>> Login-flow helpers <<<<<<<<<<<<<<<<<<<<<<
-
-
-def is_within_grace_period(*, user: User) -> bool:
-    return bool(
-        user.mfa_grace_period_ends_at and user.mfa_grace_period_ends_at > timezone.now()
-    )
+# >>>>>>>>>>>>>>>>>>>> Step-up check <<<<<<<<<<<<<<<<<<<<<<
 
 
 def verify_fresh_code(*, user: User, code: str) -> bool:

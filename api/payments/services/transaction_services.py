@@ -12,7 +12,7 @@ from api.payments.tasks import release_course_payment
 from api.platform.services.platform_settings_service import get_settings
 from api.users.models import User
 from api.wallet.models import Wallet
-from shared.services.paystack_service import PaystackService
+from shared.services.payment_services import PaystackService
 
 logger = logging.getLogger(__name__)
 

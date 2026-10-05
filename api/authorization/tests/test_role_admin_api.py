@@ -270,6 +270,23 @@ class RoleCreateTests(RoleTestCase):
         self.assertEqual(refused.status_code, status.HTTP_403_FORBIDDEN)
         self.assertEqual(allowed.status_code, status.HTTP_201_CREATED)
 
+    @override_settings(MFA_ENFORCED=True)
+    def test_a_challenged_session_opened_under_another_role_is_refused(self):
+        user = User.objects.select_related("access_role").get(id=self.super_admin.id)
+        payload = {"name": "X", "base_role": UserRole.STAFF_WRITER, "permissions": []}
+
+        self.client.force_authenticate(
+            user,
+            token={
+                "mfa_verified": True,
+                "mfa_challenged": True,
+                "role": UserRole.STAFF_WRITER,
+            },
+        )
+        response = self.client.post(ROLES_URL, payload, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
 
 class RoleManagerEscalationTests(RoleTestCase):
     """A non-Super-Admin manager can never hand out more than they hold."""

@@ -35,13 +35,12 @@ class IsStrongMFASession(BasePermission):
     """Require an MFA-verified session for this action, whatever the caller's role.
 
     For money and identity actions a custom role could otherwise reach with a
-    password alone (MFA is only mandated for some base roles). Inert where
-    MFA is not enforced.
+    password alone (MFA is opt-in for every role). Inert where MFA is not
+    enforced.
 
     Reads `mfa_challenged`, not `mfa_verified`: login mints `mfa_verified`
-    true without a challenge for roles MFA is not mandatory for, whereas
-    `mfa_challenged` is only set when the session actually passed an MFA
-    challenge. The token's role claim must also match the user's current
+    true for an account that never enrolled, whereas `mfa_challenged` is
+    only set when the session actually passed an MFA challenge. The token's role claim must also match the user's current
     role, so a session opened under an earlier role does not carry its MFA
     state across a role change.
     """

@@ -80,7 +80,9 @@ BANK_ACCOUNT_CREATE_DOCS = {
         "server-side name check to pass.\n\n"
         "**Important:** This endpoint can return a 400 even when the serializer "
         "is valid, for example if the account name does not match the user "
-        "profile or the account is suspended."
+        "profile or the account is suspended.\n\n"
+        "**Note:** Because Flutterwave does not allow testing with live bank account details, use the provided test bank account details in the test environment.\n"
+        "bank_code: 044; account number 0690000031, 0690000032, 0690000033, or 0690000034)"
     ),
     "tags": ["Creator — Bank Accounts"],
     "request": BankAccountCreateSerializer,

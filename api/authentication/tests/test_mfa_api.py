@@ -144,16 +144,8 @@ class MFAServiceTests(TestCase):
             mfa_service.RECOVERY_CODE_COUNT,
         )
 
-    def test_disable_forbidden_for_admin(self):
+    def test_disable_allowed_for_every_role(self):
         user = make_user(role=UserRole.ADMIN)
-        secret, _codes = _enroll_and_confirm(user)
-
-        with self.assertRaises(Exception):
-            mfa_service.disable(user=user, code=pyotp.TOTP(secret).now())
-        self.assertTrue(mfa_service.get_device(user=user).is_enabled)
-
-    def test_disable_allowed_for_non_mandated_role(self):
-        user = make_user(role=UserRole.COURSE_CREATOR)
         secret, _codes = _enroll_and_confirm(user)
 
         mfa_service.disable(user=user, code=pyotp.TOTP(secret).now())
@@ -161,17 +153,15 @@ class MFAServiceTests(TestCase):
         self.assertIsNone(mfa_service.get_device(user=user))
         self.assertEqual(MFARecoveryCode.objects.filter(user=user).count(), 0)
 
-    def test_admin_reset_deletes_device_without_granting_new_grace_period(self):
+    def test_admin_reset_deletes_device_and_recovery_codes(self):
         super_admin = make_user(role=UserRole.SUPER_ADMIN)
         target = make_user(role=UserRole.ADMIN)
         _enroll_and_confirm(target)
-        original_grace = target.mfa_grace_period_ends_at
 
         mfa_service.admin_reset(acting_admin=super_admin, target_user=target)
 
         self.assertIsNone(mfa_service.get_device(user=target))
-        target.refresh_from_db()
-        self.assertEqual(target.mfa_grace_period_ends_at, original_grace)
+        self.assertEqual(MFARecoveryCode.objects.filter(user=target).count(), 0)
         self.assertTrue(
             UserActivityLog.objects.filter(
                 user=target, action="MFA_RESET_BY_ADMIN"
@@ -179,30 +169,10 @@ class MFAServiceTests(TestCase):
         )
 
 
-class MFAGracePeriodTests(TestCase):
-    def test_grace_period_set_on_first_save_with_mandated_role(self):
-        user = make_user(role=UserRole.ADMIN)
-        self.assertIsNotNone(user.mfa_grace_period_ends_at)
-        self.assertGreater(user.mfa_grace_period_ends_at, timezone.now())
-
-    def test_grace_period_not_reset_on_subsequent_saves(self):
-        user = make_user(role=UserRole.ADMIN)
-        first = user.mfa_grace_period_ends_at
-
-        user.first_name = "Changed"
-        user.save(update_fields=["first_name"])
-        user.refresh_from_db()
-
-        self.assertEqual(user.mfa_grace_period_ends_at, first)
-
-    def test_non_mandated_role_never_gets_a_grace_period(self):
-        user = make_user(role=UserRole.COURSE_CREATOR)
-        self.assertIsNone(user.mfa_grace_period_ends_at)
-
-
 @override_settings(MFA_ENFORCED=True)
 class LoginMFAFlowApiTests(APITestCase):
-    """Mandated-role MFA flow under enforced MFA (production behaviour)."""
+    """Login/verify flow for an enrolled account under enforced MFA
+    (production behaviour)."""
     def setUp(self):
         cache.clear()
 
@@ -221,32 +191,6 @@ class LoginMFAFlowApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIn("access", response.data)
         self.assertNotIn("mfa_required", response.data)
-
-    def test_admin_without_device_logs_in_flagged_within_grace_period(self):
-        user = make_user(role=UserRole.ADMIN)
-
-        response = self._login(user.email)
-
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn("access", response.data)
-        self.assertTrue(response.data["mfa_enrollment_required"])
-        access = AccessToken(response.data["access"])
-        self.assertFalse(access.get("mfa_verified"))
-
-    def test_admin_without_device_past_grace_period_still_logs_in_but_unverified(self):
-        user = make_user(role=UserRole.ADMIN)
-        from api.users.models import User
-
-        User.objects.filter(id=user.id).update(
-            mfa_grace_period_ends_at=timezone.now() - timezone.timedelta(days=1)
-        )
-
-        response = self._login(user.email)
-
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertTrue(response.data["mfa_enrollment_overdue"])
-        access = AccessToken(response.data["access"])
-        self.assertFalse(access.get("mfa_verified"))
 
     def test_admin_with_device_gets_challenge_instead_of_tokens(self):
         user = make_user(role=UserRole.ADMIN)
@@ -347,47 +291,44 @@ class MFAAdminResetApiTests(APITestCase):
 
 
 @override_settings(MFA_ENFORCED=True)
-class IsMFAVerifiedForSessionApiTests(APITestCase):
-    """`IsMFAVerifiedForSession` claim enforcement under enforced MFA."""
-    def _token(self, user, mfa_verified):
-        token = AccessToken.for_user(user)
-        token["mfa_verified"] = mfa_verified
-        return token
+class AdminActionsNeedNoMFAApiTests(APITestCase):
+    """Platform settings and category writes are gated by permission alone:
+    an admin who never opted in to MFA is not blocked, even where MFA is
+    enforced."""
 
-    def test_admin_without_mfa_verified_claim_blocked_from_platform_settings_patch(
-        self,
-    ):
+    def test_unenrolled_admin_can_patch_platform_settings(self):
         admin = make_user(role=UserRole.ADMIN)
-        self.client.force_authenticate(admin, token=self._token(admin, False))
+        token = AccessToken.for_user(admin)
+        token["mfa_verified"] = False
+        self.client.force_authenticate(admin, token=token)
 
         response = self.client.patch(
             "/api/v1/platform-settings/",
             {"course_module_count_min": 6},
             format="json",
         )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["course_module_count_min"], 6)
+
+    def test_course_creator_still_cannot_patch_platform_settings(self):
+        self.client.force_authenticate(make_user(role=UserRole.COURSE_CREATOR))
+
+        response = self.client.patch(
+            "/api/v1/platform-settings/",
+            {"course_module_count_min": 6},
+            format="json",
+        )
+
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
-    def test_admin_with_mfa_verified_claim_allowed(self):
-        admin = make_user(role=UserRole.ADMIN)
-        self.client.force_authenticate(admin, token=self._token(admin, True))
-
-        response = self.client.patch(
-            "/api/v1/platform-settings/",
-            {"course_module_count_min": 6},
-            format="json",
-        )
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-
-    def test_non_mandated_role_unaffected_by_claim(self):
-        writer = make_user(role=UserRole.STAFF_WRITER)
-        # No token at all - non-mandated roles short-circuit past the claim
-        # check entirely in IsMFAVerifiedForSession.
-        self.client.force_authenticate(writer)
+    def test_unenrolled_admin_can_create_a_category(self):
+        self.client.force_authenticate(make_user(role=UserRole.ADMIN))
 
         response = self.client.post(
             "/api/v1/categories/",
             {
-                "name": "Writer Category",
+                "name": "Admin Category",
                 "creator_price_beginner": "50.00",
                 "creator_price_intermediate": "50.00",
                 "creator_price_advanced": "50.00",
@@ -395,6 +336,7 @@ class IsMFAVerifiedForSessionApiTests(APITestCase):
                 "status": "ACTIVE",
             },
         )
+
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
 
@@ -474,3 +416,203 @@ class MFAEnforcementOffApiTests(APITestCase):
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+
+class MFAOptInApiTests(APITestCase):
+    """MFA is opt-in for admins and super admins, in every environment: an
+    account that never enrolled just logs in, one that enrolled is always
+    challenged, and only the account holder can turn it on or off."""
+
+    def setUp(self):
+        cache.clear()
+
+    def _login(self, email, password="testpass123"):
+        return self.client.post(
+            "/api/v1/auth/login/",
+            {"email": email, "password": password},
+            format="json",
+        )
+
+    def _assert_plain_login(self, user):
+        response = self._login(user.email)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("access", response.data)
+        for flag in (
+            "mfa_required",
+            "challenge_token",
+            "mfa_enrollment_required",
+            "mfa_enrollment_overdue",
+        ):
+            self.assertNotIn(flag, response.data)
+        self.assertTrue(AccessToken(response.data["access"]).get("mfa_verified"))
+
+    @override_settings(MFA_ENFORCED=True)
+    def test_unenrolled_admin_and_super_admin_log_in_when_enforced(self):
+        for role in (UserRole.ADMIN, UserRole.SUPER_ADMIN):
+            with self.subTest(role=role):
+                self._assert_plain_login(make_user(role=role))
+
+    @override_settings(MFA_ENFORCED=False)
+    def test_unenrolled_admin_and_super_admin_log_in_when_not_enforced(self):
+        for role in (UserRole.ADMIN, UserRole.SUPER_ADMIN):
+            with self.subTest(role=role):
+                self._assert_plain_login(make_user(role=role))
+
+    def test_admin_who_enrolled_is_challenged_whether_or_not_enforced(self):
+        for enforced in (True, False):
+            with self.subTest(enforced=enforced), override_settings(
+                MFA_ENFORCED=enforced
+            ):
+                user = make_user(role=UserRole.ADMIN)
+                _enroll_and_confirm(user)
+
+                response = self._login(user.email)
+
+                self.assertEqual(response.status_code, status.HTTP_200_OK)
+                self.assertTrue(response.data["mfa_required"])
+                self.assertIn("challenge_token", response.data)
+                self.assertNotIn("access", response.data)
+
+    def test_admin_opts_in_over_http_then_is_challenged_at_login(self):
+        user = make_user(role=UserRole.SUPER_ADMIN)
+        self.client.force_authenticate(user)
+        secret = self.client.post("/api/v1/auth/mfa/enroll/").data["secret"]
+        confirm = self.client.post(
+            "/api/v1/auth/mfa/enroll/confirm/",
+            {"code": pyotp.TOTP(secret).now()},
+            format="json",
+        )
+        self.assertEqual(confirm.status_code, status.HTTP_200_OK)
+        self.client.force_authenticate(None)
+
+        response = self._login(user.email)
+
+        self.assertTrue(response.data["mfa_required"])
+
+    def test_admin_can_opt_back_out_with_a_valid_code(self):
+        user = make_user(role=UserRole.ADMIN)
+        secret, _codes = _enroll_and_confirm(user)
+        self.client.force_authenticate(user)
+
+        response = self.client.post(
+            "/api/v1/auth/mfa/disable/",
+            {"code": pyotp.TOTP(secret).now()},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["detail"], "MFA disabled.")
+        self.assertIsNone(mfa_service.get_device(user=user))
+        self.client.force_authenticate(None)
+        self._assert_plain_login(user)
+
+    def test_admin_cannot_opt_out_with_a_wrong_code(self):
+        user = make_user(role=UserRole.ADMIN)
+        _enroll_and_confirm(user)
+        self.client.force_authenticate(user)
+
+        response = self.client.post(
+            "/api/v1/auth/mfa/disable/", {"code": "000000"}, format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertTrue(mfa_service.get_device(user=user).is_enabled)
+
+    def test_disable_requires_authentication(self):
+        response = self.client.post(
+            "/api/v1/auth/mfa/disable/", {"code": "123456"}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_disable_only_affects_the_caller(self):
+        caller = make_user(role=UserRole.ADMIN)
+        other = make_user(role=UserRole.ADMIN)
+        caller_secret, _ = _enroll_and_confirm(caller)
+        _enroll_and_confirm(other)
+        self.client.force_authenticate(caller)
+
+        self.client.post(
+            "/api/v1/auth/mfa/disable/",
+            {"code": pyotp.TOTP(caller_secret).now()},
+            format="json",
+        )
+
+        self.assertIsNone(mfa_service.get_device(user=caller))
+        self.assertTrue(mfa_service.get_device(user=other).is_enabled)
+
+
+class MeMFAEnabledApiTests(APITestCase):
+    """`mfa_enabled` on the profile object returned by /users/me/ and by the
+    login / verify / refresh responses."""
+
+    def setUp(self):
+        cache.clear()
+
+    def test_me_reports_false_for_an_account_that_never_enrolled(self):
+        self.client.force_authenticate(make_user(role=UserRole.ADMIN))
+
+        response = self.client.get("/api/v1/users/me/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIs(response.data["mfa_enabled"], False)
+
+    def test_me_reports_false_while_enrollment_is_unconfirmed(self):
+        user = make_user(role=UserRole.ADMIN)
+        mfa_service.enroll(user=user)
+        self.client.force_authenticate(user)
+
+        response = self.client.get("/api/v1/users/me/")
+
+        self.assertIs(response.data["mfa_enabled"], False)
+
+    def test_me_reports_true_once_enrollment_is_confirmed(self):
+        user = make_user(role=UserRole.SUPER_ADMIN)
+        _enroll_and_confirm(user)
+        self.client.force_authenticate(user)
+
+        response = self.client.get("/api/v1/users/me/")
+
+        self.assertIs(response.data["mfa_enabled"], True)
+
+    def test_me_reports_false_again_after_opting_out(self):
+        user = make_user(role=UserRole.ADMIN)
+        secret, _codes = _enroll_and_confirm(user)
+        self.client.force_authenticate(user)
+
+        self.client.post(
+            "/api/v1/auth/mfa/disable/",
+            {"code": pyotp.TOTP(secret).now()},
+            format="json",
+        )
+
+        self.assertIs(self.client.get("/api/v1/users/me/").data["mfa_enabled"], False)
+
+    def test_plain_login_returns_mfa_enabled_false_in_user(self):
+        user = make_user(role=UserRole.ADMIN)
+
+        response = self.client.post(
+            "/api/v1/auth/login/",
+            {"email": user.email, "password": "testpass123"},
+            format="json",
+        )
+
+        self.assertIs(response.data["user"]["mfa_enabled"], False)
+
+    def test_verify_response_returns_mfa_enabled_true_in_user(self):
+        user = make_user(role=UserRole.ADMIN)
+        secret, _codes = _enroll_and_confirm(user)
+        challenge = self.client.post(
+            "/api/v1/auth/login/",
+            {"email": user.email, "password": "testpass123"},
+            format="json",
+        ).data["challenge_token"]
+
+        response = self.client.post(
+            "/api/v1/auth/mfa/verify/",
+            {"challenge_token": challenge, "code": pyotp.TOTP(secret).now()},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIs(response.data["user"]["mfa_enabled"], True)

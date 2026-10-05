@@ -136,6 +136,10 @@ class DocumentationTests(DevSurfaceAuthBase):
                 "reference_scheme",
                 "submission_lifecycle",
                 "deduplication",
+                "course_upload",
+                "course_schema",
+                "media",
+                "course_lifecycle",
                 "plan_and_payouts",
                 "endpoints",
                 "webhooks",
@@ -157,6 +161,9 @@ class DocumentationTests(DevSurfaceAuthBase):
                 "/api/v1/mie/v1/register/",
                 "/api/v1/mie/v1/submissions/",
                 "/api/v1/mie/v1/submissions/queue/",
+                "/api/v1/mie/v1/course-requirements/",
+                "/api/v1/mie/v1/uploads/presign/",
+                "/api/v1/mie/v1/submissions/<submission_id>/course/",
                 "/api/v1/mie/v1/me/",
                 "/api/v1/mie/v1/documentation/",
                 "/api/v1/mie/v1/documentation/download/",
@@ -185,6 +192,8 @@ class DocumentationTests(DevSurfaceAuthBase):
                 self.assertTrue(body["submission"]["title"])
                 for field in event["extra_submission_fields"]:
                     self.assertIn(field, body["submission"])
+                for field in event["extra_course_fields"]:
+                    self.assertIn(field, body["submission"]["course"])
 
     def test_sample_bodies_match_the_shape_the_dispatcher_sends(self):
         """Guards the JSON envelope against dispatcher drift."""

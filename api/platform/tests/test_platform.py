@@ -2,7 +2,6 @@ from decimal import Decimal
 
 from rest_framework import status
 from rest_framework.test import APITestCase
-from rest_framework_simplejwt.tokens import AccessToken
 
 from django.contrib.auth import get_user_model
 
@@ -46,15 +45,6 @@ class PlatformSettingsApiTests(APITestCase):
         self.admin = make_user(role=UserRole.ADMIN)
         self.creator = make_user(role=UserRole.COURSE_CREATOR)
 
-    def _authenticate_mfa_verified(self, user):
-        """ADMIN/SUPER_ADMIN are MFA-mandated roles - IsMFAVerifiedForSession
-        requires the token to carry mfa_verified=True, which plain
-        force_authenticate(user) (no token) never does."""
-
-        token = AccessToken.for_user(user)
-        token["mfa_verified"] = True
-        self.client.force_authenticate(user, token=token)
-
     def test_get_requires_authentication(self):
         response = self.client.get("/api/v1/platform-settings/")
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
@@ -69,7 +59,7 @@ class PlatformSettingsApiTests(APITestCase):
         self.assertNotIn("lesson_quiz_questions_max", response.data)
 
     def test_lesson_quiz_thresholds_cannot_be_configured(self):
-        self._authenticate_mfa_verified(self.admin)
+        self.client.force_authenticate(self.admin)
 
         response = self.client.patch(
             "/api/v1/platform-settings/",
@@ -89,7 +79,7 @@ class PlatformSettingsApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_admin_can_patch_one_field(self):
-        self._authenticate_mfa_verified(self.admin)
+        self.client.force_authenticate(self.admin)
 
         response = self.client.patch(
             "/api/v1/platform-settings/",
@@ -101,7 +91,7 @@ class PlatformSettingsApiTests(APITestCase):
         self.assertEqual(response.data["course_module_count_max"], 12)
 
     def test_patch_empty_body_rejected(self):
-        self._authenticate_mfa_verified(self.admin)
+        self.client.force_authenticate(self.admin)
 
         response = self.client.patch("/api/v1/platform-settings/", {}, format="json")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -116,7 +106,7 @@ class PlatformSettingsApiTests(APITestCase):
             quality_check_service.validate_structural_standards(course), []
         )
 
-        self._authenticate_mfa_verified(self.admin)
+        self.client.force_authenticate(self.admin)
         self.client.patch(
             "/api/v1/platform-settings/",
             {"course_module_count_min": 5},
@@ -134,7 +124,7 @@ class PlatformSettingsApiTests(APITestCase):
         self.assertEqual(settings_row.sla_amber_threshold_hours, 24)
         self.assertEqual(settings_row.sla_red_threshold_hours, 48)
 
-        self._authenticate_mfa_verified(self.admin)
+        self.client.force_authenticate(self.admin)
         response = self.client.patch(
             "/api/v1/platform-settings/",
             {"sla_amber_threshold_hours": 12, "sla_red_threshold_hours": 36},
@@ -149,7 +139,7 @@ class PlatformSettingsApiTests(APITestCase):
         self.assertEqual(settings_row.draft_minimum_hold_hours, 48)
         self.assertEqual(settings_row.auto_flag_after_hours, 48)
 
-        self._authenticate_mfa_verified(self.admin)
+        self.client.force_authenticate(self.admin)
         response = self.client.patch(
             "/api/v1/platform-settings/",
             {"draft_minimum_hold_hours": 24, "auto_flag_after_hours": 0},
@@ -161,7 +151,7 @@ class PlatformSettingsApiTests(APITestCase):
         self.assertEqual(response.data["auto_flag_after_hours"], 0)
 
     def test_negative_hold_hours_rejected(self):
-        self._authenticate_mfa_verified(self.admin)
+        self.client.force_authenticate(self.admin)
 
         response = self.client.patch(
             "/api/v1/platform-settings/",

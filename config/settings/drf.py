@@ -46,6 +46,12 @@ REST_FRAMEWORK = {
         # MIE Endpoint 1 - per developer account (api/mie/throttling.py),
         # whichever credential it presents.
         "mie_ingest": "30/min",
+        # MIE course push - per developer account. Each push builds and
+        # submits a whole course in one transaction.
+        "mie_course_push": "20/hour",
+        # MIE course-media presign - per developer account. A course can
+        # carry a video per lesson, so this is sized for a full course.
+        "mie_upload": "120/hour",
         # MIE open self-registration - per client IP, since no account exists
         # yet. Tight, because it creates rows pre-auth.
         "mie_register": "5/hour",

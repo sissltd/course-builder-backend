@@ -115,16 +115,6 @@ class PlatformSettings(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
             "themselves via NotificationPreference."
         ),
     )
-    mfa_enrollment_grace_period_days = models.PositiveIntegerField(
-        verbose_name=_("MFA Enrollment Grace Period Days"),
-        default=7,
-        help_text=_(
-            "How many days an Admin/Super Admin may keep logging in without "
-            "MFA enrolled before enforcement on sensitive actions kicks in. "
-            "The clock starts once, at role assignment - not reset by "
-            "re-saving this setting."
-        ),
-    )
     payment_processor = models.CharField(
         verbose_name=_("Payment Processor"),
         max_length=20,

@@ -22,7 +22,6 @@ UPDATABLE_FIELDS = {
     "auto_flag_after_hours",
     "sla_amber_threshold_hours",
     "sla_red_threshold_hours",
-    "mfa_enrollment_grace_period_days",
     "payment_processor",
     "kyc_provider",
     "liveness_threshold",

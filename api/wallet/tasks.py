@@ -9,24 +9,16 @@ from api.authentication.services.activity_service import log_activity
 from api.notification.models import Notification
 from api.payments.models.ledgeraccount_models import InternalAccount
 from api.payments.services import transaction_services
-from api.platform.enums import PaymentProcessors
 from api.users.enums import UserActivityActionEnums, UserActivityCategoryEnums
 from core.models import TransferOutboxEvent
-from shared.services.flutterwave_service import FlutterwaveService
 
 from .models import Wallet
 
 logger = logging.getLogger(__name__)
 
 
-def _get_transfer_service(provider: PaymentProcessors):
-    """Determine which transfer service to use based on the value of PlatformSettings.payment_processor."""
-
-    return FlutterwaveService()  # Deliberately using Flutterwave for all transfers
-
-
 @shared_task(bind=True, max_retries=3)
-def dispatch_transfer_task(self, outbox_id, provider: PaymentProcessors = PaymentProcessors.FLUTTERWAVE):
+def dispatch_transfer_task(self, outbox_id):
     try:
         with transaction.atomic():
             # Lock outbox entry so multiple workers don't execute it concurrently
@@ -41,11 +33,19 @@ def dispatch_transfer_task(self, outbox_id, provider: PaymentProcessors = Paymen
             entry.save()
 
         try:
-            successful, response_data = _get_transfer_service(provider).initiate_transfer(
+            from shared.services.payment_services.provider import get_payment_provider
+
+            provider = get_payment_provider()
+            bank_details = entry.bank_details
+
+            successful, response_data = provider.initiate_transfer(
                 amount_naira=entry.amount,
-                recipient_code=entry.recipient_code,
-                reason=entry.reason,
+                account_number=bank_details.account_number,
+                bank_code=bank_details.bank_code,
+                account_name=bank_details.account_name,
                 reference=entry.reference,
+                reason="Wallet Withdrawal",
+                bankaccount_id=bank_details.id,
             )
         except Exception as exc:
             logger.error(f"Error initiating transfer for outbox {outbox_id}: {exc}")
