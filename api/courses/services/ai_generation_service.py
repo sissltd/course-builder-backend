@@ -24,10 +24,45 @@ from api.courses.models import (
 from api.courses.services import course_service
 
 
+# Backend-published AI generation progress events are sent on one Redis
+# channel per user so SSE subscribers can render progress without polling.
+AI_GENERATION_CHANNEL_TEMPLATE = "user:ai-generations:{user_id}"
+
+
+def _ai_generation_channel(user_id):
+    return AI_GENERATION_CHANNEL_TEMPLATE.format(user_id=user_id)
+
+
+def publish_ai_generation_progress(*, job, payload):
+    """Schedule an async publish of a generation progress event for the job owner.
+
+    This is best-effort and tolerant of Redis outages: a missing or broken
+    channel should not prevent generation from completing or surface any
+    user-facing error.
+    """
+    try:
+        from asgiref.sync import async_to_sync
+        from shared.redis.redis_service import RedisService
+
+        async_to_sync(RedisService.publish_ai_generation_progress)(
+            job_id=job.id,
+            user_id=job.creator_id,
+            payload=payload,
+        )
+    except Exception:
+        return
+
+
 # While a creator has a job in one of these states the provider may be working
 # on their behalf, so no new AI request is accepted until it returns a result.
 IN_FLIGHT_JOB_STATUSES = (
     AIGenerationStatus.QUEUED,
+    AIGenerationStatus.RUNNING,
+    AIGenerationStatus.STRUCTURE_READY,
+)
+# A worker holds the job in one of these states while executing it; both must
+# keep heartbeating so duplicate deliveries and the watchdog see a live claim.
+EXECUTING_JOB_STATUSES = (
     AIGenerationStatus.RUNNING,
     AIGenerationStatus.STRUCTURE_READY,
 )
@@ -171,10 +206,17 @@ def check_cancelled(job):
     job.refresh_from_db(fields=["cancel_requested"])
     if job.cancel_requested:
         job.status = AIGenerationStatus.CANCELLED
+        job.stage = "Generation cancelled"
         job.completed_at = timezone.now()
-        job.save(update_fields=["status", "completed_at", "updated_datetime"])
+        job.save(
+            update_fields=["status", "stage", "completed_at", "updated_datetime"]
+        )
         job.items.exclude(status=AIGenerationItemStatus.COMPLETED).update(
             status=AIGenerationItemStatus.CANCELLED
+        )
+        publish_ai_generation_progress(
+            job=job,
+            payload={"type": "cancelled", "stage": job.stage},
         )
         return True
     return False
@@ -199,7 +241,7 @@ def claim_job_for_execution(*, job_id, task_id, stage):
     now = timezone.now()
     heartbeat = job.last_heartbeat_at or job.updated_datetime
     if (
-        job.status == AIGenerationStatus.RUNNING
+        job.status in EXECUTING_JOB_STATUSES
         and heartbeat
         and now - heartbeat < HEARTBEAT_TIMEOUT
     ):
@@ -227,8 +269,31 @@ def heartbeat(*, job):
 
     now = timezone.now()
     AIGenerationJob.objects.filter(
-        pk=job.pk, status=AIGenerationStatus.RUNNING
+        pk=job.pk, status__in=EXECUTING_JOB_STATUSES
     ).update(last_heartbeat_at=now, updated_datetime=now)
+
+
+@transaction.atomic
+def queue_job_for_retry(*, job, stage):
+    """Queue a retry only if cancellation or another terminal state has not won."""
+
+    job = AIGenerationJob.objects.select_for_update().get(pk=job.pk)
+    if job.status in {
+        AIGenerationStatus.COMPLETED,
+        AIGenerationStatus.FAILED,
+        AIGenerationStatus.CANCELLED,
+    }:
+        return False
+    if job.cancel_requested:
+        check_cancelled(job)
+        return False
+    job.status = AIGenerationStatus.QUEUED
+    job.stage = stage
+    job.last_heartbeat_at = None
+    job.save(
+        update_fields=["status", "stage", "last_heartbeat_at", "updated_datetime"]
+    )
+    return True
 
 
 @transaction.atomic
@@ -313,17 +378,11 @@ def fail_stale_in_flight_jobs(*, creator):
             updated_datetime__lt=stale_before,
         )
         | Q(
-            status__in=[
-                AIGenerationStatus.RUNNING,
-                AIGenerationStatus.STRUCTURE_READY,
-            ],
+            status__in=EXECUTING_JOB_STATUSES,
             last_heartbeat_at__lt=stale_before,
         )
         | Q(
-            status__in=[
-                AIGenerationStatus.RUNNING,
-                AIGenerationStatus.STRUCTURE_READY,
-            ],
+            status__in=EXECUTING_JOB_STATUSES,
             last_heartbeat_at__isnull=True,
             updated_datetime__lt=stale_before,
         )
@@ -375,8 +434,39 @@ def materialize_structure(*, job, generated):
     job.status = AIGenerationStatus.STRUCTURE_READY
     job.stage = "Preparing course details..."
     job.save(update_fields=["course", "status", "stage", "updated_datetime"])
+    publish_ai_generation_progress(
+        job=job,
+        payload={
+            "type": "phase",
+            "phase": "PREPARING_DETAILS",
+            "stage": job.stage,
+            "items": [
+                {
+                    "key": item.key,
+                    "label": item.label,
+                    "status": item.status,
+                }
+                for item in job.items.order_by("order")
+            ],
+        },
+    )
 
+    total_modules = len(generated["modules"])
     for module_order, module_data in enumerate(generated["modules"], 1):
+        module_index = module_order - 1
+        publish_ai_generation_progress(
+            job=job,
+            payload={
+                "type": "module",
+                "module_index": module_index,
+                "module_count": total_modules,
+                "module": {
+                    "title": module_data["title"],
+                    "order": module_order,
+                },
+                "stage": f"Generating module {module_order} of {total_modules}...",
+            },
+        )
         module = Module.objects.create(
             course=course,
             title=module_data["title"],
@@ -429,6 +519,14 @@ def materialize_module_content(*, job, module, generated):
         created_by=job.creator,
         updated_by=job.creator,
     )
+    publish_ai_generation_progress(
+        job=job,
+        payload={
+            "type": "module_done",
+            "module_index": module.order - 1,
+            "stage": f"Generated module {module.order}.",
+        },
+    )
 
 
 @transaction.atomic
@@ -442,6 +540,13 @@ def materialize_final_assessment(*, job, generated):
         updated_by=job.creator,
     )
     course_service.recalculate_duration_estimate(course=job.course)
+    publish_ai_generation_progress(
+        job=job,
+        payload={
+            "type": "final_assessment_done",
+            "stage": "Course details ready",
+        },
+    )
 
 
 def module_content_is_materialized(*, module) -> bool:
@@ -464,9 +569,53 @@ def add_usage(*, job, usage):
     job.save(update_fields=["input_tokens", "output_tokens", "updated_datetime"])
 
 
+@transaction.atomic
+def complete_job(
+    *,
+    job,
+    stage,
+    result=None,
+    provider=None,
+    model=None,
+    input_tokens=None,
+    output_tokens=None,
+):
+    """Atomically finish a job unless cancellation won the completion race."""
+
+    job = AIGenerationJob.objects.select_for_update().get(pk=job.pk)
+    if job.status in {
+        AIGenerationStatus.COMPLETED,
+        AIGenerationStatus.FAILED,
+        AIGenerationStatus.CANCELLED,
+    }:
+        return False
+    if job.cancel_requested:
+        check_cancelled(job)
+        return False
+
+    job.status = AIGenerationStatus.COMPLETED
+    job.stage = stage
+    job.completed_at = timezone.now()
+    update_fields = ["status", "stage", "completed_at", "updated_datetime"]
+    for field, value in (
+        ("result", result),
+        ("provider", provider),
+        ("model", model),
+        ("input_tokens", input_tokens),
+        ("output_tokens", output_tokens),
+    ):
+        if value is not None:
+            setattr(job, field, value)
+            update_fields.append(field)
+    job.save(update_fields=update_fields)
+    return True
+
+
+@transaction.atomic
 def cancel_job(*, job, actor):
     if job.creator_id != actor.id:
         raise exceptions.PermissionDenied()
+    job = AIGenerationJob.objects.select_for_update().get(pk=job.pk)
     if job.status in {
         AIGenerationStatus.COMPLETED,
         AIGenerationStatus.FAILED,
@@ -475,6 +624,8 @@ def cancel_job(*, job, actor):
         return job
     job.cancel_requested = True
     job.save(update_fields=["cancel_requested", "updated_datetime"])
+    if job.status == AIGenerationStatus.QUEUED:
+        check_cancelled(job)
     return job
 
 

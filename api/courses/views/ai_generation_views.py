@@ -1,15 +1,22 @@
+import json
+import logging
 from datetime import datetime
 
+from django.http import StreamingHttpResponse
+from django.utils import timezone
 from drf_spectacular.utils import (
     OpenApiExample,
     OpenApiParameter,
     OpenApiResponse,
+    OpenApiTypes,
     extend_schema,
 )
 from rest_framework import exceptions, status
+from rest_framework.renderers import JSONRenderer
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from django.utils import timezone
+
+from api.courses.renderers import ServerSentEventsRenderer
 
 from api.courses.exceptions import AIDispatchUnavailable
 from api.courses.enums import (
@@ -40,6 +47,15 @@ from shared.spectacular.responses import STANDARD_ERROR_RESPONSES, inline_error_
 
 
 AI_TAG = ["Creator — AI"]
+logger = logging.getLogger(__name__)
+
+STREAM_HEADER_NOTE = (
+    "This endpoint returns `Content-Type: text/event-stream`. Do not use "
+    "the Swagger UI Try it out button with it. Reconnect with backoff if the stream "
+    "closes unexpectedly, and fall back to polling the job endpoint."
+)
+
+
 JOB_EXAMPLE = {
     "id": "40d3e800-877a-48fd-9344-52f62af8d20c",
     "course": None,
@@ -274,6 +290,180 @@ class AICourseGenerationListCreateView(APIView):
         )
 
 
+
+def _format_ai_generation_sse(event, payload):
+    message = json.dumps({"event": event, "payload": payload}, default=str)
+    return f"data: {message}\n\n"
+
+
+
+
+def _has_owned_ai_generation_job(*, creator, job_id):
+    return AIGenerationJob.objects.filter(pk=job_id, creator=creator).exists()
+
+
+def _get_ai_generation_snapshot(*, creator, job_id):
+    ai_generation_service.fail_stale_in_flight_jobs(creator=creator)
+    job = (
+        AIGenerationJob.objects.prefetch_related("items")
+        .filter(pk=job_id, creator=creator)
+        .first()
+    )
+    if job is None:
+        return None
+    terminal = job.status in {
+        AIGenerationStatus.COMPLETED,
+        AIGenerationStatus.FAILED,
+        AIGenerationStatus.CANCELLED,
+    }
+    return AIGenerationJobSerializer(job).data, terminal
+
+
+def _decode_ai_generation_message(message):
+    raw_data = message.get("data")
+    if isinstance(raw_data, bytes):
+        raw_data = raw_data.decode("utf-8", errors="replace")
+    try:
+        return json.loads(raw_data)
+    except (TypeError, ValueError):
+        return None
+
+
+def _sync_ai_generation_event_stream(*, creator, job_id):
+    """Synchronous iterator for WSGI deployments."""
+    from shared.redis.redis_service import RedisService
+
+    channel = ai_generation_service._ai_generation_channel(creator.id)
+    pubsub = None
+    try:
+        try:
+            redis_client = RedisService.get_redis_client()
+            if redis_client is not None:
+                pubsub = redis_client.pubsub()
+                pubsub.subscribe(channel)
+        except Exception:
+            logger.exception("Unable to subscribe to AI generation progress")
+
+        snapshot_state = _get_ai_generation_snapshot(creator=creator, job_id=job_id)
+        if snapshot_state is None:
+            yield _format_ai_generation_sse("error", {"code": "not_found"})
+            return
+
+        snapshot, terminal = snapshot_state
+        yield _format_ai_generation_sse("snapshot", snapshot)
+        if terminal or pubsub is None:
+            return
+
+        while True:
+            try:
+                message = pubsub.get_message(
+                    ignore_subscribe_messages=True,
+                    timeout=15,
+                )
+            except Exception:
+                logger.exception("AI generation progress stream failed")
+                return
+
+            if message is None:
+                yield ": keep-alive\n\n"
+                continue
+
+            event = _decode_ai_generation_message(message)
+            if not isinstance(event, dict) or str(event.get("job_id")) != str(job_id):
+                continue
+
+            event_payload = event.get("payload", {})
+            if not isinstance(event_payload, dict):
+                event_payload = {}
+            yield _format_ai_generation_sse("progress", event)
+            if event_payload.get("type") in {"completed", "failed", "cancelled"}:
+                return
+    finally:
+        if pubsub is not None:
+            try:
+                pubsub.unsubscribe(channel)
+            except Exception:
+                logger.debug(
+                    "Unable to unsubscribe from AI generation channel", exc_info=True
+                )
+            try:
+                pubsub.close()
+            except Exception:
+                logger.debug("Unable to close AI generation pubsub", exc_info=True)
+
+
+async def _async_ai_generation_event_stream(*, creator, job_id):
+    """Asynchronous iterator for ASGI deployments."""
+    from asgiref.sync import sync_to_async
+    from shared.redis.redis_service import RedisService
+
+    channel = ai_generation_service._ai_generation_channel(creator.id)
+    redis_client = None
+    pubsub = None
+    try:
+        try:
+            redis_client = RedisService.get_async_redis_client()
+            if redis_client is not None:
+                pubsub = redis_client.pubsub()
+                await pubsub.subscribe(channel)
+        except Exception:
+            logger.exception("Unable to subscribe to AI generation progress")
+
+        snapshot_state = await sync_to_async(
+            _get_ai_generation_snapshot, thread_sensitive=True
+        )(creator=creator, job_id=job_id)
+        if snapshot_state is None:
+            yield _format_ai_generation_sse("error", {"code": "not_found"})
+            return
+
+        snapshot, terminal = snapshot_state
+        yield _format_ai_generation_sse("snapshot", snapshot)
+        if terminal or pubsub is None:
+            return
+
+        while True:
+            try:
+                message = await pubsub.get_message(
+                    ignore_subscribe_messages=True,
+                    timeout=15,
+                )
+            except Exception:
+                logger.exception("AI generation progress stream failed")
+                return
+
+            if message is None:
+                yield ": keep-alive\n\n"
+                continue
+
+            event = _decode_ai_generation_message(message)
+            if not isinstance(event, dict) or str(event.get("job_id")) != str(job_id):
+                continue
+
+            event_payload = event.get("payload", {})
+            if not isinstance(event_payload, dict):
+                event_payload = {}
+            yield _format_ai_generation_sse("progress", event)
+            if event_payload.get("type") in {"completed", "failed", "cancelled"}:
+                return
+    finally:
+        if pubsub is not None:
+            try:
+                await pubsub.unsubscribe(channel)
+            except Exception:
+                logger.debug(
+                    "Unable to unsubscribe from AI generation channel", exc_info=True
+                )
+            try:
+                await pubsub.aclose()
+            except Exception:
+                logger.debug("Unable to close AI generation pubsub", exc_info=True)
+        if redis_client is not None:
+            try:
+                await redis_client.aclose()
+            except Exception:
+                logger.debug("Unable to close AI generation Redis client", exc_info=True)
+
+
 class AIGenerationDetailView(APIView):
     permission_classes = [Perm(codenames.COURSES_CREATE)]
 
@@ -317,15 +507,18 @@ class AIGenerationDetailView(APIView):
 
     @extend_schema(
         operation_id="course_ai_generations_cancel",
-        summary="Cancel AI course generation",
+        summary="Cancel an AI generation job",
         description=(
-            "Requests cancellation of a creator-owned AI generation job. The worker "
-            "stops at the next safe checkpoint and marks remaining progress items cancelled.\n\n"
+            "Requests cancellation of a creator-owned AI generation job. A queued job "
+            "is cancelled immediately; a running worker stops at its next safe checkpoint "
+            "after the current provider or storage operation returns. It marks remaining "
+            "progress items cancelled.\n\n"
             "Call this when the creator selects ‘Stop this process and go back’.\n\n"
             "**Auth:** The `courses.create` permission (Course Creator and Writer by default).\n\n"
             "**Prerequisites:** The job must belong to the caller.\n\n"
-            "**Important:** Cancellation is cooperative, so the returned job may show "
-            "`cancel_requested=true` before its status becomes CANCELLED. Repeating the "
+            "**Important:** Queued jobs become `CANCELLED` immediately. For a running "
+            "job, cancellation is cooperative, so the response may show "
+            "`cancel_requested=true` before its status becomes `CANCELLED`. Repeating the "
             "request or cancelling a terminal job is safe."
         ),
         request=None,
@@ -335,9 +528,22 @@ class AIGenerationDetailView(APIView):
                 description="Cancellation was accepted or the job was already terminal.",
                 examples=[
                     OpenApiExample(
-                        name="Cancellation requested",
-                        value={**JOB_EXAMPLE, "cancel_requested": True},
-                    )
+                        name="Queued job cancelled",
+                        value={
+                            **JOB_EXAMPLE,
+                            "status": "CANCELLED",
+                            "stage": "Generation cancelled",
+                            "cancel_requested": True,
+                        },
+                    ),
+                    OpenApiExample(
+                        name="Running job cancellation requested",
+                        value={
+                            **JOB_EXAMPLE,
+                            "status": "RUNNING",
+                            "cancel_requested": True,
+                        },
+                    ),
                 ],
             ),
             **STANDARD_ERROR_RESPONSES["auth"],
@@ -354,6 +560,93 @@ class AIGenerationDetailView(APIView):
         return Response(
             AIGenerationJobSerializer(job).data, status=status.HTTP_202_ACCEPTED
         )
+
+
+class AIGenerationStreamView(APIView):
+    permission_classes = [Perm(codenames.COURSES_CREATE)]
+    renderer_classes = [ServerSentEventsRenderer, JSONRenderer]
+
+    def finalize_response(self, request, response, *args, **kwargs):
+        if isinstance(response, Response) and response.status_code >= 400:
+            request.accepted_renderer = JSONRenderer()
+            request.accepted_media_type = "application/json"
+        return super().finalize_response(request, response, *args, **kwargs)
+
+    @extend_schema(
+        operation_id="course_ai_generations_stream",
+        summary="Stream AI generation progress",
+        description=(
+            "Streams the current state and progress of an AI-generated course so the "
+            "creator can follow the loading flow and recover after reconnecting. "
+            "The first event contains the full job snapshot; later events contain worker "
+            "progress for this job.\n\n"
+            "Open this stream after creating or recovering a generation job, while the "
+            "creator is on an AI-generation loading screen.\n\n"
+            "**Auth:** Authenticated Course Creator or Writer with the `courses.create` permission.\n\n"
+            "**Prerequisites:** The job must exist and belong to the authenticated creator.\n\n"
+            f"**Important:** {STREAM_HEADER_NOTE} Missing or foreign job IDs receive a "
+            "standard HTTP 404 before the stream opens. Progress events carry the worker "
+            "event under `payload.payload`."
+        ),
+        request=None,
+        responses={
+            (200, "text/event-stream"): OpenApiResponse(
+                response=OpenApiTypes.STR,
+                description=(
+                    "SSE frames are UTF-8 text. The first `data:` frame is a snapshot; "
+                    "subsequent frames carry matching progress events until a terminal event."
+                ),
+                examples=[
+                    OpenApiExample(
+                        name="Initial job snapshot",
+                        media_type="text/event-stream",
+                        status_codes=["200"],
+                        value=(
+                            'data: {"event":"snapshot","payload":{"id":"40d3e800-877a-48fd-'
+                            '9344-52f62af8d20c","status":"RUNNING","stage":"Creating content...",'
+                            '"current_phase":"CREATING_CONTENT","items":[]}}\n\n'
+                        ),
+                    ),
+                    OpenApiExample(
+                        name="Progress event",
+                        media_type="text/event-stream",
+                        status_codes=["200"],
+                        value=(
+                            'data: {"event":"progress","payload":{"job_id":"40d3e800-877a-48fd-'
+                            '9344-52f62af8d20c","payload":{"type":"item_running",'
+                            '"key":"content_objectives"}}}\n\n'
+                        ),
+                    ),
+                ],
+            ),
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["forbidden"],
+            **STANDARD_ERROR_RESPONSES["not_found"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+        tags=AI_TAG,
+    )
+    def get(self, request, pk):
+        creator = request.user
+        if not _has_owned_ai_generation_job(creator=creator, job_id=pk):
+            raise exceptions.NotFound()
+        if hasattr(request._request, "scope"):
+            stream = _async_ai_generation_event_stream(
+                creator=creator,
+                job_id=pk,
+            )
+        else:
+            stream = _sync_ai_generation_event_stream(
+                creator=creator,
+                job_id=pk,
+            )
+        response = StreamingHttpResponse(
+            stream,
+            content_type="text/event-stream",
+        )
+        response["Cache-Control"] = "no-cache"
+        response["X-Accel-Buffering"] = "no"
+        return response
 
 
 class AIGenerationRetryView(APIView):
