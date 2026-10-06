@@ -1,3 +1,4 @@
+import math
 from datetime import timedelta
 
 from django.db import transaction
@@ -6,6 +7,11 @@ from django.utils import timezone
 from rest_framework import exceptions
 
 from api.catalog.models import Category, Topic
+from api.courses.ai.providers import (
+    LESSON_DURATION_MAX_MINUTES,
+    LESSON_DURATION_MIN_MINUTES,
+    GenerationStandards,
+)
 from api.courses.enums import (
     AIGenerationItemStatus,
     AIGenerationKind,
@@ -18,10 +24,13 @@ from api.courses.models import (
     AIGenerationItem,
     AIGenerationJob,
     Assessment,
+    CourseVersion,
     Lesson,
     Module,
 )
 from api.courses.services import course_service
+from api.platform.services import platform_settings_service
+from api.reviews.services import quality_check_service
 
 
 # Backend-published AI generation progress events are sent on one Redis
@@ -148,6 +157,131 @@ def normalize_ai_learning_objectives(objectives: list) -> list[str]:
         else:
             normalized.append(item)
     return normalized
+
+
+def get_generation_standards() -> GenerationStandards:
+    """The submission thresholds generation must meet, from PlatformSettings."""
+
+    return GenerationStandards.from_platform_settings(
+        platform_settings_service.get_settings()
+    )
+
+
+def _rescaled_durations(
+    durations: list[int], *, min_total: int, max_total: int
+) -> list[int]:
+    """Scale lesson durations proportionally so their sum lands in range.
+
+    Rounds up when growing and down when shrinking, so the per-lesson rounding
+    never pushes the total back across the bound it was scaled to. Returns the
+    input unchanged when it is already in range (or empty).
+    """
+
+    total = sum(durations)
+    if not durations or min_total <= total <= max_total:
+        return durations
+    target = min_total if total < min_total else max_total
+    factor = target / total if total else 0
+    rounding = math.ceil if total < min_total else math.floor
+    return [
+        max(
+            LESSON_DURATION_MIN_MINUTES,
+            min(LESSON_DURATION_MAX_MINUTES, rounding(duration * factor)),
+        )
+        for duration in durations
+    ]
+
+
+def repair_outline(*, outline: dict, standards: GenerationStandards, provider):
+    """Fix the outline fields a JSON schema cannot constrain.
+
+    Word counts and summed durations are not expressible in the provider's
+    structured-output schema, so they are checked here with the same rules as
+    the submission quality check. A short/long description gets one rewrite
+    through the existing assist call; durations are rescaled locally. Returns
+    (outline, usage) where usage covers any extra provider call.
+    """
+
+    usage = {"input_tokens": 0, "output_tokens": 0}
+    description = outline["description"]
+    words = quality_check_service.word_count(description)
+    if not (
+        standards.description_words_min <= words <= standards.description_words_max
+    ):
+        rewritten, assist_usage = provider.generate_assist(
+            target="course description",
+            current_value=description,
+            instruction=(
+                f"Rewrite this as a learner-facing course description of "
+                f"{standards.description_words_min}-"
+                f"{standards.description_words_max} words (aim for about "
+                f"{standards.description_words_target}). Cover who the course "
+                "is for, what learners will be able to do, and how the course "
+                "is structured. Return plain prose only."
+            ),
+            context={
+                "title": outline["title"],
+                "learning_objectives": outline["learning_objectives"],
+                "modules": [module["title"] for module in outline["modules"]],
+            },
+        )
+        usage["input_tokens"] += assist_usage.get("input_tokens", 0)
+        usage["output_tokens"] += assist_usage.get("output_tokens", 0)
+        rewritten = (rewritten or "").strip()
+        if (
+            standards.description_words_min
+            <= quality_check_service.word_count(rewritten)
+            <= standards.description_words_max
+        ):
+            outline = {**outline, "description": rewritten}
+
+    lessons = [
+        lesson for module in outline["modules"] for lesson in module["lessons"]
+    ]
+    durations = _rescaled_durations(
+        [lesson["duration_minutes"] for lesson in lessons],
+        min_total=standards.duration_min_minutes,
+        max_total=standards.duration_max_minutes,
+    )
+    for lesson, duration in zip(lessons, durations, strict=True):
+        lesson["duration_minutes"] = duration
+    return outline, usage
+
+
+def rescale_course_lesson_durations(*, course, standards: GenerationStandards):
+    """Bring stored lesson durations back in range after module content runs.
+
+    The module-content call may adjust per-lesson durations, so the outline
+    repair alone cannot guarantee the final course total.
+    """
+
+    lessons = list(Lesson.objects.filter(module__course=course).order_by("pk"))
+    durations = _rescaled_durations(
+        [lesson.duration_minutes for lesson in lessons],
+        min_total=standards.duration_min_minutes,
+        max_total=standards.duration_max_minutes,
+    )
+    changed = []
+    for lesson, duration in zip(lessons, durations, strict=True):
+        if lesson.duration_minutes != duration:
+            lesson.duration_minutes = duration
+            changed.append(lesson)
+    if changed:
+        Lesson.objects.bulk_update(changed, ["duration_minutes"])
+
+
+def _default_course_version():
+    return (
+        CourseVersion.objects.filter(is_active=True)
+        .order_by("-created_datetime")
+        .first()
+    )
+
+
+def quality_report(*, course) -> list[str]:
+    """Submission checks the generated course still fails (e.g. preview video)."""
+
+    return quality_check_service.validate_structural_standards(course)
 
 
 @transaction.atomic
@@ -427,6 +561,7 @@ def materialize_structure(*, job, generated):
         ),
         tags=generated["tags"],
         duration_seconds=generated["planned_duration_seconds"],
+        version=_default_course_version(),
         terms_accepted=True,
         source_type=CourseSourceType.AI_GENERATED,
     )
@@ -530,7 +665,7 @@ def materialize_module_content(*, job, module, generated):
 
 
 @transaction.atomic
-def materialize_final_assessment(*, job, generated):
+def materialize_final_assessment(*, job, generated, standards):
     Assessment.objects.create(
         level=AssessmentLevel.COURSE,
         course=job.course,
@@ -539,6 +674,7 @@ def materialize_final_assessment(*, job, generated):
         created_by=job.creator,
         updated_by=job.creator,
     )
+    rescale_course_lesson_durations(course=job.course, standards=standards)
     course_service.recalculate_duration_estimate(course=job.course)
     publish_ai_generation_progress(
         job=job,

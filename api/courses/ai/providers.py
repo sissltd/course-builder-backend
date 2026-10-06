@@ -2,6 +2,7 @@ import base64
 import math
 import time
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 
 import httpx
 from django.conf import settings
@@ -82,107 +83,196 @@ ASSESSMENT_SCHEMA = {
     },
 }
 
-COURSE_OUTLINE_SCHEMA = {
-    "type": "object",
-    "additionalProperties": False,
-    "required": [
-        "title",
-        "description",
-        "difficulty_level",
-        "learning_objectives",
-        "tags",
-        "planned_duration_seconds",
-        "modules",
-    ],
-    "properties": {
-        "title": {"type": "string"},
-        "description": {"type": "string"},
-        "difficulty_level": {
+# Generation caps the structure below the platform maximums: every module is one
+# more sequential provider call, so the upper bound is a cost/latency choice.
+GENERATION_MODULE_CAP = 8
+GENERATION_LESSONS_PER_MODULE_CAP = 6
+LESSON_DURATION_MIN_MINUTES = 5
+LESSON_DURATION_MAX_MINUTES = 90
+
+
+@dataclass(frozen=True)
+class GenerationStandards:
+    """The submission quality thresholds a generated course must satisfy.
+
+    Built from PlatformSettings - the same row the submission quality check
+    reads - so generation and the check can never disagree about the bar.
+    """
+
+    course_objectives_min: int
+    course_objectives_max: int
+    modules_min: int
+    modules_max: int
+    lessons_per_module_min: int
+    lessons_per_module_max: int
+    lesson_objectives_min: int
+    lesson_objectives_max: int
+    description_words_min: int
+    description_words_max: int
+    script_words_min: int
+    script_words_max: int
+    duration_min_minutes: int
+    duration_max_minutes: int
+    final_assessment_min_questions: int
+
+    @classmethod
+    def from_platform_settings(cls, platform_settings) -> "GenerationStandards":
+        modules_min = platform_settings.course_module_count_min
+        lessons_min = platform_settings.course_lessons_per_module_min
+        return cls(
+            course_objectives_min=platform_settings.course_learning_objectives_min,
+            course_objectives_max=platform_settings.course_learning_objectives_max,
+            modules_min=modules_min,
+            modules_max=max(
+                modules_min,
+                min(platform_settings.course_module_count_max, GENERATION_MODULE_CAP),
+            ),
+            lessons_per_module_min=lessons_min,
+            lessons_per_module_max=max(
+                lessons_min,
+                min(
+                    platform_settings.course_lessons_per_module_max,
+                    GENERATION_LESSONS_PER_MODULE_CAP,
+                ),
+            ),
+            lesson_objectives_min=platform_settings.lesson_learning_objectives_min,
+            lesson_objectives_max=platform_settings.lesson_learning_objectives_max,
+            description_words_min=platform_settings.course_description_word_min,
+            description_words_max=platform_settings.course_description_word_max,
+            script_words_min=platform_settings.lesson_script_word_min,
+            script_words_max=platform_settings.lesson_script_word_max,
+            duration_min_minutes=platform_settings.course_duration_min_minutes,
+            duration_max_minutes=platform_settings.course_duration_max_minutes,
+            final_assessment_min_questions=(
+                platform_settings.course_final_assessment_min_questions
+            ),
+        )
+
+    @property
+    def description_words_target(self) -> int:
+        """Aim at the lower third of the range: models undershoot word counts."""
+
+        span = self.description_words_max - self.description_words_min
+        return self.description_words_min + span // 3
+
+    @property
+    def duration_target_minutes(self) -> int:
+        return (self.duration_min_minutes + self.duration_max_minutes) // 2
+
+
+def _objectives_schema(*, scope, min_items, max_items):
+    return {
+        "type": "array",
+        "minItems": min_items,
+        "maxItems": max_items,
+        "items": {
             "type": "string",
-            "enum": ["BEGINNER", "INTERMEDIATE", "ADVANCED"],
+            "description": (
+                f"One complete, standalone {scope} objective sentence. "
+                "Do not split comma-separated clauses into separate items."
+            ),
         },
-        "learning_objectives": {
-            "type": "array",
-            "items": {
+    }
+
+
+def _lesson_duration_schema():
+    return {
+        "type": "integer",
+        "minimum": LESSON_DURATION_MIN_MINUTES,
+        "maximum": LESSON_DURATION_MAX_MINUTES,
+    }
+
+
+def build_course_outline_schema(standards: GenerationStandards) -> dict:
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "required": [
+            "title",
+            "description",
+            "difficulty_level",
+            "learning_objectives",
+            "tags",
+            "planned_duration_seconds",
+            "modules",
+        ],
+        "properties": {
+            "title": {"type": "string"},
+            "description": {
                 "type": "string",
                 "description": (
-                    "One complete, standalone learning objective sentence. "
-                    "Do not split comma-separated clauses into separate items."
+                    f"Learner-facing course description of "
+                    f"{standards.description_words_min}-"
+                    f"{standards.description_words_max} words."
                 ),
             },
-            "minItems": 3,
-            "maxItems": 8,
-        },
-        "tags": {
-            "type": "array",
-            "items": {"type": "string"},
-            "minItems": 3,
-            "maxItems": 10,
-        },
-        "planned_duration_seconds": {
-            "type": "integer",
-            "minimum": 7200,
-            "maximum": 28800,
-        },
-        "modules": {
-            "type": "array",
-            "minItems": 5,
-            "maxItems": 8,
-            "items": {
-                "type": "object",
-                "additionalProperties": False,
-                "required": [
-                    "title",
-                    "description",
-                    "learning_objectives",
-                    "lessons",
-                ],
-                "properties": {
-                    "title": {"type": "string"},
-                    "description": {"type": "string"},
-                    "learning_objectives": {
-                        "type": "array",
-                        "items": {
-                            "type": "string",
-                            "description": (
-                                "One complete, standalone module objective "
-                                "sentence. Do not split comma-separated "
-                                "clauses into separate items."
-                            ),
+            "difficulty_level": {
+                "type": "string",
+                "enum": ["BEGINNER", "INTERMEDIATE", "ADVANCED"],
+            },
+            "learning_objectives": _objectives_schema(
+                scope="learning",
+                min_items=standards.course_objectives_min,
+                max_items=standards.course_objectives_max,
+            ),
+            "tags": {
+                "type": "array",
+                "items": {"type": "string"},
+                "minItems": 3,
+                "maxItems": 10,
+            },
+            "planned_duration_seconds": {
+                "type": "integer",
+                "minimum": standards.duration_min_minutes * 60,
+                "maximum": standards.duration_max_minutes * 60,
+            },
+            "modules": {
+                "type": "array",
+                "minItems": standards.modules_min,
+                "maxItems": standards.modules_max,
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": [
+                        "title",
+                        "description",
+                        "learning_objectives",
+                        "lessons",
+                    ],
+                    "properties": {
+                        "title": {"type": "string"},
+                        "description": {"type": "string"},
+                        "learning_objectives": {
+                            "type": "array",
+                            "items": {
+                                "type": "string",
+                                "description": (
+                                    "One complete, standalone module objective "
+                                    "sentence. Do not split comma-separated "
+                                    "clauses into separate items."
+                                ),
+                            },
                         },
-                    },
-                    "lessons": {
-                        "type": "array",
-                        "minItems": 3,
-                        "maxItems": 5,
-                        "items": {
-                            "type": "object",
-                            "additionalProperties": False,
-                            "required": [
-                                "title",
-                                "learning_objectives",
-                                "duration_minutes",
-                            ],
-                            "properties": {
-                                "title": {"type": "string"},
-                                "learning_objectives": {
-                                    "type": "array",
-                                    "minItems": 2,
-                                    "maxItems": 5,
-                                    "items": {
-                                        "type": "string",
-                                        "description": (
-                                            "One complete, standalone lesson "
-                                            "objective sentence. Do not split "
-                                            "comma-separated clauses into "
-                                            "separate items."
-                                        ),
-                                    },
-                                },
-                                "duration_minutes": {
-                                    "type": "integer",
-                                    "minimum": 5,
-                                    "maximum": 90,
+                        "lessons": {
+                            "type": "array",
+                            "minItems": standards.lessons_per_module_min,
+                            "maxItems": standards.lessons_per_module_max,
+                            "items": {
+                                "type": "object",
+                                "additionalProperties": False,
+                                "required": [
+                                    "title",
+                                    "learning_objectives",
+                                    "duration_minutes",
+                                ],
+                                "properties": {
+                                    "title": {"type": "string"},
+                                    "learning_objectives": _objectives_schema(
+                                        scope="lesson",
+                                        min_items=standards.lesson_objectives_min,
+                                        max_items=standards.lesson_objectives_max,
+                                    ),
+                                    "duration_minutes": _lesson_duration_schema(),
                                 },
                             },
                         },
@@ -190,63 +280,56 @@ COURSE_OUTLINE_SCHEMA = {
                 },
             },
         },
-    },
-}
+    }
 
-MODULE_CONTENT_SCHEMA = {
-    "type": "object",
-    "additionalProperties": False,
-    "required": ["lessons", "assessment"],
-    "properties": {
-        "lessons": {
-            "type": "array",
-            "minItems": 3,
-            "maxItems": 5,
-            "items": {
-                "type": "object",
-                "additionalProperties": False,
-                "required": [
-                    "script",
-                    "learning_objectives",
-                    "duration_minutes",
-                ],
-                "properties": {
-                    "script": {"type": "string"},
-                    "learning_objectives": {
-                        "type": "array",
-                        "minItems": 2,
-                        "maxItems": 5,
-                        "items": {
-                            "type": "string",
-                            "description": (
-                                "One complete, standalone lesson objective "
-                                "sentence. Do not split comma-separated "
-                                "clauses into separate items."
-                            ),
-                        },
-                    },
-                    "duration_minutes": {
-                        "type": "integer",
-                        "minimum": 5,
-                        "maximum": 90,
+
+def build_module_content_schema(
+    standards: GenerationStandards, *, lesson_count: int
+) -> dict:
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["lessons", "assessment"],
+        "properties": {
+            "lessons": {
+                "type": "array",
+                "minItems": lesson_count,
+                "maxItems": lesson_count,
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": [
+                        "script",
+                        "learning_objectives",
+                        "duration_minutes",
+                    ],
+                    "properties": {
+                        "script": {"type": "string"},
+                        "learning_objectives": _objectives_schema(
+                            scope="lesson",
+                            min_items=standards.lesson_objectives_min,
+                            max_items=standards.lesson_objectives_max,
+                        ),
+                        "duration_minutes": _lesson_duration_schema(),
                     },
                 },
             },
+            "assessment": ASSESSMENT_SCHEMA,
         },
-        "assessment": ASSESSMENT_SCHEMA,
-    },
-}
+    }
 
-FINAL_ASSESSMENT_SCHEMA = {
-    **ASSESSMENT_SCHEMA,
-    "properties": {
-        **ASSESSMENT_SCHEMA["properties"],
-        "questions": {
-            **ASSESSMENT_SCHEMA["properties"]["questions"],
-            "minItems": 15,
+
+def build_final_assessment_schema(standards: GenerationStandards) -> dict:
+    return {
+        **ASSESSMENT_SCHEMA,
+        "properties": {
+            **ASSESSMENT_SCHEMA["properties"],
+            "questions": {
+                **ASSESSMENT_SCHEMA["properties"]["questions"],
+                "minItems": standards.final_assessment_min_questions,
+            },
         },
-    },
-}
+    }
 
 
 def _enforce_provider_rate_window():
@@ -287,13 +370,15 @@ class CourseAIProvider(ABC):
     name = "unknown"
 
     @abstractmethod
-    def generate_course_outline(self, *, title, description, category, topic): ...
+    def generate_course_outline(
+        self, *, title, description, category, topic, standards
+    ): ...
 
     @abstractmethod
-    def generate_module_content(self, *, course, module): ...
+    def generate_module_content(self, *, course, module, standards): ...
 
     @abstractmethod
-    def generate_final_assessment(self, *, course): ...
+    def generate_final_assessment(self, *, course, standards): ...
 
     @abstractmethod
     def generate_assist(self, *, target, current_value, instruction, context): ...
@@ -385,15 +470,25 @@ class OpenAIResponsesProvider(CourseAIProvider):
             detail="The AI provider returned no course content.", retryable=False
         )
 
-    def generate_course_outline(self, *, title, description, category, topic):
+    def generate_course_outline(
+        self, *, title, description, category, topic, standards
+    ):
         prompt = f"""Create a professional course outline for the supplied intent.
 Category: {category}\nTopic: {topic or 'Not specified'}\nWorking title: {title}\nCreator description: {description}
-Use 5-8 modules and 3-5 lessons per module. Return concise course, module, and lesson outlines only. Keep the selected category and topic authoritative. Each learning_objectives array item must be a complete standalone sentence; do not split one objective into separate items at commas."""
+The course must pass these submission standards exactly:
+- Course description: {standards.description_words_min}-{standards.description_words_max} words (aim for about {standards.description_words_target} words). Expand the creator description into a full learner-facing overview: who it is for, what they will learn, and the outcome.
+- Course learning objectives: {standards.course_objectives_min}-{standards.course_objectives_max} items.
+- Modules: {standards.modules_min}-{standards.modules_max}, each with {standards.lessons_per_module_min}-{standards.lessons_per_module_max} lessons.
+- Each lesson: {standards.lesson_objectives_min}-{standards.lesson_objectives_max} learning objectives.
+- The duration_minutes of all lessons combined must total {standards.duration_min_minutes}-{standards.duration_max_minutes} minutes (aim for about {standards.duration_target_minutes}); planned_duration_seconds must equal that total in seconds.
+Return concise course, module, and lesson outlines only. Keep the selected category and topic authoritative. Each learning_objectives array item must be a complete standalone sentence; do not split one objective into separate items at commas."""
         return self._structured_response(
-            name="course_outline", schema=COURSE_OUTLINE_SCHEMA, prompt=prompt
+            name="course_outline",
+            schema=build_course_outline_schema(standards),
+            prompt=prompt,
         )
 
-    def generate_module_content(self, *, course, module):
+    def generate_module_content(self, *, course, module, standards):
         lesson_outline = [
             {
                 "title": lesson.title,
@@ -406,20 +501,26 @@ Use 5-8 modules and 3-5 lessons per module. Return concise course, module, and l
 Course: {course.title}\nCourse description: {course.description}
 Module: {module.title}\nModule description: {module.description}
 Lessons, in this exact order: {lesson_outline}
-Return exactly one entry per supplied lesson. Each script must be 500-1500 words. Do not create lesson assessments; creators may add those optionally. Include 3-5 explained multiple-choice questions for the module assessment."""
+Return exactly one entry per supplied lesson. Each script must be {standards.script_words_min}-{standards.script_words_max} words. Each lesson must keep {standards.lesson_objectives_min}-{standards.lesson_objectives_max} learning objectives, and its duration_minutes must stay at the supplied value so the course total stays within {standards.duration_min_minutes}-{standards.duration_max_minutes} minutes. Do not create lesson assessments; creators may add those optionally. Include 3-5 explained multiple-choice questions for the module assessment."""
         return self._structured_response(
-            name="module_content", schema=MODULE_CONTENT_SCHEMA, prompt=prompt
+            name="module_content",
+            schema=build_module_content_schema(
+                standards, lesson_count=len(lesson_outline)
+            ),
+            prompt=prompt,
         )
 
-    def generate_final_assessment(self, *, course):
+    def generate_final_assessment(self, *, course, standards):
         module_titles = list(
             course.modules.order_by("order").values_list("title", flat=True)
         )
         prompt = f"""Create the final assessment for this professional course.
 Course: {course.title}\nDescription: {course.description}\nModules: {module_titles}
-Include at least 15 explained multiple-choice questions spanning the whole course."""
+Include at least {standards.final_assessment_min_questions} explained multiple-choice questions spanning the whole course."""
         return self._structured_response(
-            name="final_assessment", schema=FINAL_ASSESSMENT_SCHEMA, prompt=prompt
+            name="final_assessment",
+            schema=build_final_assessment_schema(standards),
+            prompt=prompt,
         )
 
     def generate_assist(self, *, target, current_value, instruction, context):

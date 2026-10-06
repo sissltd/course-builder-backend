@@ -55,6 +55,11 @@ class AILearningObjectiveNormalizationTests(SimpleTestCase):
         )
 
 
+# Within the default 100-500 word description standard, so outline repair
+# leaves it alone.
+COMPLIANT_DESCRIPTION = " ".join(["word"] * 150)
+
+
 def _question(number):
     return {
         "type": "MULTIPLE_CHOICE",
@@ -93,7 +98,7 @@ class AICourseGenerationTaskTests(TestCase):
         provider.generate_course_outline.return_value = (
             {
                 "title": "Practical Analytics",
-                "description": "Generated description",
+                "description": COMPLIANT_DESCRIPTION,
                 "difficulty_level": "BEGINNER",
                 "learning_objectives": [
                     "Analyze data",
@@ -287,7 +292,7 @@ class AICourseGenerationTaskTests(TestCase):
         provider.generate_course_outline.return_value = (
             {
                 "title": "Practical Analytics",
-                "description": "Generated description",
+                "description": COMPLIANT_DESCRIPTION,
                 "difficulty_level": "BEGINNER",
                 "learning_objectives": ["Analyze data", "Clean data", "Chart data"],
                 "tags": ["analytics", "python", "data"],
@@ -407,7 +412,7 @@ class AICourseGenerationTaskTests(TestCase):
         provider = Mock(name="provider", text_model="test-model")
         provider.name = "test"
 
-        def cancel_during_final_assessment(*, course):
+        def cancel_during_final_assessment(*, course, standards):
             AIGenerationJob.objects.filter(pk=self.job.pk).update(cancel_requested=True)
             return {"title": "Final assessment", "questions": []}, {
                 "input_tokens": 1,

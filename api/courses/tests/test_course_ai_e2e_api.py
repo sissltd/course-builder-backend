@@ -35,6 +35,7 @@ from api.courses.tests.factories import (
     make_topic,
     make_user,
 )
+from api.reviews.services import quality_check_service
 from api.users.enums import UserRole
 from shared.services.storage_service import StorageService
 
@@ -54,7 +55,7 @@ class FakeCourseAIProvider:
         return (
             {
                 "title": "Practical Data Analysis",
-                "description": "Generated course description",
+                "description": " ".join(["word"] * 150),
                 "difficulty_level": "BEGINNER",
                 "learning_objectives": ["Analyze data", "Clean data", "Chart data"],
                 "tags": ["analytics", "python", "data"],
@@ -209,6 +210,12 @@ class CourseAIEndToEndTests(APITestCase):
         self.assertEqual(polled.status_code, status.HTTP_200_OK)
         self.assertEqual(polled.data["status"], AIGenerationStatus.COMPLETED)
         self.assertEqual(polled.data["result"]["course_id"], str(course.id))
+        # The job reports the submission checks the course still fails, using
+        # the same validator the submit endpoint runs.
+        self.assertEqual(
+            polled.data["result"]["quality_failures"],
+            quality_check_service.validate_structural_standards(course),
+        )
 
         # An idempotent resubmission after completion resolves to the same job.
         replay = self._start_generation()

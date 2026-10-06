@@ -172,6 +172,7 @@ def generate_ai_course(self, job_id):
     job.model = getattr(provider, "text_model", "")
     job.save(update_fields=["provider", "model", "updated_datetime"])
     payload = job.request_payload
+    standards = ai_generation_service.get_generation_standards()
     try:
         course = job.course
         if course is None:
@@ -192,7 +193,16 @@ def generate_ai_course(self, job_id):
                 description=payload["description"],
                 category=payload["category_name"],
                 topic=payload.get("topic_name", ""),
+                standards=standards,
             )
+            ai_generation_service.heartbeat(job=job)
+            outline, repair_usage = ai_generation_service.repair_outline(
+                outline=outline, standards=standards, provider=provider
+            )
+            usage = {
+                key: usage.get(key, 0) + repair_usage[key]
+                for key in ("input_tokens", "output_tokens")
+            }
             ai_generation_service.mark_item(
                 job, "content_objectives", AIGenerationItemStatus.COMPLETED
             )
@@ -275,7 +285,7 @@ def generate_ai_course(self, job_id):
                 },
             )
             generated, module_usage = provider.generate_module_content(
-                course=course, module=module
+                course=course, module=module, standards=standards
             )
             if ai_generation_service.check_cancelled(job):
                 return
@@ -305,12 +315,12 @@ def generate_ai_course(self, job_id):
                 },
             )
             final_assessment, final_usage = provider.generate_final_assessment(
-                course=course
+                course=course, standards=standards
             )
             if ai_generation_service.check_cancelled(job):
                 return
             ai_generation_service.materialize_final_assessment(
-                job=job, generated=final_assessment
+                job=job, generated=final_assessment, standards=standards
             )
             ai_generation_service.add_usage(job=job, usage=final_usage)
             ai_generation_service.publish_ai_generation_progress(
@@ -324,10 +334,15 @@ def generate_ai_course(self, job_id):
         ai_generation_service.mark_item(
             job, "details_lessons", AIGenerationItemStatus.COMPLETED
         )
+        quality_failures = ai_generation_service.quality_report(course=course)
         completed = ai_generation_service.complete_job(
             job=job,
             stage="Course details ready",
-            result={"course_id": str(course.id), "builder_ready": True},
+            result={
+                "course_id": str(course.id),
+                "builder_ready": True,
+                "quality_failures": quality_failures,
+            },
         )
         if not completed:
             return
@@ -337,6 +352,7 @@ def generate_ai_course(self, job_id):
                 "type": "completed",
                 "course_id": str(course.id),
                 "stage": "Course details ready",
+                "quality_failures": quality_failures,
             },
         )
     except AIProviderRateLimited as exc:
