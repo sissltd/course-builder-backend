@@ -5,7 +5,7 @@ from api.courses.models import Assessment, Course, Lesson
 from api.platform.services import platform_settings_service
 
 
-def _word_count(text: str) -> int:
+def word_count(text: str) -> int:
     """Count whitespace-separated words in a text field."""
 
     return len(text.split())
@@ -104,7 +104,7 @@ def validate_structural_standards(course: Course) -> list[str]:
                 )
 
             if lesson.content_type == LessonContentType.TEXT:
-                script_words = _word_count(lesson.script)
+                script_words = word_count(lesson.script)
                 if not (
                     platform_settings.lesson_script_word_min
                     <= script_words
@@ -116,7 +116,7 @@ def validate_structural_standards(course: Course) -> list[str]:
                         f"words (has {script_words})."
                     )
 
-    description_words = _word_count(course.description)
+    description_words = word_count(course.description)
     if not (
         platform_settings.course_description_word_min
         <= description_words
