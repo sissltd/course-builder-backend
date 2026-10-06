@@ -11,8 +11,10 @@ from rest_framework.views import APIView
 from api.authentication.services import activity_service
 from api.notification.docs.notification_docs import (
     NOTIFICATION_LIST_DOCS,
+    NOTIFICATION_MARK_ALL_READ_DOCS,
     NOTIFICATION_READ_TOGGLE_DOCS,
     NOTIFICATION_STREAM_DOCS,
+    NOTIFICATION_UNREAD_COUNT_DOCS,
 )
 from api.notification.models import Notification
 from api.notification.serializers import (
@@ -23,7 +25,9 @@ from api.notification.serializers import (
 from api.notification.services import notification_preference_service
 from api.notification.services.inapp_notification_service import (
     event_stream,
+    get_unread_count,
     get_user_notifications,
+    mark_all_read,
     toggle_notification_read_status,
 )
 from api.users.enums import UserActivityActionEnums, UserActivityCategoryEnums
@@ -169,3 +173,32 @@ class NotificationReadToggleView(APIView):
 
         except Exception as e:
             return custom_error_response(message=str(e), status=500)
+
+
+class NotificationUnreadCountView(APIView):
+    """How many of the current user's in-app notifications are unread, for
+    the badge and the "Unread (n)" tab."""
+
+    permission_classes: ClassVar = [IsAuthenticated]
+
+    @extend_schema(**NOTIFICATION_UNREAD_COUNT_DOCS)
+    def get(self, request, *args, **kwargs):
+        return custom_success_response(
+            message="Unread notification count retrieved.",
+            status=200,
+            data={"unread_count": get_unread_count(user=request.user)},
+        )
+
+
+class NotificationMarkAllReadView(APIView):
+    """Mark every unread in-app notification of the current user as read."""
+
+    permission_classes: ClassVar = [IsAuthenticated]
+
+    @extend_schema(**NOTIFICATION_MARK_ALL_READ_DOCS)
+    def post(self, request, *args, **kwargs):
+        return custom_success_response(
+            message="All notifications marked as read.",
+            status=200,
+            data={"updated": mark_all_read(user=request.user)},
+        )

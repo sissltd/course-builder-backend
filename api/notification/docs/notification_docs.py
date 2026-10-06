@@ -143,32 +143,37 @@ NOTIFICATION_STREAM_DOCS = {
         "**Important:** This endpoint returns `Content-Type: text/event-stream` "
         "— it is **not** a standard JSON response. The Swagger UI *Try it out* "
         "button does not support SSE; test with `curl` or `Postman's SSE` "
-        "client instead. Each event is a JSON-encoded notification object. "
-        "The connection does not time out on the server side; the client must "
+        "client instead. Every event, the first one and each push after it, "
+        "is a JSON array of the user's newest 20 in-app notifications, newest "
+        "first, so the client can replace its list with each event. A push "
+        "follows a new notification, a read toggle or mark-all-read. The "
+        "connection does not time out on the server side; the client must "
         "handle reconnection."
     ),
     "tags": ["Users — Notifications"],
     "responses": {
         200: OpenApiResponse(
             description=(
-                "SSE stream opened. Each event contains a JSON-encoded "
-                "notification object with the fields shown in the example."
+                "SSE stream opened. Each event's data is a JSON array of up "
+                "to 20 notification objects with the fields shown in the "
+                "example."
             ),
             examples=[
                 OpenApiExample(
                     name="SSE event payload",
-                    value={
-                        "id": "f26ee285-6d9d-4e88-a939-4a246dcb8127",
-                        "title": "Course approved",
-                        "content": 'Your course "Backend Fundamentals" has been approved.',
-                        "content_type": "text",
-                        "is_read": False,
-                        "created_datetime": "2026-08-01T10:30:00.000000Z",
-                        "metadata": {
-                            "course_id": "af470cc5-1ec9-458f-9fc9-66da0bcadf44",
-                            "action": "course.approved",
-                        },
-                    },
+                    value=[
+                        {
+                            "id": "f26ee285-6d9d-4e88-a939-4a246dcb8127",
+                            "title": "Course approved",
+                            "content": 'Your course "Backend Fundamentals" has been approved.',
+                            "content_type": "TEXT",
+                            "is_read": False,
+                            "created_datetime": "2026-08-01T10:30:00.000000Z",
+                            "metadata": {
+                                "course_id": "af470cc5-1ec9-458f-9fc9-66da0bcadf44",
+                            },
+                        }
+                    ],
                 )
             ],
         ),
@@ -253,5 +258,100 @@ NOTIFICATION_LIST_DOCS = {
         ),
         **STANDARD_ERROR_RESPONSES["auth"],
         **STANDARD_ERROR_RESPONSES["server"],
+    },
+}
+
+
+NotificationUnreadCountSuccessSerializer = inline_serializer(
+    name="NotificationUnreadCountSuccess",
+    fields={
+        "status": serializers.IntegerField(),
+        "success": serializers.BooleanField(),
+        "message": serializers.CharField(),
+        "data": inline_serializer(
+            name="NotificationUnreadCountData",
+            fields={"unread_count": serializers.IntegerField(min_value=0)},
+        ),
+    },
+)
+
+
+NOTIFICATION_UNREAD_COUNT_DOCS = {
+    "summary": "Count unread notifications",
+    "description": "Returns how many of the authenticated user's in-app "
+    "notifications are unread. Powers the bell badge and the "
+    '"Unread (n)" tab on the notifications page.\n\n'
+    "**Auth:** Any authenticated user.\n\n"
+    "**Prerequisites:** None.\n\n"
+    "**Important:** Counts only the caller's own in-app notifications; "
+    "email-type rows are never included. The SSE stream does not carry "
+    "this count, so refetch it after a stream event if the badge must "
+    "stay exact.",
+    "tags": ["Users — Notifications"],
+    "responses": {
+        200: OpenApiResponse(
+            response=NotificationUnreadCountSuccessSerializer,
+            description="Unread count retrieved.",
+            examples=[
+                OpenApiExample(
+                    name="Success",
+                    value={
+                        "status": 200,
+                        "success": True,
+                        "message": "Unread notification count retrieved.",
+                        "data": {"unread_count": 12},
+                    },
+                )
+            ],
+        ),
+        **STANDARD_ERROR_RESPONSES["auth"],
+    },
+}
+
+
+NotificationMarkAllReadSuccessSerializer = inline_serializer(
+    name="NotificationMarkAllReadSuccess",
+    fields={
+        "status": serializers.IntegerField(),
+        "success": serializers.BooleanField(),
+        "message": serializers.CharField(),
+        "data": inline_serializer(
+            name="NotificationMarkAllReadData",
+            fields={"updated": serializers.IntegerField(min_value=0)},
+        ),
+    },
+)
+
+
+NOTIFICATION_MARK_ALL_READ_DOCS = {
+    "summary": "Mark all notifications as read",
+    "description": "Marks every unread in-app notification of the "
+    'authenticated user as read. Called from the "Mark all as read" '
+    "action on the notifications page.\n\n"
+    "**Auth:** Any authenticated user.\n\n"
+    "**Prerequisites:** None.\n\n"
+    "**Important:** Takes no request body. Only the caller's own "
+    "notifications change. Idempotent: with nothing unread it returns "
+    "`updated: 0`. When anything changed, the caller's open SSE streams "
+    "receive the refreshed list.",
+    "tags": ["Users — Notifications"],
+    "request": None,
+    "responses": {
+        200: OpenApiResponse(
+            response=NotificationMarkAllReadSuccessSerializer,
+            description="Notifications marked as read.",
+            examples=[
+                OpenApiExample(
+                    name="Success",
+                    value={
+                        "status": 200,
+                        "success": True,
+                        "message": "All notifications marked as read.",
+                        "data": {"updated": 12},
+                    },
+                )
+            ],
+        ),
+        **STANDARD_ERROR_RESPONSES["auth"],
     },
 }

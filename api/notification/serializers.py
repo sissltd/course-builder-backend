@@ -22,6 +22,7 @@ class NotificationPreferenceSerializer(serializers.ModelSerializer):
             "mie_recommendation_alert",
             "mie_pipeline_alert",
             "in_app_enabled",
+            "course_update",
             "sla_amber_threshold_hours_override",
             "sla_red_threshold_hours_override",
         ]
@@ -32,22 +33,80 @@ class NotificationPreferenceUpdateSerializer(serializers.Serializer):
     """Write serializer for PATCH /users/me/notification-preferences/.
     Every field is optional so a client can toggle just one at a time."""
 
-    new_course_assigned = serializers.BooleanField(required=False)
-    escalation_assigned = serializers.BooleanField(required=False)
-    creator_feedback = serializers.BooleanField(required=False)
-    sla_amber_warning = serializers.BooleanField(required=False)
-    sla_red_critical_alert = serializers.BooleanField(required=False)
-    sla_breached = serializers.BooleanField(required=False)
-    kyc_submission_alert = serializers.BooleanField(required=False)
-    account_deletion_detection_alert = serializers.BooleanField(required=False)
-    mie_recommendation_alert = serializers.BooleanField(required=False)
-    mie_pipeline_alert = serializers.BooleanField(required=False)
-    in_app_enabled = serializers.BooleanField(required=False)
+    new_course_assigned = serializers.BooleanField(
+        required=False,
+        help_text="Notify when a course is assigned to this reviewer.",
+    )
+    escalation_assigned = serializers.BooleanField(
+        required=False,
+        help_text="Reserved: nothing sends escalation notifications yet.",
+    )
+    creator_feedback = serializers.BooleanField(
+        required=False,
+        help_text="Notify appeal deciders when a creator appeals a rejection.",
+    )
+    sla_amber_warning = serializers.BooleanField(
+        required=False,
+        help_text="Reserved: nothing sends amber SLA warnings yet.",
+    )
+    sla_red_critical_alert = serializers.BooleanField(
+        required=False,
+        help_text=(
+            "Notify course approvers when a course passes the red SLA "
+            "threshold. This is the admin 'Review SLA Breach Alert' toggle."
+        ),
+    )
+    sla_breached = serializers.BooleanField(
+        required=False,
+        help_text="Reserved: nothing sends SLA-breached notifications yet.",
+    )
+    kyc_submission_alert = serializers.BooleanField(
+        required=False,
+        help_text="Notify account approvers when a new KYC submission arrives.",
+    )
+    account_deletion_detection_alert = serializers.BooleanField(
+        required=False,
+        help_text="Reserved: no deletion-detection system exists yet.",
+    )
+    mie_recommendation_alert = serializers.BooleanField(
+        required=False,
+        help_text="Reserved: nothing sends MIE recommendation alerts yet.",
+    )
+    mie_pipeline_alert = serializers.BooleanField(
+        required=False,
+        help_text="Reserved: nothing sends MIE pipeline alerts yet.",
+    )
+    in_app_enabled = serializers.BooleanField(
+        required=False,
+        help_text=(
+            "Master toggle for in-app notifications. Off suppresses all but "
+            "critical operational alerts."
+        ),
+    )
+    course_update = serializers.BooleanField(
+        required=False,
+        help_text=(
+            "Notify admins (holders of courses.assign) when someone else "
+            "submits, approves, rejects or publishes a course."
+        ),
+    )
     sla_amber_threshold_hours_override = serializers.IntegerField(
-        required=False, allow_null=True, min_value=1
+        required=False,
+        allow_null=True,
+        min_value=1,
+        help_text=(
+            "This reviewer's amber SLA threshold in hours, used by the review "
+            "queue's SLA-urgency sort. Null uses the platform default."
+        ),
     )
     sla_red_threshold_hours_override = serializers.IntegerField(
-        required=False, allow_null=True, min_value=1
+        required=False,
+        allow_null=True,
+        min_value=1,
+        help_text=(
+            "This reviewer's red SLA threshold in hours, used by the review "
+            "queue's SLA-urgency sort. Null uses the platform default."
+        ),
     )
 
     def validate(self, attrs):

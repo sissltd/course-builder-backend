@@ -2,9 +2,11 @@ from django.urls import path
 
 from api.notification.views import (
     NotificationListView,
+    NotificationMarkAllReadView,
     NotificationPreferenceView,
     NotificationReadToggleView,
     NotificationStreamView,
+    NotificationUnreadCountView,
 )
 
 urlpatterns = [
@@ -27,5 +29,15 @@ urlpatterns = [
         "users/me/notifications/toggle-read/",
         NotificationReadToggleView.as_view(),
         name="user-toggle-read-notifications",
+    ),
+    path(
+        "users/me/notifications/unread-count/",
+        NotificationUnreadCountView.as_view(),
+        name="user-notifications-unread-count",
+    ),
+    path(
+        "users/me/notifications/mark-all-read/",
+        NotificationMarkAllReadView.as_view(),
+        name="user-notifications-mark-all-read",
     ),
 ]

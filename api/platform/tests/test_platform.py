@@ -150,6 +150,27 @@ class PlatformSettingsApiTests(APITestCase):
         self.assertEqual(response.data["draft_minimum_hold_hours"], 24)
         self.assertEqual(response.data["auto_flag_after_hours"], 0)
 
+    def test_payment_settings_are_readable_and_round_trip(self):
+        self.client.force_authenticate(self.admin)
+
+        before = self.client.get("/api/v1/platform-settings/")
+        self.assertEqual(before.data["auto_credit_duration_hours"], 24)
+        self.assertIs(before.data["withdrawal_require_verification"], True)
+
+        self.client.patch(
+            "/api/v1/platform-settings/",
+            {
+                "auto_credit_duration_hours": 6,
+                "withdrawal_require_verification": False,
+            },
+            format="json",
+        )
+
+        after = self.client.get("/api/v1/platform-settings/")
+        self.assertEqual(after.status_code, status.HTTP_200_OK)
+        self.assertEqual(after.data["auto_credit_duration_hours"], 6)
+        self.assertIs(after.data["withdrawal_require_verification"], False)
+
     def test_negative_hold_hours_rejected(self):
         self.client.force_authenticate(self.admin)
 
