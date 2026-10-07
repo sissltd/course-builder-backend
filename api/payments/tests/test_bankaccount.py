@@ -43,6 +43,10 @@ def suspend_url(account):
     return f"/api/v1/payout-accounts/{account.id}/suspend/"
 
 
+def remove_suspension_url(account):
+    return f"/api/v1/payout-accounts/{account.id}/remove-suspension/"
+
+
 def make_bank_account(*, user, account_number="0123456789", **kwargs):
     defaults = {
         "user": user,
@@ -312,6 +316,58 @@ class BankAccountSuspendAccessTests(APITestCase):
         account.refresh_from_db()
         self.assertTrue(account.is_suspended)
 
+    def test_approver_cannot_remove_suspension(self):
+        """Approvers approve courses; restoring payouts is likewise out of scope."""
+
+        approver = make_user(role=UserRole.STAFF_APPROVER)
+        account = make_bank_account(
+            user=make_user(role=UserRole.COURSE_CREATOR),
+            is_suspended=True,
+            paystack_recipient_code="RCP_1234567890",
+        )
+        self.client.force_authenticate(approver)
+
+        response = self.client.post(remove_suspension_url(account), format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        account.refresh_from_db()
+        self.assertTrue(account.is_suspended)
+
+    def test_suspension_removal_is_logged_on_the_owners_activity_log(self):
+        admin_ = make_user(role=UserRole.ADMIN)
+        acct_owner = make_user(role=UserRole.COURSE_CREATOR)
+        account = make_bank_account(user=acct_owner, is_suspended=True, paystack_recipient_code="RCP_1234567890")
+        self.client.force_authenticate(admin_)
+
+        self.client.post(remove_suspension_url(account), format="json")
+
+        entries = UserActivityLog.objects.filter(action=UserActivityActionEnums.BANK_ACCOUNT_UPDATED)
+        self.assertTrue(entries.filter(user=acct_owner).exists())
+        self.assertFalse(entries.filter(user=admin_).exists())
+
+    def test_non_admin_role_cannot_remove_suspension(self):
+        creator = make_user(role=UserRole.COURSE_CREATOR)
+        account = make_bank_account(user=creator, is_suspended=True, paystack_recipient_code="RCP_1234567890")
+        self.client.force_authenticate(creator)
+
+        response = self.client.post(remove_suspension_url(account), format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        account.refresh_from_db()
+        self.assertTrue(account.is_suspended)
+
+    def test_admin_can_remove_suspension_on_any_account(self):
+        admin_ = make_user(role=UserRole.ADMIN)
+        self.client.force_authenticate(admin_)
+        acct_owner = make_user(role=UserRole.COURSE_CREATOR)
+        account = make_bank_account(user=acct_owner, is_suspended=True, paystack_recipient_code="RCP_1234567890")
+
+        response = self.client.post(remove_suspension_url(account), format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        account.refresh_from_db()
+        self.assertFalse(account.is_suspended)
+
 
 class VerifyBankAccountViewTests(APITestCase):
     def setUp(self):
@@ -350,22 +406,24 @@ class VerifyBankAccountViewTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    # def test_verify_returns_custom_error_when_provider_fails(self):
-    #     with (
-    #         patch(
-    #             "shared.services.payment_services.flutterwave_service.FlutterwaveService.resolve_bank",
-    #             side_effect=Exception("provider down"),
-    #         ),
-    #     ):
-    #         response = self.client.post(
-    #             VERIFY_URL,
-    #             {"account_number": "0123456789", "bank_code": "058"},
-    #             format="json",
-    #         )
+    def test_verify_returns_custom_error_when_provider_fails(self):
+        with (
+            patch(
+                "shared.services.payment_services.flutterwave_service.FlutterwaveService.resolve_bank",
+                side_effect=Exception("provider down"),
+            ),
+        ):
+            response = self.client.post(
+                VERIFY_URL,
+                {"account_number": "0123456789", "bank_code": "058"},
+                format="json",
+            )
 
-    #     print(">>>>>>>", response.data, response, response.status_code, response.data["errors"][0]["message"])
-    #     self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-    #     self.assertContains(response.data["errors"][0]["message"], "Bank account verification failed")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn(
+            "Bank account verification failed",
+            response.data["errors"][0]["message"],
+        )
 
 
 class BankListViewTests(APITestCase):

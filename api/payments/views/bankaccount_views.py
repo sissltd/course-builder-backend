@@ -18,6 +18,7 @@ from api.payments.docs.bankaccount_docs import (
     BANK_ACCOUNT_DELETE_DOCS,
     BANK_ACCOUNT_DETAIL_DOCS,
     BANK_ACCOUNT_LIST_DOCS,
+    BANK_ACCOUNT_REMOVE_SUSPENSION_DOCS,
     BANK_ACCOUNT_SET_DEFAULT_DOCS,
     BANK_ACCOUNT_SUSPEND_DOCS,
     BANK_ACCOUNT_VERIFY_DOCS,
@@ -213,7 +214,7 @@ class BankAccountSuspendView(APIView):
         )
         
 
-@extend_schema(**BANK_ACCOUNT_SUSPEND_DOCS, request=None)
+@extend_schema(**BANK_ACCOUNT_REMOVE_SUSPENSION_DOCS, request=None)
 class BankAccountRemoveSuspensionView(APIView):
     """/api/v1/payout-accounts/{id}/remove-suspension/
 
@@ -274,7 +275,7 @@ class VerifyBankAccountView(APIView):
             logger.error(exc)
             return custom_error_response(
                 status=status.HTTP_400_BAD_REQUEST,
-                message=f"Bank account verification failed: {str(exc)}",
+                message=f"Bank account verification failed: {exc!s}",
                 technical_message=str(exc),
             )
 

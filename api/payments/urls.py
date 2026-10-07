@@ -3,6 +3,7 @@ from django.urls import path
 from api.payments.views.bankaccount_views import (
     BankAccountDetailView,
     BankAccountListCreateView,
+    BankAccountRemoveSuspensionView,
     BankAccountSetDefaultView,
     BankAccountSuspendView,
     BankListView,
@@ -30,6 +31,11 @@ urlpatterns = [
         "payout-accounts/<uuid:pk>/suspend/",
         BankAccountSuspendView.as_view(),
         name="bank-accounts-suspend",
+    ),
+    path(
+        "payout-accounts/<uuid:pk>/remove-suspension/",
+        BankAccountRemoveSuspensionView.as_view(),
+        name="bank-accounts-remove-suspension",
     ),
     path(
         "payout-accounts/verify/",

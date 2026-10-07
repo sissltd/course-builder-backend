@@ -82,7 +82,7 @@ class FlutterwaveWebhookView(APIView):
             # Dedupe on Flutterwave's unique event id, NOT the transfer
             # reference - several legitimate events (disburse, then a later
             # reversal) share one reference and must not be collapsed.
-            event_id = str(payload_dict.get("webhook_id") or payload_dict.get("event_id"))
+            event_id = str(payload_dict.get("webhook_id") or payload_dict.get("id"))
             if event_id in ("None", ""):
                 raise KeyError("id")
         except (ValueError, KeyError):
