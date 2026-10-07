@@ -163,6 +163,13 @@ class FlutterwaveWebhookServices:
                 template_name="emails/successful_withdrawal",
                 context={"first_name": entry.user.first_name, "amount": entry.amount},
             )
+            Notification.emit_in_app_notification(
+                receivers=[entry.user],
+                title="Successful Withdrawal Notification",
+                content=f"You have successfully withdrawn {entry.amount} Naira.",
+                metadata={"reference": reference},
+                critical=True,
+            )
 
     @staticmethod
     @django_transaction.atomic
@@ -257,6 +264,13 @@ class FlutterwaveWebhookServices:
                         "first_name": entry.user.first_name,
                         "amount": entry.amount,
                     },
+                )
+                Notification.emit_in_app_notification(
+                    receivers=[entry.user],
+                    title="Failed Withdrawal Notification",
+                    content=f"Your withdrawal of {entry.amount} Naira has failed.",
+                    metadata={"reference": reference},
+                    critical=True,
                 )
             except Exception as e:
                 logger.error(
