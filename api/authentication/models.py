@@ -63,6 +63,20 @@ class EmailVerificationToken(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
             "tokens - applied to User.email once this token is confirmed."
         ),
     )
+    reference_request = models.ForeignKey(
+        "wallet.WithdrawalRequest",
+        verbose_name=_("Reference Request"),
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="verification_tokens",
+        help_text=_(
+            "The domain object this token authorizes an action on (currently a "
+            "WithdrawalRequest), so an OTP issued for one request cannot confirm "
+            "another. Only populated for request-scoped purposes such as "
+            "WITHDRAWAL_CONFIRMATION."
+        ),
+    )
 
     class Meta:
         verbose_name = _("Email Verification Token")

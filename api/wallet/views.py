@@ -1,3 +1,5 @@
+import logging
+
 from django_filters.rest_framework import DjangoFilterBackend
 from drf_spectacular.utils import (
     OpenApiExample,
@@ -36,6 +38,8 @@ from api.wallet.services import wallet_service
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 from shared.response.error import custom_error_response
 from shared.response.success import custom_success_response
+
+logger = logging.getLogger(__name__)
 
 _WALLET_OWNER_EXAMPLE = {
     "id": "5a1f83c6-92b4-4e70-8d3f-1c7e6b409af2",
@@ -163,10 +167,11 @@ class WithdrawalConfirmView(APIView):
                 message="Withdrawal request is being processed.",
                 status=status.HTTP_202_ACCEPTED,
             )
-        except Exception as e:
+        except Exception:
+            logger.exception("Withdrawal confirmation failed for user %s", request.user)
             return custom_error_response(
                 data=None,
-                message=str(e),
+                message="Unable to process the withdrawal. Please try again.",
                 status=status.HTTP_400_BAD_REQUEST,
             )
 

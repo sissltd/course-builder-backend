@@ -273,6 +273,19 @@ class FlutterwaveService:
         # Generate a unique X-Trace-Id for each request
         return f"{reference}-{int(time.time() * 1000)}"
 
+    def _transfer_headers(self, reference):
+        headers = self._headers()
+        headers.update(
+            {
+                "X-Trace-Id": self._get_x_trace_id(reference),
+                "X-Idempotency-Key": reference,
+                "accept": "application/json",
+                "content-type": "application/json",
+                "X-Scenario-Key": "scenario:successful",
+            }
+        )
+        return headers
+
     def _extract_error_message(self, response_data):
         """Flutterwaves format for validation errors is different for that of non-validation errors.
         We check for non-validation errors first, and if none are found, we look for validation errors.
@@ -287,18 +300,16 @@ class FlutterwaveService:
     def initiate_transfer1(
         self, amount_naira: Decimal, account_number:str, bank_code:str, account_name:str, reference: str, reason:str|None=None, bankaccount_id=None
     ):
+        """Legacy variant kept for reference. This route requeires that the recipient_code to have been previously generated on the side of the service provider before initiating the transfer; prefer `initiate_transfer`
+
+        Raises requests.exceptions.RequestException on network failure: the
+        outcome is ambiguous (Flutterwave may have received it), so the caller
+        must retry - not reverse the funds. The X-Idempotency-Key header makes
+        that retry safe.
+        """
 
         url = f"{self.BASE_URL}/transfers"
-        headers = self._headers()
-        headers.update(
-            {
-                "X-Trace-Id": self._get_x_trace_id(reference),
-                "X-Idempotency-Key": reference,
-                "accept": "application/json",
-                "content-type": "application/json",
-                "X-Scenario-Key": "scenario:successful",
-            }
-        )
+        headers = self._transfer_headers(reference)
         recipient_code = self.get_recipient_id(account_number, bank_code, account_name, bank_account_id=bankaccount_id)
         try:
             amount_kobo = int(Decimal(str(amount_naira)) * 100)  # Convert from Naira to Kobo
@@ -326,65 +337,68 @@ class FlutterwaveService:
 
             logger.error(f"Flutterwave initiate transfer failed: {response_data.get('message')}")
             return False, {"message": f"Flutterwave initiate transfer failed: {response_data.get('message')}"}
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Error initiating Flutterwave transfer: {e}")
-            return False, {"message": f"Error initiating Flutterwave transfer: {e}"}
+        except requests.exceptions.RequestException:
+            # Ambiguous: Flutterwave may have received it. Let the caller retry
+            # (the idempotency key makes that safe) instead of reversing funds.
+            raise
 
     def initiate_transfer(
             self, amount_naira: Decimal, account_number:str, bank_code:str, account_name:str, reference: str, reason:str|None=None, bankaccount_id=None
         ):
-            logger.warning(f"Initiating Flutterwave transfer for reference: {bankaccount_id}: {account_name}")
-            url = f"{self.BASE_URL}/direct-transfers"
-            headers = self._headers()
-            headers.update(
-                {
-                    "X-Trace-Id": self._get_x_trace_id(reference),
-                    "X-Idempotency-Key": reference,
-                    "accept": "application/json",
-                    "content-type": "application/json",
-                    "X-Scenario-Key": "scenario:successful",
-                }
-            )
-            try:
-                amount_kobo = int(Decimal(str(amount_naira)) * 100)  # Convert from Naira to Kobo
-            except (ValueError, TypeError):
-                logger.error(f"Invalid amount for Paystack transfer: {amount_naira}")
-                return False, {"message": f"Invalid amount for Paystack transfer: {amount_naira}"}
-    
-            payload = {
-                "action": "instant",
-                "type": "bank",
-                "reference": reference,
-                "meta": {"reason": reason},
-                "payment_instruction": {
-                    "source_currency": "NGN",
-                    "destination_currency": "NGN",
-                    "amount": {"applies_to": "source_currency", "value": amount_kobo},
-                    "recipient": {
-                        "bank": {
-                            "account_number": account_number,
-                            "code": bank_code,
-                        }
-                    },
+        """Submit a bank transfer to Flutterwave.
+
+        Returns (True, data) when the processor accepts, or (False,
+        {"message": ...}) only on a decisive API-level rejection (bad
+        recipient, invalid amount, etc.). Network failures raise
+        requests.exceptions.RequestException: the outcome is ambiguous
+        (Flutterwave may have received it), so the caller must retry
+        rather than reverse the funds. The X-Idempotency-Key header makes
+        that retry safe.
+        """
+        logger.warning(f"Initiating Flutterwave transfer for reference: {bankaccount_id}: {account_name}")
+        url = f"{self.BASE_URL}/direct-transfers"
+        headers = self._transfer_headers(reference)
+        try:
+            amount_kobo = int(Decimal(str(amount_naira)) * 100)  # Convert from Naira to Kobo
+        except (ValueError, TypeError):
+            logger.error(f"Invalid amount for Paystack transfer: {amount_naira}")
+            return False, {"message": f"Invalid amount for Paystack transfer: {amount_naira}"}
+
+        payload = {
+            "action": "instant",
+            "type": "bank",
+            "reference": reference,
+            "meta": {"reason": reason},
+            "payment_instruction": {
+                "source_currency": "NGN",
+                "destination_currency": "NGN",
+                "amount": {"applies_to": "source_currency", "value": amount_kobo},
+                "recipient": {
+                    "bank": {
+                        "account_number": account_number,
+                        "code": bank_code,
+                    }
                 },
-                "narration": reason,
-            }
-    
-            try:
-                response = requests.post(url, json=payload, headers=headers, timeout=10)
-                response_data = response.json()
-                if response.status_code in (200, 201) and response_data.get("status") == "success":
-                    return True, response_data.get("data", {})
-    
-                message = self._extract_error_message(response_data)
-                logger.error(f"Flutterwave initiate transfer failed: {message}")
-                return False, {"message": f"Flutterwave initiate transfer failed: {message}"}
-            except requests.exceptions.RequestException as e:
-                logger.error(f"Error initiating Flutterwave transfer: {e}")
-                return False, {"message": f"Error initiating Flutterwave transfer: {e}"}
-    
-    
-    
+            },
+            "narration": reason,
+        }
+
+        try:
+            response = requests.post(url, json=payload, headers=headers, timeout=10)
+            response_data = response.json()
+            print(f"<><><><><>Flutterwave initiate transfer response: {response_data}")
+            if response.status_code in (200, 201) and response_data.get("status") == "success":
+                return True, response_data.get("data", {})
+
+            message = self._extract_error_message(response_data)
+            logger.error(f"Flutterwave initiate transfer failed: {message}")
+            return False, {"message": f"Flutterwave initiate transfer failed: {message}"}
+        except requests.exceptions.RequestException:
+            # Ambiguous: Flutterwave may have received it. Let the caller
+            # retry (the idempotency key makes that safe) instead of
+            # reversing funds.
+            raise
+
     @classmethod
     def get_banks(cls):
         from shared.redis.redis_service import RedisService

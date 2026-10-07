@@ -3,6 +3,8 @@ import secrets
 from datetime import timedelta
 
 from django.conf import settings
+from django.db import transaction
+from django.db.models import F
 from django.utils import timezone
 from rest_framework import exceptions
 
@@ -43,25 +45,37 @@ def issue_token(
 
 
 def issue_numeric_code(
-    *, user: User, purpose: str, length: int, expiry_minutes: int
+    *,
+    user: User,
+    purpose: str,
+    length: int,
+    expiry_minutes: int,
+    reference_request=None,
 ) -> tuple[EmailVerificationToken, str]:
     """Same one-active-token-per-purpose contract as issue_token, but the raw
     value is a short numeric code (for OTP-style manual entry, e.g. confirming
     a withdrawal) rather than a URL-safe link token. Stored identically -
     verify_token and can_resend work unchanged for either kind of value.
+
+    `reference_request` binds the code to a specific domain object (currently
+    a WithdrawalRequest), so an OTP issued for withdrawal A cannot confirm
+    withdrawal B. Invalidate-then-create happens atomically so concurrent
+    requests can't leave two active codes.
     """
 
-    EmailVerificationToken.objects.filter(
-        user=user, purpose=purpose, is_used=False
-    ).update(is_used=True, used_at=timezone.now())
+    with transaction.atomic():
+        EmailVerificationToken.objects.filter(user=user, purpose=purpose, is_used=False).update(
+            is_used=True, used_at=timezone.now()
+        )
 
-    raw_code = "".join(secrets.choice("0123456789") for _ in range(length))
-    record = EmailVerificationToken.objects.create(
-        user=user,
-        purpose=purpose,
-        token_hash=_hash_token(raw_code),
-        expires_at=timezone.now() + timedelta(minutes=expiry_minutes),
-    )
+        raw_code = "".join(secrets.choice("0123456789") for _ in range(length))
+        record = EmailVerificationToken.objects.create(
+            user=user,
+            purpose=purpose,
+            token_hash=_hash_token(raw_code),
+            expires_at=timezone.now() + timedelta(minutes=expiry_minutes),
+            **({"reference_request": reference_request} if reference_request is not None else {}),
+        )
     return record, raw_code
 
 
@@ -73,33 +87,35 @@ def verify_token(*, user: User, purpose: str, token: str) -> EmailVerificationTo
     matching unused token exists (wrong token, wrong user, or wrong purpose -
     all reported identically so a mismatch never reveals which part was
     wrong). Raises ValidationError if expired or the abuse-attempt guard trips.
+
+    Consumption is atomic: the token is marked used with a single conditional
+    UPDATE inside a row lock, so two concurrent verifications of the same code
+    cannot both succeed, and the brute-force attempts counter cannot lose
+    updates.
     """
 
-    record = EmailVerificationToken.objects.filter(
-        token_hash=_hash_token(token), is_used=False
-    ).first()
-    if not record or record.user_id != user.id or record.purpose != purpose:
-        raise exceptions.NotFound(
-            "Invalid or expired verification code. Please request a new one."
+    with transaction.atomic():
+        record = EmailVerificationToken.objects.select_for_update().filter(token_hash=_hash_token(token)).first()
+        if not record or record.user_id != user.id or record.purpose != purpose:
+            raise exceptions.NotFound("Invalid or expired verification code. Please request a new one.")
+
+        # Increment attempts atomically for abuse protection
+        EmailVerificationToken.objects.filter(pk=record.pk).update(attempts=F("attempts") + 1)
+        record.refresh_from_db(fields=["attempts"])
+
+        if record.attempts >= settings.EMAIL_TOKEN_MAX_ATTEMPTS:
+            raise exceptions.ValidationError("Too many attempts. Please request a new code.")
+
+        if record.expires_at < timezone.now():
+            raise exceptions.ValidationError("This code has expired. Please request a new one.")
+
+        # Atomic consume: only one concurrent caller can flip is_used.
+        consumed = EmailVerificationToken.objects.filter(pk=record.pk, is_used=False).update(
+            is_used=True, used_at=timezone.now(), updated_datetime=timezone.now()
         )
-
-    # Increment attempts for abuse protection
-    record.attempts += 1
-    record.save(update_fields=["attempts", "updated_datetime"])
-
-    if record.attempts >= settings.EMAIL_TOKEN_MAX_ATTEMPTS:
-        raise exceptions.ValidationError(
-            "Too many attempts. Please request a new code."
-        )
-
-    if record.expires_at < timezone.now():
-        raise exceptions.ValidationError(
-            "This code has expired. Please request a new one."
-        )
-
-    record.is_used = True
-    record.used_at = timezone.now()
-    record.save(update_fields=["is_used", "used_at", "updated_datetime"])
+        if not consumed:
+            raise exceptions.NotFound("Invalid or expired verification code. Please request a new one.")
+        record.refresh_from_db(fields=["is_used", "used_at"])
     return record
 
 
