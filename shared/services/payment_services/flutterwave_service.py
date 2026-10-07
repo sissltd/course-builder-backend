@@ -164,13 +164,6 @@ class FlutterwaveService:
         response.raise_for_status()
 
         response_data = response.json()
-        if response_data.get("status") == "failed":
-            raise ValueError(f"Failed to resolve account on Flutterwave: {response_data.get('message')}")
-        
-        resolved_name = response_data.get("data", {}).get("account_name")
-        if not resolved_name:
-            raise ValueError("Flutterwave did not return an account name.")
-        response_data = response_data.get("data", {})
         return response_data
 
     def fetch_recipient_id(self, account_number, bank_code) -> tuple[str, str] | tuple[None, None]:
