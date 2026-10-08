@@ -38,6 +38,7 @@ from api.mie.authentication import API_KEY_HEADER
 from api.mie.enums import (
     DeveloperAccountStatus,
     MiePlanType,
+    WEBHOOK_ALL_EVENTS,
     SubmissionStatus,
     WebhookDeliveryStatus,
     WebhookEventType,
@@ -67,6 +68,11 @@ from api.mie.services.course_push_service import MIE_UPLOAD_PURPOSES
 from api.mie.services.key_service import API_KEY_PREFIX
 from api.mie.services.reference import REFERENCE_SUFFIXES
 from api.mie.services.submission_service import EVENT_TYPE_BY_STATUS
+from api.mie.services.webhook_endpoint_service import (
+    MAX_WEBHOOK_ENDPOINTS,
+    events_for,
+    live_endpoints,
+)
 from api.reviews.enums import ReviewStage
 from shared.constants.authentication import SUPPORT_EMAIL
 from shared.services.storage_service import (
@@ -75,7 +81,7 @@ from shared.services.storage_service import (
     MIN_MEDIA_WIDTH,
 )
 
-DOCUMENTATION_VERSION = "3.0.0"
+DOCUMENTATION_VERSION = "3.1.0"
 """Bump when the shape of this document changes, not when values change."""
 
 API_ROOT = "/api/v1"
@@ -369,10 +375,21 @@ WEBHOOK_EVENT_DOCS = {
         "resulting_status": None,
         "extra_fields": ["course"],
     },
+    WebhookEventType.COURSE_TEXT_APPROVED: {
+        "fires_when": (
+            "The text of your course passed the first review seat. The "
+            "course is now AWAITING_VIDEO: send the video with POST "
+            "/mie/v1/submissions/{id}/course/video/. Only fires when the "
+            "platform reviews text before video."
+        ),
+        "resulting_status": None,
+        "extra_fields": ["course"],
+    },
     WebhookEventType.COURSE_REVISION_REQUESTED: {
         "fires_when": (
             "A reviewer - in content review or QA verification - sent your "
-            "course back to DRAFT. course.revision_feedback says what to "
+            "course back, to DRAFT or, when the platform reviews text before "
+            "video, to NEEDS_REVISION. course.revision_feedback says what to "
             "fix; push the corrected course to the same idea."
         ),
         "resulting_status": None,
@@ -391,6 +408,7 @@ WEBHOOK_EVENT_DOCS = {
 
 COURSE_STATUS_BY_EVENT = {
     WebhookEventType.COURSE_SUBMITTED: CourseStatus.SUBMITTED,
+    WebhookEventType.COURSE_TEXT_APPROVED: CourseStatus.AWAITING_VIDEO,
     WebhookEventType.COURSE_REVISION_REQUESTED: CourseStatus.DRAFT,
     WebhookEventType.COURSE_PUBLISHED: CourseStatus.PUBLISHED,
 }
@@ -417,10 +435,20 @@ COURSE_STATUS_DOCS = {
     },
     CourseStatus.NEEDS_REVISION: {
         "meaning": (
-            "Legacy review state. The review flow now returns rejected "
-            "courses to DRAFT instead, so a pushed course should not reach it."
+            "A reviewer sent the course back while the platform reviews text "
+            "before video. Nothing is in review until you push again; the "
+            "course resumes at the seat that sent it back."
         ),
-        "your_move": "Treat it like DRAFT: read the feedback and push again.",
+        "your_move": "Read the feedback and push again, as for DRAFT.",
+    },
+    CourseStatus.AWAITING_VIDEO: {
+        "meaning": (
+            "The text passed the first review seat and the platform is "
+            "waiting for the video."
+        ),
+        "your_move": (
+            "Send the video with POST /mie/v1/submissions/{id}/course/video/."
+        ),
     },
     CourseStatus.QA_VERIFICATION: {
         "meaning": (
@@ -544,7 +572,7 @@ def _your_account(account, base_url: str) -> dict:
             DeveloperAccountStatus(account.status)
         ],
         "plan_type": account.plan_type,
-        "webhook_url": account.webhook_url,
+        "webhook_endpoints": _endpoint_summaries(account),
         "api_key_preview": (
             f"{account.api_key_prefix}..." if account.api_key_prefix else None
         ),
@@ -557,10 +585,11 @@ def _your_account(account, base_url: str) -> dict:
             "secret in full. It verifies our messages to you; it never "
             "authenticates your requests to us."
         ),
-        "how_to_change_webhook_url": (
-            "The webhook URL is fixed at registration and is not "
-            f"self-service. Email {SUPPORT_EMAIL} to have a superadmin "
-            "change it."
+        "how_to_manage_webhooks": (
+            "Self-service. Add, change or delete endpoints, and choose the "
+            f"events each one receives, at {base_url}{API_ROOT}/mie/v1/webhooks/ "
+            "with your API key, or from your developer profile. See "
+            "`webhooks.endpoints_and_subscriptions`."
         ),
     }
 
@@ -613,8 +642,8 @@ def _quickstart(account, base_url: str) -> dict:
                 "step": 4,
                 "title": "Verify the webhook you just received",
                 "detail": (
-                    "A signed POST lands on your webhook_url within a "
-                    "minute. Recompute the HMAC before trusting it - see "
+                    "A signed POST lands on each of your webhook endpoints "
+                    "that takes the event, within a minute. Recompute the HMAC before trusting it - see "
                     "the `webhooks.verification` section."
                 ),
                 "curl": None,
@@ -1113,6 +1142,166 @@ def _plan_and_payouts(account) -> dict:
     }
 
 
+SAMPLE_ALL_EVENTS_ENDPOINT = {
+    "id": "5b1f0c9e-2d4a-4f7e-9a3b-8c6d1e2f3a4b",
+    "url": "https://hooks.studio.io/mie",
+    "events": [WEBHOOK_ALL_EVENTS],
+    "created_datetime": "2026-08-23T08:55:00Z",
+    "updated_datetime": "2026-08-23T08:55:00Z",
+}
+
+SAMPLE_COURSE_EVENTS_ENDPOINT = {
+    "id": "9a7c3e51-0b2d-4c8f-a6e4-1d3f5b7c9e02",
+    "url": "https://hooks.studio.io/mie/courses",
+    "events": [
+        WebhookEventType.COURSE_TEXT_APPROVED.value,
+        WebhookEventType.COURSE_REVISION_REQUESTED.value,
+        WebhookEventType.COURSE_PUBLISHED.value,
+    ],
+    "created_datetime": "2026-10-08T09:00:00Z",
+    "updated_datetime": "2026-10-08T09:00:00Z",
+}
+
+
+def _endpoint_summaries(account) -> list[dict]:
+    """The caller's live endpoints, as /mie/v1/webhooks/ returns them.
+
+    Reads the `live_webhook_endpoints` prefetch when the caller supplies it,
+    as DeveloperAccountAdminSerializer does, and queries otherwise.
+    """
+
+    endpoints = getattr(account, "live_webhook_endpoints", None)
+    if endpoints is None:
+        endpoints = live_endpoints(developer=account)
+    return [
+        {"id": str(endpoint.id), "url": endpoint.url, "events": events_for(endpoint)}
+        for endpoint in endpoints
+    ]
+
+
+def _webhook_endpoint_routes(prefix: str) -> list[dict]:
+    """The routes that manage webhook endpoints."""
+
+    auth = f"{API_KEY_HEADER} (or Bearer session token)"
+    events_field = (
+        f'array of strings: ["{WEBHOOK_ALL_EVENTS}"] for every event type, '
+        f"or one or more of {WebhookEventType.values}"
+    )
+    not_found = {"status": 404, "when": "The endpoint is not yours, or was deleted."}
+    unauthorised = {"status": 401, "when": "Missing, invalid, suspended, or inactive credentials."}
+    return [
+        {
+            "name": "List your webhook endpoints",
+            "method": "GET",
+            "path": f"{API_ROOT}/mie/v1/webhooks/",
+            "url": f"{prefix}/mie/v1/webhooks/",
+            "auth": auth,
+            "rate_limit": "None",
+            "purpose": "Every URL you receive webhooks on, and the events each takes.",
+            "success_status": 200,
+            "response_example": [SAMPLE_ALL_EVENTS_ENDPOINT, SAMPLE_COURSE_EVENTS_ENDPOINT],
+            "errors": [unauthorised],
+            "notes": [
+                f"Not paginated: an account keeps at most {MAX_WEBHOOK_ENDPOINTS} endpoints.",
+            ],
+        },
+        {
+            "name": "Add a webhook endpoint",
+            "method": "POST",
+            "path": f"{API_ROOT}/mie/v1/webhooks/",
+            "url": f"{prefix}/mie/v1/webhooks/",
+            "auth": auth,
+            "rate_limit": "None",
+            "purpose": "Receive events at another URL: every event, or the ones you choose.",
+            "request_body": {
+                "url": "string, required, HTTPS URL",
+                "events": f"{events_field}; required",
+            },
+            "request_example": {
+                "url": SAMPLE_COURSE_EVENTS_ENDPOINT["url"],
+                "events": SAMPLE_COURSE_EVENTS_ENDPOINT["events"],
+            },
+            "success_status": 201,
+            "response_example": SAMPLE_COURSE_EVENTS_ENDPOINT,
+            "errors": [
+                {"status": 400, "when": "A field is missing, the URL is malformed, or an event type is unknown or mixed with \"all\"."},
+                unauthorised,
+                {"status": 409, "when": "webhook_endpoint_duplicate: you already have an endpoint for this URL. webhook_endpoint_limit: you already have the maximum."},
+            ],
+            "notes": ["Applies to events recorded from now on."],
+        },
+        {
+            "name": "Show one webhook endpoint",
+            "method": "GET",
+            "path": f"{API_ROOT}/mie/v1/webhooks/<endpoint_id>/",
+            "url": f"{prefix}/mie/v1/webhooks/{SAMPLE_COURSE_EVENTS_ENDPOINT['id']}/",
+            "auth": auth,
+            "rate_limit": "None",
+            "purpose": "One endpoint and the events it takes.",
+            "success_status": 200,
+            "response_example": SAMPLE_COURSE_EVENTS_ENDPOINT,
+            "errors": [unauthorised, not_found],
+        },
+        {
+            "name": "Change a webhook endpoint",
+            "method": "PATCH",
+            "path": f"{API_ROOT}/mie/v1/webhooks/<endpoint_id>/",
+            "url": f"{prefix}/mie/v1/webhooks/{SAMPLE_COURSE_EVENTS_ENDPOINT['id']}/",
+            "auth": auth,
+            "rate_limit": "None",
+            "purpose": "Change the URL, the events, or both. Send only what changes, as often as you like.",
+            "request_body": {
+                "url": "string, optional, HTTPS URL",
+                "events": f"{events_field}; optional, replaces the whole list",
+            },
+            "request_example": {"events": [WEBHOOK_ALL_EVENTS]},
+            "success_status": 200,
+            "response_example": {**SAMPLE_COURSE_EVENTS_ENDPOINT, "events": [WEBHOOK_ALL_EVENTS]},
+            "errors": [
+                {"status": 400, "when": "Empty body, malformed URL, or an unknown event type."},
+                unauthorised,
+                not_found,
+                {"status": 409, "when": "webhook_endpoint_duplicate: the new URL is already another of your endpoints."},
+            ],
+            "notes": ["Deliveries already queued still go to this endpoint, at its current URL."],
+        },
+        {
+            "name": "Delete a webhook endpoint",
+            "method": "DELETE",
+            "path": f"{API_ROOT}/mie/v1/webhooks/<endpoint_id>/",
+            "url": f"{prefix}/mie/v1/webhooks/{SAMPLE_COURSE_EVENTS_ENDPOINT['id']}/",
+            "auth": auth,
+            "rate_limit": "None",
+            "purpose": "Stop sending events to an endpoint.",
+            "success_status": 204,
+            "errors": [
+                unauthorised,
+                not_found,
+                {"status": 409, "when": "last_webhook_endpoint: it is your only endpoint. Change it instead."},
+            ],
+            "notes": ["Deliveries still queued for it are dropped, not moved to another endpoint."],
+        },
+        {
+            "name": "List the webhook event types",
+            "method": "GET",
+            "path": f"{API_ROOT}/mie/v1/webhooks/event-types/",
+            "url": f"{prefix}/mie/v1/webhooks/event-types/",
+            "auth": auth,
+            "rate_limit": "None",
+            "purpose": "Every event type you can put in an endpoint's `events`, with what makes it fire.",
+            "success_status": 200,
+            "response_example": [
+                {
+                    "event": WebhookEventType.SUBMISSION_APPROVED.value,
+                    "label": WebhookEventType.SUBMISSION_APPROVED.label,
+                    "fires_when": WEBHOOK_EVENT_DOCS[WebhookEventType.SUBMISSION_APPROVED]["fires_when"],
+                }
+            ],
+            "errors": [unauthorised],
+        },
+    ]
+
+
 def _endpoints(base_url: str) -> list[dict]:
     """Every route a developer can reach, in the order they will use them."""
 
@@ -1131,7 +1320,11 @@ def _endpoints(base_url: str) -> list[dict]:
             ),
             "request_body": {
                 "email": "string, required, unique across all accounts",
-                "webhook_url": "string, required, HTTPS URL that will receive signed events",
+                "webhook_url": (
+                    "string, required, HTTPS URL that will receive signed "
+                    "events. It becomes your first webhook endpoint, taking "
+                    "every event; add more and choose their events once approved."
+                ),
                 "plan_type": (
                     "string, optional, one of "
                     f"{[member.value for member in MiePlanType]}; "
@@ -1148,7 +1341,7 @@ def _endpoints(base_url: str) -> list[dict]:
             "response_example": {
                 "id": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
                 "email": "dev@studio.io",
-                "webhook_url": "https://hooks.studio.io/mie",
+                "webhook_endpoints": [SAMPLE_ALL_EVENTS_ENDPOINT],
                 "status": DeveloperAccountStatus.PENDING.value,
                 "plan_type": MiePlanType.PAID_PER_SUBMISSION.value,
                 "api_key_preview": None,
@@ -1566,6 +1759,45 @@ def _endpoints(base_url: str) -> list[dict]:
             ],
         },
         {
+            "name": "Send the video for a course whose text was approved",
+            "method": "POST",
+            "path": f"{API_ROOT}/mie/v1/submissions/<submission_id>/course/video/",
+            "url": f"{prefix}/mie/v1/submissions/{SAMPLE_SUBMISSION_ID}/course/video/",
+            "auth": f"{API_KEY_HEADER} (or Bearer session token)",
+            "rate_limit": _rate("mie_course_push"),
+            "purpose": (
+                "Attach the preview video and each video lesson's media, and "
+                "send the course to the video review seat. Only when the "
+                "platform reviews text before video, after COURSE_TEXT_APPROVED."
+            ),
+            "request_body": {
+                "preview_video_url": "string, required, HTTPS URL of the 1-2 minute preview",
+                "lessons": (
+                    "array, optional: {module_order, lesson_order, video_url | "
+                    "embedded_link} for each VIDEO lesson, addressed by the "
+                    "orders of your text push"
+                ),
+            },
+            "request_example": {
+                "preview_video_url": "https://cdn.studio.io/rust/preview.mp4",
+                "lessons": [
+                    {
+                        "module_order": 1,
+                        "lesson_order": 1,
+                        "video_url": "https://cdn.studio.io/rust/m1l1.mp4",
+                    }
+                ],
+            },
+            "success_status": 200,
+            "errors": [
+                {"status": 400, "when": "A field is invalid, a lesson does not exist, or the course fails the structural check. Nothing is stored."},
+                {"status": 401, "when": "Missing, invalid, suspended, or inactive credentials."},
+                {"status": 404, "when": "The idea is not yours."},
+                {"status": 409, "when": "course_not_awaiting_video: the course is not waiting for its video. video_provider_conflict: the platform supplies this video."},
+            ],
+            "notes": ["COURSE_SUBMITTED fires on success."],
+        },
+        {
             "name": "Your account",
             "method": "GET",
             "path": f"{API_ROOT}/mie/v1/me/",
@@ -1581,7 +1813,7 @@ def _endpoints(base_url: str) -> list[dict]:
                 "email": "dev@studio.io",
                 "status": DeveloperAccountStatus.APPROVED.value,
                 "plan_type": MiePlanType.PAID_PER_SUBMISSION.value,
-                "webhook_url": "https://hooks.studio.io/mie",
+                "webhook_endpoints": [SAMPLE_ALL_EVENTS_ENDPOINT],
                 "api_key_preview": f"{API_KEY_PREFIX}a1b2c3d...",
                 "api_key_last_used_at": "2026-08-24T15:30:00Z",
                 "signing_secret": "<your 43-character signing secret>",
@@ -1597,6 +1829,7 @@ def _endpoints(base_url: str) -> list[dict]:
                 "A 200 from this endpoint is the cheapest possible credentials check.",
             ],
         },
+        *_webhook_endpoint_routes(prefix),
         {
             "name": "This documentation (JSON)",
             "method": "GET",
@@ -1647,7 +1880,41 @@ def _webhooks(account) -> dict:
             "endpoint for decisions - if you do not consume webhooks you "
             "will only learn outcomes by re-reading your queue."
         ),
-        "your_endpoint": account.webhook_url,
+        "your_endpoints": _endpoint_summaries(account),
+        "endpoints_and_subscriptions": {
+            "summary": (
+                "You can receive webhooks on up to "
+                f"{MAX_WEBHOOK_ENDPOINTS} endpoints. Each one takes every "
+                f'event (`events: ["{WEBHOOK_ALL_EVENTS}"]`, including types '
+                "added later) or only the event types you list. Manage them "
+                f"at {API_ROOT}/mie/v1/webhooks/ with your API key, or from "
+                "your developer profile; change them as often as you like."
+            ),
+            "your_first_endpoint": (
+                "The URL you registered with is your first endpoint and takes "
+                "every event. Narrow it, change its URL, or add others."
+            ),
+            "delivery_per_endpoint": (
+                "Each event is delivered separately to every endpoint that "
+                "takes it, with its own retries: one endpoint being down never "
+                "delays another. Each endpoint receives its own `event_id` for "
+                "the occurrence, so dedupe per endpoint."
+            ),
+            "when_changes_apply": (
+                "To events recorded after the change. Deliveries already "
+                "queued for an endpoint still go to it, at its current URL."
+            ),
+            "deleting": (
+                "Deleting an endpoint drops its queued deliveries. Your last "
+                "endpoint cannot be deleted (409 `last_webhook_endpoint`); "
+                "change its URL or events instead."
+            ),
+            "signing": (
+                "Every endpoint is signed with the same signing secret, from "
+                f"{API_ROOT}/mie/v1/me/."
+            ),
+            "event_types": f"GET {API_ROOT}/mie/v1/webhooks/event-types/ lists every type you can choose.",
+        },
         "delivery": {
             "method": "POST",
             "content_type": "application/json",
@@ -2300,8 +2567,9 @@ def _faq() -> list[dict]:
         {
             "question": "Can I change my webhook URL myself?",
             "answer": (
-                "Not today. The URL is fixed at registration; email "
-                f"{SUPPORT_EMAIL} to have it changed."
+                "Yes. PATCH /mie/v1/webhooks/{id}/ with a new `url`, from your "
+                "code or your developer profile. You can also add more "
+                "endpoints and choose which events each one receives."
             ),
         },
         {

@@ -453,6 +453,8 @@ SPECTACULAR_SETTINGS = {
     "ENUM_NAME_OVERRIDES": {
         "CategoryStatusEnum": "api.catalog.enums.CategoryStatus",
         "CourseStatusEnum": "api.courses.enums.CourseStatus",
+        # Course.review_stage and Course.revision_seat draw on the same seats.
+        "ReviewStageEnum": "api.reviews.enums.ReviewStage",
         "TransactionStatusEnum": "api.wallet.enums.TransactionStatus",
         "CollaboratorRoleEnum": "api.collaborators.enums.CollaboratorRole",
         # CategoryRequestStatus and ReservationStatus share identical choices

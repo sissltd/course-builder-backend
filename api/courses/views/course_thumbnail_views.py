@@ -9,7 +9,6 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from api.collaborators.services import collaborator_service
-from api.courses.enums import CourseStatus
 from api.courses.models import Course, CourseThumbnail
 from api.courses.serializers.course_thumbnail_serializer import (
     CourseThumbnailSerializer,
@@ -87,9 +86,9 @@ class CourseThumbnailView(APIView):
     def post(self, request, course_pk):
         course = self._get_course(course_pk)
         self._require_manage_access(course)
-        if course.status != CourseStatus.DRAFT:
+        if not course.is_editable:
             raise exceptions.ValidationError(
-                "The thumbnail can only be changed while the course is Draft."
+                "The thumbnail can only be changed while the course is Draft or Needs Revision."
             )
         serializer = CourseThumbnailSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)

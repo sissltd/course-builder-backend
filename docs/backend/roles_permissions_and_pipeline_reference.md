@@ -262,6 +262,20 @@ else holds — logged via `log_activity`. A reviewer must **claim** a seat
 rejection returns the course to `DRAFT` and clears every seat; resubmission
 restarts at First Review.
 
+**Staged review flow** (`PlatformSettings.staged_review_flow_enabled`, off by
+default): the same three seats, but First and Second Review take a
+`STAFF_WRITER` (`review_service.STAGED_SEAT_ROLES`, chosen by
+`review_service.seat_roles()`; Writers hold `courses.approve` /
+`courses.reject` by default), First Review reads the text only and its
+approval parks the course at `AWAITING_VIDEO`, Second Review is the video
+review, and a rejection parks the course at `NEEDS_REVISION` with
+`Course.revision_seat` so the resubmission resumes at that seat with only
+that seat cleared. Pricing and publishing are then restricted to
+`STAFF_APPROVER` and `SUPER_ADMIN` by `course_service.require_approver` — a
+base-role check on top of `courses.set_pricing` / `courses.publish`, so it
+applies on every route that reaches those services. See
+`course_platform_flow.md` section 4.
+
 View gate: `CourseReviewViewSet.get_permissions()` (`course_views.py:1224-1229`)
 — `claim/approve/reject/content_approve/content_reject` fall through to the
 class default `IsCreatorReviewerRole | IsQaReviewerRole | IsAdminRole`

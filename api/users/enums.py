@@ -157,6 +157,8 @@ class UserActivityActionEnums(models.TextChoices):
     COURSE_APPROVED = "COURSE_APPROVED", "Course Approved"
     COURSE_REJECTED = "COURSE_REJECTED", "Course Rejected"
     COURSE_PUBLISHED = "COURSE_PUBLISHED", "Course Published"
+    COURSE_VIDEO_DECIDED = "COURSE_VIDEO_DECIDED", "Course Video Source Chosen"
+    COURSE_VIDEO_SUBMITTED = "COURSE_VIDEO_SUBMITTED", "Course Video Submitted"
     AVAILABILITY_UPDATED = "AVAILABILITY_UPDATED", "Availability Updated"
     NOTIFICATION_PREFERENCES_UPDATED = (
         "NOTIFICATION_PREFERENCES_UPDATED",

@@ -21,6 +21,7 @@ price snapshot and nothing else: the developer payout is not built yet.
 
 from django.conf import settings as django_settings
 from django.db import transaction
+from django.utils import timezone
 from rest_framework import exceptions
 
 from api.catalog.enums import CategoryStatus
@@ -33,6 +34,7 @@ from api.courses.enums import (
     DifficultyLevel,
     LessonContentType,
     QuestionType,
+    VideoProvider,
 )
 from api.courses.models import (
     Assessment,
@@ -47,8 +49,9 @@ from api.courses.serializers.assessment_serializer import (
     MAXIMUM_CHOICE_OPTIONS,
     MINIMUM_CHOICE_OPTIONS,
 )
+from api.courses.exceptions import CourseNotAwaitingVideo
 from api.courses.services import course_service
-from api.mie.enums import SubmissionStatus, WebhookEventType
+from api.mie.enums import MieSourceType, SubmissionStatus, WebhookEventType
 from api.mie.exceptions import CourseAlreadyInFlight, IdeaNotApproved
 from api.mie.models import CourseSubmission, DeveloperAccount, WebhookEvent
 from api.mie.serializers.course_push_serializer import (
@@ -56,7 +59,7 @@ from api.mie.serializers.course_push_serializer import (
     MAX_PUSH_LESSONS_PER_MODULE,
     MAX_PUSH_MODULES,
 )
-from api.mie.services import developer_service
+from api.mie.services import developer_service, webhook_endpoint_service
 from api.platform.services import platform_settings_service
 from api.reviews.enums import ReviewActionType
 from api.reviews.models import ReviewAction
@@ -123,6 +126,104 @@ def push_course(*, developer: DeveloperAccount, submission_id, data: dict) -> Co
     return course
 
 
+def push_video(*, developer: DeveloperAccount, submission_id, data: dict) -> Course:
+    """Attach the video to a course whose text passed the first review seat,
+    and send it to the video review seat.
+
+    `data` is CourseVideoPushSerializer.validated_data. Raises NotFound for
+    an idea that is not the caller's, CourseNotAwaitingVideo (409) for a
+    course that is not waiting for its video, VideoProviderConflict (409) when
+    the platform, not the developer, supplies this course's video, and
+    ValidationError for a lesson the course does not have or a course that
+    fails the structural check. On any of those nothing is written.
+
+    A course a later seat sent back (NEEDS_REVISION) after its video was
+    attached takes the new video the same way and resumes at that seat.
+    """
+
+    with transaction.atomic():
+        submission = _lock_own_submission(
+            developer=developer, submission_id=submission_id
+        )
+        course = submission.resulting_course
+        if course is None:
+            raise CourseNotAwaitingVideo("No course has been pushed for this idea yet.")
+        creator = developer_service.get_or_create_creator_user(developer=developer)
+
+        resubmitting_video = (
+            course.status == CourseStatus.NEEDS_REVISION
+            and course.video_attached_at is not None
+        )
+        if course.status != CourseStatus.AWAITING_VIDEO and not resubmitting_video:
+            raise CourseNotAwaitingVideo()
+
+        _apply_video(course=course, data=data)
+        if resubmitting_video:
+            course_service.submit_course(
+                course=course, actor=creator, skip_draft_hold=True
+            )
+        else:
+            course_service.submit_video(course=course, actor=creator)
+        record_course_event(course=course, event_type=WebhookEventType.COURSE_SUBMITTED)
+    return course
+
+
+def _apply_video(*, course: Course, data: dict) -> None:
+    """Write the preview video and each lesson's media onto the course.
+
+    Lessons are looked up once and matched by (module order, lesson order), so
+    the query count does not grow with the number of lessons.
+    """
+
+    course.preview_video_url = data["preview_video_url"]
+    course.save(update_fields=["preview_video_url", "updated_datetime"])
+
+    lessons = {
+        (lesson.module.order, lesson.order): lesson
+        for lesson in Lesson.objects.filter(module__course=course).select_related(
+            "module"
+        )
+    }
+    unknown = [
+        f"module {item['module_order']}, lesson {item['lesson_order']}"
+        for item in data.get("lessons", [])
+        if (item["module_order"], item["lesson_order"]) not in lessons
+    ]
+    if unknown:
+        raise exceptions.ValidationError(
+            {"lessons": [f"The course has no lesson at {where}." for where in unknown]}
+        )
+    changed = []
+    now = timezone.now()
+    for item in data.get("lessons", []):
+        lesson = lessons[(item["module_order"], item["lesson_order"])]
+        lesson.video_url = item.get("video_url", "")
+        lesson.embedded_link = item.get("embedded_link", "")
+        lesson.updated_datetime = now
+        changed.append(lesson)
+    Lesson.objects.bulk_update(
+        changed, ["video_url", "embedded_link", "updated_datetime"]
+    )
+
+
+def video_provider_for(*, course: Course) -> str:
+    """Who supplies the video of a pushed course once its text passes: the
+    developer, or the production engine when the idea came from the
+    platform's own crawler (a SYSTEM account has no video to send)."""
+
+    submission = (
+        CourseSubmission.objects.select_related("developer")
+        .filter(resulting_course=course)
+        .first()
+    )
+    if (
+        submission is not None
+        and submission.developer.source_type == MieSourceType.SYSTEM
+    ):
+        return VideoProvider.PRODUCTION_ENGINE
+    return VideoProvider.DEVELOPER
+
+
 def _lock_own_submission(*, developer, submission_id) -> CourseSubmission:
     """The caller's submission, row-locked so two pushes for the same idea
     run one after the other. Another developer's idea is a 404, never a
@@ -147,11 +248,11 @@ def _check_gate(*, submission: CourseSubmission, data: dict) -> None:
             f"{submission.status}."
         )
     course = submission.resulting_course
-    if course is not None and course.status != CourseStatus.DRAFT:
+    if course is not None and not course.is_editable:
         raise CourseAlreadyInFlight(
             "This idea's course is already "
             f"{course.status}. It can only be replaced after a reviewer "
-            "sends it back to DRAFT."
+            "sends it back to DRAFT or NEEDS_REVISION."
         )
     if _normalise(data["title"]) != _normalise(submission.title):
         raise exceptions.ValidationError(
@@ -392,7 +493,7 @@ def status_payload(*, course: Course, submission: CourseSubmission) -> dict:
         "published_at": course.published_at,
         "revision_feedback": (
             _latest_revision_feedback(course)
-            if course.status == CourseStatus.DRAFT and course.rejected_at
+            if course.is_editable and course.rejected_at
             else None
         ),
     }
@@ -549,7 +650,7 @@ def _upload_rule(purpose: str, rule: dict) -> dict:
 
 def record_course_event(
     *, course: Course, event_type: str, review_action: ReviewAction | None = None
-) -> WebhookEvent | None:
+) -> list[WebhookEvent]:
     """Record a COURSE_* webhook for a pushed course; a no-op for any other.
 
     The course and review services call this at every move a developer
@@ -559,14 +660,14 @@ def record_course_event(
     """
 
     if course.source_type != CourseSourceType.DEVELOPER_API:
-        return None
+        return []
     submission = (
         CourseSubmission.objects.select_related("developer")
         .filter(resulting_course=course)
         .first()
     )
     if submission is None:
-        return None
+        return []
 
     body = {
         "reference": submission.public_reference,
@@ -580,7 +681,7 @@ def record_course_event(
     }
     if review_action is not None:
         body["course"]["revision_feedback"] = revision_feedback(review_action)
-    return WebhookEvent.objects.create(
+    return webhook_endpoint_service.record_event(
         submission=submission,
         event_type=event_type,
         payload={"submission": body, "developer_email": submission.developer.email},

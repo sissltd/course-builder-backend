@@ -20,9 +20,9 @@ from api.courses.renderers import ServerSentEventsRenderer
 
 from api.courses.exceptions import AIDispatchUnavailable
 from api.courses.enums import (
+    EDITABLE_COURSE_STATUSES,
     AIGenerationKind,
     AIGenerationStatus,
-    CourseStatus,
     MediaSource,
 )
 from api.courses.models import AIGenerationJob, CourseThumbnail
@@ -748,9 +748,9 @@ class AIAssistListCreateView(APIView):
         course = request.user.courses.filter(pk=course_pk).first()
         if not course:
             raise exceptions.NotFound()
-        if course.status != CourseStatus.DRAFT:
+        if not course.is_editable:
             raise exceptions.ValidationError(
-                "AI assists are only available for Draft courses."
+                "AI assists are only available for Draft or Needs Revision courses."
             )
         serializer = AIAssistCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -911,7 +911,7 @@ class AIThumbnailCreateView(APIView):
     )
     def post(self, request, course_pk):
         course = request.user.courses.filter(
-            pk=course_pk, status=CourseStatus.DRAFT
+            pk=course_pk, status__in=EDITABLE_COURSE_STATUSES
         ).first()
         if not course:
             raise exceptions.NotFound()

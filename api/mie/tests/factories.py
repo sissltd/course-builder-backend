@@ -18,6 +18,7 @@ from api.mie.models import (
     CourseSubmission,
     DeveloperAccount,
     SubmissionRejectionReason,
+    WebhookEndpoint,
     WebhookEvent,
 )
 
@@ -36,7 +37,12 @@ def make_developer_account(
         "plan_type": plan_type,
     }
     defaults.update(kwargs)
-    return DeveloperAccount.objects.create(**defaults)
+    # Registration turns the URL into the account's first endpoint, taking
+    # every event; mirror it so events fan out exactly as in production.
+    webhook_url = defaults.pop("webhook_url")
+    account = DeveloperAccount.objects.create(**defaults)
+    WebhookEndpoint.objects.create(developer=account, url=webhook_url, all_events=True)
+    return account
 
 
 def make_approved_account(**kwargs):
@@ -121,6 +127,10 @@ def make_webhook_event(*, submission=None, event_type=WebhookEventType.SUBMISSIO
         submission = make_submission()
     defaults = {
         "submission": submission,
+        # The account's first endpoint, as record_events would choose.
+        "endpoint": submission.developer.webhook_endpoints.filter(is_deleted=False)
+        .order_by("created_datetime")
+        .first(),
         "event_type": event_type,
         "payload": {
             "submission": {

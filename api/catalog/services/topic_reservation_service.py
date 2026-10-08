@@ -92,15 +92,24 @@ def approve_request(
             "updated_datetime",
         ]
     )
+    Notification.emit_in_app_notification(
+        receivers=[request.requested_by],
+        title="Topic request approved",
+        content=(
+            f"Your request for '{topic.name}' was approved and the topic is "
+            "reserved for you. You can start a course on it now."
+        ),
+        metadata={"topic_reservation_request_id": request.id, "topic_id": topic.id},
+    )
     return request
 
 
 def reject_request(
     *, request: TopicReservationRequest, actor: User, reason: str = ""
 ) -> TopicReservationRequest:
-    """Reject a Pending request. No email - Figma has no rejection-notice
-    screen. No Topic is created; `reason` is free text from the reviewer,
-    e.g. that the name already matches an existing topic."""
+    """Reject a Pending request and tell the requester, in-app, with the
+    reviewer's `reason`. No Topic is created; `reason` is free text, e.g.
+    that the name already matches an existing topic."""
 
     if request.status != ReservationStatus.PENDING:
         raise exceptions.ValidationError(
@@ -119,6 +128,15 @@ def reject_request(
             "reviewed_at",
             "updated_datetime",
         ]
+    )
+    Notification.emit_in_app_notification(
+        receivers=[request.requested_by],
+        title="Topic request declined",
+        content=(
+            f"Your request for '{request.name}' was declined."
+            + (f" Reason: {reason}" if reason else "")
+        ),
+        metadata={"topic_reservation_request_id": request.id},
     )
     return request
 

@@ -12,7 +12,6 @@ from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 
 from api.collaborators.services import collaborator_service
-from api.courses.enums import CourseStatus
 from api.courses.models import Lesson, Module
 from api.courses.serializers import LessonSerializer, LessonWriteSerializer
 from api.courses.serializers.ordering_serializer import ReorderSerializer
@@ -24,6 +23,7 @@ from api.courses.services import (
 )
 from api.authorization import codenames
 from api.authorization.permissions import Perm
+from api.platform.services import platform_settings_service
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 
 _VIDEO_LESSON_REQUEST_EXAMPLE = {
@@ -142,7 +142,7 @@ _DRAFT_ONLY_400 = OpenApiResponse(
                     {
                         "type": "validation_error",
                         "code": "invalid",
-                        "message": "Lessons can only be edited while the course is Draft.",
+                        "message": "Lessons can only be edited while the course is Draft or Needs Revision.",
                         "field_name": None,
                     }
                 ]
@@ -423,6 +423,14 @@ class LessonViewSet(ModelViewSet):
             return LessonSerializer
         return LessonWriteSerializer
 
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        if self.action in {"create", "update", "partial_update"}:
+            context["staged_review_flow"] = (
+                platform_settings_service.is_staged_review_flow_enabled()
+            )
+        return context
+
     @extend_schema(
         summary="Reorder a module's lessons",
         description=(
@@ -461,9 +469,9 @@ class LessonViewSet(ModelViewSet):
     @action(detail=False, methods=["patch"])
     def reorder(self, request, *args, **kwargs):
         module = self._get_module()
-        if module.course.status != CourseStatus.DRAFT:
+        if not module.course.is_editable:
             raise exceptions.ValidationError(
-                "Lessons can only be reordered while the course is Draft."
+                "Lessons can only be reordered while the course is Draft or Needs Revision."
             )
         module_lock_service.check_not_locked(module=module, user=request.user)
 
@@ -505,9 +513,9 @@ class LessonViewSet(ModelViewSet):
     @transaction.atomic
     def perform_create(self, serializer):
         module = self._get_module()
-        if module.course.status != CourseStatus.DRAFT:
+        if not module.course.is_editable:
             raise exceptions.ValidationError(
-                "Lessons can only be added while the course is Draft."
+                "Lessons can only be added while the course is Draft or Needs Revision."
             )
         module_lock_service.check_not_locked(module=module, user=self.request.user)
         self._validate_unique_order(
@@ -541,9 +549,9 @@ class LessonViewSet(ModelViewSet):
     @transaction.atomic
     def perform_update(self, serializer):
         module = serializer.instance.module
-        if module.course.status != CourseStatus.DRAFT:
+        if not module.course.is_editable:
             raise exceptions.ValidationError(
-                "Lessons can only be edited while the course is Draft."
+                "Lessons can only be edited while the course is Draft or Needs Revision."
             )
         module_lock_service.check_not_locked(module=module, user=self.request.user)
         if "order" in serializer.validated_data:
@@ -579,9 +587,9 @@ class LessonViewSet(ModelViewSet):
 
     def perform_destroy(self, instance):
         module = instance.module
-        if module.course.status != CourseStatus.DRAFT:
+        if not module.course.is_editable:
             raise exceptions.ValidationError(
-                "Lessons can only be deleted while the course is Draft."
+                "Lessons can only be deleted while the course is Draft or Needs Revision."
             )
         module_lock_service.check_not_locked(module=module, user=self.request.user)
         instance.delete()

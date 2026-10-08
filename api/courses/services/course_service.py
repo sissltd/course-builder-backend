@@ -26,8 +26,10 @@ from api.courses.enums import (
     CourseStatus,
     DistributionChannel,
     DistributionStatus,
+    VideoProvider,
 )
-from api.courses.services import course_update_alert_service
+from api.courses.exceptions import CourseNotAwaitingVideo, VideoProviderConflict
+from api.courses.services import course_update_alert_service, production_engine
 from api.courses.models import (
     Course,
     CourseDistribution,
@@ -104,6 +106,34 @@ def _validate_topic_matches_category(
         )
 
 
+def require_approved_topic(*, topic: Topic | None) -> None:
+    """With the staged review flow on, a creator's course must start from a
+    topic that exists and is available.
+
+    A topic exists only once it was in the catalogue or an admin approved the
+    creator's request for it (topic_reservation_service.approve_request), so
+    requiring one is what makes a request-then-approve the only way into a new
+    subject. A no-op with the switch off, where the topic stays optional.
+    Raises ValidationError keyed to `topic`.
+    """
+
+    if not platform_settings_service.is_staged_review_flow_enabled():
+        return
+    if topic is None:
+        raise exceptions.ValidationError(
+            {
+                "topic": (
+                    "Choose an existing topic, or request one and wait for it "
+                    "to be approved, before creating a course."
+                )
+            }
+        )
+    if topic.status != CategoryStatus.ACTIVE:
+        raise exceptions.ValidationError(
+            {"topic": "This topic is not currently available."}
+        )
+
+
 def create_draft_course(
     *,
     creator: User,
@@ -127,7 +157,9 @@ def create_draft_course(
 
     Raises ValidationError if terms_accepted is False (BR-005), the category
     is not currently accepting submissions, topic doesn't belong to category,
-    or topic is currently reserved by someone else. Does not snapshot the
+    topic is not active, topic is currently reserved by someone else, or - with
+    the staged review flow on - a creator's course has no topic
+    (require_approved_topic). Does not snapshot the
     category/topic price yet - that happens at submit time, see
     submit_course().
 
@@ -149,12 +181,18 @@ def create_draft_course(
             "This category is not currently accepting new courses."
         )
     _validate_topic_matches_category(topic=topic, category=category)
+    if topic is not None and topic.status != CategoryStatus.ACTIVE:
+        raise exceptions.ValidationError("This topic is not currently available.")
     if (
         topic is not None
         and topic.is_currently_reserved
         and topic.reserved_by_id != creator.id
     ):
         raise exceptions.ValidationError("This topic is currently reserved.")
+    if source_type != CourseSourceType.DEVELOPER_API:
+        # A developer's course is gated on its approved idea instead
+        # (course_push_service), so only a creator's course needs a topic.
+        require_approved_topic(topic=topic)
 
     with transaction.atomic():
         course = Course.objects.create(
@@ -199,8 +237,10 @@ def update_draft_course(*, course: Course, actor: User, data: dict) -> Course:
     course is not in Draft status, or a supplied topic doesn't belong to the
     (new or existing) category."""
 
-    if course.status != CourseStatus.DRAFT:
-        raise exceptions.ValidationError("Only Draft courses can be edited.")
+    if not course.is_editable:
+        raise exceptions.ValidationError(
+            "Only Draft or Needs Revision courses can be edited."
+        )
 
     if "topic" in data:
         category = data.get("category", course.category)
@@ -226,7 +266,8 @@ def delete_draft_course(*, course: Course, actor: User) -> None:
 def submit_course(
     *, course: Course, actor: User, skip_draft_hold: bool = False
 ) -> Course:
-    """Transition a Draft course to Submitted.
+    """Transition a Draft course to Submitted, or resubmit a Needs Revision
+    one (staged review flow) at the seat that sent it back.
 
     - Only the owning creator may submit (ownership is also enforced by the
       IsCourseOwner object permission, this is a service-level defense in depth).
@@ -235,7 +276,12 @@ def submit_course(
       the MIE course push sets it: that course was written outside the
       builder and arrives finished, so there is no drafting period to hold.
     - Runs quality_check_service.validate_structural_standards(); any
-      failures abort the transition with an aggregated ValidationError.
+      failures abort the transition with an aggregated ValidationError. With
+      the staged review flow the text must carry no video yet, so a
+      submission with one is refused (see that function).
+    - A Needs Revision course skips the draft hold and the price snapshot,
+      re-runs the same standards, and returns to the seat that rejected it
+      with only that seat cleared (resume_at_revision_seat).
     - Every course except an AI-generated one snapshots the current
       topic/category price; AI-generated courses keep this field null.
       Only CREATOR_UPLOADED courses are then paid out automatically
@@ -251,6 +297,8 @@ def submit_course(
         raise exceptions.ValidationError(
             "Only the course creator can submit this course."
         )
+    if course.status == CourseStatus.NEEDS_REVISION:
+        return _resubmit_after_revision(course=course, actor=actor)
     if course.status != CourseStatus.DRAFT:
         raise exceptions.ValidationError(
             f"Course cannot be submitted from status '{course.status}'."
@@ -322,9 +370,11 @@ def submit_course(
 def start_review_cycle(*, course: Course) -> Course:
     """Send `course` to the pending queue at First Review, every seat empty.
 
-    Both ways into review call this - submit_course and an approved appeal
-    (course_appeal_service.approve_appeal) - so no cycle inherits the last
-    one's claimants or completion stamps. Four eyes depends on that: it
+    The ways into a fresh review call this - submit_course for a Draft and an
+    approved appeal against a Draft (course_appeal_service.approve_appeal) -
+    so no cycle inherits the last one's claimants or completion stamps. A
+    Needs Revision course does not: it resumes at its seat
+    (resume_at_revision_seat) with the earlier seats' decisions kept. Four eyes depends on that: it
     reads every completed seat it finds as part of the current cycle. QA's
     row is cleared too, otherwise a resubmitted course would still be
     "assigned to another QA reviewer" from its previous pass.
@@ -353,6 +403,211 @@ def start_review_cycle(*, course: Course) -> Course:
             claimed_at=None,
             completed_at=None,
             updated_datetime=timezone.now(),
+        )
+    return course
+
+
+def resume_at_revision_seat(*, course: Course, actor: User) -> Course:
+    """Return a Needs Revision course to the seat that rejected it.
+
+    Only that seat is cleared: the seats before it keep their decisions, so
+    four eyes still reads the cycle correctly and no earlier seat reviews the
+    course again. A QA rejection resumes at QA verification, which is a
+    status rather than a content seat. Sets the state and saves it; the
+    callers (a resubmission, an approved appeal) do their own notifying.
+
+    A Needs Revision course with no recorded seat - set by hand rather than
+    through a rejection - restarts at the first seat, the only place it can
+    safely begin.
+    """
+
+    seat = course.revision_seat or ReviewStage.CONTENT
+    with transaction.atomic():
+        if seat == ReviewStage.QA:
+            course.status = CourseStatus.QA_VERIFICATION
+            course.review_stage = ""
+        else:
+            course.status = CourseStatus.SUBMITTED
+            course.review_stage = seat
+        course.revision_seat = ""
+        # A new queue entry starts un-alerted and unflagged, as in
+        # start_review_cycle.
+        course.sla_red_alerted_at = None
+        course.flagged_at = None
+        course.flag_reason = ""
+        course.updated_by = actor
+        course.save(
+            update_fields=[
+                "status",
+                "review_stage",
+                "revision_seat",
+                "sla_red_alerted_at",
+                "flagged_at",
+                "flag_reason",
+                "updated_by",
+                "updated_datetime",
+            ]
+        )
+        review_service.reset_seat(course=course, seat=seat)
+    return course
+
+
+def _resubmit_after_revision(*, course: Course, actor: User) -> Course:
+    """submit_course for a Needs Revision course: the same standards, then
+    straight back to the seat that rejected it."""
+
+    failures = quality_check_service.validate_structural_standards(course)
+    if failures:
+        raise exceptions.ValidationError({"structural_standards": failures})
+
+    with transaction.atomic():
+        course = resume_at_revision_seat(course=course, actor=actor)
+        quality_review_service.run_baseline_checks(course=course)
+        Notification.emit_in_app_notification(
+            receivers=[course.creator],
+            title="Course resubmitted",
+            content=f"Your course '{course.title}' has been resubmitted for review.",
+            metadata={"course_id": course.id},
+        )
+        course_update_alert_service.notify_course_status_change(
+            course=course,
+            actor=actor,
+            title="Course resubmitted",
+            content=f"'{course.title}' was resubmitted after revision.",
+        )
+        activity_service.log_activity(
+            user=course.creator,
+            category=UserActivityCategoryEnums.SUBMISSION,
+            action=UserActivityActionEnums.COURSE_SUBMITTED,
+            summary=f"You resubmitted '{course.title}' for review.",
+            target=course,
+        )
+    return course
+
+
+def record_video_decision(*, course: Course, actor: User, will_provide: bool) -> Course:
+    """Record who supplies the video of a course whose text has passed the
+    first review seat (staged review flow).
+
+    The creator either adds the video themselves (CREATOR) or leaves it to
+    the production engine (PRODUCTION_ENGINE); the choice can be changed
+    until the video is submitted. A developer's course is fixed to the
+    developer, so only creator-sourced courses may decide.
+
+    Raises CourseNotAwaitingVideo (409) when the course is not waiting for its
+    video and VideoProviderConflict (409) for a developer-sourced course.
+    """
+
+    permission_service.require_any_permission(
+        actor, (codenames.COURSES_CREATE, codenames.COURSES_EDIT)
+    )
+    if course.creator_id != actor.id:
+        raise exceptions.ValidationError(
+            "Only the course creator can decide who supplies the video."
+        )
+    if course.status != CourseStatus.AWAITING_VIDEO:
+        raise CourseNotAwaitingVideo()
+    if course.source_type == CourseSourceType.DEVELOPER_API:
+        raise VideoProviderConflict(
+            "The developer supplies the video for a developer course."
+        )
+
+    with transaction.atomic():
+        course.video_provider = (
+            VideoProvider.CREATOR if will_provide else VideoProvider.PRODUCTION_ENGINE
+        )
+        course.updated_by = actor
+        course.save(update_fields=["video_provider", "updated_by", "updated_datetime"])
+        activity_service.log_activity(
+            user=actor,
+            category=UserActivityCategoryEnums.SUBMISSION,
+            action=UserActivityActionEnums.COURSE_VIDEO_DECIDED,
+            summary=(
+                f"You will add the video for '{course.title}'."
+                if will_provide
+                else f"You left the video for '{course.title}' to video production."
+            ),
+            target=course,
+        )
+    return course
+
+
+def submit_video(*, course: Course, actor: User) -> Course:
+    """Attach a course's video and send it to the video review seat (staged
+    review flow).
+
+    Only the party that supplies the video may call this: the creator when
+    video_provider is CREATOR, or the developer's linked creator account when
+    it is DEVELOPER (the MIE endpoint passes that account as `actor`). A
+    course whose video the production engine supplies cannot be submitted
+    here. The video-stage structural rules run (preview video, media on every
+    video lesson) together with every text rule, so the text cannot have
+    drifted since it was approved. Only the video seat's assignment is reset;
+    the first seat keeps its decision.
+
+    Raises CourseNotAwaitingVideo (409), VideoProviderConflict (409) or a
+    ValidationError carrying the aggregated `structural_standards` failures.
+    """
+
+    permission_service.require_any_permission(
+        actor, (codenames.COURSES_CREATE, codenames.COURSES_EDIT)
+    )
+    if course.creator_id != actor.id:
+        raise exceptions.ValidationError("Only the course creator can submit its video.")
+    if course.status != CourseStatus.AWAITING_VIDEO:
+        raise CourseNotAwaitingVideo()
+    if course.video_provider not in (VideoProvider.CREATOR, VideoProvider.DEVELOPER):
+        raise VideoProviderConflict(
+            "Choose to add the video yourself before submitting it."
+            if not course.video_provider
+            else "The production engine supplies the video for this course."
+        )
+
+    with transaction.atomic():
+        course.video_attached_at = timezone.now()
+        failures = quality_check_service.validate_structural_standards(course)
+        if failures:
+            course.video_attached_at = None
+            raise exceptions.ValidationError({"structural_standards": failures})
+        course.status = CourseStatus.SUBMITTED
+        course.review_stage = ReviewStage.SECOND_REVIEW
+        # A new queue entry starts un-alerted and unflagged, as in
+        # start_review_cycle.
+        course.sla_red_alerted_at = None
+        course.flagged_at = None
+        course.flag_reason = ""
+        course.updated_by = actor
+        course.save(
+            update_fields=[
+                "video_attached_at",
+                "status",
+                "review_stage",
+                "sla_red_alerted_at",
+                "flagged_at",
+                "flag_reason",
+                "updated_by",
+                "updated_datetime",
+            ]
+        )
+        review_service.reset_seat(course=course, seat=ReviewStage.SECOND_REVIEW)
+        Notification.emit_in_app_notification(
+            receivers=[course.creator],
+            title="Video submitted",
+            content=f"The video for '{course.title}' has been submitted for review.",
+            metadata={"course_id": course.id},
+        )
+        course_update_alert_service.notify_course_status_change(
+            course=course,
+            actor=actor,
+            title="Video submitted",
+            content=f"The video for '{course.title}' was submitted for review.",
+        )
+        activity_service.log_activity(
+            user=actor,
+            category=UserActivityCategoryEnums.SUBMISSION,
+            action=UserActivityActionEnums.COURSE_VIDEO_SUBMITTED,
+            summary=f"You submitted the video for '{course.title}'.",
+            target=course,
         )
     return course
 
@@ -453,11 +708,30 @@ def _build_course_snapshot(course: Course) -> dict:
     }
 
 
-def save_distribution_channels(
-    *, course: Course, channels: list[dict]
-) -> list[CourseDistribution]:
-    """Create or update the channel cards from the Review Prices design."""
+def require_approver(*, actor: User) -> None:
+    """Refuse (403) a caller who may not price or publish a course.
 
+    A no-op with the staged review flow off, where the permission alone
+    decides. With it on, only the Approver (and the Super Admin) may.
+    """
+
+    if not platform_settings_service.is_staged_review_flow_enabled():
+        return
+    if not (actor.is_superuser or actor.role in review_service.APPROVER_ROLES):
+        raise exceptions.PermissionDenied(
+            "Only the Approver can price and publish a course."
+        )
+
+
+def save_distribution_channels(
+    *, course: Course, actor: User, channels: list[dict]
+) -> list[CourseDistribution]:
+    """Create or update the channel cards from the Review Prices design.
+
+    With the staged review flow on, only the Approver may set prices
+    (require_approver)."""
+
+    require_approver(actor=actor)
     if course.status != CourseStatus.APPROVED:
         raise exceptions.ValidationError(
             f"Course prices cannot be saved from status '{course.status}'."
@@ -491,9 +765,14 @@ def publish_course(
     There is no re-edit-after-publish workflow yet (publishing is one-way,
     no unpublish action), so this only ever creates a single snapshot per
     course today - see CourseVersion's docstring.
+
+    With the staged review flow on this is the Approver's "trigger final
+    production": only the Approver (and the Super Admin) may call it
+    (require_approver), and the course is handed to production_engine.
     """
 
     permission_service.require_permission(actor, codenames.COURSES_PUBLISH)
+    require_approver(actor=actor)
     if course.status != CourseStatus.APPROVED:
         raise exceptions.ValidationError(
             f"Course cannot be published from status '{course.status}'."
@@ -506,7 +785,9 @@ def publish_course(
                 f"Course cannot be published from status '{course.status}'."
             )
         if distribution_channels is not None:
-            save_distribution_channels(course=course, channels=distribution_channels)
+            save_distribution_channels(
+                course=course, actor=actor, channels=distribution_channels
+            )
         version = _get_publish_version(course=course)
         if version is None:
             raise exceptions.ValidationError(
@@ -552,6 +833,7 @@ def publish_course(
             published_at=now,
             updated_datetime=now,
         )
+        production_engine.finalize(course=course, actor=actor)
         activity_service.log_activity(
             user=actor,
             category=UserActivityCategoryEnums.PUBLISH,
@@ -593,6 +875,7 @@ def get_review_queue(
     track_filter: str | None = None,
     sla_user: User | None = None,
     seats_for: User | None = None,
+    visible_to: User | None = None,
 ) -> QuerySet[Course]:
     """Return courses awaiting review.
 
@@ -614,6 +897,10 @@ def get_review_queue(
     the current cycle. The Admin tier may take any seat, so it isn't
     narrowed. The Pending screen passes it; the other screens list every
     course in their status.
+
+    `visible_to` hides the courses that user may not see while the staged
+    review flow is on (review_service.seat_visibility_q): every screen passes
+    it, so a course shows only to the role at its current seat.
     """
 
     statuses = status_in or [CourseStatus.SUBMITTED, CourseStatus.IN_REVIEW]
@@ -628,6 +915,9 @@ def get_review_queue(
             "distribution_channels",
         )
     )
+
+    if visible_to is not None:
+        queryset = review_service.restrict_to_seat_role(queryset, user=visible_to)
 
     # Both conditions ride in the same SQL (the lockout is a subquery), so
     # the queue's query count doesn't grow with the rows it returns.

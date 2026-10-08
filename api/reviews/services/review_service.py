@@ -1,7 +1,7 @@
 import logging
 
 from django.db import transaction
-from django.db.models import QuerySet
+from django.db.models import Q, QuerySet
 from django.utils import timezone
 from rest_framework import exceptions
 
@@ -10,10 +10,11 @@ from api.achievements.services import award_service
 from api.authentication.services import activity_service
 from api.authorization import codenames
 from api.authorization.services import permission_service
-from api.courses.enums import CourseSourceType, CourseStatus
+from api.courses.enums import CourseSourceType, CourseStatus, VideoProvider
 from api.courses.models import Course
 from api.courses.services import course_update_alert_service
 from api.notification.models import Notification, NotificationPreference
+from api.platform.services import platform_settings_service
 from api.payments.services.transaction_services import effect_course_payment
 from api.reviews.enums import ReviewActionType, ReviewStage
 from api.reviews.models import ReviewAction, ReviewAssignment
@@ -40,6 +41,30 @@ SEAT_ROLES = {
     ReviewStage.VERIFICATION: (UserRole.STAFF_VERIFIER,),
 }
 CONTENT_REVIEW_SEATS = tuple(SEAT_ROLES)
+
+#: The same seats with the staged review flow on: Writers read the text at the
+#: first seat and watch the video at the second. Same seats and order, so only
+#: who may sit them differs.
+STAGED_SEAT_ROLES = {
+    ReviewStage.CONTENT: (UserRole.STAFF_WRITER,),
+    ReviewStage.SECOND_REVIEW: (UserRole.STAFF_WRITER,),
+    ReviewStage.VERIFICATION: (UserRole.STAFF_VERIFIER,),
+}
+
+
+#: Who prices and publishes a course under the staged review flow: the
+#: Approver's turn, the last seat of the chain. Workflow like the seat roles,
+#: so widening a role's grants cannot widen who may publish.
+APPROVER_ROLES = (UserRole.STAFF_APPROVER, UserRole.SUPER_ADMIN)
+
+
+def seat_roles() -> dict:
+    """Who may take each content seat under the review flow now in force."""
+
+    if platform_settings_service.is_staged_review_flow_enabled():
+        return STAGED_SEAT_ROLES
+    return SEAT_ROLES
+
 
 #: Who may sit the QA seat that follows content review. Like SEAT_ROLES this is
 #: workflow, not a permission: holding Approve Course lets you decide seats your
@@ -74,7 +99,7 @@ def claimable_seats(*, user: User) -> tuple:
 
     if is_admin_tier(user):
         return CONTENT_REVIEW_SEATS
-    return tuple(seat for seat, roles in SEAT_ROLES.items() if user.role in roles)
+    return tuple(seat for seat, roles in seat_roles().items() if user.role in roles)
 
 
 def decided_seats(*, user: User) -> QuerySet[ReviewAssignment]:
@@ -91,6 +116,78 @@ def decided_seats(*, user: User) -> QuerySet[ReviewAssignment]:
     )
 
 
+def seat_visibility_q(*, user: User) -> Q | None:
+    """Which courses `user` may see while the staged review flow is on, as a
+    filter on Course - or None when nothing is hidden from them.
+
+    A course is visible only to the role sitting its current seat, and to the
+    Super Admin, who sees everything. The seat moves with the course, so a
+    course at First Review is shown to Writers alone, and reaches the
+    Verifier, the QA Reviewer and the Approver only as it gets to them:
+
+    - Submitted / In Review: the roles that sit its review seat (a course with
+      no seat recorded is at First Review, as everywhere else).
+    - Needs Revision: the roles of the seat that sent it back, who will review
+      it again.
+    - QA Verification: the QA Reviewer. Approved: the Approver.
+    - Published: everyone with access to courses, the work is done.
+    - Draft and Awaiting Video belong to the creator, the developer or the
+      production engine, so no reviewer role sees them.
+
+    None while the flow is off, where the queue shows what it always did.
+    """
+
+    if user.is_superuser or user.role == UserRole.SUPER_ADMIN:
+        return None
+    if not platform_settings_service.is_staged_review_flow_enabled():
+        return None
+
+    seats = [seat for seat, roles in STAGED_SEAT_ROLES.items() if user.role in roles]
+    sits_qa = user.role in QA_SEAT_ROLES
+    visible = Q(status=CourseStatus.PUBLISHED)
+    if seats:
+        at_a_seat = Q(review_stage__in=seats)
+        if ReviewStage.CONTENT in seats:
+            at_a_seat |= Q(review_stage="")
+        visible |= Q(status__in=REVIEWABLE_STATUSES) & at_a_seat
+    revision_seats = [*seats, *([ReviewStage.QA] if sits_qa else [])]
+    if revision_seats:
+        visible |= Q(
+            status=CourseStatus.NEEDS_REVISION, revision_seat__in=revision_seats
+        )
+    if sits_qa:
+        visible |= Q(status=CourseStatus.QA_VERIFICATION)
+    if user.role in APPROVER_ROLES:
+        visible |= Q(status=CourseStatus.APPROVED)
+    return visible
+
+
+def restrict_to_seat_role(queryset: QuerySet[Course], *, user: User) -> QuerySet[Course]:
+    """`queryset` narrowed to the courses `user` may see (seat_visibility_q).
+
+    The narrowing is in the query, so a hidden course is a 404 on its detail
+    and its actions, exactly like one that does not exist."""
+
+    visible = seat_visibility_q(user=user)
+    return queryset if visible is None else queryset.filter(visible)
+
+
+def reset_seat(*, course: Course, seat: str) -> None:
+    """Hand `seat` back to the pool: nobody holds it and it is undecided.
+
+    Used when a course re-enters the queue at a seat it already passed or was
+    rejected at. Only that seat's row changes, so the other seats keep their
+    completion stamps and four eyes still reads the whole cycle correctly.
+    """
+
+    ReviewAssignment.objects.filter(course=course, stage=seat).update(
+        reviewer=None,
+        claimed_at=None,
+        completed_at=None,
+        updated_datetime=timezone.now(),
+    )
+
+
 def open_seat(*, course: Course, verb: str) -> str:
     """Return the content seat `course` is at, or 400 when it isn't at one.
 
@@ -104,7 +201,7 @@ def open_seat(*, course: Course, verb: str) -> str:
     """
 
     seat = course.review_stage or ReviewStage.CONTENT
-    if course.status not in REVIEWABLE_STATUSES or seat not in SEAT_ROLES:
+    if course.status not in REVIEWABLE_STATUSES or seat not in CONTENT_REVIEW_SEATS:
         raise exceptions.ValidationError(
             f"Course cannot be {verb} from status '{course.status}'."
         )
@@ -242,7 +339,7 @@ def assignable_reviewers(*, actor: User, course: Course) -> list[dict]:
 
     permission_service.require_permission(actor, codenames.COURSES_ASSIGN)
     seat = _seat_for_assignment(course)
-    roles = QA_SEAT_ROLES if seat == ReviewStage.QA else SEAT_ROLES[seat]
+    roles = QA_SEAT_ROLES if seat == ReviewStage.QA else seat_roles()[seat]
     may_review = RolePermission.objects.filter(
         role_id=OuterRef("access_role_id"),
         codename__in=(codenames.COURSES_APPROVE, codenames.COURSES_REJECT),
@@ -344,7 +441,7 @@ def require_seat_access(*, course: Course, seat: str, user: User) -> None:
 
     label = ReviewStage(seat).label
     if seat not in claimable_seats(user=user):
-        roles = " or ".join(role.label for role in SEAT_ROLES[seat])
+        roles = " or ".join(role.label for role in seat_roles()[seat])
         raise exceptions.PermissionDenied(f"The {label} seat is for a {roles}.")
 
     earlier_seats = CONTENT_REVIEW_SEATS[: CONTENT_REVIEW_SEATS.index(seat)]
@@ -501,6 +598,25 @@ def approve_course(
     return review_action
 
 
+def _return_for_revision(*, course: Course, seat: str) -> str:
+    """Send `course` back to its creator after `seat` rejected it, and say
+    where it went, for the notifications.
+
+    The staged review flow parks it at Needs Revision and remembers the seat,
+    so a resubmission resumes there. Otherwise it returns to Draft and a
+    resubmission restarts the whole chain. Sets fields only: the caller
+    saves them.
+    """
+
+    course.review_stage = ""
+    if platform_settings_service.is_staged_review_flow_enabled():
+        course.status = CourseStatus.NEEDS_REVISION
+        course.revision_seat = seat
+        return "Needs Revision"
+    course.status = CourseStatus.DRAFT
+    return "Draft"
+
+
 def reject_course(
     *,
     course: Course,
@@ -508,14 +624,17 @@ def reject_course(
     feedback: dict,
     flags: list[dict] | None = None,
 ) -> ReviewAction:
-    """Reject the content seat a course is at and send it back to Draft.
+    """Reject the content seat a course is at and send it back to its creator.
 
     A rejection at any seat ends the cycle. Per PRD "Returns to Draft.
     Creator revises." the course status reverts directly to Draft
     (CourseStatus.REJECTED is never persisted on Course.status - the
     rejection itself is preserved via the ReviewAction record and
     Course.rejected_at), and resubmitting restarts the chain at First
-    Review with every seat cleared. The claimant, four-eyes, lock and
+    Review with every seat cleared. With the staged review flow on, the
+    course goes to Needs Revision instead, remembering the rejecting seat
+    (Course.revision_seat), and resubmitting resumes at that seat with the
+    earlier seats' decisions kept. The claimant, four-eyes, lock and
     stale-course rules are approve_content's.
 
     Requires a non-empty feedback["summary"]. `flags`, when supplied, is a
@@ -547,14 +666,14 @@ def reject_course(
         now = timezone.now()
         assignment.completed_at = now
         assignment.save(update_fields=["completed_at", "updated_datetime"])
-        course.status = CourseStatus.DRAFT
-        course.review_stage = ""
+        returned_to = _return_for_revision(course=course, seat=seat)
         course.rejected_at = now
         course.updated_by = reviewer
         course.save(
             update_fields=[
                 "status",
                 "review_stage",
+                "revision_seat",
                 "rejected_at",
                 "updated_by",
                 "updated_datetime",
@@ -564,14 +683,14 @@ def reject_course(
         Notification.emit_in_app_notification(
             receivers=[course.creator],
             title="Course rejected",
-            content=f"Your course '{course.title}' was rejected and returned to Draft for revision.",
+            content=f"Your course '{course.title}' was rejected and returned to {returned_to} for revision.",
             metadata={"course_id": course.id, "feedback": feedback},
         )
         course_update_alert_service.notify_course_status_change(
             course=course,
             actor=reviewer,
             title="Course rejected",
-            content=f"'{course.title}' was rejected and returned to Draft.",
+            content=f"'{course.title}' was rejected and returned to {returned_to}.",
         )
         _notify_mie_revision(course=course, review_action=review_action)
         activity_service.log_activity(
@@ -664,6 +783,50 @@ def _create_review_flags(*, review_action: ReviewAction, flags: list[dict]) -> N
 # Ported from upstream; complements the single-stage functions above.
 
 
+def _video_provider_for_approved_text(course: Course) -> str:
+    """Who supplies the video of a course whose text just passed the first
+    seat. A developer's course follows the developer (or, for the platform's
+    own crawler account, the production engine); a creator's own course is
+    left blank until the creator chooses.
+
+    Local import: api.mie imports course_service, which imports this module.
+    """
+
+    if course.source_type != CourseSourceType.DEVELOPER_API:
+        return ""
+    from api.mie.services import course_push_service
+
+    return course_push_service.video_provider_for(course=course)
+
+
+def _announce_text_approved(*, course: Course) -> None:
+    """Tell whoever must supply the video that the text passed.
+
+    A creator is asked whether they will add it; a developer is sent the
+    COURSE_TEXT_APPROVED webhook; the production engine is not told here.
+    """
+
+    if course.source_type == CourseSourceType.DEVELOPER_API:
+        if course.video_provider == VideoProvider.DEVELOPER:
+            from api.mie.enums import WebhookEventType
+            from api.mie.services import course_push_service
+
+            course_push_service.record_course_event(
+                course=course, event_type=WebhookEventType.COURSE_TEXT_APPROVED
+            )
+        return
+    if course.creator_id:
+        Notification.emit_in_app_notification(
+            receivers=[course.creator],
+            title="Text approved - add your video?",
+            content=(
+                f"The text of '{course.title}' passed review. Add the video "
+                "yourself, or leave it to video production."
+            ),
+            metadata={"course_id": course.id, "action": "video_decision"},
+        )
+
+
 def approve_content(
     *, course: Course, reviewer: User, feedback: dict | None = None
 ) -> ReviewAction:
@@ -673,7 +836,10 @@ def approve_content(
     Review, Verification. Each approval completes its own seat and returns
     the course to the pending queue at the next one; only the last seat ends
     content review and moves the course to mandatory QA verification. The
-    creator hears once, at that point, rather than after every seat.
+    creator hears once, at that point, rather than after every seat. With
+    the staged review flow on, approving the first seat instead parks the
+    course at Awaiting Video, and the video submission brings it to the
+    second seat.
 
     The claimant, four-eyes, lock and stale-course rules are reject_course's.
     """
@@ -697,14 +863,33 @@ def approve_content(
 
         # The last seat has no successor, which is what ends content review.
         next_seat = NEXT_SEAT[seat]
-        course.status = (
-            CourseStatus.SUBMITTED if next_seat else CourseStatus.QA_VERIFICATION
+        # With the staged flow the first seat reads the text only: approving
+        # it parks the course until its video is attached.
+        awaiting_video = (
+            seat == ReviewStage.CONTENT
+            and platform_settings_service.is_staged_review_flow_enabled()
         )
-        course.review_stage = next_seat or ""
+        if awaiting_video:
+            course.status = CourseStatus.AWAITING_VIDEO
+            course.review_stage = ""
+            course.video_provider = _video_provider_for_approved_text(course)
+        else:
+            course.status = (
+                CourseStatus.SUBMITTED if next_seat else CourseStatus.QA_VERIFICATION
+            )
+            course.review_stage = next_seat or ""
         course.updated_by = reviewer
         course.save(
-            update_fields=["status", "review_stage", "updated_by", "updated_datetime"]
+            update_fields=[
+                "status",
+                "review_stage",
+                "video_provider",
+                "updated_by",
+                "updated_datetime",
+            ]
         )
+        if awaiting_video:
+            _announce_text_approved(course=course)
         activity_service.log_activity(
             user=reviewer,
             category=UserActivityCategoryEnums.APPROVAL,
@@ -826,11 +1011,26 @@ def reject_qa(*, course: Course, reviewer: User, feedback: dict) -> ReviewAction
             stage=ReviewStage.QA,
             feedback=feedback,
         )
-        course.status = CourseStatus.DRAFT
+        # QA's decision is recorded on its assignment, as approve_qa does.
+        assignment, _ = ReviewAssignment.objects.get_or_create(
+            course=course, stage=ReviewStage.QA
+        )
+        assignment.reviewer = reviewer
+        assignment.claimed_at = assignment.claimed_at or timezone.now()
+        assignment.completed_at = timezone.now()
+        assignment.save(update_fields=["reviewer", "claimed_at", "completed_at", "updated_datetime"])
+        returned_to = _return_for_revision(course=course, seat=ReviewStage.QA)
         course.rejected_at = timezone.now()
         course.updated_by = reviewer
         course.save(
-            update_fields=["status", "rejected_at", "updated_by", "updated_datetime"]
+            update_fields=[
+                "status",
+                "review_stage",
+                "revision_seat",
+                "rejected_at",
+                "updated_by",
+                "updated_datetime",
+            ]
         )
         if course.creator_id:
             Notification.emit_in_app_notification(
@@ -847,7 +1047,7 @@ def reject_qa(*, course: Course, reviewer: User, feedback: dict) -> ReviewAction
             course=course,
             actor=reviewer,
             title="Course rejected in QA",
-            content=f"'{course.title}' failed QA and was returned to Draft.",
+            content=f"'{course.title}' failed QA and was returned to {returned_to}.",
         )
         _notify_mie_revision(course=course, review_action=action)
         activity_service.log_activity(

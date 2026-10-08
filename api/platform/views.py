@@ -27,6 +27,7 @@ from api.authorization import codenames
 from api.authorization.permissions import Perm
 from api.authorization.services import permission_service
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
+from shared.spectacular.responses import inline_error_response
 
 _SETTINGS_EXAMPLE = {
     "id": "2e9c4a71-58b3-4d06-9f27-6a1e8c0b5d34",
@@ -121,7 +122,10 @@ class PlatformSettingsView(APIView):
             "keeps the price snapshot it was submitted with, and courses "
             "already approved are never re-validated. Raising a minimum can "
             "therefore make an in-progress draft invalid at submission time. "
-            "An empty body returns 400 rather than silently doing nothing."
+            "An empty body returns 400 rather than silently doing nothing. "
+            "`staged_review_flow_enabled` switches the whole review flow, so "
+            "changing it returns 409 while any course is in review, awaiting "
+            "video or revision, or approved but unpublished."
         ),
         tags=["Admin — Platform Settings"],
         request=PlatformSettingsUpdateSerializer,
@@ -153,6 +157,31 @@ class PlatformSettingsView(APIView):
             **STANDARD_ERROR_RESPONSES["validation"],
             **STANDARD_ERROR_RESPONSES["auth"],
             **STANDARD_ERROR_RESPONSES["permission"],
+            409: inline_error_response(
+                description=(
+                    "`staged_review_flow_enabled` cannot change while courses "
+                    "are in review, awaiting video or revision, or approved "
+                    "but unpublished."
+                ),
+                examples=[
+                    OpenApiExample(
+                        name="Courses in flight",
+                        value={
+                            "errors": [
+                                {
+                                    "type": "client_error",
+                                    "code": "staged_review_flow_in_flight",
+                                    "message": (
+                                        "The review flow cannot be switched "
+                                        "while courses are in review."
+                                    ),
+                                    "field_name": None,
+                                }
+                            ]
+                        },
+                    )
+                ],
+            ),
             **STANDARD_ERROR_RESPONSES["server"],
         },
     )

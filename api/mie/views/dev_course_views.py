@@ -15,9 +15,11 @@ from api.mie.serializers.course_push_serializer import (
     CoursePushSerializer,
     DevCourseSerializer,
 )
+from api.mie.serializers.course_video_push_serializer import CourseVideoPushSerializer
 from api.mie.services import course_push_service
 from api.mie.services.documentation_service import SAMPLE_COURSE_PUSH
 from api.mie.throttling import MieDeveloperRateThrottle
+from api.platform.services import platform_settings_service
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 from shared.serializers.storage_serializer import (
     UploadRequestSerializer,
@@ -89,12 +91,15 @@ class MieCoursePushView(APIView):
             "structural check at submit - nothing is stored and every "
             "failure is returned. The first push creates the course. A later "
             "push is accepted only while a reviewer has sent the course back "
-            "to DRAFT, and replaces its content entirely; while the course "
-            "is in review or published it returns 409. Media fields take any "
+            "to DRAFT or NEEDS_REVISION, and replaces its content entirely; "
+            "while the course is in review or published it returns 409. Media fields take any "
             "HTTPS URL - your own host, a video platform, or our storage via "
             "`POST /mie/v1/uploads/presign/`. Lesson videos are optional; the "
-            "course preview video is required. `COURSE_SUBMITTED` fires on "
-            "success."
+            "course preview video is required - unless the platform reviews "
+            "text before video, in which case send the course with no video "
+            "at all and send it afterwards with "
+            "`POST /mie/v1/submissions/{id}/course/video/`. "
+            "`COURSE_SUBMITTED` fires on success."
         ),
         tags=["Developer — MIE Courses"],
         parameters=[SUBMISSION_ID_PARAMETER],
@@ -179,7 +184,14 @@ class MieCoursePushView(APIView):
         },
     )
     def post(self, request, submission_id):
-        serializer = CoursePushSerializer(data=request.data)
+        serializer = CoursePushSerializer(
+            data=request.data,
+            context={
+                "staged_review_flow": (
+                    platform_settings_service.is_staged_review_flow_enabled()
+                )
+            },
+        )
         serializer.is_valid(raise_exception=True)
         course = course_push_service.push_course(
             developer=request.auth,
@@ -225,6 +237,130 @@ class MieCoursePushView(APIView):
             DevCourseSerializer(
                 course_push_service.course_status(
                     developer=request.auth, submission_id=submission_id
+                )
+            ).data
+        )
+
+
+class MieCourseVideoView(APIView):
+    """Send the video for a course whose text passed the first review seat."""
+
+    authentication_classes = [MieDeveloperAuthentication]
+    permission_classes = [IsMieDeveloper]
+    throttle_scope = "mie_course_push"
+    throttle_classes = [MieDeveloperRateThrottle]
+
+    @extend_schema(
+        summary="Send the video for a course whose text was approved",
+        description=(
+            "Attaches the course's preview video and each video lesson's "
+            "media, and sends the course to the video review seat.\n\n"
+            "Called when `COURSE_TEXT_APPROVED` fires - the text of your "
+            "course passed the first review seat and the platform is waiting "
+            "for the video - and again after a later seat sends the video "
+            "back (`COURSE_REVISION_REQUESTED`).\n\n"
+            "**Auth:** Requires a valid MIE developer API key "
+            "(`X-MIE-Api-Key`) or a platform Bearer session token.\n\n"
+            "**Prerequisites:** The idea is yours and its course is "
+            "AWAITING_VIDEO (or NEEDS_REVISION after its video was already "
+            "attached). The platform must be the kind that reviews text "
+            "before video, and the video must be yours to supply: a course "
+            "from the platform's own crawler is produced by the platform.\n\n"
+            "**Important:** All or nothing. Lessons are addressed by the "
+            "`order` of their module and of the lesson in your text push. "
+            "Every VIDEO lesson needs a `video_url` or `embedded_link`, and "
+            "the preview video is required; every text rule is checked "
+            "again. Nothing is stored if any rule fails. `COURSE_SUBMITTED` "
+            "fires on success."
+        ),
+        tags=["Developer — MIE Courses"],
+        parameters=[SUBMISSION_ID_PARAMETER],
+        request=CourseVideoPushSerializer,
+        examples=[
+            OpenApiExample(
+                "Course video",
+                value={
+                    "preview_video_url": "https://cdn.example.com/rust/preview.mp4",
+                    "lessons": [
+                        {
+                            "module_order": 1,
+                            "lesson_order": 1,
+                            "video_url": "https://cdn.example.com/rust/m1l1.mp4",
+                        }
+                    ],
+                },
+                request_only=True,
+            ),
+        ],
+        responses={
+            status.HTTP_200_OK: OpenApiResponse(
+                DevCourseSerializer,
+                description="Video attached; the course is waiting at the video review seat.",
+            ),
+            status.HTTP_400_BAD_REQUEST: OpenApiResponse(
+                description=(
+                    "A field is invalid, a lesson does not exist, or the "
+                    "course fails the structural check. Nothing was stored."
+                ),
+                examples=[
+                    OpenApiExample(
+                        "Unknown lesson",
+                        value=_error(
+                            "invalid",
+                            "The course has no lesson at module 9, lesson 1.",
+                            "lessons",
+                        ),
+                    ),
+                    OpenApiExample(
+                        "Preview video missing",
+                        value=_error(
+                            "invalid",
+                            "Course must have a preview video before submission (BR-015).",
+                            "structural_standards",
+                        ),
+                    ),
+                ],
+            ),
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["not_found"],
+            status.HTTP_409_CONFLICT: OpenApiResponse(
+                description=(
+                    "The course is not waiting for its video, or the "
+                    "platform supplies it."
+                ),
+                examples=[
+                    OpenApiExample(
+                        "Not awaiting video",
+                        value=_error(
+                            "course_not_awaiting_video",
+                            "This course is not waiting for its video.",
+                        ),
+                    ),
+                    OpenApiExample(
+                        "Platform supplies the video",
+                        value=_error(
+                            "video_provider_conflict",
+                            "The production engine supplies the video for this course.",
+                        ),
+                    ),
+                ],
+            ),
+            **STANDARD_ERROR_RESPONSES["rate_limited"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
+    def post(self, request, submission_id):
+        serializer = CourseVideoPushSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        course = course_push_service.push_video(
+            developer=request.auth,
+            submission_id=submission_id,
+            data=serializer.validated_data,
+        )
+        return Response(
+            DevCourseSerializer(
+                course_push_service.status_payload(
+                    course=course, submission=course.mie_submission
                 )
             ).data
         )

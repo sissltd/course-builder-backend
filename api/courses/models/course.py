@@ -5,9 +5,11 @@ from django.utils.translation import gettext_lazy as _
 
 from api.courses.constants import COURSE_MEDIA_URL_MAX_LENGTH
 from api.courses.enums import (
+    EDITABLE_COURSE_STATUSES,
     CourseSourceType,
     CourseStatus,
     DifficultyLevel,
+    VideoProvider,
 )
 from api.reviews.enums import ReviewStage
 from core.mixins import (
@@ -83,6 +85,41 @@ class Course(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMi
             "is tracked by status alone."
         ),
     )
+    revision_seat = models.CharField(
+        verbose_name=_("Revision Seat"),
+        max_length=20,
+        choices=ReviewStage.choices,
+        blank=True,
+        default="",
+        help_text=_(
+            "The review seat that sent this course back for revision. A "
+            "resubmission resumes at this seat instead of restarting the "
+            "chain. Set only while the course is Needs Revision (staged "
+            "review flow)."
+        ),
+    )
+    video_provider = models.CharField(
+        verbose_name=_("Video Provider"),
+        max_length=20,
+        choices=VideoProvider.choices,
+        blank=True,
+        default="",
+        help_text=_(
+            "Who supplies this course's video after its text passes the "
+            "first review seat. Decides who may attach the video "
+            "(staged review flow)."
+        ),
+    )
+    video_attached_at = models.DateTimeField(
+        verbose_name=_("Video Attached At"),
+        null=True,
+        blank=True,
+        help_text=_(
+            "When the video was submitted for review (staged review flow). "
+            "Null while the course is still text only: before this is set "
+            "the course may carry no video, after it the video is required."
+        ),
+    )
     creator_price_snapshot = models.DecimalField(
         verbose_name=_("Creator Price Snapshot"),
         max_digits=10,
@@ -99,7 +136,9 @@ class Course(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMi
         blank=True,
         default="",
         help_text=_(
-            "1-2 minute course overview video URL, required before submission (BR-015)."
+            "1-2 minute course overview video URL, required before submission "
+            "(BR-015). With the staged review flow it is instead refused at "
+            "submission and required when the video is submitted."
         ),
     )
     thumbnail_url = models.URLField(
@@ -254,3 +293,9 @@ class Course(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMi
         """Use the course title as the human-readable label."""
 
         return self.title
+
+    @property
+    def is_editable(self) -> bool:
+        """Whether the creator may still change this course's content."""
+
+        return self.status in EDITABLE_COURSE_STATUSES
