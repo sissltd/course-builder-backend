@@ -1,3 +1,6 @@
+from api.courses.enums import IN_FLIGHT_COURSE_STATUSES
+from api.courses.models import Course
+from api.platform.exceptions import StagedReviewFlowInFlight
 from api.platform.models import PlatformSettings
 
 UPDATABLE_FIELDS = {
@@ -25,8 +28,9 @@ UPDATABLE_FIELDS = {
     "payment_processor",
     "kyc_provider",
     "liveness_threshold",
-    "auto_credit_duration_hours",   
+    "auto_credit_duration_hours",
     "withdrawal_require_verification",
+    "staged_review_flow_enabled",
 }
 
 
@@ -40,11 +44,26 @@ def get_settings() -> PlatformSettings:
     return settings_row
 
 
+def is_staged_review_flow_enabled() -> bool:
+    """Whether courses are reviewed in the staged flow (text first, video
+    second, resume at the rejecting seat). Off until an admin switches it on."""
+
+    return get_settings().staged_review_flow_enabled
+
+
 def update_settings(**fields) -> PlatformSettings:
     """Apply whichever settings fields were provided (all optional)."""
 
     settings_row = get_settings()
     update_fields = ["updated_datetime"]
+
+    new_flow = fields.get("staged_review_flow_enabled")
+    if (
+        new_flow is not None
+        and new_flow != settings_row.staged_review_flow_enabled
+        and Course.objects.filter(status__in=IN_FLIGHT_COURSE_STATUSES).exists()
+    ):
+        raise StagedReviewFlowInFlight()
 
     for field, value in fields.items():
         if field in UPDATABLE_FIELDS and value is not None:

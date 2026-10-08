@@ -26,8 +26,8 @@ from rest_framework import exceptions
 
 from api.authentication.services.activity_service import log_activity
 from api.mie.enums import MieSourceType, SubmissionStatus, WebhookEventType
-from api.mie.models import CourseSubmission, SubmissionRejectionReason, WebhookEvent
-from api.mie.services import guardrail_service
+from api.mie.models import CourseSubmission, SubmissionRejectionReason
+from api.mie.services import guardrail_service, webhook_endpoint_service
 from api.users.enums import (
     UserActivityActionEnums,
     UserActivityCategoryEnums,
@@ -94,7 +94,7 @@ def decide_submission(
             submission.rejection_note = rejection_note or submission.rejection_note
         submission.save()
 
-        WebhookEvent.objects.create(
+        webhook_endpoint_service.record_event(
             submission=submission,
             event_type=WebhookEventType.SUBMISSION_APPROVED
             if approve
@@ -179,13 +179,14 @@ def decide_submissions_bulk(
     """Approve or reject many ideas at once, from the Recommendations screen.
 
     Validated as one batch, then written as one batch: whatever the number
-    of ideas, this costs two SELECTs, one UPDATE and two INSERTs, so a
-    fifty-row selection is no more expensive per row than a single one.
+    of ideas, this costs three SELECTs (the ideas, then their developers'
+    webhook endpoints), one UPDATE and two INSERTs, so a fifty-row
+    selection is no more expensive per row than a single one.
     An id matching nothing fails the whole call before any write, so a
     half-applied selection is impossible.
 
-    Each idea still gets its own webhook event and audit row, exactly as a
-    one-at-a-time decision would.
+    Each idea still gets its own webhook events (one per endpoint that takes
+    the decision) and audit row, exactly as a one-at-a-time decision would.
     """
 
     permission_service.require_permission(actor, codenames.MIE_APPROVE_TOPIC_PROPOSALS)
@@ -241,18 +242,17 @@ def decide_submissions_bulk(
             ],
             batch_size=BULK_DECISION_LIMIT,
         )
-        WebhookEvent.objects.bulk_create(
+        webhook_endpoint_service.record_events(
             [
-                WebhookEvent(
-                    submission=submission,
-                    event_type=WebhookEventType.SUBMISSION_APPROVED
+                (
+                    submission,
+                    WebhookEventType.SUBMISSION_APPROVED
                     if approve
                     else WebhookEventType.SUBMISSION_REJECTED,
-                    payload=_decision_payload(submission),
+                    _decision_payload(submission),
                 )
                 for submission in submissions
-            ],
-            batch_size=BULK_DECISION_LIMIT,
+            ]
         )
         # Built rather than routed through activity_service.log_activity: the
         # helper writes one row per call, which would put an INSERT per idea
@@ -332,7 +332,7 @@ def set_payout_bypass(*, actor, submission: CourseSubmission, bypass: bool) -> C
     submission.payout_bypass = bypass
     submission.save(update_fields=["payout_bypass", "updated_datetime"])
 
-    WebhookEvent.objects.create(
+    webhook_endpoint_service.record_event(
         submission=submission,
         event_type=WebhookEventType.SUBMISSION_PAYOUT_BYPASS_UPDATED,
         payload=_bypass_payload(submission),

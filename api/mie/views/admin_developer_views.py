@@ -4,12 +4,13 @@ from drf_spectacular.utils import (
     OpenApiResponse,
     extend_schema,
 )
+from django.db.models import Prefetch
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from api.mie.enums import DeveloperAccountStatus, MiePlanType
-from api.mie.models import DeveloperAccount
+from api.mie.models import DeveloperAccount, WebhookEndpoint
 from api.mie.serializers.developer_admin_serializer import (
     DeveloperAccountAdminSerializer,
     DeveloperActionResponseSerializer,
@@ -32,7 +33,13 @@ class MieDeveloperAdminViewSet(viewsets.ReadOnlyModelViewSet):
     material; re-approval issues fresh credentials.
     """
 
-    queryset = DeveloperAccount.objects.order_by("-created_datetime")
+    queryset = DeveloperAccount.objects.order_by("-created_datetime").prefetch_related(
+        Prefetch(
+            "webhook_endpoints",
+            queryset=WebhookEndpoint.objects.filter(is_deleted=False),
+            to_attr="live_webhook_endpoints",
+        )
+    )
     serializer_class = DeveloperAccountAdminSerializer
     permission_classes = [Perm(codenames.MIE_MANAGE_CONSOLE)]
     lookup_field = "id"
@@ -91,7 +98,15 @@ class MieDeveloperAdminViewSet(viewsets.ReadOnlyModelViewSet):
                             {
                                 "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
                                 "email": "dev@studio.io",
-                                "webhook_url": "https://hooks.studio.io/mie",
+                                "webhook_endpoints": [
+                                    {
+                                        "id": "5b1f0c9e-2d4a-4f7e-9a3b-8c6d1e2f3a4b",
+                                        "url": "https://hooks.studio.io/mie",
+                                        "events": ["all"],
+                                        "created_datetime": "2026-08-23T08:55:00Z",
+                                        "updated_datetime": "2026-08-23T08:55:00Z",
+                                    }
+                                ],
                                 "status": "APPROVED",
                                 "plan_type": "PAID_PER_SUBMISSION",
                                 "source_type": "EXTERNAL",
@@ -138,7 +153,15 @@ class MieDeveloperAdminViewSet(viewsets.ReadOnlyModelViewSet):
                         value={
                             "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
                             "email": "dev@studio.io",
-                            "webhook_url": "https://hooks.studio.io/mie",
+                            "webhook_endpoints": [
+                                    {
+                                        "id": "5b1f0c9e-2d4a-4f7e-9a3b-8c6d1e2f3a4b",
+                                        "url": "https://hooks.studio.io/mie",
+                                        "events": ["all"],
+                                        "created_datetime": "2026-08-23T08:55:00Z",
+                                        "updated_datetime": "2026-08-23T08:55:00Z",
+                                    }
+                                ],
                             "status": "PENDING",
                             "plan_type": "PAID_PER_SUBMISSION",
                             "api_key_preview": None,
@@ -199,7 +222,15 @@ class MieDeveloperAdminViewSet(viewsets.ReadOnlyModelViewSet):
                         value={
                             "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
                             "email": "dev@studio.io",
-                            "webhook_url": "https://hooks.studio.io/mie",
+                            "webhook_endpoints": [
+                                    {
+                                        "id": "5b1f0c9e-2d4a-4f7e-9a3b-8c6d1e2f3a4b",
+                                        "url": "https://hooks.studio.io/mie",
+                                        "events": ["all"],
+                                        "created_datetime": "2026-08-23T08:55:00Z",
+                                        "updated_datetime": "2026-08-23T08:55:00Z",
+                                    }
+                                ],
                             "status": "PENDING",
                             "plan_type": "PAID_PER_SUBMISSION",
                             "api_key_preview": None,
@@ -258,7 +289,15 @@ class MieDeveloperAdminViewSet(viewsets.ReadOnlyModelViewSet):
                             "account": {
                                 "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
                                 "email": "dev@studio.io",
-                                "webhook_url": "https://hooks.studio.io/mie",
+                                "webhook_endpoints": [
+                                    {
+                                        "id": "5b1f0c9e-2d4a-4f7e-9a3b-8c6d1e2f3a4b",
+                                        "url": "https://hooks.studio.io/mie",
+                                        "events": ["all"],
+                                        "created_datetime": "2026-08-23T08:55:00Z",
+                                        "updated_datetime": "2026-08-23T08:55:00Z",
+                                    }
+                                ],
                                 "status": "APPROVED",
                                 "plan_type": "PAID_PER_SUBMISSION",
                                 "source_type": "EXTERNAL",
@@ -278,7 +317,15 @@ class MieDeveloperAdminViewSet(viewsets.ReadOnlyModelViewSet):
                             "account": {
                                 "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
                                 "email": "dev@studio.io",
-                                "webhook_url": "https://hooks.studio.io/mie",
+                                "webhook_endpoints": [
+                                    {
+                                        "id": "5b1f0c9e-2d4a-4f7e-9a3b-8c6d1e2f3a4b",
+                                        "url": "https://hooks.studio.io/mie",
+                                        "events": ["all"],
+                                        "created_datetime": "2026-08-23T08:55:00Z",
+                                        "updated_datetime": "2026-08-23T08:55:00Z",
+                                    }
+                                ],
                                 "status": "APPROVED",
                                 "plan_type": "PAID_PER_SUBMISSION",
                                 "source_type": "EXTERNAL",

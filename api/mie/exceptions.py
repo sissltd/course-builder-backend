@@ -27,3 +27,38 @@ class CourseAlreadyInFlight(APIException):
         "This idea's course is already in review or published. It can only "
         "be replaced after a reviewer sends it back to DRAFT."
     )
+
+
+class WebhookEndpointLimitReached(APIException):
+    """A developer tried to add an endpoint beyond the per-account limit."""
+
+    status_code = status.HTTP_409_CONFLICT
+    default_code = "webhook_endpoint_limit"
+    default_detail = "You already have the maximum number of webhook endpoints."
+
+
+class WebhookEndpointDuplicate(APIException):
+    """A developer tried to register a URL they already have an endpoint for.
+
+    409 rather than 400: the URL is valid; it conflicts with an existing
+    endpoint, which the developer should edit instead.
+    """
+
+    status_code = status.HTTP_409_CONFLICT
+    default_code = "webhook_endpoint_duplicate"
+    default_detail = "You already have a webhook endpoint for this URL. Edit it instead."
+
+
+class LastWebhookEndpoint(APIException):
+    """A developer tried to delete their only endpoint.
+
+    Webhooks are the only push channel, so an account always keeps at least
+    one; the developer changes its URL or events instead.
+    """
+
+    status_code = status.HTTP_409_CONFLICT
+    default_code = "last_webhook_endpoint"
+    default_detail = (
+        "This is your only webhook endpoint. Change its URL or events instead "
+        "of deleting it."
+    )

@@ -150,6 +150,19 @@ class PlatformSettings(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
             "Whether creators must complete identity verification before making withdrawals."
         ),
     )
+    staged_review_flow_enabled = models.BooleanField(
+        verbose_name=_("Staged Review Flow Enabled"),
+        default=False,
+        help_text=_(
+            "Switches course review to the staged flow: courses are "
+            "submitted as text only, the first seat reviews the text, the "
+            "video is attached afterwards and reviewed at the second seat, "
+            "and a rejection returns the course to Needs Revision and "
+            "resumes at the rejecting seat. Only the Approver may price and "
+            "publish. Off keeps the original single-pass review. Cannot be "
+            "changed while any course is in review."
+        ),
+    )
 
     class Meta:
         verbose_name = _("Platform Settings")

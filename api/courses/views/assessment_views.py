@@ -9,7 +9,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from api.collaborators.services import collaborator_service
-from api.courses.enums import AssessmentLevel, CourseStatus
+from api.courses.enums import AssessmentLevel
 from api.courses.models import Course, Lesson, Module
 from api.courses.serializers import AssessmentSerializer, AssessmentWriteSerializer
 from api.courses.services import module_lock_service
@@ -85,7 +85,7 @@ _DRAFT_ONLY_400 = OpenApiResponse(
                     {
                         "type": "validation_error",
                         "code": "invalid",
-                        "message": "Assessments can only be edited while the course is Draft.",
+                        "message": "Assessments can only be edited while the course is Draft or Needs Revision.",
                         "field_name": None,
                     }
                 ]
@@ -225,9 +225,9 @@ class LessonAssessmentView(APIView):
     )
     def put(self, request, course_pk, module_pk, lesson_pk):
         lesson = self._get_lesson(course_pk, module_pk, lesson_pk, request.user)
-        if lesson.module.course.status != CourseStatus.DRAFT:
+        if not lesson.module.course.is_editable:
             raise exceptions.ValidationError(
-                "Assessments can only be edited while the course is Draft."
+                "Assessments can only be edited while the course is Draft or Needs Revision."
             )
         module_lock_service.check_not_locked(
             module=lesson.module, user=request.user
@@ -352,9 +352,9 @@ class ModuleAssessmentView(APIView):
     )
     def put(self, request, course_pk, module_pk):
         module = self._get_module(course_pk, module_pk, request.user)
-        if module.course.status != CourseStatus.DRAFT:
+        if not module.course.is_editable:
             raise exceptions.ValidationError(
-                "Assessments can only be edited while the course is Draft."
+                "Assessments can only be edited while the course is Draft or Needs Revision."
             )
         module_lock_service.check_not_locked(module=module, user=request.user)
 
@@ -473,9 +473,9 @@ class CourseAssessmentView(APIView):
     )
     def put(self, request, course_pk):
         course = self._get_course(course_pk, request.user)
-        if course.status != CourseStatus.DRAFT:
+        if not course.is_editable:
             raise exceptions.ValidationError(
-                "Assessments can only be edited while the course is Draft."
+                "Assessments can only be edited while the course is Draft or Needs Revision."
             )
 
         assessment = getattr(course, "final_assessment", None)

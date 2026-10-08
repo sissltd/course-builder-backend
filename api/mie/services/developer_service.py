@@ -5,6 +5,7 @@ from rest_framework import exceptions
 from api.authentication.services.activity_service import log_activity
 from api.mie.enums import DeveloperAccountStatus, MiePlanType, MieSourceType
 from api.mie.models import DeveloperAccount
+from api.mie.services import webhook_endpoint_service
 from api.mie.services.key_service import issue_credentials, revoke_key
 from api.mie.services.webhook_dispatcher import drop_events_for_rejected_account
 from api.users.enums import (
@@ -21,6 +22,9 @@ from api.authorization.services import permission_service
 def register_developer(*, email: str, webhook_url: str, plan_type: str) -> DeveloperAccount:
     """Create a PENDING account from the minimal registration payload.
 
+    `webhook_url` becomes the account's first webhook endpoint, taking every
+    event; the developer adds more, or narrows it, once approved.
+
     The email is the identity for both API-key issuance and platform OTP
     sign-in, so it is unique across accounts regardless of status.
     """
@@ -29,9 +33,10 @@ def register_developer(*, email: str, webhook_url: str, plan_type: str) -> Devel
         raise exceptions.ValidationError(
             {"email": ["A developer account with this email already exists."]}
         )
-    return DeveloperAccount.objects.create(
-        email=email.lower(), webhook_url=webhook_url, plan_type=plan_type
-    )
+    with transaction.atomic():
+        account = DeveloperAccount.objects.create(email=email.lower(), plan_type=plan_type)
+        webhook_endpoint_service.add_first_endpoint(developer=account, url=webhook_url)
+    return account
 
 
 def approve_developer(*, actor, account: DeveloperAccount) -> str | None:
@@ -133,10 +138,10 @@ def provision_system_account(
     with transaction.atomic():
         account = DeveloperAccount.objects.create(
             email=email.lower(),
-            webhook_url=webhook_url,
             plan_type=MiePlanType.BYPASS_ACCOUNT,
             source_type=MieSourceType.SYSTEM,
         )
+        webhook_endpoint_service.add_first_endpoint(developer=account, url=webhook_url)
         raw_key = approve_developer(actor=actor, account=account)
         log_activity(
             user=actor,

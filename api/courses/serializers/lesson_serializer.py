@@ -361,7 +361,14 @@ class LessonWriteSerializer(serializers.ModelSerializer):
         return normalized
 
     def validate(self, attrs):
-        """A VIDEO lesson should carry at least one media reference."""
+        """A VIDEO lesson should carry at least one media reference.
+
+        With the staged review flow the text is written and reviewed before
+        any video exists, so the reference is not demanded at write time. The
+        caller says so through the `staged_review_flow` context key (absent
+        means off), and the requirement is enforced when the video is
+        submitted instead.
+        """
 
         if "lesson_requirement" in attrs:
             lesson_requirement = attrs.pop("lesson_requirement")
@@ -372,7 +379,9 @@ class LessonWriteSerializer(serializers.ModelSerializer):
         content_type = attrs.get("content_type") or getattr(
             self.instance, "content_type", None
         )
-        if content_type == LessonContentType.VIDEO:
+        if content_type == LessonContentType.VIDEO and not self.context.get(
+            "staged_review_flow", False
+        ):
             has_media = any(
                 attrs.get(field, getattr(self.instance, field, ""))
                 for field in ("video_url", "embedded_link")

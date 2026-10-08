@@ -15,7 +15,7 @@ courses/        # Course, Module, Lesson, content blocks, thumbnails, tags, vers
 quizzes/        # Quiz, Question, QuestionOption — kept separate because it's reused
                 #   from both the lesson editor and (later) student-facing attempts
 collaborators/  # CourseCollaborator + WorkspaceCollaborator
-reviews/        # QualityCheckCriterion, CourseQualityCheck, CourseReview, CourseReviewFlag
+reviews/        # ReviewAction, ReviewAssignment, ReviewFlag, QualityCheckRun, QualityFinding, MediaAsset
 catalog/        # Category, Topic, CategoryRequest — shared lookup data, admin-managed
 ```
 
@@ -44,7 +44,7 @@ Thumbnail           (cover image/video via Add Media modal)
       ↓
 Quality Check        (admin-defined checklist, auto-validated + manual review)
       ↓
-Preview and Submit  → course.status = 'in_review'
+Preview and Submit  → course.status = 'SUBMITTED' (see section 4)
 ```
 
 Collaborators can be invited at any point via the top bar — it's not gated by wizard position, so don't couple it to the step sequence.
@@ -180,28 +180,60 @@ Two tables, not one:
 
 The workflow: whenever the course is saved at any step, re-run validation against every active criterion and upsert the `CourseQualityCheck` rows. Don't compute this lazily only when the Quality Check screen loads — the sidebar badge (orange warning icon on "Course Information") needs to reflect state from other steps too, so it has to be a background/on-save recalculation, not a page-specific check.
 
-`Preview and Submit` flips `course.status` from `draft` → `in_review`. That's the wizard's finish line — anything past this point (`needs_revision`, `rejected`, `approved`) belongs to the review flow, not the creation flow.
+`Preview and Submit` calls `course_service.submit_course`, which runs the structural standards and moves the course from `DRAFT` to `SUBMITTED`. That is the wizard's finish line - everything after it belongs to the review flow (section 4).
 
 ---
 
-## 4. Review flow (admin side, surfaces on the creator dashboard)
+## 4. Review flow
 
-Once a course is `in_review`, an admin (out of scope for this pass — that's the superadmin system we're building later) makes a decision. What I've modeled here is just enough to render the dashboard's "Course details" panel correctly:
+The statuses a `Course` really stores are `DRAFT`, `SUBMITTED`, `IN_REVIEW`, `NEEDS_REVISION`, `AWAITING_VIDEO`, `QA_VERIFICATION`, `APPROVED` and `PUBLISHED` (`ARCHIVED` and `REJECTED` exist in the enum but are never stored). Every move is a service call; there are no model signals. A decision is a `ReviewAction`; the person accountable for a seat is a `ReviewAssignment` (one row per course and seat); a rejection's flagged issues are `ReviewFlag` rows. The older design of `CourseReview` / `CourseReviewFlag` / `CourseQualityCheck` described in earlier versions of this document was never built.
 
-| Field | Model |
-|---|---|
-| Decision (`approved`/`rejected`/`needs_revision`) | `CourseReview.decision` |
-| Overall note | `CourseReview.overall_note` |
-| Specific flagged issue (e.g. "P1 Lesson 2 — Script Length") | `CourseReviewFlag.title` |
-| System-generated message (e.g. "306/500 words below minimum") | `CourseReviewFlag.system_message` |
-| Reviewer's note | `CourseReviewFlag.reviewer_note` |
-| Which lesson/module it's about | `CourseReviewFlag.lesson_id` / `.module_id` (both nullable — a flag can be course-wide) |
+There are two review flows, chosen by the platform setting `PlatformSettings.staged_review_flow_enabled` (off by default; it can only be switched while no course is in review).
 
-I made this a **review round** model (`CourseReview` has many `CourseReviewFlag`s) rather than flags hanging directly off `Course`, because a course can go through revision more than once — you want history of "what was wrong in round 1 vs round 2," not just the current set of flags overwriting the last.
+### Original flow (switch off)
 
-Dashboard summary numbers (`Total courses`, `In Review`, `Needs Revision`, `Rejected`, `Draft/In Progress`) are all just `Course.objects.filter(owner=request.user, status=...).count()` — don't persist these either.
+```
+DRAFT -> SUBMITTED (First Review) -> IN_REVIEW -> SUBMITTED (Second Review) -> ... (Verification)
+      -> QA_VERIFICATION -> APPROVED -> PUBLISHED
+```
 
-`Course.quality_score` (the % bar in the course table) — this one I did persist directly on `Course`, since it's shown in a sortable/filterable table column and recomputing it per row on every dashboard load would be wasteful. Recalculate it whenever `CourseQualityCheck` rows change, same trigger point as the quality check re-validation above.
+The video is part of the submission (a preview video is required, BR-015). First and Second Review take a Creator Reviewer, Verification a Verifier, QA a QA Reviewer; whoever decided an earlier seat cannot take a later one (four eyes). A rejection at any seat returns the course to `DRAFT` and a resubmission restarts at First Review with every seat cleared. Anyone holding `courses.set_pricing` / `courses.publish` can price and publish.
+
+### Staged flow (switch on)
+
+Text is reviewed first and the video is added afterwards:
+
+```
+DRAFT --submit (text only, no video)--> SUBMITTED / First Review (R1, a Writer reads the text)
+R1 approves --> AWAITING_VIDEO
+   creator course:    the creator chooses (POST /courses/{id}/video-decision/) to add the video
+                      themselves (CREATOR) or leave it to video production (PRODUCTION_ENGINE)
+   developer course:  COURSE_TEXT_APPROVED webhook; the developer sends it with
+                      POST /mie/v1/submissions/{id}/course/video/ (DEVELOPER)
+   platform crawler:  video production supplies it (PRODUCTION_ENGINE)
+video submitted (POST /courses/{id}/submit-video/) --> SUBMITTED / Second Review (R2, a Writer watches the video)
+R2 approves --> SUBMITTED / Verification (Verifier checks text and video) --> QA_VERIFICATION
+QA approves --> APPROVED --> the Approver sets prices and publishes ("final production") --> PUBLISHED
+
+Any seat rejects --> NEEDS_REVISION, remembering the seat (Course.revision_seat)
+resubmit (POST /courses/{id}/submit/) --> back at that seat only; earlier seats keep their decisions
+```
+
+Rules that differ from the original flow:
+
+- A course submitted with any video (preview video, lesson video or embed, video content block, video media asset) is refused until it has reached the video stage (`Course.video_attached_at`); once it has, the preview video and a media reference on every video lesson are required instead. One function, `quality_check_service.validate_structural_standards`, applies whichever rule fits, so the reviewers' quality check agrees with submission.
+- **A course is visible only to the role at its current seat, and to the Super Admin** (`review_service.seat_visibility_q`). First Review and the video review show it to Writers, Verification to Verifiers, QA to QA Reviewers, and an approved course to the Approver; it reaches each role only as it arrives. `NEEDS_REVISION` shows to the roles of the seat that sent it back. Published courses stay visible to everyone with course access. Drafts and `AWAITING_VIDEO` courses belong to the creator, developer or production engine, so no reviewer role sees them. The rule is applied in the query on the review queue (lists, screens, detail and every action), `admin/courses`, the creator-side `/courses/` for staff who view every course, global search and the reviewer dashboard counts, so a hidden course is a 404, never a 403.
+- Seats are taken by role: Writers sit First and Second Review (`review_service.STAGED_SEAT_ROLES`), a Verifier Verification, a QA Reviewer QA. Four eyes still applies.
+- Only the Approver (and the Super Admin) may set prices and publish (`course_service.require_approver`). Publishing hands the course to `production_engine.finalize`, which is a no-op until the production engine is built.
+- A creator's course must start from a topic that exists and is active (`course_service.require_approved_topic`): an existing unreserved topic, or one an admin approved after the creator's request (`/topic-reservations/`). A developer's course is gated on its approved idea instead.
+- A `VIDEO` lesson may be written as a script with no media; the media is demanded when the video is submitted.
+- An appeal against a rejection (`/course-appeals/`) works on a `NEEDS_REVISION` course too; an approved appeal resumes at the rejecting seat.
+
+Not built: the production engine itself, so a course whose video production supplies sits at `AWAITING_VIDEO` until it exists; payout to developers; unpublishing or editing after publication.
+
+Dashboard summary numbers are all counts over `Course.status`; they are computed live per request and keyed by every `CourseStatus`, so the new statuses appear without any change.
+
+`Course.quality_score` (the % bar in the course table) is persisted directly on `Course`, since it is shown in a sortable/filterable column.
 
 ---
 
@@ -224,4 +256,4 @@ I don't have the actual "+ Invite" modal (just the empty state and the resulting
 - **Ordering fields everywhere** (`order_index` on modules, lessons, questions, options, objectives, content blocks) — every one of these needs a composite unique index on `(parent_id, order_index)` so two siblings can't silently collide on position. Reordering from the frontend should send the full new order, not incremental moves.
 - **UUID vs SERIAL** — `Course`, `Module`, `Lesson`, `Quiz`, `Question`, `QuestionOption` are UUID since they get exposed in URLs/API responses. Everything else (lookups, join tables, objective/requirement rows) is `SERIAL` since it's internal-only and never referenced directly by the frontend.
 - **Autosave means small transactions.** Every step should be its own atomic update, not one giant "create course" transaction at the end. If the block editor fails halfway through saving 10 blocks, don't leave the lesson half-written — wrap the block list replace in `transaction.atomic()`.
-- **Publish is not in this schema.** `Course.status` includes `published`/`archived` for completeness, but the actual publish action (superadmin review, visibility settings, etc.) is a separate system we're building later — don't wire a `PublishView` against this schema yet.
+- **Publishing is one-way.** `publish_course` creates a `PublishedCourseSnapshot` and marks the SoluDesk `CourseDistribution` published; there is no unpublish, archive or edit-after-publish yet. Coursera and Udemy distribution rows stay `QUEUED` because nothing pushes to them.

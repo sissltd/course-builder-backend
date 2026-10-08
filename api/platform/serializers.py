@@ -38,6 +38,7 @@ class PlatformSettingsSerializer(serializers.ModelSerializer):
             "liveness_threshold",
             "auto_credit_duration_hours",
             "withdrawal_require_verification",
+            "staged_review_flow_enabled",
         ]
         read_only_fields = fields
 
@@ -181,6 +182,15 @@ class PlatformSettingsUpdateSerializer(serializers.Serializer):
     withdrawal_require_verification = serializers.BooleanField(
         required=False,
         help_text="Whether creators must complete identity verification before making withdrawals.",
+    )
+    staged_review_flow_enabled = serializers.BooleanField(
+        required=False,
+        help_text=(
+            "Switch course review to the staged flow (text first, video "
+            "second, resume at the rejecting seat). Refused with 409 while "
+            "any course is in review, awaiting video or revision, or "
+            "approved but unpublished."
+        ),
     )
 
     def validate(self, attrs):

@@ -4,7 +4,7 @@ from django.db import models
 class DeveloperAccountStatus(models.TextChoices):
     """Lifecycle of an external developer account.
 
-    PENDING  -> registered with email + webhook_url, awaiting superadmin
+    PENDING  -> registered with email + a first webhook URL, awaiting superadmin
                 approval. No API key exists yet; every authenticated
                 endpoint rejects the account.
     APPROVED -> API key issued (shown once at approval). Full access.
@@ -73,7 +73,7 @@ class SubmissionStatus(models.TextChoices):
 
 
 class WebhookEventType(models.TextChoices):
-    """Events pushed to a developer's webhook_url.
+    """Events pushed to a developer's webhook endpoints.
 
     Fired immediately on every transition including automated dedup
     short-circuits - devs never poll; the webhook is the only channel.
@@ -102,11 +102,17 @@ class WebhookEventType(models.TextChoices):
         "Submission Payout Bypass Updated",
     )
     COURSE_SUBMITTED = "COURSE_SUBMITTED", "Course Submitted"
+    COURSE_TEXT_APPROVED = "COURSE_TEXT_APPROVED", "Course Text Approved"
     COURSE_REVISION_REQUESTED = (
         "COURSE_REVISION_REQUESTED",
         "Course Revision Requested",
     )
     COURSE_PUBLISHED = "COURSE_PUBLISHED", "Course Published"
+
+
+WEBHOOK_ALL_EVENTS = "all"
+"""The token a developer sends in an endpoint's `events` to receive every
+event type, including ones added later."""
 
 
 class WebhookDeliveryStatus(models.TextChoices):

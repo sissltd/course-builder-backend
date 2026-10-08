@@ -11,7 +11,6 @@ from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 
 from api.collaborators.services import collaborator_service
-from api.courses.enums import CourseStatus
 from api.courses.models import (
     Lesson,
     LessonContentBlock,
@@ -99,9 +98,9 @@ class _BaseLessonSubResourceViewSet(ModelViewSet):
 
     def _check_editable(self, lesson: Lesson) -> None:
         module = lesson.module
-        if module.course.status != CourseStatus.DRAFT:
+        if not module.course.is_editable:
             raise exceptions.ValidationError(
-                f"{self.editable_noun} can only be edited while the course is Draft."
+                f"{self.editable_noun} can only be edited while the course is Draft or Needs Revision."
             )
         module_lock_service.check_not_locked(module=module, user=self.request.user)
 

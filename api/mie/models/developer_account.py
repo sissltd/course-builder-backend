@@ -9,8 +9,9 @@ from core.mixins import DateHistoryModelMixin, UUIDPrimaryKeyModelMixin
 class DeveloperAccount(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
     """An external developer registered into the MIE pipeline.
 
-    Registration is deliberately minimal - an email and a webhook_url -
-    and the account starts PENDING: it can authenticate nothing until a
+    Registration is deliberately minimal - an email and a webhook_url,
+    which becomes the account's first WebhookEndpoint - and the account
+    starts PENDING: it can authenticate nothing until a
     superadmin approves it, which is the moment an API key is generated
     and shown exactly once. Only the SHA-256 hash and a display prefix of
     the key are ever stored; the signing secret used to HMAC our outbound
@@ -27,13 +28,6 @@ class DeveloperAccount(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
         help_text=_(
             "Registration identity. Also the login handle for platform "
             "(OTP) access to the developer surfaces."
-        ),
-    )
-    webhook_url = models.URLField(
-        verbose_name=_("Webhook URL"),
-        help_text=_(
-            "HTTPS endpoint that receives a signed POST for every event "
-            "against this developer's submissions."
         ),
     )
     status = models.CharField(

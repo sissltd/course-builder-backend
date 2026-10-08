@@ -11,7 +11,6 @@ from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 
 from api.collaborators.services import collaborator_service
-from api.courses.enums import CourseStatus
 from api.courses.models import Course, Module
 from api.courses.serializers import ModuleSerializer, ModuleWriteSerializer
 from api.courses.serializers.ordering_serializer import ReorderSerializer
@@ -56,7 +55,7 @@ _DRAFT_ONLY_400 = OpenApiResponse(
                     {
                         "type": "validation_error",
                         "code": "invalid",
-                        "message": "Modules can only be edited while the course is Draft.",
+                        "message": "Modules can only be edited while the course is Draft or Needs Revision.",
                         "field_name": None,
                     }
                 ]
@@ -356,9 +355,9 @@ class ModuleViewSet(ModelViewSet):
     def perform_create(self, serializer):
         course = self._get_course()
         self._require_manage_access(course)
-        if course.status != CourseStatus.DRAFT:
+        if not course.is_editable:
             raise exceptions.ValidationError(
-                "Modules can only be added while the course is Draft."
+                "Modules can only be added while the course is Draft or Needs Revision."
             )
         self._validate_unique_order(
             course=course, order=serializer.validated_data["order"]
@@ -369,9 +368,9 @@ class ModuleViewSet(ModelViewSet):
 
     def perform_update(self, serializer):
         module = serializer.instance
-        if module.course.status != CourseStatus.DRAFT:
+        if not module.course.is_editable:
             raise exceptions.ValidationError(
-                "Modules can only be edited while the course is Draft."
+                "Modules can only be edited while the course is Draft or Needs Revision."
             )
         module_lock_service.check_not_locked(module=module, user=self.request.user)
         if "order" in serializer.validated_data:
@@ -384,9 +383,9 @@ class ModuleViewSet(ModelViewSet):
 
     def perform_destroy(self, instance):
         self._require_manage_access(instance.course)
-        if instance.course.status != CourseStatus.DRAFT:
+        if not instance.course.is_editable:
             raise exceptions.ValidationError(
-                "Modules can only be deleted while the course is Draft."
+                "Modules can only be deleted while the course is Draft or Needs Revision."
             )
         module_lock_service.check_not_locked(module=instance, user=self.request.user)
         instance.delete()
@@ -433,9 +432,9 @@ class ModuleViewSet(ModelViewSet):
     def reorder(self, request, *args, **kwargs):
         course = self._get_course()
         self._require_manage_access(course)
-        if course.status != CourseStatus.DRAFT:
+        if not course.is_editable:
             raise exceptions.ValidationError(
-                "Modules can only be reordered while the course is Draft."
+                "Modules can only be reordered while the course is Draft or Needs Revision."
             )
 
         serializer = ReorderSerializer(data=request.data)
@@ -564,9 +563,9 @@ class ModuleViewSet(ModelViewSet):
     @action(detail=True, methods=["post"], url_path="collaboration-lock")
     def collaboration_lock(self, request, *args, **kwargs):
         module = self.get_object()
-        if module.course.status != CourseStatus.DRAFT:
+        if not module.course.is_editable:
             raise exceptions.ValidationError(
-                "Modules can only be locked while the course is Draft."
+                "Modules can only be locked while the course is Draft or Needs Revision."
             )
         module = module_lock_service.acquire_collaboration_lock(
             module=module, user=request.user
@@ -595,9 +594,9 @@ class ModuleViewSet(ModelViewSet):
     @action(detail=True, methods=["post"], url_path="collaboration-unlock")
     def collaboration_unlock(self, request, *args, **kwargs):
         module = self.get_object()
-        if module.course.status != CourseStatus.DRAFT:
+        if not module.course.is_editable:
             raise exceptions.ValidationError(
-                "Modules can only be unlocked while the course is Draft."
+                "Modules can only be unlocked while the course is Draft or Needs Revision."
             )
         module = module_lock_service.release_collaboration_lock(
             module=module, user=request.user

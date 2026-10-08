@@ -44,6 +44,7 @@ def get_overview(*, actor) -> dict:
                 track_filter=preference.effective_track_filter,
                 sla_user=actor,
                 seats_for=actor,
+                visible_to=actor,
             )
             .values("status")
             .annotate(count=Count("id"))

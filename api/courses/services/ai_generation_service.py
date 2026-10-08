@@ -297,6 +297,9 @@ def create_course_job(*, creator, validated_data):
         ).first()
         if existing:
             return existing, False
+    # Refused here rather than when the worker builds the course, so the
+    # creator hears about it from the request and no job is queued.
+    course_service.require_approved_topic(topic=validated_data.get("topic"))
     reject_while_in_flight(creator=creator)
     job = AIGenerationJob.objects.create(
         creator=creator,
