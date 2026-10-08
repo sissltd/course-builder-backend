@@ -248,7 +248,8 @@ BANK_ACCOUNT_SUSPEND_DOCS = {
         "**Prerequisites:** The bank account must exist and not be deleted.\n\n"
         "**Important:** Recorded on the account owner's activity log with the "
         "acting admin as the actor. Suspending an already-suspended account "
-        "leaves it suspended. There is no unsuspend endpoint."
+        "leaves it suspended. The suspension can be lifted via the "
+        "remove-suspension endpoint."
     ),
     "tags": ["Admin — Bank Accounts"],
     "parameters": [
@@ -269,6 +270,48 @@ BANK_ACCOUNT_SUSPEND_DOCS = {
                         "success": True,
                         "status": 200,
                         "message": "Bank account suspended successfully",
+                    },
+                ),
+            ],
+        ),
+        **STANDARD_ERROR_RESPONSES["auth"],
+        **STANDARD_ERROR_RESPONSES["not_found"],
+        **STANDARD_ERROR_RESPONSES["server"],
+    },
+}
+
+BANK_ACCOUNT_REMOVE_SUSPENSION_DOCS = {
+    "summary": "Remove a bank account suspension",
+    "description": (
+        "Reinstates a suspended bank account so it can be used for "
+        "withdrawals again. This is an admin moderation action: the account "
+        "does not belong to the caller.\n\n"
+        "**Auth:** The `creators.suspend` permission (Suspend Account) — Admin "
+        "and Super Admin by default.\n\n"
+        "**Prerequisites:** The bank account must exist and not be deleted.\n\n"
+        "**Important:** Recorded on the account owner's activity log with the "
+        "acting admin as the actor. Removing the suspension on an account "
+        "that is not suspended leaves it active."
+    ),
+    "tags": ["Admin — Bank Accounts"],
+    "parameters": [
+        OpenApiParameter(
+            name="pk",
+            type=str,
+            location=OpenApiParameter.PATH,
+            description="Unique identifier of the bank account to reinstate.",
+        ),
+    ],
+    "responses": {
+        200: inline_success_response(
+            description="Bank account suspension removed successfully.",
+            examples=[
+                OpenApiExample(
+                    name="Success",
+                    value={
+                        "success": True,
+                        "status": 200,
+                        "message": "Bank account suspension removed successfully",
                     },
                 ),
             ],
