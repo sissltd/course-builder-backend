@@ -14,6 +14,7 @@ from api.mie.models.course_submission import (
     CONFIDENCE_NOTE_MAX_LENGTH,
     DESCRIPTION_MAX_LENGTH,
 )
+from api.mie.services import webhook_endpoint_service
 from api.mie.services.dedup_service import DedupOutcome, evaluate_title, normalize_title
 
 DAILY_CAP_WINDOW = timedelta(hours=24)
@@ -94,15 +95,16 @@ def submit_idea(*, developer, payload: dict) -> tuple[CourseSubmission, bool]:
     return submission, submission.status == SubmissionStatus.PENDING_REVIEW
 
 
-def record_event(submission: CourseSubmission) -> WebhookEvent:
-    """Create the outbound event row for a transition.
+def record_event(submission: CourseSubmission) -> list[WebhookEvent]:
+    """Record the outbound event for a transition, once per endpoint of the
+    developer that takes it (webhook_endpoint_service.record_event).
 
-    The dispatcher (slice 6) signs and sends what is recorded here; the
-    row exists from the moment the transition happens so nothing can be
-    lost between ingestion and delivery.
+    The dispatcher signs and sends what is recorded here; the rows exist
+    from the moment the transition happens so nothing can be lost between
+    ingestion and delivery.
     """
 
-    return WebhookEvent.objects.create(
+    return webhook_endpoint_service.record_event(
         submission=submission,
         event_type=EVENT_TYPE_BY_STATUS[submission.status],
         payload=_event_payload(submission),

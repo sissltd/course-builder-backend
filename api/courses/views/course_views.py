@@ -611,7 +611,10 @@ class CourseViewSet(ModelViewSet):
         if self.action in {"publish", "review_prices"}:
             # Admin-only (enforced by get_permissions) and not owner-scoped:
             # an Admin publishing a course is never its creator.
-            return Course.objects.select_related("category", "topic")
+            return review_service.restrict_to_seat_role(
+                Course.objects.select_related("category", "topic"),
+                user=self.request.user,
+            )
 
         sees_every_course = permission_service.user_has_any_permission(
             self.request.user, (codenames.COURSES_VIEW, codenames.COURSES_EDIT)
@@ -619,8 +622,12 @@ class CourseViewSet(ModelViewSet):
 
         if sees_every_course:
             # View Course / Edit Course holders see every course; the gates in
-            # get_permissions decide which of them may change one.
-            return Course.objects.select_related("category", "topic")
+            # get_permissions decide which of them may change one. With the
+            # staged review flow on, only those at the course's current seat.
+            return review_service.restrict_to_seat_role(
+                Course.objects.select_related("category", "topic"),
+                user=self.request.user,
+            )
 
         if self.action in {"retrieve", "update", "partial_update"}:
             return collaborator_service.get_courses_accessible_to(
@@ -670,14 +677,21 @@ class CourseViewSet(ModelViewSet):
             "`courses.edit`. Edit Course does not let anyone submit someone "
             "else's course - submission is the author vouching for their own "
             "work.\n\n"
-            "**Prerequisites:** The course must be `DRAFT` and pass "
+            "**Prerequisites:** The course must be `DRAFT` - or "
+            "`NEEDS_REVISION` with the staged review flow on, where it "
+            "resumes at the seat that sent it back - and pass "
             "structural validation (minimum modules/lessons, learning "
             "objectives, assessments, etc. per SCCS PRD structural "
             "standards).\n\n"
             "**Important:** Structural validation failures are returned as "
             "an aggregated list under `structural_standards`, not one "
             "field at a time, so the UI can show every outstanding issue at "
-            "once."
+            "once. With the staged review flow on, a course is reviewed as "
+            "text first, so one that carries a video (preview video, lesson "
+            "video, video block or video media asset) is refused until its "
+            "text has passed review; the video is sent afterwards with "
+            "`submit-video`. A resubmission returns to the seat that "
+            "rejected it and only that seat reviews it again."
         ),
         tags=["Creator — Courses"],
         request=None,
@@ -834,6 +848,7 @@ class CourseViewSet(ModelViewSet):
             serializer.is_valid(raise_exception=True)
             rows = course_service.save_distribution_channels(
                 course=course,
+                actor=request.user,
                 channels=serializer.validated_data["distribution_channels"],
             )
         return Response(CourseDistributionSerializer(rows, many=True).data)
@@ -1249,6 +1264,7 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
                 # the seats they can actually take. Every other screen lists
                 # its whole status, as it did before the chain existed.
                 seats_for=self.request.user if self.action == "pending" else None,
+                visible_to=self.request.user,
             )
             if "ordering" not in self.request.query_params:
                 if self.action == "approved":
@@ -1258,20 +1274,23 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
                 if self.action == "in_review":
                     return queryset.order_by("-submitted_at")
             return queryset
-        return Course.objects.select_related(
-            "category", "topic", "creator", "version"
-        ).prefetch_related(
-            "modules__lessons__assessment",
-            "modules__assessment",
-            "final_assessment",
-            "media_assets__verified_by",
-            "media_assets__lesson__module",
-            "quality_check_runs__findings",
-            "quality_findings",
-            "review_assignments__reviewer",
-            "review_actions__reviewer",
-            "review_comments__reviewer",
-            "distribution_channels",
+        return review_service.restrict_to_seat_role(
+            Course.objects.select_related(
+                "category", "topic", "creator", "version"
+            ).prefetch_related(
+                "modules__lessons__assessment",
+                "modules__assessment",
+                "final_assessment",
+                "media_assets__verified_by",
+                "media_assets__lesson__module",
+                "quality_check_runs__findings",
+                "quality_findings",
+                "review_assignments__reviewer",
+                "review_actions__reviewer",
+                "review_comments__reviewer",
+                "distribution_channels",
+            ),
+            user=self.request.user,
         )
 
     def get_serializer_class(self):
@@ -1488,7 +1507,9 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
             "Approved course. The fields correspond directly to the Figma Review modal.\n\n"
             "Called from Review Prices in the Approved Course information drawer.\n\n"
             "**Auth:** The `courses.set_pricing` permission — Creator Reviewer, "
-            "Verifier, Admin, Approver and Super Admin by default.\n\n"
+            "Verifier, Admin, Approver and Super Admin by default. With the "
+            "staged review flow on, only the Approver and Super Admin may "
+            "set prices (403 otherwise).\n\n"
             "**Prerequisites:** The course must be `APPROVED`.\n\n"
             "**Important:** `creator_payout_fixed` is read-only and comes from the "
             "submission price snapshot. Money values are decimal strings."
@@ -1521,7 +1542,9 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
             "promotional pricing, explanation, or comparable-course fields in Figma.\n\n"
             "Called when the reviewer continues from the pricing review step.\n\n"
             "**Auth:** The `courses.set_pricing` permission — Creator Reviewer, "
-            "Verifier, Admin, Approver and Super Admin by default.\n\n"
+            "Verifier, Admin, Approver and Super Admin by default. With the "
+            "staged review flow on, only the Approver and Super Admin may "
+            "set prices (403 otherwise).\n\n"
             "**Prerequisites:** The course must be `APPROVED`; at least one unique "
             "distribution channel is required.\n\n"
             "**Important:** Omitted channels are left unchanged. Coursera and Udemy "
@@ -1568,6 +1591,7 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
             serializer.is_valid(raise_exception=True)
             rows = course_service.save_distribution_channels(
                 course=course,
+                actor=request.user,
                 channels=serializer.validated_data["distribution_channels"],
             )
         return Response(CourseDistributionSerializer(rows, many=True).data)
@@ -1579,7 +1603,9 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
             "to Published. Pricing can be supplied here or saved in the prior step.\n\n"
             "Called when the reviewer presses Continue on Review and publish.\n\n"
             "**Auth:** The `courses.publish` permission — Creator Reviewer, "
-            "Verifier, Admin, Approver and Super Admin by default.\n\n"
+            "Verifier, Admin, Approver and Super Admin by default. With the "
+            "staged review flow on, only the Approver and Super Admin may "
+            "publish (403 otherwise), which also triggers final production.\n\n"
             "**Prerequisites:** The course must be `APPROVED` and an active course "
             "version must exist.\n\n"
             "**Important:** Publication is atomic and has no unpublish action. "
@@ -1642,7 +1668,8 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
             "reviewing it.\n\n"
             "**Auth:** `courses.approve` or `courses.reject`, and a base role "
             "that sits the seat: First and Second Review take a Creator "
-            "Reviewer, Verification takes a Verifier. `courses.assign` (Admin, "
+            "Reviewer (a Writer with the staged review flow on), Verification "
+            "takes a Verifier. `courses.assign` (Admin, "
             "Approver, Super Admin by default) may take any seat.\n\n"
             "**Prerequisites:** The course must be `SUBMITTED` or already "
             "`IN_REVIEW`; the reviewer must not be marked Unavailable.\n\n"
@@ -1714,12 +1741,16 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
             "payment occurs only after QA approval.\n\n"
             "Called from the 'Approve' action on the review screen.\n\n"
             "**Auth:** `courses.approve`, and a base role that sits the current seat - "
-            "Creator Reviewer for First and Second Review, Verifier for "
+            "Creator Reviewer (Writer with the staged review flow on) for "
+            "First and Second Review, Verifier for "
             "Verification - or `courses.assign` for any seat.\n\n"
             "**Prerequisites:** The course must be `SUBMITTED` or "
             "`IN_REVIEW` and you must hold its current seat; the reviewer "
             "must not be marked Unavailable.\n\n"
-            "**Important:** A course needs three approvals before it reaches "
+            "**Important:** With the staged review flow on, approving First "
+            "Review reviews the text only and parks the course at "
+            "`AWAITING_VIDEO` until its video is submitted, after which the "
+            "video seat is Second Review. A course needs three approvals before it reaches "
             "QA, each from a different person. Only the reviewer who claimed "
             "the seat may approve it (403 otherwise), and approving a seat "
             "nobody claimed returns 400 - claim it first. Admin may override "
@@ -1787,7 +1818,8 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
             "standard approve action.\n\n"
             "Called when a content reviewer completes their review.\n\n"
             "**Auth:** `courses.approve`, and a base role that sits the current seat - "
-            "Creator Reviewer for First and Second Review, Verifier for "
+            "Creator Reviewer (Writer with the staged review flow on) for "
+            "First and Second Review, Verifier for "
             "Verification - or `courses.assign` for any seat.\n\n"
             "**Prerequisites:** The course must be `SUBMITTED` or "
             "`IN_REVIEW`, and you must hold its current seat.\n\n"
@@ -1828,10 +1860,13 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
             "Rejects the content seat the course is at: records a "
             "ReviewAction and reverts the course directly to Draft so the "
             "creator can revise and resubmit (per PRD 'Returns to Draft. "
-            "Creator revises.'). No wallet credit occurs.\n\n"
+            "Creator revises.'). With the staged review flow on it goes to "
+            "`NEEDS_REVISION` instead and remembers this seat, so the "
+            "resubmission resumes here. No wallet credit occurs.\n\n"
             "Called from the 'Reject' action on the review screen.\n\n"
             "**Auth:** `courses.reject`, and a base role that sits the current seat - "
-            "Creator Reviewer for First and Second Review, Verifier for "
+            "Creator Reviewer (Writer with the staged review flow on) for "
+            "First and Second Review, Verifier for "
             "Verification - or `courses.assign` for any seat.\n\n"
             "**Prerequisites:** The course must be `SUBMITTED` or "
             "`IN_REVIEW` and you must hold its current seat; the reviewer "
@@ -1932,12 +1967,14 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
     @extend_schema(
         summary="Reject course content",
         description=(
-            "Rejects the course at the content-review gate and returns it to Draft for "
+            "Rejects the course at the content-review gate and returns it to Draft (or "
+            "`NEEDS_REVISION` with the staged review flow on) for "
             "the creator to revise. This explicit route has the same behaviour as the "
             "standard reject action.\n\n"
             "Called when a content reviewer finds blocking issues.\n\n"
             "**Auth:** `courses.reject`, and a base role that sits the current seat - "
-            "Creator Reviewer for First and Second Review, Verifier for "
+            "Creator Reviewer (Writer with the staged review flow on) for "
+            "First and Second Review, Verifier for "
             "Verification - or `courses.assign` for any seat.\n\n"
             "**Prerequisites:** The course must be `SUBMITTED` or `IN_REVIEW`, and "
             "`feedback.summary` must be non-empty.\n\n"
@@ -2076,7 +2113,8 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
     @extend_schema(
         summary="Reject a course in QA",
         description=(
-            "Rejects a course at the QA quality gate and returns it to Draft so the "
+            "Rejects a course at the QA quality gate and returns it to Draft (or "
+            "`NEEDS_REVISION` with the staged review flow on, resuming at QA) so the "
             "creator can correct media or accessibility issues.\n\n"
             "Called when required QA checks or media evidence fail.\n\n"
             "**Auth:** `courses.reject` and the QA Reviewer base role, or `courses.assign` "
@@ -2273,18 +2311,19 @@ class AdminCourseViewSet(CourseReviewViewSet):
     def get_queryset(self):
         if getattr(self, "swagger_fake_view", False):
             return Course.objects.none()
-        return Course.objects.select_related(
-            "category", "topic", "creator"
-        ).prefetch_related(
-            "modules__lessons__assessment",
-            "modules__assessment",
-            "final_assessment",
-            "media_assets__verified_by",
-            "media_assets__lesson__module",
-            "quality_check_runs__findings",
-            "quality_findings",
-            "review_assignments__reviewer",
-            "review_comments__reviewer",
+        return review_service.restrict_to_seat_role(
+            Course.objects.select_related("category", "topic", "creator").prefetch_related(
+                "modules__lessons__assessment",
+                "modules__assessment",
+                "final_assessment",
+                "media_assets__verified_by",
+                "media_assets__lesson__module",
+                "quality_check_runs__findings",
+                "quality_findings",
+                "review_assignments__reviewer",
+                "review_comments__reviewer",
+            ),
+            user=self.request.user,
         )
 
     @extend_schema(

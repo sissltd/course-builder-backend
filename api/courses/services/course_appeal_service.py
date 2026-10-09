@@ -28,7 +28,8 @@ def submit_appeal(
 
     Only the creator who owns the course may appeal it, and only while it's
     sitting in the just-rejected state (Course.rejected_at set, status back
-    at DRAFT - see review_service.reject_course). A second appeal can't be
+    at DRAFT, or NEEDS_REVISION with the staged review flow - see
+    review_service.reject_course). A second appeal can't be
     opened while one is still Pending, mirroring the single-open-request
     idiom used by TopicReservationRequest.
     """
@@ -36,7 +37,7 @@ def submit_appeal(
     permission_service.require_permission(user, codenames.COURSES_CREATE)
     if course.creator_id != user.id:
         raise exceptions.PermissionDenied("You can only appeal your own course.")
-    if course.status != CourseStatus.DRAFT or course.rejected_at is None:
+    if not course.is_editable or course.rejected_at is None:
         raise exceptions.ValidationError("This course has not been rejected.")
     if CourseAppeal.objects.filter(course=course, status=AppealStatus.PENDING).exists():
         raise exceptions.ValidationError(
@@ -81,9 +82,12 @@ def approve_appeal(
     *, appeal: CourseAppeal, actor: User, notes: str = ""
 ) -> CourseAppeal:
     """Approve a Pending appeal: reopen the course for review and notify the
-    creator. The course restarts the review chain at First Review with every
-    seat cleared (course_service.start_review_cycle), exactly as a fresh
-    submission does. Decision is final per the PRD - once decided, this
+    creator. A Draft course restarts the review chain at First Review with
+    every seat cleared (course_service.start_review_cycle), exactly as a
+    fresh submission does. A Needs Revision course (staged review flow)
+    returns to the seat that rejected it with only that seat cleared
+    (course_service.resume_at_revision_seat), since the appeal says that
+    rejection was wrong. Decision is final per the PRD - once decided, this
     appeal can't be re-decided."""
 
     permission_service.require_permission(actor, codenames.COURSES_DECIDE_APPEALS)
@@ -110,7 +114,10 @@ def approve_appeal(
         course = appeal.course
         course.updated_by = actor
         course.save(update_fields=["updated_by", "updated_datetime"])
-        course_service.start_review_cycle(course=course)
+        if course.status == CourseStatus.NEEDS_REVISION:
+            course_service.resume_at_revision_seat(course=course, actor=actor)
+        else:
+            course_service.start_review_cycle(course=course)
 
         Notification.emit_in_app_notification(
             receivers=[appeal.submitted_by],

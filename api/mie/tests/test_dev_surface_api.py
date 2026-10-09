@@ -109,7 +109,11 @@ class MeEndpointTests(DevSurfaceAuthBase):
         # The full raw key must never round-trip.
         self.assertNotIn(self.raw_key, str(response.data))
         self.assertEqual(response.data["signing_secret"], self.account.signing_secret)
-        self.assertIn("webhook_url", response.data)
+        endpoint = self.account.webhook_endpoints.get()
+        self.assertEqual(
+            [(row["id"], row["url"], row["events"]) for row in response.data["webhook_endpoints"]],
+            [(str(endpoint.id), endpoint.url, ["all"])],
+        )
 
     def test_full_raw_key_never_leaks_from_any_field(self):
         response = self.client.get(ME_URL)
@@ -164,7 +168,11 @@ class DocumentationTests(DevSurfaceAuthBase):
                 "/api/v1/mie/v1/course-requirements/",
                 "/api/v1/mie/v1/uploads/presign/",
                 "/api/v1/mie/v1/submissions/<submission_id>/course/",
+                "/api/v1/mie/v1/submissions/<submission_id>/course/video/",
                 "/api/v1/mie/v1/me/",
+                "/api/v1/mie/v1/webhooks/",
+                "/api/v1/mie/v1/webhooks/<endpoint_id>/",
+                "/api/v1/mie/v1/webhooks/event-types/",
                 "/api/v1/mie/v1/documentation/",
                 "/api/v1/mie/v1/documentation/download/",
             },
@@ -256,7 +264,10 @@ class DocumentationTests(DevSurfaceAuthBase):
         doc = self.client.get(DOCS_URL).data
 
         self.assertEqual(doc["your_account"]["email"], bypass.email)
-        self.assertEqual(doc["your_account"]["webhook_url"], bypass.webhook_url)
+        self.assertEqual(
+            [row["url"] for row in doc["your_account"]["webhook_endpoints"]],
+            [bypass.webhook_endpoints.get().url],
+        )
         self.assertEqual(doc["plan_and_payouts"]["your_plan"], "BYPASS_ACCOUNT")
         self.assertFalse(doc["plan_and_payouts"]["payout_bypass_applies_to_you"])
         self.assertEqual(

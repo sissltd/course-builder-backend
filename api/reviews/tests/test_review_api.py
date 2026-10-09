@@ -787,6 +787,9 @@ class ReviewerCourseScreenApiTests(APITestCase):
 
     def test_published_list_query_count_does_not_grow_per_row(self):
         queue_preference_service.get_or_create_preference(user=self.reviewer)
+        # The settings row is created on first read; warm it so the first
+        # request is not compared against a second that finds it in place.
+        get_settings()
         first = self._course(status_value=CourseStatus.PUBLISHED, title="Published 1")
         self._approve(first)
         CourseDistribution.objects.create(

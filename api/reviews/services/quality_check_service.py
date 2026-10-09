@@ -1,8 +1,14 @@
 from django.db.models import Sum
 
 from api.courses.enums import LessonContentType
-from api.courses.models import Assessment, Course, Lesson
+from api.courses.models import Assessment, Course, Lesson, LessonContentBlock
 from api.platform.services import platform_settings_service
+from api.reviews.enums import MediaAssetKind
+from api.reviews.models import MediaAsset
+
+#: Media assets that are video. Thumbnails, audio and subtitles are not, so a
+#: text-only course may still carry them.
+VIDEO_ASSET_KINDS = (MediaAssetKind.VIDEO, MediaAssetKind.PREVIEW_VIDEO)
 
 
 def word_count(text: str) -> int:
@@ -25,6 +31,61 @@ def get_course_duration_minutes(course: Course) -> int:
     return total or 0
 
 
+def _text_stage_video_failures(course: Course, lessons: list[Lesson]) -> list[str]:
+    """Why a course that has not reached the video stage carries a video.
+
+    The staged review flow reviews the text first and adds the video only
+    once it passes, so a course submitted with a video of any kind is refused
+    rather than reviewed with media the reviewer was never meant to see.
+    """
+
+    failures: list[str] = []
+    if course.preview_video_url:
+        failures.append(
+            "Remove the preview video: video is added after the text passes review."
+        )
+    for lesson in lessons:
+        if lesson.video_url or lesson.embedded_link:
+            failures.append(
+                f"Lesson '{lesson.title}' must not have a video yet: video is "
+                "added after the text passes review."
+            )
+    if LessonContentBlock.objects.filter(
+        lesson__module__course=course,
+        block_type=LessonContentBlock.BlockType.VIDEO,
+    ).exists():
+        failures.append(
+            "Remove the video blocks from the lesson bodies: video is added "
+            "after the text passes review."
+        )
+    if MediaAsset.objects.filter(course=course, kind__in=VIDEO_ASSET_KINDS).exists():
+        failures.append(
+            "Remove the registered video assets: video is added after the "
+            "text passes review."
+        )
+    return failures
+
+
+def _video_stage_failures(course: Course, lessons: list[Lesson]) -> list[str]:
+    """What a course that has reached the video stage still needs.
+
+    The preview video (BR-015) and a media reference on every video lesson are
+    required from here on. Media property checks stay with QA.
+    """
+
+    failures: list[str] = []
+    if not course.preview_video_url:
+        failures.append("Course must have a preview video before submission (BR-015).")
+    for lesson in lessons:
+        if lesson.content_type == LessonContentType.VIDEO and not (
+            lesson.video_url or lesson.embedded_link
+        ):
+            failures.append(
+                f"Video lesson '{lesson.title}' requires a video_url or embedded_link."
+            )
+    return failures
+
+
 def validate_structural_standards(course: Course) -> list[str]:
     """Validate a course against SCCS PRD Section 6.1-6.3 structural quality standards.
 
@@ -35,6 +96,12 @@ def validate_structural_standards(course: Course) -> list[str]:
     Thresholds are sourced from PlatformSettings (api.platform) - an Admin/
     Super Admin-editable DB row - rather than Django settings, so they can be
     tuned without a deploy.
+
+    With PlatformSettings.staged_review_flow_enabled on, the BR-015 preview
+    video requirement moves: a course that has not reached the video stage
+    (Course.video_attached_at is null) must carry no video at all, and one
+    that has must carry the preview video and a media reference on every
+    video lesson.
 
     Deliberately out of scope: readability scoring, plagiarism scanning, bias/
     inclusivity checks, per-objective assessment-alignment checking, and media
@@ -138,8 +205,21 @@ def validate_structural_standards(course: Course) -> list[str]:
             f"{platform_settings.course_duration_max_minutes} minutes (has {duration_minutes})."
         )
 
-    if not course.preview_video_url:
-        failures.append("Course must have a preview video before submission (BR-015).")
+    if not platform_settings.staged_review_flow_enabled:
+        if not course.preview_video_url:
+            failures.append(
+                "Course must have a preview video before submission (BR-015)."
+            )
+    else:
+        # Which video rule applies depends on whether the course has reached
+        # the video stage, so every caller (submission, the reviewers' check
+        # run) judges it the same way.
+        lessons = [lesson for module in modules for lesson in module.lessons.all()]
+        failures.extend(
+            _video_stage_failures(course, lessons)
+            if course.video_attached_at
+            else _text_stage_video_failures(course, lessons)
+        )
 
     if not course.version_id:
         failures.append("Course version must be selected before submission.")

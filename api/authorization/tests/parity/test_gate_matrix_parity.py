@@ -54,6 +54,13 @@ def apply_intentional_deltas(baseline: dict) -> dict:
         # every gate, so only a SUPER_ADMIN row without is_superuser changes.
         if SUPERUSER in allowed and UserRole.SUPER_ADMIN not in allowed:
             allowed.append(UserRole.SUPER_ADMIN)
+        # D4: the Writer gained courses.approve / courses.reject (migration
+        # 0006) so it can sit the review seats of the staged review flow. Every
+        # gate that admits a holder of those permissions now admits a Writer
+        # at the view; the seat roles in review_service still refuse a Writer
+        # a seat, and the QA seat, while the staged flow is off.
+        if UserRole.QA_REVIEWER in allowed and UserRole.STAFF_WRITER not in allowed:
+            allowed.append(UserRole.STAFF_WRITER)
     return expected
 
 
@@ -88,6 +95,20 @@ class GateMatrixParityTests(TestCase):
 
 class IntentionalDeltaTests(APITestCase):
     """Behaviour behind each rule in apply_intentional_deltas."""
+
+    def test_d4_writer_passes_the_review_gates_but_is_refused_the_seats_when_staged_flow_is_off(
+        self,
+    ):
+        course = make_draft_course(status=CourseStatus.SUBMITTED)
+        self.client.force_authenticate(make_user(role=UserRole.STAFF_WRITER))
+
+        listed = self.client.get("/api/v1/review-queue/")
+        claimed = self.client.post(f"/api/v1/review-queue/{course.id}/claim/")
+        qa = self.client.post(f"/api/v1/review-queue/{course.id}/qa-claim/")
+
+        self.assertEqual(listed.status_code, status.HTTP_200_OK)
+        self.assertEqual(claimed.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(qa.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_d1_creator_reviewer_is_refused_the_qa_seat_by_the_service(self):
         course = make_draft_course(status=CourseStatus.QA_VERIFICATION)

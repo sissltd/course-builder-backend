@@ -8,17 +8,54 @@ class CourseStatus(models.TextChoices):
     ReviewAction history) but is never persisted directly on Course.status:
     a rejection immediately reverts the course to DRAFT so the creator can
     revise and resubmit, per PRD wording "Returns to Draft. Creator revises."
+
+    With PlatformSettings.staged_review_flow_enabled on, a rejection instead
+    parks the course at NEEDS_REVISION (Course.revision_seat records the
+    rejecting seat), and approving the text at the first seat parks it at
+    AWAITING_VIDEO until its video is attached. Neither status is reachable
+    with the switch off.
     """
 
     DRAFT = "DRAFT", "Draft"
     SUBMITTED = "SUBMITTED", "Submitted"
     IN_REVIEW = "IN_REVIEW", "In Review"
     NEEDS_REVISION = "NEEDS_REVISION", "Needs Revision"
+    AWAITING_VIDEO = "AWAITING_VIDEO", "Awaiting Video"
     QA_VERIFICATION = "QA_VERIFICATION", "QA Verification"
     APPROVED = "APPROVED", "Approved"
     PUBLISHED = "PUBLISHED", "Published"
     ARCHIVED = "ARCHIVED", "Archived"
     REJECTED = "REJECTED", "Rejected"
+
+
+# Statuses in which the creator may change a course's content. NEEDS_REVISION
+# is only reachable with the staged review flow on.
+EDITABLE_COURSE_STATUSES = frozenset(
+    {CourseStatus.DRAFT, CourseStatus.NEEDS_REVISION}
+)
+
+
+# Statuses between submission and publication. The staged review flow can
+# only be switched while no course sits in one of them.
+IN_FLIGHT_COURSE_STATUSES = frozenset(
+    {
+        CourseStatus.SUBMITTED,
+        CourseStatus.IN_REVIEW,
+        CourseStatus.NEEDS_REVISION,
+        CourseStatus.AWAITING_VIDEO,
+        CourseStatus.QA_VERIFICATION,
+        CourseStatus.APPROVED,
+    }
+)
+
+
+class VideoProvider(models.TextChoices):
+    """Who supplies a course's video once its text has passed the first
+    review seat (staged review flow only)."""
+
+    CREATOR = "CREATOR", "Course Creator"
+    PRODUCTION_ENGINE = "PRODUCTION_ENGINE", "Production Engine"
+    DEVELOPER = "DEVELOPER", "Developer"
 
 
 class AssessmentLevel(models.TextChoices):

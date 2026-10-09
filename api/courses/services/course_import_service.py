@@ -138,6 +138,7 @@ def create_import_job(*, creator, validated_data):
         raise exceptions.ValidationError(
             {"topic": "Topic does not belong to the selected category."}
         )
+    course_service.require_approved_topic(topic=topic)
     job = CourseImportJob.objects.create(
         creator=creator,
         category=category,

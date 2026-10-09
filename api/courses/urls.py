@@ -14,6 +14,7 @@ from api.courses.views import (
     course_import_views,
     course_thumbnail_views,
     course_version_views,
+    course_video_views,
     course_views,
     lesson_sub_resource_views,
     lesson_views,
@@ -38,6 +39,16 @@ router.register(
 )
 
 urlpatterns = router.urls + [
+    path(
+        "courses/<uuid:course_pk>/video-decision/",
+        course_video_views.CourseVideoDecisionView.as_view(),
+        name="course-video-decision",
+    ),
+    path(
+        "courses/<uuid:course_pk>/submit-video/",
+        course_video_views.CourseSubmitVideoView.as_view(),
+        name="course-submit-video",
+    ),
     path(
         "course-ai-generations/",
         ai_generation_views.AICourseGenerationListCreateView.as_view(),

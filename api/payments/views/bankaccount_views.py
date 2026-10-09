@@ -18,6 +18,7 @@ from api.payments.docs.bankaccount_docs import (
     BANK_ACCOUNT_DELETE_DOCS,
     BANK_ACCOUNT_DETAIL_DOCS,
     BANK_ACCOUNT_LIST_DOCS,
+    BANK_ACCOUNT_REMOVE_SUSPENSION_DOCS,
     BANK_ACCOUNT_SET_DEFAULT_DOCS,
     BANK_ACCOUNT_SUSPEND_DOCS,
     BANK_ACCOUNT_VERIFY_DOCS,
@@ -34,8 +35,10 @@ from api.payments.services.bankaccount_services import (
     create_bank_account,
     delete_bank_account,
     get_bank_account_list,
+    remove_bank_account_suspension,
     set_default_bank_account,
     suspend_bank_account,
+    verify_account_details,
 )
 from shared.response.error import custom_error_response
 from shared.response.success import custom_success_response
@@ -70,7 +73,13 @@ class BankAccountListCreateView(APIView):
         )
 
     def post(self, request):
-        """Create a new bank account for the authenticated user."""
+        """`/api/v1/payout-accounts/`
+        
+        Create a new bank account for the authenticated user.
+        If the user already has a bank account with the same account number and 
+        bank code, it will be updated (set as the default) instead of creating a new one.
+        If the existing account is suspended, we report same
+        """
         serializer = BankAccountCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         ip, ua = client_meta(request)
@@ -142,6 +151,10 @@ class BankAccountDetailView(APIView):
 
 @extend_schema(**BANK_ACCOUNT_SET_DEFAULT_DOCS, request=None)
 class BankAccountSetDefaultView(APIView):
+    """/api/v1/payout-accounts/{id}/default/
+    
+    Creator setting a default payout account. A suspended bank account cannot be set as default.
+    """
     permission_classes: ClassVar = [IsAuthenticated]
 
     def post(self, request, pk):
@@ -154,6 +167,16 @@ class BankAccountSetDefaultView(APIView):
                 message="Bank account not found.",
                 status=status.HTTP_404_NOT_FOUND,
             )
+        except AccountDetailsError as e:
+            return custom_error_response(
+                message=str(e),
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except Exception as e:
+            return custom_error_response(
+                message=str(e),
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
         return custom_success_response(
             message="Bank account set as default successfully",
@@ -163,6 +186,12 @@ class BankAccountSetDefaultView(APIView):
 
 @extend_schema(**BANK_ACCOUNT_SUSPEND_DOCS, request=None)
 class BankAccountSuspendView(APIView):
+    """/api/v1/payout-accounts/{id}/suspend/
+
+    Admin suspending a user's bank account. The account owner will be notified
+    via their activity log, and the admin performing the action is recorded as
+    the actor.
+    """
     # Admin tier without the Approver, matching every other money surface
     # (wallet admin, KYC review): approving courses is no reason to be able
     # to freeze someone's payouts.
@@ -183,10 +212,46 @@ class BankAccountSuspendView(APIView):
             message="Bank account suspended successfully",
             status=status.HTTP_200_OK,
         )
+        
+
+@extend_schema(**BANK_ACCOUNT_REMOVE_SUSPENSION_DOCS, request=None)
+class BankAccountRemoveSuspensionView(APIView):
+    """/api/v1/payout-accounts/{id}/remove-suspension/
+
+    Admin removing the suspension on a user's bank account. The account owner will be notified
+    via their activity log, and the admin performing the action is recorded as
+    the actor.
+    """
+    # Admin tier without the Approver, matching every other money surface
+    # (wallet admin, KYC review): approving courses is no reason to be able
+    # to freeze someone's payouts.
+    permission_classes: ClassVar = [Perm(codenames.CREATORS_SUSPEND)]
+
+    def post(self, request, pk):
+        """Remove the suspension on any user's bank account - an admin moderation action."""
+        user = request.user
+        try:
+            remove_bank_account_suspension(user, pk, *client_meta(request))
+        except BankAccount.DoesNotExist:
+            return custom_error_response(
+                message="Bank account not found.",
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        return custom_success_response(
+            message="Bank account suspension removed successfully",
+            status=status.HTTP_200_OK,
+        )
 
 
 @extend_schema(**BANK_ACCOUNT_VERIFY_DOCS, auth=[{}])
 class VerifyBankAccountView(APIView):
+    """/api/v1/payout-accounts/verify/
+
+    Calls a payment provider to verify the given bank account details. 
+    Providers' test environment/sandbox typically returns fictitious account 
+    names, e.g.: `Ajadi Jackson` from Flutterwave and `Test Account` from Paystack
+    """
     authentication_classes = []  # public: a stale token must not 401 this
     permission_classes: ClassVar[list] = [AllowAny]
     serializer_class = BankAccountVerifySerializer
@@ -198,25 +263,19 @@ class VerifyBankAccountView(APIView):
         account_number = data.get("account_number")
         bank_code = data.get("bank_code")
 
-        if not account_number or not bank_code:
-            return custom_error_response(
-                status=status.HTTP_400_BAD_REQUEST,
-                message="Both account number and bank code are required",
-            )
 
-        processor = get_payment_provider()
         try:
-            verification_result = processor.resolve_bank(account_number=account_number, bank_code=bank_code)
+            resp_data = verify_account_details(account_number=account_number, bank_code=bank_code)
             return custom_success_response(
                 status=status.HTTP_200_OK,
                 message="Bank account verified successfully",
-                data=verification_result,
+                data=resp_data
             )
         except Exception as exc:
             logger.error(exc)
             return custom_error_response(
                 status=status.HTTP_400_BAD_REQUEST,
-                message="Bank account verification failed",
+                message=f"Bank account verification failed: {exc!s}",
                 technical_message=str(exc),
             )
 

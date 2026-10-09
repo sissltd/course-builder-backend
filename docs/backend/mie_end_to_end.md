@@ -66,7 +66,7 @@ Developer submits idea (POST /api/v1/mie/v1/submissions/)
 Webhook event recorded immediately for every outcome
         │
         ▼
-Dispatcher sweeps every 60s → signed POST to developer's webhook_url
+Dispatcher sweeps every 60s → signed POST to each of the developer's webhook endpoints that takes the event
         │
         ▼
 Superadmin decides (approve / reject) — reversible at any time
@@ -84,6 +84,11 @@ Normal creator review flow ──► COURSE_REVISION_REQUESTED (back to DRAFT,
 PUBLISHED ──► COURSE_PUBLISHED
 ```
 
+With `PlatformSettings.staged_review_flow_enabled` on, the push carries the
+**text only** and the video follows once the text passes the first review
+seat - see [8.5a](#85a-send-the-video-staged-review-flow) and the flow in
+`course_platform_flow.md`.
+
 ### 1.1 Where the MIE meets the course pipeline
 
 The MIE decides **ideas**. For an approved idea, the developer writes the
@@ -97,7 +102,7 @@ reviews, publishes or pays for a course. Its contact with the courses app:
 | Course push | Builds the course for an APPROVED idea and submits it, all or nothing. Creates it through `course_service.create_draft_course` (source `DEVELOPER_API`), replaces it through `update_draft_course` after a rejection, submits through `course_service.submit_course(skip_draft_hold=True)`. | `course_push_service.push_course` |
 | Linked creator account | The no-login `COURSE_CREATOR` user that owns a developer's courses, so the unchanged creator flow works. Provisioned on the first push; never matched by email. | `developer_service.get_or_create_creator_user`, `DeveloperAccount.creator_user` |
 | `resulting_course` link | Set by the first accepted push; reused by every revision push. | `CourseSubmission.resulting_course` |
-| Course events | `COURSE_REVISION_REQUESTED` from `review_service.reject_course` / `reject_qa`, `COURSE_PUBLISHED` from `course_service.publish_course`. A no-op for any course that is not `DEVELOPER_API`. | `course_push_service.record_course_event` |
+| Course events | `COURSE_TEXT_APPROVED` from `review_service.approve_content` (staged flow), `COURSE_REVISION_REQUESTED` from `review_service.reject_course` / `reject_qa`, `COURSE_PUBLISHED` from `course_service.publish_course`. A no-op for any course that is not `DEVELOPER_API`. | `course_push_service.record_course_event` |
 | Reversal | Rejecting an idea leaves any linked course exactly as it is and keeps the link; the decision's audit row carries `resulting_course_id`. A reversed idea refuses further pushes (409). | `submission_admin_service`, `course_push_service` |
 
 A pushed course lives entirely by the course lifecycle, the same as any
@@ -235,7 +240,6 @@ as the MIE crawler (`source_type=SYSTEM`, see
 |---|---|---|
 | `id` | UUID (PK) | Auto-generated via `UUIDPrimaryKeyModelMixin` |
 | `email` | EmailField | **Unique.** Registration identity and login handle. |
-| `webhook_url` | URLField | HTTPS endpoint receiving signed POSTs. |
 | `status` | CharField(10) | `PENDING` / `APPROVED` / `REJECTED` / `SUSPENDED` |
 | `plan_type` | CharField(25) | `PAID_PER_SUBMISSION` / `BYPASS_PER_SUBMISSION` / `BYPASS_ACCOUNT` |
 | `source_type` | CharField(10) | `EXTERNAL` (default) / `SYSTEM`. `editable=False`: only the `provision_mie_system_account` command sets `SYSTEM`, so no registration path can opt into or out of the system-account guardrails. |
@@ -324,17 +328,41 @@ submissions keep pointing at them.
 | `is_active` | BooleanField | Inactive reasons stop matching new ideas. |
 | `created_datetime` | DateTimeField | Auto-set on creation. |
 
-### 3.4 WebhookEvent
+### 3.4 WebhookEndpoint
 
-**File**: `api/mie/models/webhook_event.py`
+**File**: `api/mie/models/webhook_endpoint.py`
 
-One outbound webhook notification to a developer. Created immediately on
-every submission transition — including automated dedup short-circuits.
+One URL a developer receives webhooks on. An account keeps between one and
+`MAX_WEBHOOK_ENDPOINTS` (10) live endpoints; registration creates the first
+from the `webhook_url` it was given, taking every event. Managed by the
+developer at `/mie/v1/webhooks/` (section 8.4a). Soft-deleted
+(`SoftDeleteModelMixin`).
 
 | Field | Type | Notes |
 |---|---|---|
-| `id` | UUID (PK) | Developer-facing dedup key (`event_id`). |
+| `developer` | FK → DeveloperAccount | `related_name="webhook_endpoints"`. |
+| `url` | URLField | Unique per developer among live endpoints (`mie_hook_endpoint_live_url_uniq`). |
+| `all_events` | BooleanField | True: every event type, including ones added later. |
+| `event_types` | JSONField | The `WebhookEventType` values taken when `all_events` is false. |
+| `is_deleted`, `deleted_datetime` | soft delete | A deleted endpoint's pending events are failed. |
+
+Migration `mie/0010` backfilled one all-events endpoint per existing account
+from its `webhook_url`; `mie/0011` dropped `DeveloperAccount.webhook_url`.
+
+### 3.5 WebhookEvent
+
+**File**: `api/mie/models/webhook_event.py`
+
+One outbound webhook delivery to one endpoint. Recorded immediately on
+every transition — including automated dedup short-circuits — by
+`webhook_endpoint_service.record_events`, once per live endpoint that takes
+the event type (one endpoint read and one bulk insert, however many).
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | UUID (PK) | Developer-facing dedup key (`event_id`); each endpoint gets its own for an occurrence. |
 | `submission` | FK → CourseSubmission | Cascading delete. `related_name="webhook_events"`. |
+| `endpoint` | FK → WebhookEndpoint | The URL this delivery goes to. |
 | `event_type` | CharField(40) | See `WebhookEventType` enum. |
 | `payload` | JSONField | Exact JSON body delivered (or to be delivered). |
 | `signature` | CharField(128) | HMAC-SHA256 hex digest (computed at send time, not at record time). |
@@ -672,12 +700,14 @@ This separation means:
 
 1. **Query due events** — one indexed query using `mie_hook_retry_idx`
    (`delivery_status=PENDING` AND (`next_retry_at IS NULL` OR
-   `next_retry_at <= now`)), with `select_related("submission",
+   `next_retry_at <= now`)), with `select_related("endpoint", "submission",
    "submission__developer")` — no N+1.
 
 2. **Partition by account state** — deliverable (APPROVED), inactive
-   (REJECTED → terminal-fail immediately), suspended (frozen — left
-   PENDING for later).
+   (REJECTED → terminal-fail immediately), endpoint deleted (terminal-fail,
+   `last_error="webhook endpoint deleted"`), suspended (frozen — left
+   PENDING for later). Each deliverable event is POSTed to its own
+   `endpoint.url`.
 
 3. **Prepare requests** — for each deliverable event, compute the
    signing headers and body. No DB access inside threads.
@@ -793,7 +823,10 @@ Returns the developer's account details:
   "email": "dev@studio.io",
   "status": "APPROVED",
   "plan_type": "PAID_PER_SUBMISSION",
-  "webhook_url": "https://hooks.studio.io/mie",
+  "webhook_endpoints": [
+    {"id": "5b1f0c9e-...", "url": "https://hooks.studio.io/mie", "events": ["all"],
+     "created_datetime": "2026-06-28T14:22:00Z", "updated_datetime": "2026-06-28T14:22:00Z"}
+  ],
   "api_key_preview": "scb_live_a1b2c3d4...",
   "api_key_last_used_at": "2026-07-15T08:32:11Z",
   "signing_secret": "a1b2c3d4e5f6...",
@@ -806,6 +839,36 @@ Returns the developer's account details:
   never returned after initial issuance.
 - `signing_secret` IS included — it only verifies our messages, never
   authenticates theirs.
+
+### 8.4a Webhook endpoints
+
+```
+GET    /api/v1/mie/v1/webhooks/                 list your endpoints
+POST   /api/v1/mie/v1/webhooks/                 add one: {"url", "events"}
+GET    /api/v1/mie/v1/webhooks/{endpoint_id}/   show one
+PATCH  /api/v1/mie/v1/webhooks/{endpoint_id}/   change url and/or events
+DELETE /api/v1/mie/v1/webhooks/{endpoint_id}/   delete one (soft)
+GET    /api/v1/mie/v1/webhooks/event-types/     the event types to choose from
+```
+
+`dev_webhook_views.py` → `webhook_endpoint_service`. Same auth as the rest of
+the developer surface (API key or the platform Bearer session the developer
+profile uses), so the developer manages endpoints from code or the portal.
+`events` is `["all"]` (every type, including future ones) or a list of
+`WebhookEventType` values; `"all"` cannot be mixed with others. Rules:
+
+- At most 10 live endpoints (409 `webhook_endpoint_limit`).
+- A URL once per developer among live endpoints (409 `webhook_endpoint_duplicate`).
+- The last endpoint cannot be deleted (409 `last_webhook_endpoint`).
+- Another developer's endpoint is a 404.
+- Changes apply to events recorded afterwards; deleting fails the
+  endpoint's queued deliveries.
+- Changes are serialised per developer by a row lock on the account, so the
+  limit and the last-endpoint rule hold under concurrent requests.
+
+Endpoint changes are not written to the activity log: a developer has no
+platform user row (the same as idea ingestion). The endpoint's own
+created/updated timestamps record them.
 
 ### 8.4 Integration documentation
 
@@ -893,6 +956,44 @@ In one transaction, with the submission row locked:
 Returns 201 with `DevCourseSerializer` on the first push and on every
 accepted revision.
 
+With the staged review flow on, the gate also accepts a course in
+`NEEDS_REVISION` (a seat sent it back), the push is expected to carry **no**
+video (the structural check refuses a preview video, a lesson
+`video_url`/`embedded_link`, a video block or a video asset until the video
+stage), and a `VIDEO`-type lesson may be pushed as a script alone.
+
+### 8.5a Send the video (staged review flow)
+
+```
+POST /api/v1/mie/v1/submissions/{submission_id}/course/video/
+```
+
+`MieCourseVideoView.post` → `course_push_service.push_video`, throttle scope
+`mie_course_push`. Body: `CourseVideoPushSerializer` - `preview_video_url`
+plus `lessons[]` of `{module_order, lesson_order, video_url | embedded_link}`,
+addressed by the `order` values of the text push.
+
+Fired by `COURSE_TEXT_APPROVED`: the first review seat approved the text,
+the course is `AWAITING_VIDEO` and `video_provider` is `DEVELOPER`. In one
+transaction, with the submission row locked:
+
+1. The idea is the caller's (else 404) and has a course whose status is
+   `AWAITING_VIDEO` - or `NEEDS_REVISION` with its video already attached,
+   when a later seat sent the video back (else 409
+   `course_not_awaiting_video`).
+2. The preview video and each lesson's media are written (lessons are
+   looked up once and updated with one `bulk_update`; an address the course
+   does not have is a 400 under `lessons`).
+3. `course_service.submit_video` - 409 `video_provider_conflict` unless the
+   developer supplies the video (the platform's own crawler account does
+   not: its courses are `PRODUCTION_ENGINE`) - re-checks every text rule
+   with the video rules and sends the course to the second review seat.
+   A `NEEDS_REVISION` resend goes through `submit_course` and resumes at the
+   seat that sent it back.
+4. `COURSE_SUBMITTED` is recorded.
+
+Returns 200 with `DevCourseSerializer`. Any failure rolls everything back.
+
 ### 8.6 Check the course for an approved idea
 
 ```
@@ -902,7 +1003,7 @@ GET /api/v1/mie/v1/submissions/{submission_id}/course/
 `course_push_service.course_status`. 404 for another developer's idea and
 for one with no course yet. `revision_feedback` (stage, feedback, flags
 named by module/lesson title) is filled only while the course is `DRAFT`
-after a rejection.
+(or `NEEDS_REVISION`, with the staged review flow) after a rejection.
 
 ### 8.7 Course requirements
 
@@ -1075,7 +1176,8 @@ dedup short-circuits.
 | `SUBMISSION_REJECTED` | Admin rejects (or re-rejects) | `rejection_reason`, `rejection_note` |
 | `SUBMISSION_PAYOUT_BYPASS_UPDATED` | Admin toggles per-submission bypass | `payout_bypass` |
 | `COURSE_SUBMITTED` | An accepted course push (first or revision) | `course` |
-| `COURSE_REVISION_REQUESTED` | A content-review or QA rejection sends the pushed course back to `DRAFT` | `course`, `course.revision_feedback` |
+| `COURSE_TEXT_APPROVED` | The first review seat approved the pushed course's text (staged review flow only; not sent for the platform's own crawler) - send the video | `course` |
+| `COURSE_REVISION_REQUESTED` | A content-review or QA rejection sends the pushed course back to `DRAFT` (`NEEDS_REVISION` with the staged review flow) | `course`, `course.revision_feedback` |
 | `COURSE_PUBLISHED` | The pushed course is published | `course` |
 
 The mapping from status to event type is defined in
@@ -1110,6 +1212,7 @@ No retry logic is needed on the client side.
 | `POST /api/v1/mie/v1/submissions/` | — (database-counted) | `MIE_SYSTEM_DAILY_SUBMISSION_CAP` per rolling 24h, **SYSTEM accounts only** — see [5.5](#55-system-accounts-the-mie-crawler) |
 | `POST /api/v1/mie/v1/register/` | `mie_register` | 5/hour/IP |
 | `POST /api/v1/mie/v1/submissions/{id}/course/` | `mie_course_push` | 20/hour/account |
+| `POST /api/v1/mie/v1/submissions/{id}/course/video/` | `mie_course_push` | 20/hour/account |
 | `POST /api/v1/mie/v1/uploads/presign/` | `mie_upload` | 120/hour/account |
 
 ### 12.4 Webhook delivery retries

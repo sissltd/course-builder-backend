@@ -40,7 +40,7 @@ class DeveloperAccountModelTests(TestCase):
             status=DeveloperAccountStatus.SUSPENDED, signing_secret="s" * 32
         )
 
-        account.full_clean(exclude=["webhook_url"])
+        account.full_clean()
         self.assertEqual(account.status, DeveloperAccountStatus.SUSPENDED)
 
 

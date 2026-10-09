@@ -6,13 +6,15 @@ from core.mixins import DateHistoryModelMixin, UUIDPrimaryKeyModelMixin
 
 
 class WebhookEvent(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
-    """One outbound webhook notification to a developer.
+    """One outbound webhook notification to one of a developer's endpoints.
 
     Created immediately for every submission transition - including the
-    automated dedup short-circuits - and retried with backoff until
-    delivered or exhausted. `event_id` is the developer-facing dedup key:
-    receivers must treat repeated deliveries of the same event_id as one
-    event.
+    automated dedup short-circuits - once per live endpoint that takes the
+    event type (webhook_endpoint_service.record_events), and retried with
+    backoff until delivered or exhausted. `event_id` is the developer-facing
+    dedup key: receivers must treat repeated deliveries of the same
+    event_id as one event. Two endpoints receiving the same occurrence get
+    two event ids.
     """
 
     submission = models.ForeignKey(
@@ -21,6 +23,13 @@ class WebhookEvent(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
         on_delete=models.CASCADE,
         related_name="webhook_events",
         help_text=_("Submission whose state change this event announces."),
+    )
+    endpoint = models.ForeignKey(
+        "mie.WebhookEndpoint",
+        verbose_name=_("Endpoint"),
+        on_delete=models.CASCADE,
+        related_name="events",
+        help_text=_("Endpoint this delivery goes to."),
     )
     event_type = models.CharField(
         verbose_name=_("Event Type"),

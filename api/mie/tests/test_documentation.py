@@ -45,7 +45,14 @@ def _account(**overrides):
         "email": "dev@studio.io",
         "status": DeveloperAccountStatus.APPROVED,
         "plan_type": MiePlanType.PAID_PER_SUBMISSION,
-        "webhook_url": "https://hooks.studio.io/mie",
+        "live_webhook_endpoints": [
+            SimpleNamespace(
+                id="5b1f0c9e-2d4a-4f7e-9a3b-8c6d1e2f3a4b",
+                url="https://hooks.studio.io/mie",
+                all_events=True,
+                event_types=[],
+            )
+        ],
         "api_key_prefix": "scb_live_a1b2c3",
         "api_key_issued_at": datetime(2026, 8, 21, 9, 0, tzinfo=dt_timezone.utc),
         "api_key_last_used_at": datetime(2026, 8, 30, 12, 0, tzinfo=dt_timezone.utc),

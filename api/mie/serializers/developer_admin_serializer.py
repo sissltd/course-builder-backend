@@ -1,7 +1,10 @@
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from api.mie.enums import MiePlanType, MieSourceType
 from api.mie.models import DeveloperAccount
+from api.mie.serializers.webhook_endpoint_serializer import WebhookEndpointSerializer
+from api.mie.services import webhook_endpoint_service
 
 
 class DeveloperRegisterSerializer(serializers.Serializer):
@@ -15,8 +18,10 @@ class DeveloperRegisterSerializer(serializers.Serializer):
     )
     webhook_url = serializers.URLField(
         help_text=(
-            "HTTPS endpoint that will receive signed POST notifications for "
-            "every event against this developer's submissions."
+            "HTTPS endpoint that will receive signed POST notifications. It "
+            "becomes the account's first webhook endpoint, taking every "
+            "event; the developer can add more and choose their events once "
+            "approved."
         )
     )
     plan_type = serializers.ChoiceField(
@@ -33,8 +38,16 @@ class DeveloperRegisterSerializer(serializers.Serializer):
 
 class DeveloperAccountAdminSerializer(serializers.ModelSerializer):
     """Developer account as seen by superadmins. Never contains key
-    material - only the non-secret display prefix."""
+    material - only the non-secret display prefix.
 
+    `webhook_endpoints` reads the `live_webhook_endpoints` prefetch when the
+    queryset declares it (see MieDeveloperAdminViewSet), so a list costs the
+    same however many accounts it shows.
+    """
+
+    webhook_endpoints = serializers.SerializerMethodField(
+        help_text="Every live endpoint the developer receives webhooks on, with its events."
+    )
     api_key_preview = serializers.SerializerMethodField(
         help_text="Masked prefix of the current API key, or null before issuance."
     )
@@ -56,7 +69,7 @@ class DeveloperAccountAdminSerializer(serializers.ModelSerializer):
         fields = (
             "id",
             "email",
-            "webhook_url",
+            "webhook_endpoints",
             "status",
             "plan_type",
             "source_type",
@@ -68,6 +81,13 @@ class DeveloperAccountAdminSerializer(serializers.ModelSerializer):
             "updated_datetime",
         )
         read_only_fields = fields
+
+    @extend_schema_field(WebhookEndpointSerializer(many=True))
+    def get_webhook_endpoints(self, obj) -> list[dict]:
+        endpoints = getattr(obj, "live_webhook_endpoints", None)
+        if endpoints is None:
+            endpoints = webhook_endpoint_service.live_endpoints(developer=obj)
+        return WebhookEndpointSerializer(endpoints, many=True).data
 
     def get_api_key_preview(self, obj) -> str | None:
         if not obj.api_key_prefix:

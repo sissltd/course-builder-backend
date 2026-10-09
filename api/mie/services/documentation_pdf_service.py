@@ -436,10 +436,21 @@ def _render_endpoints(endpoints: list, styles: dict) -> list:
 def _render_webhooks(section: dict, styles: dict) -> list:
     story = [
         Paragraph(_text(section.get("why", "")), styles["body"]),
-        _kv_table([("Your endpoint", section.get("your_endpoint"))], styles),
     ]
+    if section.get("your_endpoints"):
+        story.append(Paragraph("Your endpoints", styles["h3"]))
+        story.append(
+            _records_table(
+                [
+                    {"url": endpoint["url"], "events": ", ".join(endpoint["events"])}
+                    for endpoint in section["your_endpoints"]
+                ],
+                styles,
+            )
+        )
 
     for key, heading in (
+        ("endpoints_and_subscriptions", "Endpoints and event subscriptions"),
         ("delivery", "Delivery"),
         ("headers", "Headers"),
         ("envelope", "Event envelope"),

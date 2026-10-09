@@ -9,6 +9,7 @@ from api.authorization.services import permission_service
 from api.catalog.models import Category, Topic
 from api.courses.enums import CourseStatus
 from api.courses.models import Course
+from api.reviews.services import review_service
 from api.users.enums import UserRole
 from api.users.models import User
 
@@ -106,10 +107,17 @@ def _search_courses(*, actor: User, query: str, limit: int) -> list[dict]:
 
 def _course_scope(*, actor: User) -> QuerySet[Course] | None:
     if actor.is_superuser or actor.role in ADMIN_ROLES:
-        return Course.objects.all()
+        return review_service.restrict_to_seat_role(Course.objects.all(), user=actor)
     if actor.role in REVIEWER_ROLES:
-        return Course.objects.filter(status__in=REVIEWABLE_STATUSES)
+        return review_service.restrict_to_seat_role(
+            Course.objects.filter(status__in=REVIEWABLE_STATUSES), user=actor
+        )
     if actor.role in CREATOR_ROLES:
+        # A Writer also reviews with the staged flow on, so alongside their own
+        # courses they find the ones at the seats they sit.
+        seat_visible = review_service.seat_visibility_q(user=actor)
+        if actor.role == UserRole.STAFF_WRITER and seat_visible is not None:
+            return Course.objects.filter(Q(creator=actor) | seat_visible)
         return Course.objects.filter(creator=actor)
     return None
 

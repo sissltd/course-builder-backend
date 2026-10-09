@@ -199,6 +199,11 @@ def reseed_reference_data() -> None:
 _SEED_MIGRATIONS = (
     ("api.authorization.migrations.0002_seed_system_roles", "seed"),
     ("api.authorization.migrations.0004_grant_new_admin_feature_permissions", "grant"),
+    # Every later grant migration too: a TransactionTestCase wipes
+    # RolePermission, and a grant left out of this list stays wiped for every
+    # test after it (and, with --reuse-db, for the next run).
+    ("api.authorization.migrations.0005_grant_support_manage_requests", "grant"),
+    ("api.authorization.migrations.0006_grant_writer_course_review", "grant"),
     ("api.operations.migrations.0002_seed_services_and_providers", "seed"),
     ("api.operations.migrations.0003_seed_celery_ai_worker", "seed_worker_service"),
     (

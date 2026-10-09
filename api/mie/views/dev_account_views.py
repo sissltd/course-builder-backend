@@ -62,7 +62,15 @@ class MieDeveloperMeView(APIView):
                             "email": "dev@studio.io",
                             "status": "APPROVED",
                             "plan_type": "PAID_PER_SUBMISSION",
-                            "webhook_url": "https://hooks.studio.io/mie",
+                            "webhook_endpoints": [
+                                {
+                                    "id": "5b1f0c9e-2d4a-4f7e-9a3b-8c6d1e2f3a4b",
+                                    "url": "https://hooks.studio.io/mie",
+                                    "events": ["all"],
+                                    "created_datetime": "2026-08-20T10:00:00Z",
+                                    "updated_datetime": "2026-08-20T10:00:00Z",
+                                }
+                            ],
                             "api_key_preview": "scb_live_a1b2c3d...",
                             "api_key_last_used_at": "2026-08-24T15:30:00Z",
                             "signing_secret": "s3Cr3t-43-char-url-safe-signing-secret-value",

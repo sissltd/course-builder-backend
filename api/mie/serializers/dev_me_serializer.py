@@ -1,6 +1,9 @@
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from api.mie.models import DeveloperAccount
+from api.mie.serializers.webhook_endpoint_serializer import WebhookEndpointSerializer
+from api.mie.services import webhook_endpoint_service
 
 
 class DeveloperMeSerializer(serializers.ModelSerializer):
@@ -18,6 +21,12 @@ class DeveloperMeSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(
         help_text="Registration identity; also the platform OTP login handle."
     )
+    webhook_endpoints = serializers.SerializerMethodField(
+        help_text=(
+            "Every endpoint the account receives webhooks on, with the events "
+            "each takes. Manage them at /mie/v1/webhooks/."
+        )
+    )
 
     class Meta:
         model = DeveloperAccount
@@ -25,7 +34,7 @@ class DeveloperMeSerializer(serializers.ModelSerializer):
             "email",
             "status",
             "plan_type",
-            "webhook_url",
+            "webhook_endpoints",
             "api_key_preview",
             "api_key_last_used_at",
             "signing_secret",
@@ -33,6 +42,12 @@ class DeveloperMeSerializer(serializers.ModelSerializer):
             "decided_at",
         )
         read_only_fields = fields
+
+    @extend_schema_field(WebhookEndpointSerializer(many=True))
+    def get_webhook_endpoints(self, obj) -> list[dict]:
+        return WebhookEndpointSerializer(
+            webhook_endpoint_service.live_endpoints(developer=obj), many=True
+        ).data
 
     def get_api_key_preview(self, obj) -> str | None:
         if not obj.api_key_prefix:

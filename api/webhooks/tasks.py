@@ -4,11 +4,21 @@ from celery import shared_task
 from django.db import transaction
 
 from api.platform.enums import PaymentProcessors
-from api.webhooks.services.flutterwave_webhook_services import FlutterwaveWebhookServices
-from api.webhooks.services.paystack_webhook_services import (
-    NonRetryableWebhookError,
+from api.webhooks.services.flutterwave_webhook_services import (
+    FlutterwaveWebhookServices,
 )
-from api.webhooks.services.youverify_webhook_services import YouverifyWebhookServices
+from api.webhooks.services.flutterwave_webhook_services import (
+    NonRetryableWebhookError as FlutterwaveNonRetryableWebhookError,
+)
+from api.webhooks.services.paystack_webhook_services import (
+    NonRetryableWebhookError as PaystackNonRetryableWebhookError,
+)
+from api.webhooks.services.youverify_webhook_services import (
+    NonRetryableWebhookError as YouverifyNonRetryableWebhookError,
+)
+from api.webhooks.services.youverify_webhook_services import (
+    YouverifyWebhookServices,
+)
 from core.models import WebhookEvent, YouverifyWebhookOutboxEvent
 
 logger = logging.getLogger(__name__)
@@ -44,7 +54,7 @@ def process_webhook_task(self, event_row_id):
         logger.error(f"WebhookEvent row {event_row_id} not found.")
         return f"Row {event_row_id} missing."
 
-    except NonRetryableWebhookError as exc:
+    except (FlutterwaveNonRetryableWebhookError, PaystackNonRetryableWebhookError) as exc:
         """Wrong Webhook payload or configuration."""
         with transaction.atomic():
             event = WebhookEvent.objects.select_for_update().get(id=event_row_id)
@@ -102,7 +112,7 @@ def process_youverify_webhook_task(self, event_row_id):
         logger.error(f"YouverifyWebhookOutboxEvent row {event_row_id} not found.")
         return f"Row {event_row_id} missing."
 
-    except NonRetryableWebhookError as exc:
+    except YouverifyNonRetryableWebhookError as exc:
         with transaction.atomic():
             event = YouverifyWebhookOutboxEvent.objects.select_for_update().get(id=event_row_id)
             event.status = "FAILED"

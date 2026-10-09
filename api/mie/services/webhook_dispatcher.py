@@ -7,8 +7,10 @@ Design contract
 
 One dispatch pass costs O(N) in due events:
 
-1. ONE indexed query fetches every due event plus its submission and the
-   developer's webhook_url/signing secret (select_related - no N+1).
+1. ONE indexed query fetches every due event plus its endpoint, its
+   submission and the developer's signing secret (select_related - no N+1).
+   Each event is one delivery to one endpoint
+   (webhook_endpoint_service.record_events fans an occurrence out).
 2. HTTP POSTs run concurrently on a small thread pool; no database work
    happens inside threads.
 3. Outcomes are written back in two bulk updates (events then nothing
@@ -19,7 +21,7 @@ from a single periodic job (celery beat entry or cron'd management
 command `dispatch_mie_webhooks`). Events recorded while an account is
 suspended stay PENDING and are delivered if the account returns;
 permanently rejected accounts' events are dropped to FAILED so they stop
-accumulating.
+accumulating, as are events whose endpoint the developer has deleted.
 
 Signing scheme (mirror-image of how we'd want to be verified):
 
@@ -43,6 +45,7 @@ from django.utils import timezone
 
 from api.mie.enums import DeveloperAccountStatus, WebhookDeliveryStatus
 from api.mie.models import WebhookEvent
+from api.mie.services.webhook_endpoint_service import ENDPOINT_REMOVED_ERROR
 
 MAX_ATTEMPTS = 5
 """Total delivery attempts before an event is terminally FAILED."""
@@ -94,7 +97,9 @@ def due_events() -> models.QuerySet[WebhookEvent]:
         delivery_status=WebhookDeliveryStatus.PENDING
     ).filter(
         models.Q(next_retry_at__isnull=True) | models.Q(next_retry_at__lte=now)
-    ).select_related("submission", "submission__developer").order_by("created_datetime")
+    ).select_related("endpoint", "submission", "submission__developer").order_by(
+        "created_datetime"
+    )
 
 
 def sign_payload(secret: str, timestamp: str, body: bytes) -> str:
@@ -128,7 +133,7 @@ def dispatch_due_events(now=None) -> DispatchReport:
     if not events:
         return DispatchReport()
 
-    deliverable, inactive = _partition_by_account_state(events)
+    deliverable, inactive, orphaned = _partition_by_account_state(events)
 
     report = DispatchReport()
     if inactive:
@@ -142,6 +147,17 @@ def dispatch_due_events(now=None) -> DispatchReport:
             last_error="developer account rejected",
             next_retry_at=None,
         )
+    if orphaned:
+        # Deleting an endpoint fails its pending events at once
+        # (webhook_endpoint_service.delete_endpoint); this catches any
+        # recorded in the same instant.
+        report.failed += WebhookEvent.objects.filter(
+            id__in=[event.id for event in orphaned]
+        ).update(
+            delivery_status=WebhookDeliveryStatus.FAILED,
+            last_error=ENDPOINT_REMOVED_ERROR,
+            next_retry_at=None,
+        )
 
     if deliverable:
         prepared = [(event, *_prepare_request(event)) for event in deliverable]
@@ -152,22 +168,26 @@ def dispatch_due_events(now=None) -> DispatchReport:
 
 
 def _partition_by_account_state(events):
-    """Split into (deliverable, terminal-inactive) without extra queries.
+    """Split into (deliverable, terminal-inactive, endpoint-deleted) without
+    extra queries.
 
-    select_related already loaded each developer; PENDING rows belonging
-    to suspended accounts are left untouched (delivered after revival);
-    rejected accounts are terminal, so their events fail immediately.
+    select_related already loaded each developer and endpoint; PENDING rows
+    belonging to suspended accounts are left untouched (delivered after
+    revival); rejected accounts are terminal, so their events fail
+    immediately, and so do events for an endpoint the developer deleted.
     """
 
-    deliverable, inactive = [], []
+    deliverable, inactive, orphaned = [], [], []
     for event in events:
         status = event.submission.developer.status
-        if status == DeveloperAccountStatus.APPROVED:
-            deliverable.append(event)
-        elif status == DeveloperAccountStatus.REJECTED:
+        if status == DeveloperAccountStatus.REJECTED:
             inactive.append(event)
-        # SUSPENDED: intentionally neither - frozen, not failed.
-    return deliverable, inactive
+        elif event.endpoint.is_deleted:
+            orphaned.append(event)
+        elif status == DeveloperAccountStatus.APPROVED:
+            deliverable.append(event)
+        # SUSPENDED: intentionally none - frozen, not failed.
+    return deliverable, inactive, orphaned
 
 
 def _prepare_request(event: WebhookEvent):
@@ -181,7 +201,7 @@ def _prepare_request(event: WebhookEvent):
         "X-MIE-Timestamp": timestamp,
         "X-MIE-Signature": sign_payload(developer.signing_secret, timestamp, body),
     }
-    return developer.webhook_url, body, headers
+    return event.endpoint.url, body, headers
 
 
 def _send_all(prepared):
