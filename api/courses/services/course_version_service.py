@@ -30,6 +30,16 @@ MIGRATABLE_STATUSES = (
 )
 
 
+def get_default_course_version() -> CourseVersion | None:
+    """The newest active version, assigned to courses created outside the builder."""
+
+    return (
+        CourseVersion.objects.filter(is_active=True)
+        .order_by("-created_datetime")
+        .first()
+    )
+
+
 def create_course_version(
     *, actor: User, label: str, is_active: bool = True, request=None
 ) -> CourseVersion:

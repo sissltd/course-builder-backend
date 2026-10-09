@@ -1,4 +1,11 @@
-from drf_spectacular.utils import OpenApiExample, OpenApiResponse, extend_schema
+from django.http import HttpResponse
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import (
+    OpenApiExample,
+    OpenApiParameter,
+    OpenApiResponse,
+    extend_schema,
+)
 from rest_framework import exceptions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -9,8 +16,9 @@ from api.courses.serializers.course_import_serializer import (
     CourseImportConfirmSerializer,
     CourseImportCreateSerializer,
     CourseImportJobSerializer,
+    CourseImportTemplateQuerySerializer,
 )
-from api.courses.services import course_import_service
+from api.courses.services import course_import_service, course_import_template_service
 from api.authorization import codenames
 from api.authorization.permissions import Perm
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
@@ -62,7 +70,7 @@ class CourseImportListCreateView(APIView):
         summary="Start a document course import",
         description=(
             "Starts a creator-owned document import from a previously uploaded "
-            "PDF, DOCX, TXT, or CSV file. The API validates the durable upload "
+            "PDF, DOCX, TXT, CSV, XLSX, or JSON file. The API validates the durable upload "
             "`file_key`, parses the document into a draft module/lesson tree, "
             "and returns an import job for the frontend to poll or review.\n\n"
             "Call this after `/api/v1/uploads/presign/` succeeds and the browser "
@@ -72,9 +80,13 @@ class CourseImportListCreateView(APIView):
             "and `purpose=COURSE_DOCUMENT_IMPORT`; the selected category must be "
             "active, and any topic must belong to that category.\n\n"
             "**Important:** Send the durable `file_key`, not the temporary "
-            "`file_url`. CSV and TXT are parsed immediately in this slice; PDF "
-            "and DOCX are accepted under the final contract and return a safe "
-            "fallback structure until parser extraction is enabled."
+            "`file_url`. XLSX and JSON files must follow the complete-course "
+            "template from `/api/v1/course-imports/template/`; they carry course "
+            "details, objectives, requirements and assessments, and template "
+            "errors fail the job with row-level messages. CSV and TXT are parsed "
+            "immediately in this slice; PDF and DOCX are accepted under the final "
+            "contract and return a safe fallback structure until parser "
+            "extraction is enabled."
         ),
         request=CourseImportCreateSerializer,
         examples=[
@@ -236,8 +248,10 @@ class CourseImportConfirmView(APIView):
         summary="Confirm a document import",
         description=(
             "Creates a Draft course from a reviewed document-import structure. "
-            "Modules, lessons, lesson scripts, and lesson content blocks are "
-            "created atomically from the reviewed tree.\n\n"
+            "Course details, modules, lessons, lesson scripts, content blocks, "
+            "requirements, and lesson/module/final assessments are created "
+            "atomically from the reviewed tree. The response lists any submission "
+            "quality checks the new draft still fails.\n\n"
             "Call this after the frontend shows the detected module/lesson preview "
             "and the creator confirms the structure.\n\n"
             "**Auth:** The `courses.create` permission (Course Creator and Writer by default).\n\n"
@@ -271,6 +285,9 @@ class CourseImportConfirmView(APIView):
                             "course_id": "3f9a2e11-6b7c-4d2a-9e5f-1c8d4a7b2f30",
                             "status": "DRAFT",
                             "builder_url": "/courses/3f9a2e11-6b7c-4d2a-9e5f-1c8d4a7b2f30/builder",
+                            "quality_failures": [
+                                "Course must have a preview video before submission (BR-015)."
+                            ],
                         },
                     )
                 ],
@@ -291,10 +308,65 @@ class CourseImportConfirmView(APIView):
             actor=request.user,
             structure=(serializer.validated_data.get("structure") or None),
         )
-        return Response(
-            {
-                "course_id": course.id,
-                "status": course.status,
-                "builder_url": f"/courses/{course.id}/builder",
-            }
+        return Response(course_import_service.confirmation_result(course))
+
+
+class CourseImportTemplateView(APIView):
+    permission_classes = [Perm(codenames.COURSES_CREATE)]
+
+    @extend_schema(
+        summary="Download the complete-course import template",
+        description=(
+            "Downloads a template a creator fills in with an existing course, "
+            "then uploads through the normal document-import flow. It covers "
+            "course details, modules, lessons, learning objectives, requirements, "
+            "and lesson, module and final assessments, so the imported draft can "
+            "meet the submission quality standards.\n\n"
+            "Call this from the Import Course screen's \"Download template\" "
+            "action. `file_type=xlsx` (default) returns a workbook with "
+            "Instructions, Course, Modules, Lessons and Questions sheets; "
+            "`file_type=json` returns the same course as one nested JSON "
+            "document.\n\n"
+            "**Auth:** The `courses.create` permission (Course Creator and Writer by default).\n\n"
+            "**Prerequisites:** None.\n\n"
+            "**Important:** Responds with a file and a `Content-Disposition: "
+            "attachment` header, not JSON. The instructions quote the current "
+            "platform quality thresholds, so download a fresh copy rather than "
+            "reusing an old one. The selector is `file_type`, not `format`, "
+            "because DRF reserves `format`."
+        ),
+        parameters=[
+            OpenApiParameter(
+                name="file_type",
+                type=str,
+                enum=list(course_import_template_service.TEMPLATE_FILE_TYPES),
+                default="xlsx",
+                description="Template file type to download.",
+            )
+        ],
+        responses={
+            (200, course_import_template_service.XLSX_CONTENT_TYPE): OpenApiResponse(
+                response=OpenApiTypes.BINARY,
+                description="XLSX workbook template attachment.",
+            ),
+            (200, course_import_template_service.JSON_CONTENT_TYPE): OpenApiResponse(
+                response=OpenApiTypes.BINARY,
+                description="JSON template attachment.",
+            ),
+            **STANDARD_ERROR_RESPONSES["validation"],
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+        tags=COURSE_IMPORT_TAG,
+    )
+    def get(self, request):
+        query = CourseImportTemplateQuerySerializer(data=request.query_params)
+        query.is_valid(raise_exception=True)
+        content, content_type, filename = course_import_template_service.build_template(
+            query.validated_data["file_type"]
         )
+        response = HttpResponse(content, content_type=content_type)
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        response["Content-Length"] = str(len(content))
+        return response
