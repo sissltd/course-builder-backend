@@ -7,9 +7,21 @@ from django.utils import timezone
 from rest_framework import exceptions
 
 from api.catalog.enums import CategoryStatus
-from api.courses.enums import CourseImportStatus, CourseSourceType
-from api.courses.models import CourseImportJob, Lesson, LessonContentBlock, Module
-from api.courses.services import course_service
+from api.courses.enums import AssessmentLevel, CourseImportStatus, CourseSourceType
+from api.courses.models import (
+    Assessment,
+    CourseImportJob,
+    Lesson,
+    LessonContentBlock,
+    LessonRequirement,
+    Module,
+)
+from api.courses.services import (
+    course_import_template_service,
+    course_service,
+    course_version_service,
+)
+from api.reviews.services import quality_check_service
 from api.authorization import codenames
 from api.authorization.services import permission_service
 from shared.services.storage_service import StorageService
@@ -24,8 +36,10 @@ DOCUMENT_IMPORT_TYPES = {
     "text/plain": {"txt"},
     "text/csv": {"csv"},
     "application/csv": {"csv"},
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {"xlsx"},
+    "application/json": {"json"},
 }
-DOCUMENT_IMPORT_EXTENSIONS = {"pdf", "docx", "txt", "csv"}
+DOCUMENT_IMPORT_EXTENSIONS = {"pdf", "docx", "txt", "csv", "xlsx", "json"}
 
 IN_FLIGHT_STATUSES = (
     CourseImportStatus.QUEUED,
@@ -72,7 +86,8 @@ def validate_import_file_metadata(
         raise exceptions.ValidationError(
             {
                 "filename": (
-                    "Filename must end with .pdf, .docx, .txt, or .csv."
+                    "Filename must end with .pdf, .docx, .txt, .csv, .xlsx, "
+                    "or .json."
                 )
             }
         )
@@ -81,7 +96,8 @@ def validate_import_file_metadata(
         raise exceptions.ValidationError(
             {
                 "content_type": (
-                    "Unsupported document format. Upload a PDF, DOCX, TXT, or CSV file."
+                    "Unsupported document format. Upload a PDF, DOCX, TXT, CSV, "
+                    "XLSX, or JSON file."
                 )
             }
         )
@@ -109,7 +125,7 @@ def create_import_job(*, creator, validated_data):
         creator=creator, status__in=IN_FLIGHT_STATUSES
     ).exists():
         raise exceptions.Throttled(
-            "You already have a document import in progress. Poll that job or "
+            detail="You already have a document import in progress. Poll that job or "
             "cancel it before starting another."
         )
     category = validated_data["category"]
@@ -225,12 +241,18 @@ def parse_document(job: CourseImportJob) -> tuple[dict, list[str]]:
     if extension == "txt":
         raw = StorageService.download_bytes(job.file_key)
         return parse_text(raw.decode("utf-8-sig"))
+    if extension == "xlsx":
+        raw = StorageService.download_bytes(job.file_key)
+        return course_import_template_service.parse_template_xlsx(raw)
+    if extension == "json":
+        raw = StorageService.download_bytes(job.file_key)
+        return course_import_template_service.parse_template_json(raw)
     if extension == "pdf":
         return stub_document_structure("Imported PDF Document")
     if extension == "docx":
         return stub_document_structure("Imported DOCX Document")
     raise exceptions.ValidationError(
-        "Unsupported document format. Upload a PDF, DOCX, TXT, or CSV file."
+        "Unsupported document format. Upload a PDF, DOCX, TXT, CSV, XLSX, or JSON file."
     )
 
 
@@ -396,55 +418,33 @@ def confirm_import_job(*, job: CourseImportJob, actor, structure: dict | None = 
         raise exceptions.ValidationError(
             "Import cannot be confirmed until parsing is ready for review."
         )
-    reviewed = structure or job.detected_structure
-    _validate_structure(reviewed)
+    reviewed, _ = course_import_template_service.validate_structure(
+        structure or job.detected_structure
+    )
     job.status = CourseImportStatus.CONFIRMING
     job.stage = "Creating course"
     job.save(update_fields=["status", "stage", "updated_datetime"])
     try:
+        course_data = reviewed.get("course", {})
         course = course_service.create_draft_course(
             creator=job.creator,
             category=job.category,
             topic=job.topic,
-            title=reviewed.get("course", {}).get("title") or job.title,
-            description=(
-                reviewed.get("course", {}).get("description")
-                or job.description
-                or job.title
-            ),
+            title=course_data.get("title") or job.title,
+            description=course_data.get("description") or job.description or job.title,
+            difficulty_level=course_data.get("difficulty_level", ""),
+            learning_objectives=course_data.get("learning_objectives"),
+            tags=course_data.get("tags"),
+            preview_video_url=course_data.get("preview_video_url", ""),
+            version=course_version_service.get_default_course_version(),
             terms_accepted=True,
             source_type=CourseSourceType.DOCUMENT_IMPORTED,
         )
+        _create_assessment(
+            job, course_data.get("final_assessment"), AssessmentLevel.COURSE, course=course
+        )
         for module_order, module_data in enumerate(reviewed["modules"], 1):
-            module = Module.objects.create(
-                course=course,
-                title=module_data["title"],
-                description=module_data.get("description", ""),
-                order=module_data.get("order") or module_order,
-                learning_objectives=[],
-                created_by=job.creator,
-                updated_by=job.creator,
-            )
-            for lesson_order, lesson_data in enumerate(module_data["lessons"], 1):
-                content = lesson_data["content"]
-                lesson = Lesson.objects.create(
-                    module=module,
-                    title=lesson_data["title"],
-                    order=lesson_data.get("order") or lesson_order,
-                    script=content,
-                    learning_objectives=[],
-                    duration_minutes=max(1, len(content.split()) // 130),
-                    created_by=job.creator,
-                    updated_by=job.creator,
-                )
-                LessonContentBlock.objects.create(
-                    lesson=lesson,
-                    order=1,
-                    block_type=LessonContentBlock.BlockType.PARAGRAPH,
-                    text_content=content,
-                    created_by=job.creator,
-                    updated_by=job.creator,
-                )
+            _create_module(job, course, module_data, module_order)
         course_service.recalculate_duration_estimate(course=course)
         job.course = course
         job.status = CourseImportStatus.COMPLETED
@@ -473,28 +473,83 @@ def confirm_import_job(*, job: CourseImportJob, actor, structure: dict | None = 
         raise
 
 
-def _validate_structure(structure: dict) -> None:
-    modules = structure.get("modules") or []
-    if not modules:
-        raise exceptions.ValidationError("At least one module is required.")
-    module_orders = []
-    for module in modules:
-        if not (module.get("title") or "").strip():
-            raise exceptions.ValidationError("Every module must have a title.")
-        lessons = module.get("lessons") or []
-        if not lessons:
-            raise exceptions.ValidationError("Every module must contain at least one lesson.")
-        module_orders.append(module.get("order"))
-        lesson_orders = []
-        for lesson in lessons:
-            if not (lesson.get("title") or "").strip():
-                raise exceptions.ValidationError("Every lesson must have a title.")
-            if not (lesson.get("content") or "").strip():
-                raise exceptions.ValidationError("Every lesson must include imported content.")
-            lesson_orders.append(lesson.get("order"))
-        compact_lesson_orders = [order for order in lesson_orders if order is not None]
-        if len(compact_lesson_orders) != len(set(compact_lesson_orders)):
-            raise exceptions.ValidationError("Lesson order must be unique within each module.")
-    compact_module_orders = [order for order in module_orders if order is not None]
-    if len(compact_module_orders) != len(set(compact_module_orders)):
-        raise exceptions.ValidationError("Module order must be unique.")
+def _create_module(job: CourseImportJob, course, module_data: dict, default_order: int):
+    module = Module.objects.create(
+        course=course,
+        title=module_data["title"],
+        description=module_data.get("description", ""),
+        order=module_data.get("order") or default_order,
+        learning_objectives=module_data.get("learning_objectives", []),
+        created_by=job.creator,
+        updated_by=job.creator,
+    )
+    _create_assessment(
+        job, module_data.get("assessment"), AssessmentLevel.MODULE, module=module
+    )
+    for lesson_order, lesson_data in enumerate(module_data["lessons"], 1):
+        _create_lesson(job, module, lesson_data, lesson_order)
+
+
+def _create_lesson(job: CourseImportJob, module, lesson_data: dict, default_order: int):
+    content = lesson_data.get("content", "")
+    lesson = Lesson.objects.create(
+        module=module,
+        title=lesson_data["title"],
+        order=lesson_data.get("order") or default_order,
+        content_type=lesson_data["content_type"],
+        script=content,
+        learning_objectives=lesson_data.get("learning_objectives", []),
+        duration_minutes=course_import_template_service.lesson_duration_minutes(
+            lesson_data
+        ),
+        video_url=lesson_data.get("video_url", ""),
+        embedded_link=lesson_data.get("embedded_link", ""),
+        created_by=job.creator,
+        updated_by=job.creator,
+    )
+    if content:
+        LessonContentBlock.objects.create(
+            lesson=lesson,
+            order=1,
+            block_type=LessonContentBlock.BlockType.PARAGRAPH,
+            text_content=content,
+            created_by=job.creator,
+            updated_by=job.creator,
+        )
+    LessonRequirement.objects.bulk_create(
+        LessonRequirement(
+            lesson=lesson,
+            text=text,
+            order=order,
+            created_by=job.creator,
+            updated_by=job.creator,
+        )
+        for order, text in enumerate(lesson_data.get("requirements", []), 1)
+    )
+    _create_assessment(
+        job, lesson_data.get("assessment"), AssessmentLevel.LESSON, lesson=lesson
+    )
+
+
+def _create_assessment(job: CourseImportJob, data: dict | None, level: str, **owner):
+    if not data:
+        return
+    Assessment.objects.create(
+        level=level,
+        title=data["title"],
+        questions=data["questions"],
+        created_by=job.creator,
+        updated_by=job.creator,
+        **owner,
+    )
+
+
+def confirmation_result(course) -> dict:
+    """Confirm-response payload, including checks the draft still fails."""
+
+    return {
+        "course_id": course.id,
+        "status": course.status,
+        "builder_url": f"/courses/{course.id}/builder",
+        "quality_failures": quality_check_service.validate_structural_standards(course),
+    }

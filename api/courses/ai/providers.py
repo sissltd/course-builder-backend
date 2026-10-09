@@ -116,24 +116,27 @@ class GenerationStandards:
     final_assessment_min_questions: int
 
     @classmethod
-    def from_platform_settings(cls, platform_settings) -> "GenerationStandards":
+    def from_platform_settings(
+        cls, platform_settings, *, capped: bool = True
+    ) -> "GenerationStandards":
+        """`capped=False` keeps the platform maximums for non-generated courses."""
+
         modules_min = platform_settings.course_module_count_min
         lessons_min = platform_settings.course_lessons_per_module_min
+        module_cap = GENERATION_MODULE_CAP if capped else math.inf
+        lesson_cap = GENERATION_LESSONS_PER_MODULE_CAP if capped else math.inf
         return cls(
             course_objectives_min=platform_settings.course_learning_objectives_min,
             course_objectives_max=platform_settings.course_learning_objectives_max,
             modules_min=modules_min,
             modules_max=max(
                 modules_min,
-                min(platform_settings.course_module_count_max, GENERATION_MODULE_CAP),
+                min(platform_settings.course_module_count_max, module_cap),
             ),
             lessons_per_module_min=lessons_min,
             lessons_per_module_max=max(
                 lessons_min,
-                min(
-                    platform_settings.course_lessons_per_module_max,
-                    GENERATION_LESSONS_PER_MODULE_CAP,
-                ),
+                min(platform_settings.course_lessons_per_module_max, lesson_cap),
             ),
             lesson_objectives_min=platform_settings.lesson_learning_objectives_min,
             lesson_objectives_max=platform_settings.lesson_learning_objectives_max,

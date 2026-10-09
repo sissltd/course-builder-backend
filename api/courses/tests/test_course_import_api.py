@@ -94,6 +94,19 @@ class CourseImportApiTests(APITestCase):
         self.assertEqual(CourseImportJob.objects.count(), 1)
 
     @patch("api.courses.services.course_import_service.StorageService.download_bytes")
+    def test_second_import_while_one_is_in_flight_is_throttled(self, mock_download):
+        mock_download.return_value = CSV_BYTES
+        self.client.post("/api/v1/course-imports/", self._payload(), format="json")
+
+        response = self.client.post(
+            "/api/v1/course-imports/",
+            self._payload(idempotency_key="import-2"),
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
+
+    @patch("api.courses.services.course_import_service.StorageService.download_bytes")
     def test_other_creator_cannot_access_job(self, mock_download):
         mock_download.return_value = CSV_BYTES
         created = self.client.post(

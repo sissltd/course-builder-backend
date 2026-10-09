@@ -49,6 +49,11 @@ urlpatterns = router.urls + [
         name="course-import-list",
     ),
     path(
+        "course-imports/template/",
+        course_import_views.CourseImportTemplateView.as_view(),
+        name="course-import-template",
+    ),
+    path(
         "course-imports/<uuid:pk>/",
         course_import_views.CourseImportDetailView.as_view(),
         name="course-import-detail",

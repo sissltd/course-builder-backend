@@ -139,8 +139,10 @@ COURSE_UPLOAD_RULES = {
             "text/plain",
             "text/csv",
             "application/csv",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "application/json",
         },
-        "extensions": {"pdf", "docx", "txt", "csv"},
+        "extensions": {"pdf", "docx", "txt", "csv", "xlsx", "json"},
         "mime_extensions": {
             "application/pdf": {"pdf"},
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document": {
@@ -149,6 +151,10 @@ COURSE_UPLOAD_RULES = {
             "text/plain": {"txt"},
             "text/csv": {"csv"},
             "application/csv": {"csv"},
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+                "xlsx"
+            },
+            "application/json": {"json"},
         },
         "max_size": 20 * MB,
     },
@@ -279,8 +285,10 @@ class StorageService:
                 expires_in:  Seconds until the presigned URL expires
         """
 
-        # [1] Validate content type
-        if content_type not in ALLOWED_CONTENT_TYPES:
+        # [1] Validate content type. A purpose may allow extra types (e.g. the
+        # XLSX/JSON import template) without opening them to every folder.
+        purpose_types = COURSE_UPLOAD_RULES.get(purpose, {}).get("content_types", ())
+        if content_type not in ALLOWED_CONTENT_TYPES and content_type not in purpose_types:
             raise InvalidFileType(
                 f"File type '{content_type}' is not allowed. "
                 f"Allowed types: {', '.join(sorted(ALLOWED_CONTENT_TYPES))}"

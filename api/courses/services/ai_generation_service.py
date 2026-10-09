@@ -24,11 +24,10 @@ from api.courses.models import (
     AIGenerationItem,
     AIGenerationJob,
     Assessment,
-    CourseVersion,
     Lesson,
     Module,
 )
-from api.courses.services import course_service
+from api.courses.services import course_service, course_version_service
 from api.platform.services import platform_settings_service
 from api.reviews.services import quality_check_service
 
@@ -268,14 +267,6 @@ def rescale_course_lesson_durations(*, course, standards: GenerationStandards):
             changed.append(lesson)
     if changed:
         Lesson.objects.bulk_update(changed, ["duration_minutes"])
-
-
-def _default_course_version():
-    return (
-        CourseVersion.objects.filter(is_active=True)
-        .order_by("-created_datetime")
-        .first()
-    )
 
 
 def quality_report(*, course) -> list[str]:
@@ -561,7 +552,7 @@ def materialize_structure(*, job, generated):
         ),
         tags=generated["tags"],
         duration_seconds=generated["planned_duration_seconds"],
-        version=_default_course_version(),
+        version=course_version_service.get_default_course_version(),
         terms_accepted=True,
         source_type=CourseSourceType.AI_GENERATED,
     )
