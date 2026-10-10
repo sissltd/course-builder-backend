@@ -30,6 +30,7 @@ from api.courses.enums import (
 )
 from api.courses.exceptions import CourseNotAwaitingVideo, VideoProviderConflict
 from api.courses.services import course_update_alert_service, production_engine
+from api.production.services import production_service
 from api.courses.models import (
     Course,
     CourseDistribution,
@@ -461,6 +462,26 @@ def _resubmit_after_revision(*, course: Course, actor: User) -> Course:
         raise exceptions.ValidationError({"structural_standards": failures})
 
     with transaction.atomic():
+        # Video the engine made is remade from the corrected text before it
+        # goes back; the engine resubmits once it is done.
+        if production_service.remake_after_resubmission(course=course, actor=actor):
+            Notification.emit_in_app_notification(
+                receivers=[course.creator],
+                title="Video being updated",
+                content=(
+                    f"The video for '{course.title}' is being updated to match your "
+                    "changes; the course goes back to review once it is ready."
+                ),
+                metadata={"course_id": course.id},
+            )
+            activity_service.log_activity(
+                user=course.creator,
+                category=UserActivityCategoryEnums.SUBMISSION,
+                action=UserActivityActionEnums.COURSE_SUBMITTED,
+                summary=f"You resubmitted '{course.title}'; its video is being updated first.",
+                target=course,
+            )
+            return course
         course = resume_at_revision_seat(course=course, actor=actor)
         quality_review_service.run_baseline_checks(course=course)
         Notification.emit_in_app_notification(
@@ -529,6 +550,14 @@ def record_video_decision(*, course: Course, actor: User, will_provide: bool) ->
             ),
             target=course,
         )
+        if will_provide:
+            production_service.cancel_active_run(
+                course=course,
+                actor=actor,
+                reason="The creator chose to add the video themselves.",
+            )
+        else:
+            production_service.request_production(course=course, actor=actor)
     return course
 
 
@@ -564,43 +593,12 @@ def submit_video(*, course: Course, actor: User) -> Course:
         )
 
     with transaction.atomic():
-        course.video_attached_at = timezone.now()
-        failures = quality_check_service.validate_structural_standards(course)
-        if failures:
-            course.video_attached_at = None
-            raise exceptions.ValidationError({"structural_standards": failures})
-        course.status = CourseStatus.SUBMITTED
-        course.review_stage = ReviewStage.SECOND_REVIEW
-        # A new queue entry starts un-alerted and unflagged, as in
-        # start_review_cycle.
-        course.sla_red_alerted_at = None
-        course.flagged_at = None
-        course.flag_reason = ""
-        course.updated_by = actor
-        course.save(
-            update_fields=[
-                "video_attached_at",
-                "status",
-                "review_stage",
-                "sla_red_alerted_at",
-                "flagged_at",
-                "flag_reason",
-                "updated_by",
-                "updated_datetime",
-            ]
-        )
-        review_service.reset_seat(course=course, seat=ReviewStage.SECOND_REVIEW)
+        _send_video_to_review(course=course, actor=actor)
         Notification.emit_in_app_notification(
             receivers=[course.creator],
             title="Video submitted",
             content=f"The video for '{course.title}' has been submitted for review.",
             metadata={"course_id": course.id},
-        )
-        course_update_alert_service.notify_course_status_change(
-            course=course,
-            actor=actor,
-            title="Video submitted",
-            content=f"The video for '{course.title}' was submitted for review.",
         )
         activity_service.log_activity(
             user=actor,
@@ -609,6 +607,109 @@ def submit_video(*, course: Course, actor: User) -> Course:
             summary=f"You submitted the video for '{course.title}'.",
             target=course,
         )
+    return course
+
+
+def deliver_video(*, course: Course, actor: User) -> Course:
+    """The production engine's submit_video: attach the video it made and
+    send the course to the video review seat.
+
+    Called only by the engine, inside its own transaction, with its system
+    account as `actor`; there is no endpoint. The same video-stage
+    structural rules run as for a creator's video. Raises
+    CourseNotAwaitingVideo (409) or VideoProviderConflict (409) when the
+    course is not waiting on engine video.
+    """
+
+    if course.status != CourseStatus.AWAITING_VIDEO:
+        raise CourseNotAwaitingVideo()
+    if course.video_provider != VideoProvider.PRODUCTION_ENGINE:
+        raise VideoProviderConflict("Only a course whose video the engine makes can receive it.")
+    _send_video_to_review(course=course, actor=actor)
+    Notification.emit_in_app_notification(
+        receivers=[course.creator],
+        title="Video ready",
+        content=f"The video for '{course.title}' has been produced and sent for review.",
+        metadata={"course_id": course.id},
+    )
+    activity_service.log_activity(
+        user=actor,
+        category=UserActivityCategoryEnums.SUBMISSION,
+        action=UserActivityActionEnums.COURSE_VIDEO_SUBMITTED,
+        summary=f"The Production Engine submitted the video for '{course.title}'.",
+        target=course,
+    )
+    return course
+
+
+def _send_video_to_review(*, course: Course, actor: User) -> None:
+    """Stamp the video stage, check the course against it, and queue it at
+    the second review seat. Shared by a creator's or developer's submission
+    and the engine's delivery."""
+
+    course.video_attached_at = timezone.now()
+    failures = quality_check_service.validate_structural_standards(course)
+    if failures:
+        course.video_attached_at = None
+        raise exceptions.ValidationError({"structural_standards": failures})
+    course.status = CourseStatus.SUBMITTED
+    course.review_stage = ReviewStage.SECOND_REVIEW
+    # A new queue entry starts un-alerted and unflagged, as in
+    # start_review_cycle.
+    course.sla_red_alerted_at = None
+    course.flagged_at = None
+    course.flag_reason = ""
+    course.updated_by = actor
+    course.save(
+        update_fields=[
+            "video_attached_at",
+            "status",
+            "review_stage",
+            "sla_red_alerted_at",
+            "flagged_at",
+            "flag_reason",
+            "updated_by",
+            "updated_datetime",
+        ]
+    )
+    review_service.reset_seat(course=course, seat=ReviewStage.SECOND_REVIEW)
+    course_update_alert_service.notify_course_status_change(
+        course=course,
+        actor=actor,
+        title="Video submitted",
+        content=f"The video for '{course.title}' was submitted for review.",
+    )
+
+
+def resubmit_produced_video(*, course: Course, actor: User) -> Course:
+    """The engine's resubmission after reworking its video: the same
+    standards as any resubmission, then back to the seat that rejected it.
+    Called only by the engine, with its system account as `actor`."""
+
+    failures = quality_check_service.validate_structural_standards(course)
+    if failures:
+        raise exceptions.ValidationError({"structural_standards": failures})
+    course = resume_at_revision_seat(course=course, actor=actor)
+    quality_review_service.run_baseline_checks(course=course)
+    Notification.emit_in_app_notification(
+        receivers=[course.creator],
+        title="Video reworked",
+        content=f"The video for '{course.title}' was reworked and resubmitted for review.",
+        metadata={"course_id": course.id},
+    )
+    course_update_alert_service.notify_course_status_change(
+        course=course,
+        actor=actor,
+        title="Course resubmitted",
+        content=f"'{course.title}' was resubmitted after its video was reworked.",
+    )
+    activity_service.log_activity(
+        user=actor,
+        category=UserActivityCategoryEnums.SUBMISSION,
+        action=UserActivityActionEnums.COURSE_SUBMITTED,
+        summary=f"The Production Engine resubmitted '{course.title}' after rework.",
+        target=course,
+    )
     return course
 
 
@@ -750,6 +851,27 @@ def save_distribution_channels(
     return saved
 
 
+SLUG_MAX_LENGTH = 280
+
+
+def catalogue_slug(course: Course) -> str:
+    """A free public slug from the title: `title`, or `title-2`, `title-3`...
+    when taken. Set once at publish and never changed."""
+
+    from django.utils.text import slugify
+
+    base = slugify(course.title)[: SLUG_MAX_LENGTH - 10] or "course"
+    taken = set(
+        Course.objects.filter(slug__startswith=base).exclude(pk=course.pk).values_list("slug", flat=True)
+    )
+    if base not in taken:
+        return base
+    suffix = 2
+    while f"{base}-{suffix}" in taken:
+        suffix += 1
+    return f"{base}-{suffix}"
+
+
 def publish_course(
     *,
     course: Course,
@@ -759,8 +881,8 @@ def publish_course(
     """Transition an Approved course to Published for a reviewer or admin.
 
     Records a PublishedCourseSnapshot under the canonical CourseVersion
-    label (SCCS PRD Section 15). No external LMS push is attempted; that is
-    deferred until each marketplace integration exists.
+    label (SCCS PRD Section 15) and gives the course its public catalogue
+    slug. Channel delivery belongs to the production engine (finalize).
 
     There is no re-edit-after-publish workflow yet (publishing is one-way,
     no unpublish action), so this only ever creates a single snapshot per
@@ -796,12 +918,14 @@ def publish_course(
         course.status = CourseStatus.PUBLISHED
         course.version = version
         course.published_at = timezone.now()
+        course.slug = course.slug or catalogue_slug(course)
         course.updated_by = actor
         course.save(
             update_fields=[
                 "status",
                 "version",
                 "published_at",
+                "slug",
                 "updated_by",
                 "updated_datetime",
             ]
@@ -826,13 +950,16 @@ def publish_course(
             failure_reason="",
             updated_datetime=now,
         )
-        CourseDistribution.objects.filter(
-            course=course, channel=DistributionChannel.SOLUDESK
-        ).update(
-            status=DistributionStatus.PUBLISHED,
-            published_at=now,
-            updated_datetime=now,
-        )
+        # With the production engine on, SoluDesk is published by the
+        # engine's push like every other channel; off, at the click.
+        if not production_engine.is_enabled():
+            CourseDistribution.objects.filter(
+                course=course, channel=DistributionChannel.SOLUDESK
+            ).update(
+                status=DistributionStatus.PUBLISHED,
+                published_at=now,
+                updated_datetime=now,
+            )
         production_engine.finalize(course=course, actor=actor)
         activity_service.log_activity(
             user=actor,

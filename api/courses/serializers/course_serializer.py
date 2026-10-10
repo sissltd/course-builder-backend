@@ -1080,7 +1080,20 @@ class ReviewRejectSerializer(serializers.Serializer):
     """
 
     feedback = serializers.JSONField(required=True)
-    flags = serializers.JSONField(required=False, default=list)
+    flags = serializers.JSONField(
+        required=False,
+        default=list,
+        help_text=(
+            "Optional itemised issues: a list of {flag_type, title, system_message, "
+            "reviewer_note, lesson_id, module_id}. flag_type takes the ReviewFlagType "
+            "vocabulary (CONTENT_ACCURACY, CONTENT_CLARITY, SCRIPT_LENGTH, "
+            "PRONUNCIATION, VOICE_QUALITY, AUDIO_LEVEL, PACING, VISUAL_ERROR, "
+            "ON_SCREEN_TEXT, VISUAL_QUALITY, CAPTIONS, OTHER). On a course whose "
+            "video the Production Engine made, a rejection whose flags are all "
+            "audio, visual or caption types is fixed and resubmitted by the engine; "
+            "for PRONUNCIATION, put one 'term = spoken form' per line in reviewer_note."
+        ),
+    )
 
     def validate_feedback(self, value):
         if not isinstance(value, dict) or not value.get("summary"):

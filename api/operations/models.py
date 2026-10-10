@@ -257,11 +257,39 @@ class PipelineJob(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
         related_name="pipeline_jobs",
         help_text=_("Course being produced."),
     )
+    run = models.ForeignKey(
+        "production.ProductionRun",
+        verbose_name=_("Production Run"),
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="steps",
+        help_text=_("Production Engine run this step belongs to, when it is one."),
+    )
+    lesson = models.ForeignKey(
+        "courses.Lesson",
+        verbose_name=_("Lesson"),
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="pipeline_jobs",
+        help_text=_("Lesson the step worked on, for per-lesson steps."),
+    )
     stage = models.CharField(
         verbose_name=_("Stage"),
         max_length=25,
         choices=PipelineStage.choices,
         help_text=_("Which stage of production this job performs."),
+    )
+    step = models.CharField(
+        verbose_name=_("Step"),
+        max_length=20,
+        blank=True,
+        default="",
+        help_text=_(
+            "The Production Engine step within the stage, e.g. storyboard, "
+            "narration, visuals, render, quality_check. Blank for other jobs."
+        ),
     )
     status = models.CharField(
         verbose_name=_("Status"),

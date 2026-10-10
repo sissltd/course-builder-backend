@@ -447,13 +447,33 @@ class OpenAIResponsesProvider(CourseAIProvider):
                     return content.get("text", "")
         return ""
 
-    def _structured_response(self, *, name, schema, prompt):
+    def structured_response(self, *, name, schema, prompt, images=()):
+        """A strict JSON-schema response and the provider's token usage.
+
+        Public for other engines (the Production Engine's storyboard and
+        visual check) that share this provider's metering, retries and rate
+        window. `images` are data URLs (e.g. "data:image/jpeg;base64,...")
+        sent with the prompt for the model to look at.
+        """
+
+        return self._structured_response(name=name, schema=schema, prompt=prompt, images=images)
+
+    def _structured_response(self, *, name, schema, prompt, images=()):
+        content = prompt
+        if images:
+            content = [
+                {
+                    "role": "user",
+                    "content": [{"type": "input_text", "text": prompt}]
+                    + [{"type": "input_image", "image_url": image, "detail": "low"} for image in images],
+                }
+            ]
         data = self._post(
             "responses",
             {
                 "model": self.text_model,
                 "store": False,
-                "input": prompt,
+                "input": content,
                 "text": {
                     "format": {
                         "type": "json_schema",

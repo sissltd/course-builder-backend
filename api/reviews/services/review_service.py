@@ -15,6 +15,7 @@ from api.courses.models import Course
 from api.courses.services import course_update_alert_service
 from api.notification.models import Notification, NotificationPreference
 from api.platform.services import platform_settings_service
+from api.production.services import production_service
 from api.payments.services.transaction_services import effect_course_payment
 from api.reviews.enums import ReviewActionType, ReviewStage
 from api.reviews.models import ReviewAction, ReviewAssignment
@@ -693,6 +694,9 @@ def reject_course(
             content=f"'{course.title}' was rejected and returned to {returned_to}.",
         )
         _notify_mie_revision(course=course, review_action=review_action)
+        production_service.handle_rejection(
+            course=course, review_action=review_action, reviewer=reviewer
+        )
         activity_service.log_activity(
             user=reviewer,
             category=UserActivityCategoryEnums.APPROVAL,
@@ -890,6 +894,8 @@ def approve_content(
         )
         if awaiting_video:
             _announce_text_approved(course=course)
+            if course.video_provider == VideoProvider.PRODUCTION_ENGINE:
+                production_service.request_production(course=course, actor=reviewer)
         activity_service.log_activity(
             user=reviewer,
             category=UserActivityCategoryEnums.APPROVAL,
@@ -992,7 +998,15 @@ def approve_qa(
     return action
 
 
-def reject_qa(*, course: Course, reviewer: User, feedback: dict) -> ReviewAction:
+def reject_qa(
+    *, course: Course, reviewer: User, feedback: dict, flags: list[dict] | None = None
+) -> ReviewAction:
+    """Reject a course at QA verification and send it back for revision.
+
+    `flags`, as on reject_course, itemise the issues. On a course whose
+    video the Production Engine made, flags it can fix start a rework.
+    """
+
     permission_service.require_permission(reviewer, codenames.COURSES_REJECT)
     require_qa_seat_access(user=reviewer)
     if not feedback.get("summary"):
@@ -1011,6 +1025,7 @@ def reject_qa(*, course: Course, reviewer: User, feedback: dict) -> ReviewAction
             stage=ReviewStage.QA,
             feedback=feedback,
         )
+        _create_review_flags(review_action=action, flags=flags or [])
         # QA's decision is recorded on its assignment, as approve_qa does.
         assignment, _ = ReviewAssignment.objects.get_or_create(
             course=course, stage=ReviewStage.QA
@@ -1050,6 +1065,7 @@ def reject_qa(*, course: Course, reviewer: User, feedback: dict) -> ReviewAction
             content=f"'{course.title}' failed QA and was returned to {returned_to}.",
         )
         _notify_mie_revision(course=course, review_action=action)
+        production_service.handle_rejection(course=course, review_action=action, reviewer=reviewer)
         activity_service.log_activity(
             user=reviewer,
             category=UserActivityCategoryEnums.APPROVAL,

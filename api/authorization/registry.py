@@ -298,6 +298,13 @@ _PERMISSIONS = (
         "Manage MIE developer accounts, submissions and rejection reasons.",
         "mie",
     ),
+    PermissionDef(
+        c.PRODUCTION_MANAGE,
+        "Manage Production Runs",
+        "Retry or cancel Production Engine runs, including ones blocked by the budget.",
+        "mie",
+        implies=(c.MIE_VIEW_PIPELINE,),
+    ),
     # Catalog
     PermissionDef(
         c.CATALOG_MANAGE_CATEGORIES,
@@ -416,6 +423,7 @@ _DEFAULT_HOLDERS = {
     c.MIE_VIEW_PIPELINE: (AD, SA),
     c.MIE_APPROVE_TOPIC_PROPOSALS: (W, SA),
     c.MIE_MANAGE_CONSOLE: (SA,),
+    c.PRODUCTION_MANAGE: (AD, SA),
     c.CATALOG_MANAGE_CATEGORIES: (W, AD, SA),
     c.CATALOG_MANAGE_TOPICS: (CR, V, AD, AP, SA),
     c.CATALOG_VIEW_TOPIC_QUEUE: (AD, AP, SA),
