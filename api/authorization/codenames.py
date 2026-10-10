@@ -50,6 +50,7 @@ TEAMS_RESET_PASSWORD = "teams.reset_password"
 MIE_VIEW_PIPELINE = "mie.view_pipeline"
 MIE_APPROVE_TOPIC_PROPOSALS = "mie.approve_topic_proposals"
 MIE_MANAGE_CONSOLE = "mie.manage_console"
+PRODUCTION_MANAGE = "production.manage"
 
 # Catalog
 CATALOG_MANAGE_CATEGORIES = "catalog.manage_categories"

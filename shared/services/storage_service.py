@@ -500,6 +500,33 @@ class StorageService:
         return file_key
 
     @staticmethod
+    def upload_file(path, *, file_key, content_type):
+        """Upload a local file under a key the caller chooses (the Production
+        Engine names its files by content hash). Large files go up in parts.
+        The object takes the bucket's default (private) access, like browser
+        uploads; read it through generate_presigned_get()."""
+
+        try:
+            _get_s3_client().upload_file(
+                str(path), BUCKET_NAME, file_key, ExtraArgs={"ContentType": content_type}
+            )
+        except ClientError as e:
+            logger.error(f"[<>Storage<>] upload_file failed for {file_key}: {e}")
+            raise StorageError("Failed to store the file. Please try again.")
+        return file_key
+
+    @staticmethod
+    def download_file(file_key, path):
+        """Download an object to a local file, for backend processing."""
+
+        file_key = _file_key_from_value(file_key)
+        try:
+            _get_s3_client().download_file(BUCKET_NAME, file_key, str(path))
+        except ClientError as e:
+            logger.error(f"[<>Storage<>] download_file failed for {file_key}: {e}")
+            raise StorageError("Failed to read the stored file. Please try again.")
+
+    @staticmethod
     def download_bytes(file_key):
         """Download a private object's bytes for backend processing."""
 

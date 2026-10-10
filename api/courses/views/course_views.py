@@ -2167,6 +2167,7 @@ class CourseReviewViewSet(ReadOnlyModelViewSet):
             course=self.get_object(),
             reviewer=request.user,
             feedback=serializer.validated_data["feedback"],
+            flags=serializer.validated_data.get("flags") or [],
         )
         return Response(ReviewActionSerializer(action).data)
 

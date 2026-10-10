@@ -52,4 +52,4 @@ class PublishedCourseSnapshot(
     def __str__(self):
         """Identify which course/version this snapshot represents."""
 
-        return f"{self.course_id} v{self.version.version_label}"
+        return f"{self.course_id} v{self.version.label}"

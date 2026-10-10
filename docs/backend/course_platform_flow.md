@@ -224,12 +224,27 @@ Rules that differ from the original flow:
 - A course submitted with any video (preview video, lesson video or embed, video content block, video media asset) is refused until it has reached the video stage (`Course.video_attached_at`); once it has, the preview video and a media reference on every video lesson are required instead. One function, `quality_check_service.validate_structural_standards`, applies whichever rule fits, so the reviewers' quality check agrees with submission.
 - **A course is visible only to the role at its current seat, and to the Super Admin** (`review_service.seat_visibility_q`). First Review and the video review show it to Writers, Verification to Verifiers, QA to QA Reviewers, and an approved course to the Approver; it reaches each role only as it arrives. `NEEDS_REVISION` shows to the roles of the seat that sent it back. Published courses stay visible to everyone with course access. Drafts and `AWAITING_VIDEO` courses belong to the creator, developer or production engine, so no reviewer role sees them. The rule is applied in the query on the review queue (lists, screens, detail and every action), `admin/courses`, the creator-side `/courses/` for staff who view every course, global search and the reviewer dashboard counts, so a hidden course is a 404, never a 403.
 - Seats are taken by role: Writers sit First and Second Review (`review_service.STAGED_SEAT_ROLES`), a Verifier Verification, a QA Reviewer QA. Four eyes still applies.
-- Only the Approver (and the Super Admin) may set prices and publish (`course_service.require_approver`). Publishing hands the course to `production_engine.finalize`, which is a no-op until the production engine is built.
+- Only the Approver (and the Super Admin) may set prices and publish (`course_service.require_approver`). Publishing hands the course to `production_engine.finalize`: with `production_enabled` on, that queues a PACKAGE run; with it off, nothing is produced and SoluDesk is marked live at the click.
 - A creator's course must start from a topic that exists and is active (`course_service.require_approved_topic`): an existing unreserved topic, or one an admin approved after the creator's request (`/topic-reservations/`). A developer's course is gated on its approved idea instead.
 - A `VIDEO` lesson may be written as a script with no media; the media is demanded when the video is submitted.
 - An appeal against a rejection (`/course-appeals/`) works on a `NEEDS_REVISION` course too; an approved appeal resumes at the rejecting seat.
 
-Not built: the production engine itself, so a course whose video production supplies sits at `AWAITING_VIDEO` until it exists; payout to developers; unpublishing or editing after publication.
+The Production Engine (`api/production`) picks up a course whose video production supplies, and does final production for every published course.
+
+- **Runs.** A run is quoted against `PlatformSettings.production_course_budget` and executed behind the `production_enabled` kill switch, on the `production` queue (`worker-media`, which has ffmpeg).
+- **VIDEO runs.** A VIDEO run goes through four steps:
+  - storyboards each lesson: verbatim narration slices, with the model only grouping sentences;
+  - voices each scene: ElevenLabs, then Google Chirp 3 HD;
+  - draws each scene with Pillow templates, plus OpenAI illustrations for IMAGE scenes;
+  - assembles every lesson into one encode at −16 LUFS, captions it from the voice timings, and runs the quality gate (`lesson_video_service.quality_failures`).
+
+  It also makes the trailer and thumbnail. Every step is content-addressed (`ProductionAsset.key`), so retries and rework pay only for what changed.
+- **Delivery.** `production_service._deliver` writes the lesson videos, captions and `MediaAsset` evidence. It then calls `course_service.deliver_video`, which sends the course to Second Review; after a rework it calls `resubmit_produced_video`, which returns it to the rejecting seat.
+- **Rework.** A rejection at a video seat whose flags are all engine-fixable starts a rework run (`production_service.handle_rejection`, `FLAG_ACTIONS`). Content flags wait for the author. The author's resubmission remakes the changed lessons before the course goes back (`remake_after_resubmission`).
+- **PACKAGE runs.** A PACKAGE run builds the canonical package (`packaging_service.build_package`) and the SCORM 1.2 and 2004 exports. It then delivers to each channel through its active `ChannelMapping`: an API push for SoluDesk, upload kits for Udemy and Coursera. Udemy refuses fully AI (crawler) courses.
+- **Catalogue.** The public catalogue (`/catalogue/courses/`) lists published courses that are live on at least one channel.
+
+Not built yet: payout to developers; unpublishing or editing after publication; adaptive streaming (HLS) and C2PA signing of the engine's video.
 
 Dashboard summary numbers are all counts over `Course.status`; they are computed live per request and keyed by every `CourseStatus`, so the new statuses appear without any change.
 

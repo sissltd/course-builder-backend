@@ -20,6 +20,9 @@ CELERY_TASK_ROUTES = {
     "api.courses.tasks.generate_ai_course": {"queue": "course_ai"},
     "api.courses.tasks.generate_ai_assist": {"queue": "course_ai"},
     "api.courses.tasks.generate_ai_thumbnail": {"queue": "course_ai"},
+    # Video production renders with ffmpeg for hours at a time: its own
+    # worker (worker-media), with ffmpeg and fonts installed.
+    "api.production.tasks.run_production": {"queue": "production"},
 }
 
 # One beat entry per recurring job. The MIE webhook sweep is deliberately a
@@ -29,6 +32,10 @@ CELERY_TASK_ROUTES = {
 CELERY_BEAT_SCHEDULE = {
     "recover-ai-generation-jobs": {
         "task": "api.courses.tasks.recover_ai_generation_jobs",
+        "schedule": 60.0,
+    },
+    "production-dispatch-runs": {
+        "task": "api.production.tasks.dispatch_production_runs",
         "schedule": 60.0,
     },
     "mie-dispatch-webhooks": {

@@ -81,6 +81,38 @@ services:
           memory: 512M
           cpus: "1.0"
 
+  # Production Engine worker: renders lesson videos with ffmpeg, so it
+  # gets the most CPU and memory and runs one run at a time.
+  worker-media:
+    build:
+      context: .
+      dockerfile: .docker/Dockerfile
+    env_file:
+      - .env
+    environment:
+      DJANGO_SETTINGS_MODULE: ${DJANGO_SETTINGS_MODULE:-config.settings}
+      DJANGO_RUN_MIGRATIONS: "0"
+      DJANGO_COLLECTSTATIC: "0"
+    command: ["celery", "-A", "config", "worker", "--loglevel=info", "--queues=production", "--concurrency=1", "--prefetch-multiplier=1"]
+    user: appuser
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A config inspect ping --timeout=5 | grep -q pong"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    depends_on:
+      - postgres
+      - redis
+      - api
+    restart: always
+    networks:
+      - backend
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: "2.0"
+
   beat:
     build:
       context: .

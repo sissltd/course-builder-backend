@@ -346,7 +346,8 @@ Fields the API returns that aren't on the admin design:
 | `new_course_assigned` | ✅ Reviewers: "Course assigned to you" |
 | `creator_feedback` | ✅ Appeal deciders: "New course-rejection appeal" (now enforced) |
 | `kyc_submission_alert` | ✅ Account approvers: new KYC submission |
-| `escalation_assigned`, `sla_amber_warning`, `sla_breached`, `account_deletion_detection_alert`, `mie_pipeline_alert` | ❌ Saved but no sender exists. Don't show them as working toggles. |
+| `escalation_assigned`, `sla_amber_warning`, `sla_breached`, `account_deletion_detection_alert` | ❌ Saved but no sender exists. Don't show them as working toggles. |
+| `mie_pipeline_alert` | ✅ Production Engine alerts: a run blocked by the budget, or failed. Sent to holders of `production.manage` (Admin, Super Admin). |
 | `sla_amber_threshold_hours_override`, `sla_red_threshold_hours_override` | Reviewer-only overrides for review-queue ordering. Integer ≥ 1, or `null` for the platform default. |
 
 > "Show disabled" means the backend has nothing behind the toggle. Hiding
