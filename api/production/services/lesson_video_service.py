@@ -25,7 +25,7 @@ from api.courses.ai.providers import AIProviderError
 from api.operations.enums import CostCategory, PipelineStage, ProviderKind
 from api.platform.services import platform_settings_service
 from api.production.enums import AssetKind, ReworkAction, SceneType
-from api.production.media import captions, ffmpeg, scoring, slides
+from api.production.rendering import captions, ffmpeg, scoring, slides
 from api.production.models import ProductionAsset, ProductionScene
 from api.production.providers import broll, media_ai, visual_check
 from api.production.providers.storyboard import split_sentences

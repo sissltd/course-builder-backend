@@ -86,7 +86,7 @@ so a 4-hour course takes roughly 1–1.5 hours.
 | Stricter or looser quality | Platform Settings: caption accuracy, drift, visual check. |
 | Turn b-roll on | Set `GEMINI_API_KEY`, then raise `production_broll_per_lesson`. |
 | New platform | A new channel mapping (PRODUCTION_ENGINE.md §8). For an API platform, a developer also adds its URL and key settings to `PUSH_ENDPOINTS`. |
-| Change the slide look | Edit `api/production/media/slides.py` **and** bump `TEMPLATE_VERSION`, or old frames are reused. |
-| Change the encode | Edit `media/ffmpeg.py` **and** bump `RENDER_VERSION`. |
+| Change the slide look | Edit `api/production/rendering/slides.py` **and** bump `TEMPLATE_VERSION`, or old frames are reused. |
+| Change the encode | Edit `rendering/ffmpeg.py` **and** bump `RENDER_VERSION`. |
 | Change a prompt | Edit it **and** bump its `*_PROMPT_VERSION`, then compare scores in Langfuse. |
 | Update vendor prices | `PRODUCTION_*_USD_*` in `.env`. These only change recorded costs; the quote rate lives in `production_service.QUOTE_USD_PER_FINISHED_MINUTE`. |

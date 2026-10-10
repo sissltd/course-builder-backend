@@ -9,7 +9,7 @@ import pytest
 from PIL import Image
 
 from api.production.enums import SceneType
-from api.production.media import captions, ffmpeg, scoring, slides
+from api.production.rendering import captions, ffmpeg, scoring, slides
 from api.production.services import lesson_video_service
 from api.production.services.lesson_video_service import apply_lexicon, quality_failures
 

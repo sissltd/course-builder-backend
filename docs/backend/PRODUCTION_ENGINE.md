@@ -370,7 +370,7 @@ Actual spend is in `ProductionCost` and on the run (`spent_amount`).
 | `api/production/services/channel_mapping_service.py` | The mapper |
 | `api/production/services/run_ledger.py` | Steps, costs, budget and switch checks, alerts |
 | `api/production/services/asset_store.py` | The content-addressed store |
-| `api/production/media/` | Frames (Pillow), ffmpeg, captions, scoring |
+| `api/production/rendering/` | Frames (Pillow), ffmpeg, captions, scoring |
 | `api/production/providers/` | Storyboard, voices, illustration and transcription, b-roll, visual check |
 | `api/production/tracing.py` | Langfuse |
 | `api/courses/services/catalogue_service.py` | The public catalogue |
