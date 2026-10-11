@@ -210,6 +210,22 @@ class QARejectSerializer(serializers.Serializer):
     feedback = serializers.JSONField(
         help_text="JSON feedback containing a non-empty summary that explains why QA rejected the course.",
     )
+    flags = serializers.JSONField(
+        required=False,
+        default=list,
+        help_text=(
+            "Optional itemised issues, as on the content-seat reject: a list of "
+            "{flag_type, title, system_message, reviewer_note, lesson_id, module_id}. "
+            "Use the ReviewFlagType vocabulary for flag_type: when every flag on a "
+            "course whose video the Production Engine made is an audio, visual or "
+            "caption type, the engine redoes those lessons and resubmits by itself."
+        ),
+    )
+
+    def validate_flags(self, value):
+        if not isinstance(value, list):
+            raise serializers.ValidationError("flags must be a list.")
+        return value
 
     def validate_feedback(self, value):
         if not isinstance(value, dict) or not value.get("summary"):

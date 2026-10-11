@@ -31,6 +31,12 @@ UPDATABLE_FIELDS = {
     "auto_credit_duration_hours",
     "withdrawal_require_verification",
     "staged_review_flow_enabled",
+    "production_enabled",
+    "production_course_budget",
+    "production_min_caption_accuracy",
+    "production_max_av_drift_ms",
+    "production_visual_check_enabled",
+    "production_broll_per_lesson",
 }
 
 

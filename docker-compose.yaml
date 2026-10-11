@@ -59,6 +59,25 @@ services:
     networks:
       - dependencies
 
+  # Production Engine worker: renders lesson videos with ffmpeg, one run at
+  # a time.
+  worker-media:
+    build:
+      context: .
+      dockerfile: .docker/Dockerfile
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    environment:
+      DJANGO_SETTINGS_MODULE: ${DJANGO_SETTINGS_MODULE:-config.settings}
+      DJANGO_RUN_MIGRATIONS: 0
+      DJANGO_COLLECTSTATIC: 0
+    command: ["celery", "-A", "config", "worker", "--loglevel=info", "--queues=production", "--concurrency=1", "--prefetch-multiplier=1"]
+    user: appuser
+    networks:
+      - dependencies
+
   scheduler:
     build:
       context: .

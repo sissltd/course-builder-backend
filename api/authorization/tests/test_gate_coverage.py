@@ -79,6 +79,9 @@ SELF_SERVICE_HANDLERS = {
     "OnboardingView.patch",
     "PaystackWebhookView.post",
     "PlatformSettingsView.get",
+    # The public course catalogue: published, live courses only.
+    "PublicCourseDetailView.get",
+    "PublicCourseListView.get",
     "QueueBehaviourPreferenceView.get",
     "QueueBehaviourPreferenceView.patch",
     "ResendVerificationView.post",

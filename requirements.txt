@@ -34,3 +34,8 @@ defusedxml==0.7.1
 pytest==9.1.1
 pytest-django==4.14.0
 pytest-xdist==3.8.0
+# Production Engine: scene frames are drawn with Pillow; channel payloads are
+# checked against each channel's JSON Schema. Both were already installed as
+# dependencies (of reportlab and drf-spectacular); pinned now that we use them.
+Pillow==12.3.0
+jsonschema==4.26.0

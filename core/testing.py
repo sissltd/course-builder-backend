@@ -204,8 +204,18 @@ _SEED_MIGRATIONS = (
     # test after it (and, with --reuse-db, for the next run).
     ("api.authorization.migrations.0005_grant_support_manage_requests", "grant"),
     ("api.authorization.migrations.0006_grant_writer_course_review", "grant"),
+    ("api.authorization.migrations.0007_grant_production_manage", "grant"),
+    ("api.courses.migrations.0002_seed_default_course_version", "seed_default_course_version"),
+    ("api.payments.migrations.0003_internalaccount", "seed_internal_accounts"),
+    ("api.payments.migrations.0008_auto_20260817_2142", "_create_flutterwave_internal_account"),
+    ("api.payments.migrations.0009_seed_adjustments_internal_account", "seed"),
+    ("api.payments.migrations.0010_auto_20260918_0953", "seed_course_payment_internal_account"),
+    # Not replayable: catalog 0002/0003 seed through `Category.creator_price`,
+    # which the price-level migration replaced, so they cannot run against
+    # the live models. Tests build their catalog rows with factories.
     ("api.operations.migrations.0002_seed_services_and_providers", "seed"),
     ("api.operations.migrations.0003_seed_celery_ai_worker", "seed_worker_service"),
+    ("api.production.migrations.0003_seed_channel_mappings", "seed"),
     (
         "api.reviews.migrations.0003_seed_default_quality_check_criteria",
         "seed_default_criteria",

@@ -60,6 +60,17 @@ class Course(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMi
         max_length=255,
         help_text=_("Course title."),
     )
+    slug = models.SlugField(
+        verbose_name=_("Slug"),
+        max_length=280,
+        unique=True,
+        null=True,
+        blank=True,
+        help_text=_(
+            "Public catalogue address, set once when the course is published "
+            "and never changed, so shared links keep working."
+        ),
+    )
     description = models.TextField(
         verbose_name=_("Description"),
         help_text=_(

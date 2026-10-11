@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from rest_framework import serializers
 
 from api.platform.enums import KYCProvider, PaymentProcessors
@@ -39,6 +41,12 @@ class PlatformSettingsSerializer(serializers.ModelSerializer):
             "auto_credit_duration_hours",
             "withdrawal_require_verification",
             "staged_review_flow_enabled",
+            "production_enabled",
+            "production_course_budget",
+            "production_min_caption_accuracy",
+            "production_max_av_drift_ms",
+            "production_visual_check_enabled",
+            "production_broll_per_lesson",
         ]
         read_only_fields = fields
 
@@ -191,6 +199,50 @@ class PlatformSettingsUpdateSerializer(serializers.Serializer):
             "any course is in review, awaiting video or revision, or "
             "approved but unpublished."
         ),
+    )
+
+    production_enabled = serializers.BooleanField(
+        required=False,
+        help_text=(
+            "Production Engine kill switch. Off: runs are created and quoted "
+            "but none starts, and a running one stops before its next step."
+        ),
+    )
+    production_course_budget = serializers.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        min_value=Decimal("0.00"),
+        required=False,
+        help_text=(
+            "Most the Production Engine may spend on one course, in USD. "
+            "Runs quoted above it are blocked before any spend."
+        ),
+    )
+    production_min_caption_accuracy = serializers.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        min_value=Decimal("0"),
+        max_value=Decimal("100"),
+        required=False,
+        help_text=(
+            "Lowest caption accuracy, in percent, a produced lesson may have "
+            "before it goes to review."
+        ),
+    )
+    production_max_av_drift_ms = serializers.IntegerField(
+        min_value=0,
+        required=False,
+        help_text="Largest audio/video length gap a produced lesson may have, in milliseconds.",
+    )
+    production_visual_check_enabled = serializers.BooleanField(
+        required=False,
+        help_text="Have a vision model check a frame of every scene before review.",
+    )
+    production_broll_per_lesson = serializers.IntegerField(
+        min_value=0,
+        max_value=5,
+        required=False,
+        help_text="Most faceless AI motion clips per lesson (0 = off). About $1.20 each, included in the quote.",
     )
 
     def validate(self, attrs):
