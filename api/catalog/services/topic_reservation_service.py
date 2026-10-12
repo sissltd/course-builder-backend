@@ -67,10 +67,8 @@ def approve_request(
             topic = Topic.objects.create(
                 category=request.category,
                 name=request.name,
-                # A brand-new topic has no difficulty of its own, so it
-                # inherits the category's entry rate; an admin can raise it
-                # afterwards through the topic endpoints.
-                creator_price=request.category.creator_price_beginner,
+                # No price overrides: a new topic pays its category's three
+                # prices until a Writer sets its own.
                 reserved_by=request.requested_by,
                 reserved_until=timezone.localdate() + timedelta(days=expiry_days),
             )

@@ -75,7 +75,7 @@ The system automatically catches duplicate ideas before they reach the admin que
 
 ### Payout Plans
 
-Different creators can have different payment arrangements. Some get paid for every course published from one of their ideas (approving an idea alone pays nothing). Others get paid the same way unless a specific idea is marked as excluded. Others never receive payouts (for example, when the creator is contributing for non-commercial reasons). Admins set the plan per creator.
+Different creators can have different payment arrangements. Some get paid for every course produced from one of their ideas, when it passes QA (approving an idea alone pays nothing). Others get paid the same way unless a specific idea is marked as excluded. Others never receive payouts (for example, when the creator is contributing for non-commercial reasons). Admins set the plan per creator.
 
 ### Rejection Reasons
 

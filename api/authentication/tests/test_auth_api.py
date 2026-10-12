@@ -1206,7 +1206,7 @@ class MeApiTests(APITestCase):
     def test_patch_assigns_category_and_creates_creator_profile(self):
         user = make_user()
         category = Category.objects.create(
-            name="Web Applications", creator_price_beginner="100", creator_price_intermediate="100", creator_price_advanced="100"
+            name="Web Applications", creator_price_without_video="100", creator_price_with_video="100", creator_price_ai_built="100"
         )
         self.client.force_authenticate(user)
 
@@ -1225,7 +1225,7 @@ class MeApiTests(APITestCase):
     def test_patch_null_category_clears_existing_category(self):
         user = make_user()
         category = Category.objects.create(
-            name="Data Science", creator_price_beginner="100", creator_price_intermediate="100", creator_price_advanced="100"
+            name="Data Science", creator_price_without_video="100", creator_price_with_video="100", creator_price_ai_built="100"
         )
         CreatorProfile.objects.create(user=user, primary_expertise_category=category)
         self.client.force_authenticate(user)
@@ -1243,7 +1243,7 @@ class MeApiTests(APITestCase):
     def test_omitted_category_remains_unchanged(self):
         user = make_user()
         category = Category.objects.create(
-            name="Product Design", creator_price_beginner="100", creator_price_intermediate="100", creator_price_advanced="100"
+            name="Product Design", creator_price_without_video="100", creator_price_with_video="100", creator_price_ai_built="100"
         )
         CreatorProfile.objects.create(user=user, primary_expertise_category=category)
         self.client.force_authenticate(user)
@@ -1259,9 +1259,9 @@ class MeApiTests(APITestCase):
         user = make_user(first_name="Original")
         category = Category.objects.create(
             name="Inactive Category",
-            creator_price_beginner="100",
-            creator_price_intermediate="100",
-            creator_price_advanced="100",
+            creator_price_without_video="100",
+            creator_price_with_video="100",
+            creator_price_ai_built="100",
             status=CategoryStatus.INACTIVE,
         )
         self.client.force_authenticate(user)

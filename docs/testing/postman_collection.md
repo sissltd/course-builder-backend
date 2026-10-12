@@ -391,7 +391,9 @@ Query params (optional): `track_preference` (`CREATOR_PREFERRED`|`AI_PREFERRED`|
         "id": "5f2c1e2a-1234-4a11-9f3a-000000000001",
         "name": "Web Development",
         "description": "Frontend, backend, and full-stack web courses.",
-        "creator_price": "75.00",
+        "creator_price_without_video": "75.00",
+        "creator_price_with_video": "75.00",
+        "creator_price_ai_built": "75.00",
         "track_preference": "OPEN",
         "status": "ACTIVE",
         "created_datetime": "2026-07-11T10:00:00Z",
@@ -416,7 +418,9 @@ Auth: any authenticated user
 {
   "name": "AI & Machine Learning",
   "description": "Beginner to advanced AI/ML courses.",
-  "creator_price": "100.00",
+  "creator_price_without_video": "100.00",
+  "creator_price_with_video": "100.00",
+  "creator_price_ai_built": "100.00",
   "track_preference": "AI_PREFERRED",
   "status": "ACTIVE"
 }
@@ -428,7 +432,9 @@ Auth: any authenticated user
   "id": "5f2c1e2a-1234-4a11-9f3a-000000000002",
   "name": "AI & Machine Learning",
   "description": "Beginner to advanced AI/ML courses.",
-  "creator_price": "100.00",
+  "creator_price_without_video": "100.00",
+  "creator_price_with_video": "100.00",
+  "creator_price_ai_built": "100.00",
   "track_preference": "AI_PREFERRED",
   "status": "ACTIVE"
 }
@@ -462,12 +468,12 @@ Auth: any authenticated user
 }
 ```
 
-### Update Category — Admin or Creator Reviewer
+### Update Category — Writer, Admin or Super Admin (prices need `catalog.set_creator_prices`)
 `PATCH {{base_url}}/api/v1/categories/{{category_id}}/`
 
 **Body**
 ```json
-{ "creator_price": "120.00" }
+{ "creator_price_with_video": "120.00" }
 ```
 
 **200 OK** — updated category object. *(Existing in-progress/submitted courses keep their `creator_price_snapshot`; only courses submitted after this change pick up the new price.)*

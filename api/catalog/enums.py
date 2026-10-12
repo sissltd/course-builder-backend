@@ -54,3 +54,14 @@ class ReservationStatus(models.TextChoices):
     PENDING = "PENDING", "Pending"
     APPROVED = "APPROVED", "Approved"
     REJECTED = "REJECTED", "Rejected"
+
+
+class CreatorPriceType(models.TextChoices):
+    """Which of a category's (or topic's) three creator prices a course is
+    paid at. Fixed by how the course was made: built with our AI, or written
+    by the creator who either adds the video or leaves it to the
+    Production Engine. A developer's course carries its own video."""
+
+    WITHOUT_VIDEO = "WITHOUT_VIDEO", "Creator, without video"
+    WITH_VIDEO = "WITH_VIDEO", "Creator, with video"
+    AI_BUILT = "AI_BUILT", "Built with our AI"

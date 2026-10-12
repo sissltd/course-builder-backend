@@ -90,9 +90,8 @@ def credit_wallet(*, user: User, amount: Decimal, course: Course | None = None, 
 
     Uses select_for_update() inside an atomic transaction so concurrent
     credits to the same wallet cannot produce a lost update. Does not send a
-    notification itself - callers (e.g. review_service.approve_course) are
-    responsible for that, avoiding duplicate notifications when this is one
-    step of a larger workflow.
+    notification itself. Course payouts do not use it: they are ledger
+    transfers from the course-payment account (course_payout_service).
     """
 
     with transaction.atomic():

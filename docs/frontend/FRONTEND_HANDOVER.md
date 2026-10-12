@@ -576,9 +576,9 @@ One row:
 {
   "id": "uuid",
   "name": "Software Engineering",
-  "creator_price_beginner": "300.00",
-  "creator_price_intermediate": "400.00",
-  "creator_price_advanced": "500.00",
+  "creator_price_without_video": "300.00",
+  "creator_price_with_video": "400.00",
+  "creator_price_ai_built": "200.00",
   "icon": "rocket",
   "track_preference": "CREATOR_PREFERRED",
   "status": "ACTIVE",
@@ -598,7 +598,7 @@ Tabs map to filters:
 | Open | `?track_preference=OPEN` |
 | Archive | `?status=ARCHIVED` |
 
-Also supports `?search=` and `?ordering=name,-created_datetime,creator_price_beginner`.
+Also supports `?search=` and `?ordering=name,-created_datetime,creator_price_with_video`.
 
 ## Create, edit, archive, delete
 
@@ -619,15 +619,18 @@ Create/edit body:
 {
   "name": "Software Engineering",
   "track_preference": "CREATOR_PREFERRED",
-  "creator_price_beginner": "300.00",
-  "creator_price_intermediate": "400.00",
-  "creator_price_advanced": "500.00",
+  "creator_price_without_video": "300.00",
+  "creator_price_with_video": "400.00",
+  "creator_price_ai_built": "200.00",
   "icon": "rocket"
 }
 ```
 
-- **Payout follows course difficulty.** A course freezes the tier matching
-  its own `difficulty_level` when it is submitted.
+- **Three creator prices, by how the course is made:** without video (the
+  creator leaves it to the Production Engine), with video, and AI-built.
+  Only holders of `catalog.set_creator_prices` (Writer, Admin, Super Admin)
+  may set them; anyone else gets 403. A course locks all three when it is
+  submitted. See [CREATOR_PAYOUT_HANDOVER.md](CREATOR_PAYOUT_HANDOVER.md).
 - `icon` is free text — the client owns its icon set.
 - Archiving keeps every course, payout and price snapshot; it only removes
   the category from the creator picker, and is reversible.
@@ -644,13 +647,13 @@ Create/edit body:
 ```
 POST /api/v1/category-requests/         { "name": "...", "description": "..." }
 GET  /api/v1/category-requests/
-POST /api/v1/category-requests/{id}/approve/   { "creator_price": "150000.00" }
+POST /api/v1/category-requests/{id}/approve/   { "creator_price_without_video": "...", "creator_price_with_video": "...", "creator_price_ai_built": "..." }
 POST /api/v1/category-requests/{id}/reject/
 ```
 
 Creators see their own; admins see all. The category does **not** exist
 until approved — don't add it to any picker while `status` is `PENDING`.
-On approval all three price tiers start at the supplied rate.
+The approver sets the new category's three creator prices (needs `catalog.set_creator_prices`).
 
 ---
 

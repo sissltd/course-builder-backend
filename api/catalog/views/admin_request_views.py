@@ -16,6 +16,7 @@ from api.catalog.serializers import (
     AdminCategoryRequestSerializer,
     CategoryRequestApproveSerializer,
 )
+from api.catalog.services.category_service import PRICE_FIELDS
 from api.catalog.services import category_request_service
 from api.authorization import codenames
 from api.authorization.permissions import Perm
@@ -116,8 +117,10 @@ class AdminCategoryRequestViewSet(ReadOnlyModelViewSet):
             "creator payout.\n\n"
             "**Auth:** The `catalog.manage_categories` permission — Writer, Admin and Super Admin by default.\n\n"
             "**Prerequisites:** The request must be Pending.\n\n"
-            "**Important:** `creator_price` seeds all three category price tiers. "
-            "A duplicate category name or slug returns 400 and creates nothing."
+            "**Important:** The three creator prices are required (without "
+            "video, with video, AI-built) and need `catalog.set_creator_prices` "
+            "(403 otherwise). A duplicate category name or slug returns 400 and "
+            "creates nothing."
         ),
         tags=["Admin — Category Requests"],
         request=CategoryRequestApproveSerializer,
@@ -149,8 +152,12 @@ class AdminCategoryRequestViewSet(ReadOnlyModelViewSet):
     def approve(self, request, pk=None):
         serializer = CategoryRequestApproveSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
         updated = category_request_service.approve_request(
-            request=self.get_object(), actor=request.user, **serializer.validated_data
+            request=self.get_object(),
+            actor=request.user,
+            prices={field: data[field] for field in PRICE_FIELDS},
+            track_preference=data.get("track_preference"),
         )
         return Response(self.get_serializer(updated).data)
 

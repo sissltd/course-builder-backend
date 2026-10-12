@@ -329,9 +329,9 @@ class AdminActionsNeedNoMFAApiTests(APITestCase):
             "/api/v1/categories/",
             {
                 "name": "Admin Category",
-                "creator_price_beginner": "50.00",
-                "creator_price_intermediate": "50.00",
-                "creator_price_advanced": "50.00",
+                "creator_price_without_video": "50.00",
+                "creator_price_with_video": "50.00",
+                "creator_price_ai_built": "50.00",
                 "track_preference": "OPEN",
                 "status": "ACTIVE",
             },

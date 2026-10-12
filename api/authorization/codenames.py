@@ -55,6 +55,7 @@ PRODUCTION_MANAGE = "production.manage"
 # Catalog
 CATALOG_MANAGE_CATEGORIES = "catalog.manage_categories"
 CATALOG_MANAGE_TOPICS = "catalog.manage_topics"
+CATALOG_SET_CREATOR_PRICES = "catalog.set_creator_prices"
 CATALOG_VIEW_TOPIC_QUEUE = "catalog.view_topic_queue"
 
 # Platform

@@ -10,8 +10,9 @@ class CategoryAdmin(admin.ModelAdmin):
         "id",
         "name",
         "slug",
-        "creator_price_beginner",
-        "creator_price_advanced",
+        "creator_price_without_video",
+        "creator_price_with_video",
+        "creator_price_ai_built",
         "track_preference",
         "status",
         "created_datetime",
@@ -56,7 +57,9 @@ class TopicAdmin(admin.ModelAdmin):
         "name",
         "slug",
         "category",
-        "creator_price",
+        "creator_price_without_video",
+        "creator_price_with_video",
+        "creator_price_ai_built",
         "status",
         "reserved_by",
         "reserved_until",
@@ -68,10 +71,10 @@ class TopicAdmin(admin.ModelAdmin):
     def save_model(self, request, obj, form, change):
         """Route edits through topic_service so admin can't bypass its rules.
 
-        A plain obj.save() here would skip update_topic()'s refresh of
-        creator_price_snapshot on courses still in the review queue - the same
-        business rule the API's PATCH endpoint enforces. Routing through the
-        service keeps admin from silently diverging from it.
+        A plain obj.save() here would skip update_topic()'s price-permission
+        check and its re-locking of prices on courses still in the review
+        queue - the same rules the API's PATCH endpoint enforces. Routing
+        through the service keeps admin from silently diverging from them.
         """
 
         if not change:

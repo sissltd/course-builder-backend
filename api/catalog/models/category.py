@@ -6,7 +6,7 @@ from django.utils.translation import gettext_lazy as _
 
 from django.utils.text import slugify
 
-from api.catalog.enums import CategoryStatus, TrackPreference
+from api.catalog.enums import CategoryStatus, CreatorPriceType, TrackPreference
 from core.mixins import (
     DateHistoryModelMixin,
     SoftDeleteModelMixin,
@@ -23,9 +23,11 @@ class Category(
 ):
     """A staff-managed course category with fixed creator pricing.
 
-    Price changes are not retroactive: Course.creator_price_snapshot captures
-    the price in effect when a course is submitted, so editing a category's
-    price here only affects courses submitted after the change.
+    Three prices, one per CreatorPriceType. Only holders of
+    `catalog.set_creator_prices` (the Writer, Admin, Super Admin) set them.
+    Price changes are not retroactive: a course locks the category's (or its
+    topic's) prices when it is submitted (Course.creator_rates_snapshot), so
+    editing them here only affects courses submitted afterwards.
     """
 
     name = models.CharField(
@@ -44,26 +46,35 @@ class Category(
             "lookups and discovery."
         ),
     )
-    creator_price_beginner = models.DecimalField(
-        verbose_name=_("Creator Price - Beginner"),
+    creator_price_without_video = models.DecimalField(
+        verbose_name=_("Creator Price - Without Video"),
         max_digits=10,
         decimal_places=2,
         validators=[MinValueValidator(Decimal(0))],
-        help_text=_("Payout for an approved Beginner course in this category."),
+        help_text=_(
+            "Paid to a creator who writes the course and leaves its video to "
+            "the Production Engine. Paid when Second Review approves it."
+        ),
     )
-    creator_price_intermediate = models.DecimalField(
-        verbose_name=_("Creator Price - Intermediate"),
+    creator_price_with_video = models.DecimalField(
+        verbose_name=_("Creator Price - With Video"),
         max_digits=10,
         decimal_places=2,
         validators=[MinValueValidator(Decimal(0))],
-        help_text=_("Payout for an approved Intermediate course in this category."),
+        help_text=_(
+            "Paid to a creator who writes the course and adds its video, and "
+            "to a paid developer. Paid when QA approves it."
+        ),
     )
-    creator_price_advanced = models.DecimalField(
-        verbose_name=_("Creator Price - Advanced"),
+    creator_price_ai_built = models.DecimalField(
+        verbose_name=_("Creator Price - AI-built"),
         max_digits=10,
         decimal_places=2,
         validators=[MinValueValidator(Decimal(0))],
-        help_text=_("Payout for an approved Advanced course in this category."),
+        help_text=_(
+            "Paid to a creator who builds the course with our AI. Paid at "
+            "Second Review or QA, by who supplies the video."
+        ),
     )
     icon = models.CharField(
         verbose_name=_("Icon"),
@@ -107,20 +118,14 @@ class Category(
             self.slug = slugify(self.name)[:160]
         super().save(*args, **kwargs)
 
-    def price_for(self, difficulty_level) -> Decimal:
-        """Payout for a course of `difficulty_level` in this category.
-
-        The three levels key off courses.DifficultyLevel. An unrecognised
-        or missing level falls back to the beginner rate rather than
-        raising: a payout must always resolve to a number, and the entry
-        rate is the safe direction to err in.
-        """
+    def price_for(self, price_type: str) -> Decimal:
+        """This category's creator price of `price_type` (CreatorPriceType)."""
 
         return {
-            "BEGINNER": self.creator_price_beginner,
-            "INTERMEDIATE": self.creator_price_intermediate,
-            "ADVANCED": self.creator_price_advanced,
-        }.get(difficulty_level, self.creator_price_beginner)
+            CreatorPriceType.WITHOUT_VIDEO: self.creator_price_without_video,
+            CreatorPriceType.WITH_VIDEO: self.creator_price_with_video,
+            CreatorPriceType.AI_BUILT: self.creator_price_ai_built,
+        }[price_type]
 
     def __str__(self):
         """Use the category name as the human-readable label."""
