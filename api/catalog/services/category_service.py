@@ -5,37 +5,49 @@ from rest_framework import exceptions
 
 from api.catalog.enums import CategoryDeletionStrategy, CategoryStatus
 from api.catalog.exceptions import CategoryDeletionNeedsStrategy
+from api.authorization import codenames
+from api.authorization.services import permission_service
 from api.catalog.models import Category
 from api.users.models import User
 
+#: The fields that decide what creators are paid.
+PRICE_FIELDS = frozenset(
+    {"creator_price_without_video", "creator_price_with_video", "creator_price_ai_built"}
+)
+
+
+def require_price_setter(actor: User) -> None:
+    """Only holders of `catalog.set_creator_prices` (the Writer, Admin and
+    Super Admin by default) may set what creators are paid. 403 otherwise."""
+
+    permission_service.require_permission(actor, codenames.CATALOG_SET_CREATOR_PRICES)
+
 
 def create_category(*, actor: User, **fields) -> Category:
-    """Create a category, stamping the acting staff member as its author."""
+    """Create a category, stamping the acting staff member as its author. A
+    new category carries its three prices, so its author must be allowed to
+    set them."""
 
+    require_price_setter(actor)
     return Category.objects.create(created_by=actor, updated_by=actor, **fields)
 
 
 def update_category(*, category: Category, actor: User, data: dict) -> Category:
     """Apply `data` to `category` and record who changed it.
 
-    Editing a price level is allowed and takes effect only for courses
-    submitted afterwards - Course.creator_price_snapshot freezes the rate at
-    submission time, so no existing payout is altered retroactively.
+    Changing a price needs `catalog.set_creator_prices` (403 otherwise) and
+    takes effect only for courses submitted afterwards - a course locks its
+    prices at submission (Course.creator_rates_snapshot), so no existing
+    payout is altered retroactively.
 
     This allowlist must stay in step with CategoryWriteSerializer: a field
     the serializer accepts but this set omits is silently dropped, which
     looks to the caller like a successful save that changed nothing.
     """
 
-    editable_fields = {
-        "name",
-        "creator_price_beginner",
-        "creator_price_intermediate",
-        "creator_price_advanced",
-        "icon",
-        "track_preference",
-        "status",
-    }
+    editable_fields = {"name", "icon", "track_preference", "status"} | PRICE_FIELDS
+    if PRICE_FIELDS & data.keys():
+        require_price_setter(actor)
     for field, value in data.items():
         if field in editable_fields:
             setattr(category, field, value)

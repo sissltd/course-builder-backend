@@ -2,30 +2,25 @@ from decimal import Decimal
 from typing import Any, cast
 from unittest.mock import Mock, patch
 
-from celery.exceptions import Retry
 from django.contrib.contenttypes.models import ContentType
 from django.test import TestCase
 
-from api.courses.enums import CourseSourceType, CourseStatus
-from api.courses.tests.factories import make_draft_course, make_user
+from api.courses.tests.factories import make_user
 from api.payments.models.ledgeraccount_models import InternalAccount
 from api.payments.models.transaction_model import Transaction
 from api.payments.services.transaction_services import (
 	InsufficientFundsError,
 	TransferRecipientError,
 	create_transaction,
-	effect_course_payment,
 	get_paystack_recipient_code,
 	get_wallet_for_update,
 	internal_transfer,
 	list_transactions,
 )
-from api.payments.tasks import release_course_payment
 from api.users.enums import UserRole
 from api.users.models.user import User
 from api.wallet.models import Wallet
 
-release_task: Any = release_course_payment
 
 
 class TransactionServiceTests(TestCase):
@@ -170,133 +165,3 @@ class TransactionServiceTests(TestCase):
 		)
 		with self.assertRaisesRegex(TransferRecipientError, "gateway unavailable"):
 			get_paystack_recipient_code("123", "001", "Test User")
-
-	@patch("api.payments.services.transaction_services.release_course_payment")
-	@patch("api.payments.services.transaction_services.get_settings")
-	def test_effect_course_payment_schedules_only_creator_uploaded_courses(
-		self, get_settings, release_task
-	):
-		course = make_draft_course(
-			creator=self.creator, source_type=CourseSourceType.CREATOR_UPLOADED
-		)
-		get_settings.return_value.auto_credit_duration_hours = 48
-
-		effect_course_payment(course)
-
-		release_task.apply_async.assert_called_once_with(
-			args=[course.id], countdown=48 * 3600
-		)
-
-		release_task.apply_async.reset_mock()
-		course.source_type = CourseSourceType.DOCUMENT_IMPORTED
-		course.save(update_fields=["source_type"])
-		effect_course_payment(course)
-		release_task.apply_async.assert_not_called()
-
-
-class ReleaseCoursePaymentTaskTests(TestCase):
-	def setUp(self):
-		self.creator = make_user(role=UserRole.COURSE_CREATOR)
-		self.course = make_draft_course(
-			creator=self.creator,
-			status=CourseStatus.APPROVED,
-			creator_price_snapshot=Decimal("75.00"),
-		)
-
-	def test_missing_course_is_ignored(self):
-		release_task.run("00000000-0000-0000-0000-000000000000")
-
-		self.assertEqual(Transaction.objects.count(), 0)
-
-	def test_unapproved_course_is_ignored(self):
-		self.course.status = CourseStatus.DRAFT
-		self.course.save(update_fields=["status"])
-
-		release_task.run(self.course.id)
-
-		self.assertEqual(Transaction.objects.count(), 0)
-
-	def test_existing_reference_is_idempotent(self):
-		Transaction.objects.create(
-			reference=f"course_payment_{self.course.id}",
-			amount=Decimal("75.00"),
-			type=Transaction.TransactionType.CREDIT,
-			status=Transaction.TransactionStatus.COMPLETED,
-		)
-
-		release_task.run(self.course.id)
-
-		self.assertEqual(Transaction.objects.count(), 1)
-
-	@patch("api.payments.tasks.Notification.emit_in_app_notification")
-	@patch("api.payments.services.transaction_services.internal_transfer")
-	def test_approved_course_transfers_payment_and_notifies_creator(
-		self, internal_transfer, emit_notification
-	):
-		debit_ledger, _ = InternalAccount.objects.get_or_create(
-			code_name="course_payment",
-			defaults={"name": "Course payments", "currency": "NGN"},
-		)
-		credit_wallet = Wallet.objects.create(user=self.creator)
-
-		with patch(
-			"api.payments.tasks.wallet_service.get_or_create_wallet",
-			return_value=credit_wallet,
-		):
-			release_task.run(self.course.id)
-
-		internal_transfer.assert_called_once_with(
-			amount=Decimal("75.00"),
-			from_ledger=debit_ledger,
-			to_ledger=credit_wallet,
-			reference=f"course_payment_{self.course.id}",
-			description=f"Course '{self.course.title}' approved after QA verification",
-			course_id=self.course.id,
-		)
-		emit_notification.assert_called_once_with(
-			receivers=[self.creator],
-			title="Course approved",
-			content=f"Your course '{self.course.title}' passed QA verification and has been approved.",
-			metadata={"course_id": self.course.id, "amount": Decimal("75.00")},
-		)
-
-	def test_missing_internal_account_is_not_retried(self):
-		with patch(
-			"api.payments.tasks.InternalAccount.objects.get",
-			side_effect=InternalAccount.DoesNotExist,
-		), self.assertRaises(InternalAccount.DoesNotExist):
-			release_task.run(self.course.id)
-
-	@patch("api.payments.tasks.wallet_service.get_or_create_wallet")
-	@patch("api.payments.services.transaction_services.internal_transfer")
-	def test_unexpected_transfer_failure_uses_task_retry(
-		self, internal_transfer, get_or_create_wallet
-	):
-		InternalAccount.objects.get_or_create(
-			code_name="course_payment",
-			defaults={"name": "Course payments", "currency": "NGN"},
-		)
-		get_or_create_wallet.return_value = Wallet.objects.create(user=self.creator)
-		internal_transfer.side_effect = RuntimeError("database unavailable")
-
-		with patch.object(release_course_payment, "retry", side_effect=Retry) as retry, self.assertRaises(Retry):
-			release_task.run(self.course.id)
-
-		retry.assert_called_once()
-
-	@patch("api.payments.tasks.Notification.emit_in_app_notification")
-	@patch("api.payments.services.transaction_services.internal_transfer")
-	def test_notification_failure_does_not_retry_payment(
-		self, internal_transfer, emit_notification
-	):
-		InternalAccount.objects.get_or_create(
-			code_name="course_payment",
-			defaults={"name": "Course payments", "currency": "NGN"},
-		)
-		internal_transfer.return_value = None
-		emit_notification.side_effect = RuntimeError("notification unavailable")
-
-		release_task.run(self.course.id)
-
-		internal_transfer.assert_called_once()
-		emit_notification.assert_called_once()

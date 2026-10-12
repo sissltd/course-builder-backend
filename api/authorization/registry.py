@@ -320,6 +320,13 @@ _PERMISSIONS = (
         grantable_to_public_roles=True,
     ),
     PermissionDef(
+        c.CATALOG_SET_CREATOR_PRICES,
+        "Set Creator Prices",
+        "Set the three creator prices (without video, with video, AI-built) "
+        "on categories and topics. These are what creators are paid.",
+        "catalog",
+    ),
+    PermissionDef(
         c.CATALOG_VIEW_TOPIC_QUEUE,
         "View Topic Reservation Queue",
         "View the admin topic reservation screens.",
@@ -426,6 +433,7 @@ _DEFAULT_HOLDERS = {
     c.PRODUCTION_MANAGE: (AD, SA),
     c.CATALOG_MANAGE_CATEGORIES: (W, AD, SA),
     c.CATALOG_MANAGE_TOPICS: (CR, V, AD, AP, SA),
+    c.CATALOG_SET_CREATOR_PRICES: (W, AD, SA),
     c.CATALOG_VIEW_TOPIC_QUEUE: (AD, AP, SA),
     c.PLATFORM_EDIT_SETTINGS: (AD, SA),
     c.AUDIT_VIEW: (AD, SA),

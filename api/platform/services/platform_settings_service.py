@@ -28,7 +28,6 @@ UPDATABLE_FIELDS = {
     "payment_processor",
     "kyc_provider",
     "liveness_threshold",
-    "auto_credit_duration_hours",
     "withdrawal_require_verification",
     "staged_review_flow_enabled",
     "production_enabled",

@@ -87,7 +87,7 @@ class CoursePushTestCase(APITestCase):
     def setUp(self):
         self.developer, self.key = make_approved_developer()
         self.category = make_category(
-            creator_price_intermediate=Decimal("150.00"), status=CategoryStatus.ACTIVE
+            creator_price_with_video=Decimal("150.00"), status=CategoryStatus.ACTIVE
         )
         self.version, _ = CourseVersion.objects.get_or_create(label="1.0")
         self.idea = make_decided_submission(
@@ -240,18 +240,13 @@ class CoursePushSuccessTests(CoursePushTestCase):
             event.payload["submission"]["reference"], self.idea.public_reference
         )
 
-    def test_no_payout_is_scheduled_for_a_pushed_course(self):
-        from api.payments.services.transaction_services import effect_course_payment
-
+    def test_a_pushed_course_is_priced_with_video_and_not_paid_yet(self):
         self._push()
         course = Course.objects.get(mie_submission=self.idea)
 
-        with patch(
-            "api.payments.services.transaction_services.release_course_payment"
-        ) as task:
-            effect_course_payment(course)
-
-        task.apply_async.assert_not_called()
+        self.assertEqual(course.payout_type, "WITH_VIDEO")
+        self.assertEqual(course.creator_price_snapshot, Decimal("150.00"))
+        self.assertIsNone(course.creator_paid_at)
 
 
 class LinkedCreatorAccountTests(CoursePushTestCase):

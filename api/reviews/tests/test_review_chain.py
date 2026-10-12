@@ -40,9 +40,9 @@ class ReviewChainTests(APITestCase):
         self.verifier = make_user(role=UserRole.STAFF_VERIFIER)
         self.admin = make_user(role=UserRole.ADMIN)
         self.category = make_category(
-            creator_price_beginner=Decimal("120.00"),
-            creator_price_intermediate=Decimal("120.00"),
-            creator_price_advanced=Decimal("120.00"),
+            creator_price_without_video=Decimal("120.00"),
+            creator_price_with_video=Decimal("120.00"),
+            creator_price_ai_built=Decimal("120.00"),
         )
         CourseVersion.objects.get_or_create(label="1.0")
 

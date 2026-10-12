@@ -30,6 +30,7 @@ from api.courses.enums import (
 )
 from api.courses.exceptions import CourseNotAwaitingVideo, VideoProviderConflict
 from api.courses.services import course_update_alert_service, production_engine
+from api.payments.services import course_payout_service
 from api.production.services import production_service
 from api.courses.models import (
     Course,
@@ -283,12 +284,9 @@ def submit_course(
     - A Needs Revision course skips the draft hold and the price snapshot,
       re-runs the same standards, and returns to the seat that rejected it
       with only that seat cleared (resume_at_revision_seat).
-    - Every course except an AI-generated one snapshots the current
-      topic/category price; AI-generated courses keep this field null.
-      Only CREATOR_UPLOADED courses are then paid out automatically
-      (transaction_services.effect_course_payment) - a DEVELOPER_API
-      course carries its price for the developer payout, which is not
-      built yet.
+    - Every course locks its topic's (or category's) three creator prices
+      and is priced at the one of its type (course_payout_service); it is
+      paid when Second Review (engine video) or QA (own video) approves it.
     """
 
     permission_service.require_any_permission(
@@ -319,22 +317,15 @@ def submit_course(
         raise exceptions.ValidationError({"structural_standards": failures})
 
     with transaction.atomic():
-        # A topic-specific price still overrides the category, unchanged.
-        # Otherwise the payout follows the course's own difficulty, which
-        # is what the category's three price levels exist to express.
-        course.creator_price_snapshot = (
-            None
-            if course.source_type == CourseSourceType.AI_GENERATED
-            else (
-                course.topic.creator_price
-                if course.topic_id
-                else course.category.price_for(course.difficulty_level)
-            )
-        )
+        # The topic's (or category's) three creator prices are locked now;
+        # which one is paid follows how the course is made.
+        course_payout_service.lock_rates(course)
         course.submitted_at = timezone.now()
         course.updated_by = actor
         course.save(
             update_fields=[
+                "creator_rates_snapshot",
+                "payout_type",
                 "creator_price_snapshot",
                 "submitted_at",
                 "updated_by",
@@ -512,7 +503,9 @@ def record_video_decision(*, course: Course, actor: User, will_provide: bool) ->
 
     The creator either adds the video themselves (CREATOR) or leaves it to
     the production engine (PRODUCTION_ENGINE); the choice can be changed
-    until the video is submitted. A developer's course is fixed to the
+    until the video is submitted. The choice also sets the price the creator
+    is paid (with or without video) and when: QA approval, or Second Review
+    approval for engine-made video. A developer's course is fixed to the
     developer, so only creator-sourced courses may decide.
 
     Raises CourseNotAwaitingVideo (409) when the course is not waiting for its
@@ -537,8 +530,18 @@ def record_video_decision(*, course: Course, actor: User, will_provide: bool) ->
         course.video_provider = (
             VideoProvider.CREATOR if will_provide else VideoProvider.PRODUCTION_ENGINE
         )
+        # Who makes the video decides the price: with or without video.
+        course_payout_service.refresh_expected_payout(course)
         course.updated_by = actor
-        course.save(update_fields=["video_provider", "updated_by", "updated_datetime"])
+        course.save(
+            update_fields=[
+                "video_provider",
+                "payout_type",
+                "creator_price_snapshot",
+                "updated_by",
+                "updated_datetime",
+            ]
+        )
         activity_service.log_activity(
             user=actor,
             category=UserActivityCategoryEnums.SUBMISSION,

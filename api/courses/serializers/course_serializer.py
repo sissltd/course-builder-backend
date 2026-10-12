@@ -212,6 +212,8 @@ class CourseListSerializer(serializers.ModelSerializer):
             "issue_count",
             "waiting_seconds",
             "creator_price_snapshot",
+            "payout_type",
+            "creator_paid_at",
             "submitted_at",
             "date_submitted",
             "date_approved",
@@ -438,7 +440,10 @@ class CourseDistributionSerializer(serializers.ModelSerializer):
         decimal_places=2,
         allow_null=True,
         read_only=True,
-        help_text="Fixed creator payout captured when the course was submitted.",
+        help_text=(
+            "What the creator is paid: the course's locked price of its payout "
+            "type (without video, with video, AI-built)."
+        ),
     )
     learner_fee = serializers.DecimalField(
         source="learner_price",
@@ -671,6 +676,8 @@ class CourseDetailSerializer(serializers.ModelSerializer):
             "video_provider",
             "video_attached_at",
             "creator_price_snapshot",
+            "payout_type",
+            "creator_paid_at",
             "preview_video_url",
             "thumbnail_url",
             "terms_accepted_at",

@@ -48,7 +48,7 @@ def staged_flow(db):
 @pytest.fixture
 def category(db):
     return make_category(
-        creator_price_intermediate=Decimal("150.00"), status=CategoryStatus.ACTIVE
+        creator_price_with_video=Decimal("150.00"), status=CategoryStatus.ACTIVE
     )
 
 

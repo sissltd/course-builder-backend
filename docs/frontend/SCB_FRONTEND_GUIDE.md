@@ -358,8 +358,8 @@ The category does **not** exist until an admin approves — do not add it to
 any picker while `status` is `PENDING`. The creator is emailed on
 approval, and `resulting_category` is populated then.
 
-Admin-only: `POST /category-requests/{id}/approve/` (requires
-`creator_price`) and `POST /category-requests/{id}/reject/`.
+Admin-only: `POST /category-requests/{id}/approve/` (requires the three
+creator prices) and `POST /category-requests/{id}/reject/`.
 
 ---
 

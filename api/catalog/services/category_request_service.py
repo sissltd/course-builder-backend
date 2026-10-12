@@ -57,9 +57,13 @@ def submit_request(
 
 
 def approve_request(
-    *, request: CategoryRequest, actor: User, creator_price, track_preference=None
+    *, request: CategoryRequest, actor: User, prices: dict, track_preference=None
 ) -> CategoryRequest:
     """Approve a Pending request, creating the real Category.
+
+    `prices` are the new category's three creator prices
+    (creator_price_without_video / _with_video / _ai_built), set by the
+    approver, who must hold `catalog.set_creator_prices`.
 
     The requester is emailed on success. Email failure is swallowed: the
     category exists and the request is decided, so raising here would roll
@@ -75,11 +79,7 @@ def approve_request(
     fields = {
         "name": request.name,
         "slug": slugify(request.name),
-        # The approving admin supplies one rate; every tier starts there
-        # and can be differentiated afterwards through the category editor.
-        "creator_price_beginner": creator_price,
-        "creator_price_intermediate": creator_price,
-        "creator_price_advanced": creator_price,
+        **prices,
     }
     if track_preference is not None:
         fields["track_preference"] = track_preference

@@ -31,7 +31,9 @@ _TOPIC_EXAMPLE = {
     "id": "e5f6a7b8-c9d0-4e1f-2a3b-4c5d6e7f8a9b",
     "category": _CATEGORY_MINI_EXAMPLE,
     "name": "Django REST Framework",
-    "creator_price": "180.00",
+    "creator_price_without_video": None,
+    "creator_price_with_video": None,
+    "creator_price_ai_built": None,
     "status": "ACTIVE",
     "reserved_by": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
     "reserved_until": "2026-08-19",
@@ -286,9 +288,8 @@ class TopicReservationRequestViewSet(ModelViewSet):
             "**Prerequisites:** The request must be `PENDING`; `name` must "
             "not already be taken by another topic in the same "
             "`category`.\n\n"
-            "**Important:** Unlike creating a Topic directly via "
-            "`TopicViewSet`, no separate `creator_price` input exists here "
-            "- it's always copied from the category at approval time."
+            "**Important:** The new topic has no price overrides: it pays its "
+            "category's three creator prices until a Writer sets its own."
         ),
         tags=["Reviewer — Topic Reservations"],
         request=None,

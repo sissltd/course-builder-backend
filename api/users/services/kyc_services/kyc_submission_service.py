@@ -138,7 +138,7 @@ def approve_verification(
 
     Raises ValidationError if the submission isn't awaiting review (prevents
     double-approval). Notifies the submitting user and logs the reviewer's
-    activity, mirroring review_service.approve_course.
+    activity, mirroring review_service.approve_qa.
     """
 
     permission_service.require_permission(reviewer, codenames.CREATORS_APPROVE_ACCOUNT)

@@ -218,6 +218,7 @@ class UserActivityActionEnums(models.TextChoices):
     COURSE_VERSION_UPDATED = "COURSE_VERSION_UPDATED", "Course Version Updated"
     COURSE_VERSION_MIGRATED = "COURSE_VERSION_MIGRATED", "Course Version Migrated"
     WALLET_ADJUSTED = "WALLET_ADJUSTED", "Wallet Adjusted"
+    COURSE_PAYOUT_CREDITED = "COURSE_PAYOUT_CREDITED", "Course Payout Credited"
 
 
 class KYCDocumentType(models.TextChoices):
