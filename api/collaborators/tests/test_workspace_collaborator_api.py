@@ -10,6 +10,169 @@ from api.courses.tests.factories import make_category, make_draft_course, make_u
 from api.users.enums import UserRole
 
 
+class WorkspaceCollaboratorAutoAcceptSignalTest(APITestCase):
+    """Tests for the post_save signal that auto-accepts pending workspace
+    invites when the invitee signs up with a matching email.
+
+    Bug fix: Previously, when a Course Creator invited someone via the
+    Collaborators menu and the invitee signed up and logged in, the
+    WorkspaceCollaborator row stayed PENDING with user_id=NULL. The
+    collaborator did not appear in the creator's Collaborators list because
+    search and category filters require a linked user. This signal closes
+    that gap by linking the user on creation.
+    """
+
+    def test_user_signup_auto_links_pending_workspace_invite(self):
+        """When a user signs up with an email matching a pending invite,
+        the signal links the user and sets status to ACTIVE."""
+        owner = make_user(role=UserRole.COURSE_CREATOR)
+        invite_email = "collab@example.com"
+
+        # Course creator sends a workspace invite
+        self.client.force_authenticate(owner)
+        response = self.client.post(
+            "/api/v1/workspace-collaborators/",
+            {"invited_email": invite_email, "role": "COLLABORATOR"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["status"], "PENDING")
+
+        invite_id = response.data["id"]
+
+        # The invitee signs up with the invited email
+        invitee = make_user(email=invite_email, role=UserRole.COURSE_CREATOR)
+
+        # Refresh and verify the signal linked them
+        invite = WorkspaceCollaborator.objects.get(id=invite_id)
+        self.assertEqual(invite.user_id, invitee.id)
+        self.assertEqual(invite.status, WorkspaceCollaborator.Status.ACTIVE)
+
+    def test_user_signup_appears_in_collaborators_list(self):
+        """After signup, the auto-accepted collaborator appears in the
+        owner's Collaborators list and can be found by search."""
+        owner = make_user(role=UserRole.COURSE_CREATOR)
+        invite_email = "jane.doe@example.com"
+
+        # Send invite
+        self.client.force_authenticate(owner)
+        self.client.post(
+            "/api/v1/workspace-collaborators/",
+            {"invited_email": invite_email, "role": "COLLABORATOR"},
+            format="json",
+        )
+
+        # Invitee signs up
+        make_user(
+            email=invite_email,
+            first_name="Jane",
+            last_name="Doe",
+            role=UserRole.COURSE_CREATOR,
+        )
+
+        # Owner fetches collaborators list
+        response = self.client.get("/api/v1/workspace-collaborators/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        results = response.data["data"]["results"]
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["email"], invite_email)
+        self.assertEqual(results[0]["name"], "Jane Doe")
+        self.assertEqual(results[0]["status"], "ACTIVE")
+
+    def test_user_signup_finds_collaborator_by_search(self):
+        """After signup, searching by name finds the collaborator."""
+        owner = make_user(role=UserRole.COURSE_CREATOR)
+        invite_email = "john.smith@example.com"
+
+        # Send invite
+        self.client.force_authenticate(owner)
+        self.client.post(
+            "/api/v1/workspace-collaborators/",
+            {"invited_email": invite_email, "role": "COLLABORATOR"},
+            format="json",
+        )
+
+        # Invitee signs up
+        make_user(
+            email=invite_email,
+            first_name="John",
+            last_name="Smith",
+            role=UserRole.COURSE_CREATOR,
+        )
+
+        # Search by name
+        response = self.client.get(
+            "/api/v1/workspace-collaborators/",
+            {"search": "John"},
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        results = response.data["data"]["results"]
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["email"], invite_email)
+
+    def test_user_signup_finds_collaborator_by_email_search(self):
+        """After signup, searching by email finds the collaborator."""
+        owner = make_user(role=UserRole.COURSE_CREATOR)
+        invite_email = "john.smith@example.com"
+
+        # Send invite
+        self.client.force_authenticate(owner)
+        self.client.post(
+            "/api/v1/workspace-collaborators/",
+            {"invited_email": invite_email, "role": "COLLABORATOR"},
+            format="json",
+        )
+
+        # Invitee signs up
+        make_user(
+            email=invite_email,
+            first_name="John",
+            last_name="Smith",
+            role=UserRole.COURSE_CREATOR,
+        )
+
+        # Search by email
+        response = self.client.get(
+            "/api/v1/workspace-collaborators/",
+            {"search": "john.smith@example.com"},
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        results = response.data["data"]["results"]
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["email"], invite_email)
+
+    def test_resaving_existing_user_does_not_re_link(self):
+        """Re-saving an existing user should not re-trigger the link."""
+        owner = make_user(role=UserRole.COURSE_CREATOR)
+        invite_email = "pending@example.com"
+
+        # Send invite
+        self.client.force_authenticate(owner)
+        response = self.client.post(
+            "/api/v1/workspace-collaborators/",
+            {"invited_email": invite_email, "role": "COLLABORATOR"},
+            format="json",
+        )
+        invite_id = response.data["id"]
+
+        # User signs up (signal fires)
+        user = make_user(email=invite_email, role=UserRole.COURSE_CREATOR)
+
+        invite = WorkspaceCollaborator.objects.get(id=invite_id)
+        self.assertEqual(invite.user_id, user.id)
+        self.assertEqual(invite.status, WorkspaceCollaborator.Status.ACTIVE)
+
+        # Re-save the user with updated info
+        user.first_name = "Updated"
+        user.save()
+
+        # Status should still be ACTIVE, not re-processed
+        invite.refresh_from_db()
+        self.assertEqual(invite.user_id, user.id)
+        self.assertEqual(invite.status, WorkspaceCollaborator.Status.ACTIVE)
+
+
 class WorkspaceCollaboratorApiTests(APITestCase):
     def setUp(self):
         self.owner = make_user(role=UserRole.COURSE_CREATOR)
