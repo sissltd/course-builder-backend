@@ -189,7 +189,7 @@ curl -s $BASE_URL/api/v1/category-requests/ -H "Authorization: Bearer $ACCESS_TO
 ```bash
 curl -s -X POST $BASE_URL/api/v1/category-requests/$REQUEST_ID/approve/ \
   -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
-  -d '{ "creator_price": "40.00", "track_preference": "OPEN" }'
+  -d '{ "creator_price_without_video": "30.00", "creator_price_with_video": "40.00", "creator_price_ai_built": "20.00", "track_preference": "OPEN" }'
 ```
 **Expect 200**, `status: "APPROVED"`, `resulting_category` populated. Check
 the console log for the approval email (subject "Your category request has
@@ -210,7 +210,7 @@ been approved"). Note `resulting_category.id` as `$CATEGORY_ID`.
 ```bash
 curl -s -X POST $BASE_URL/api/v1/topics/ \
   -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
-  -d "{ \"category\": \"$CATEGORY_ID\", \"name\": \"Autonomous Drones\", \"creator_price\": \"25.00\", \"status\": \"ACTIVE\" }"
+  -d "{ \"category\": \"$CATEGORY_ID\", \"name\": \"Autonomous Drones\", \"creator_price_with_video\": \"25.00\", \"status\": \"ACTIVE\" }"
 ```
 **Expect 201.** Note `id` as `$TOPIC_ID`.
 

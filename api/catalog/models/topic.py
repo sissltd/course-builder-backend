@@ -6,7 +6,7 @@ from django.utils import timezone
 from django.utils.text import slugify
 from django.utils.translation import gettext_lazy as _
 
-from api.catalog.enums import CategoryStatus
+from api.catalog.enums import CategoryStatus, CreatorPriceType
 from core.mixins import (
     DateHistoryModelMixin,
     UserHistoryModelMixin,
@@ -15,12 +15,12 @@ from core.mixins import (
 
 
 class Topic(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMixin):
-    """An Admin-managed course topic nested under a Category, with its own price.
+    """An Admin-managed course topic nested under a Category.
 
-    Mirrors Category's pricing model (fixed, non-retroactive - see
-    Category's docstring) but scoped one level down: a Course's price is
-    snapshotted from its Topic when one is set, falling back to the
-    Category's price otherwise (course_service.submit_course).
+    A topic may override any of its category's three creator prices; a
+    price left blank falls back to the category's of the same type
+    (`price_for`). Same rules as Category's prices (non-retroactive, set
+    only by holders of `catalog.set_creator_prices`).
     """
 
     category = models.ForeignKey(
@@ -44,13 +44,37 @@ class Topic(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMix
             "within its category."
         ),
     )
-    creator_price = models.DecimalField(
-        verbose_name=_("Creator Price"),
+    creator_price_without_video = models.DecimalField(
+        verbose_name=_("Creator Price - Without Video"),
         max_digits=10,
         decimal_places=2,
+        null=True,
+        blank=True,
         validators=[MinValueValidator(Decimal(0))],
         help_text=_(
-            "Fixed price paid to a creator for an approved course in this topic."
+            "This topic's own without-video price. Blank uses the category's."
+        ),
+    )
+    creator_price_with_video = models.DecimalField(
+        verbose_name=_("Creator Price - With Video"),
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(Decimal(0))],
+        help_text=_(
+            "This topic's own with-video price. Blank uses the category's."
+        ),
+    )
+    creator_price_ai_built = models.DecimalField(
+        verbose_name=_("Creator Price - AI-built"),
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(Decimal(0))],
+        help_text=_(
+            "This topic's own AI-built price. Blank uses the category's."
         ),
     )
     status = models.CharField(
@@ -95,6 +119,17 @@ class Topic(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMix
                 fields=["category", "status"], name="topic_category_status_idx"
             ),
         ]
+
+    def price_for(self, price_type: str) -> Decimal:
+        """This topic's creator price of `price_type`, or its category's when
+        the topic does not override it."""
+
+        own = {
+            CreatorPriceType.WITHOUT_VIDEO: self.creator_price_without_video,
+            CreatorPriceType.WITH_VIDEO: self.creator_price_with_video,
+            CreatorPriceType.AI_BUILT: self.creator_price_ai_built,
+        }[price_type]
+        return own if own is not None else self.category.price_for(price_type)
 
     def save(self, *args, **kwargs):
         if not self.slug:

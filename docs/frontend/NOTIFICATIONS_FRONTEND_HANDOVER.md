@@ -42,7 +42,8 @@ badge, Security) are in
    be saved and ignored.
 
 8. **Settings → Payments: `GET platform-settings/` now returns
-   `auto_credit_duration_hours` and `withdrawal_require_verification`.**
+   `withdrawal_require_verification`.** (`auto_credit_duration_hours` has
+   since been removed: creators are paid at approval.)
    `PATCH` already accepted them, but `GET` left them out, so the Payments tab
    couldn't show saved values. Details are in
    [settings_and_achievements_handover.md](settings_and_achievements_handover.md).

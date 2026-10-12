@@ -149,11 +149,11 @@ def reseed_reference_data() -> None:
             name=name,
             defaults={
                 "slug": slugify(name)[:160],
-                # Seed every tier at the same rate; differentiating them is
-                # a deliberate admin edit, not a fixture concern.
-                "creator_price_beginner": price,
-                "creator_price_intermediate": price,
-                "creator_price_advanced": price,
+                # Seed every price type at the same rate; differentiating
+                # them is a deliberate Writer edit, not a fixture concern.
+                "creator_price_without_video": price,
+                "creator_price_with_video": price,
+                "creator_price_ai_built": price,
                 "track_preference": track,
             },
         )
@@ -171,7 +171,6 @@ def reseed_reference_data() -> None:
                         f"soludesks:catalog-topic:{category_name}:{topic_name}",
                     ),
                     "slug": slugify(topic_name)[:160],
-                    "creator_price": category.creator_price_beginner,
                     "status": "ACTIVE",
                 },
             )
@@ -205,6 +204,7 @@ _SEED_MIGRATIONS = (
     ("api.authorization.migrations.0005_grant_support_manage_requests", "grant"),
     ("api.authorization.migrations.0006_grant_writer_course_review", "grant"),
     ("api.authorization.migrations.0007_grant_production_manage", "grant"),
+    ("api.authorization.migrations.0008_grant_set_creator_prices", "grant"),
     ("api.courses.migrations.0002_seed_default_course_version", "seed_default_course_version"),
     ("api.payments.migrations.0003_internalaccount", "seed_internal_accounts"),
     ("api.payments.migrations.0008_auto_20260817_2142", "_create_flutterwave_internal_account"),

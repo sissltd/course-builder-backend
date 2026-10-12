@@ -37,9 +37,9 @@ def make_category(**kwargs):
     n = next(_sequence)
     defaults = {
         "name": f"Category {n}",
-        "creator_price_beginner": Decimal("100.00"),
-        "creator_price_intermediate": Decimal("100.00"),
-        "creator_price_advanced": Decimal("100.00"),
+        "creator_price_without_video": Decimal("100.00"),
+        "creator_price_with_video": Decimal("100.00"),
+        "creator_price_ai_built": Decimal("100.00"),
         "track_preference": TrackPreference.OPEN,
         "status": CategoryStatus.ACTIVE,
     }

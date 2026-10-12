@@ -158,6 +158,7 @@ def test_when_veo_cannot_make_a_clip_the_scene_is_drawn_as_a_still(creator, medi
 
 
 @pytest.mark.django_db
+@override_settings(GEMINI_API_KEY="")
 def test_without_a_gemini_key_no_broll_is_offered(creator, media):
     set_settings(production_broll_per_lesson=3)
     course = _awaiting_engine_video(creator)
@@ -248,6 +249,7 @@ def test_langfuse_being_down_never_fails_a_run(creator, media):
 
 
 @pytest.mark.django_db
+@override_settings(LANGFUSE_PUBLIC_KEY="", LANGFUSE_SECRET_KEY="")
 def test_without_langfuse_keys_nothing_is_sent(creator, media):
     course = _awaiting_engine_video(creator)
 

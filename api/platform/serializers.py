@@ -38,7 +38,6 @@ class PlatformSettingsSerializer(serializers.ModelSerializer):
             "payment_processor",
             "kyc_provider",
             "liveness_threshold",
-            "auto_credit_duration_hours",
             "withdrawal_require_verification",
             "staged_review_flow_enabled",
             "production_enabled",
@@ -181,11 +180,6 @@ class PlatformSettingsUpdateSerializer(serializers.Serializer):
         min_value=0,
         max_value=100,
         help_text="Score (0 - 100) at or above which a 'real' liveness result passes.",
-    )
-    auto_credit_duration_hours = serializers.IntegerField(
-        required=False,
-        min_value=0,
-        help_text="Number of hours after course approval before the creator's wallet is credited.",
     )
     withdrawal_require_verification = serializers.BooleanField(
         required=False,

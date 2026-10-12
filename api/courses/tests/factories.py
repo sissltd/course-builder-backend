@@ -46,9 +46,9 @@ def make_category(**kwargs):
     n = next(_sequence)
     defaults = {
         "name": f"Category {n}",
-        "creator_price_beginner": Decimal("100.00"),
-        "creator_price_intermediate": Decimal("100.00"),
-        "creator_price_advanced": Decimal("100.00"),
+        "creator_price_without_video": Decimal("100.00"),
+        "creator_price_with_video": Decimal("100.00"),
+        "creator_price_ai_built": Decimal("100.00"),
         "track_preference": TrackPreference.OPEN,
         "status": CategoryStatus.ACTIVE,
     }
@@ -62,7 +62,9 @@ def make_topic(*, category=None, **kwargs):
     defaults = {
         "category": category,
         "name": f"Topic {n}",
-        "creator_price": Decimal("25.00"),
+        "creator_price_without_video": Decimal("25.00"),
+        "creator_price_with_video": Decimal("25.00"),
+        "creator_price_ai_built": Decimal("25.00"),
         "status": CategoryStatus.ACTIVE,
     }
     defaults.update(kwargs)

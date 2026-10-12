@@ -33,16 +33,16 @@ from includes.spectacular.responses import (
 
 WRITE_ACTIONS = {"create", "update", "partial_update", "destroy"}
 # Read endpoints that back the admin Categories screen rather than the
-# creator picker - full category data, including per-tier pricing, is an
+# creator picker - full category data, including the creator prices, is an
 # Admin Writer concern, so the catalog stays a single source of truth.
 ADMIN_READ_ACTIONS = {"list", "retrieve", "stats", "deletion_impact"}
 
 _CATEGORY_EXAMPLE = {
     "id": "7d2f4b18-3c9a-4e51-b8f0-1a6c5d3e9b74",
     "name": "Software Engineering",
-    "creator_price_beginner": "150.00",
-    "creator_price_intermediate": "200.00",
-    "creator_price_advanced": "300.00",
+    "creator_price_without_video": "100.00",
+    "creator_price_with_video": "150.00",
+    "creator_price_ai_built": "60.00",
     "icon": "code",
     "track_preference": "OPEN",
     "status": "ACTIVE",
@@ -64,11 +64,14 @@ _PICKER_EXAMPLE = {
 }
 
 _PRICE_WARNING = (
-    "Editing the `creator_price_beginner`, `creator_price_intermediate`, or "
-    "`creator_price_advanced` rates is not retroactive: "
-    "`Course.creator_price_snapshot` freezes the rate when a course is "
-    "submitted, so a change here only affects courses submitted afterwards "
-    "and never alters an existing payout."
+    "The three creator prices are what creators are paid: "
+    "`creator_price_without_video` (the creator leaves the video to the "
+    "Production Engine; paid at Second Review), `creator_price_with_video` "
+    "(the creator, or a paid developer, supplies it; paid at QA) and "
+    "`creator_price_ai_built` (built with our AI). Setting them needs "
+    "`catalog.set_creator_prices` (Writer, Admin, Super Admin; 403 "
+    "otherwise). A change is not retroactive: a course locks its prices "
+    "when it is submitted, so only courses submitted afterwards are affected."
 )
 
 
@@ -151,9 +154,9 @@ _PRICE_WARNING = (
                 request_only=True,
                 value={
                     "name": "Software Engineering",
-                    "creator_price_beginner": "150.00",
-                    "creator_price_intermediate": "200.00",
-                    "creator_price_advanced": "300.00",
+                    "creator_price_without_video": "100.00",
+                    "creator_price_with_video": "150.00",
+                    "creator_price_ai_built": "60.00",
                     "icon": "code",
                     "track_preference": "OPEN",
                     "status": "ACTIVE",
@@ -196,7 +199,7 @@ _PRICE_WARNING = (
                                         "Ensure this value is greater than or "
                                         "equal to 0."
                                     ),
-                                    "field_name": "creator_price_beginner",
+                                    "field_name": "creator_price_with_video",
                                 }
                             ]
                         },
@@ -260,7 +263,7 @@ _PRICE_WARNING = (
             OpenApiExample(
                 name="Reprice",
                 request_only=True,
-                value={"creator_price_advanced": "175.00"},
+                value={"creator_price_with_video": "175.00"},
             ),
         ],
         responses={
@@ -422,8 +425,9 @@ class CategoryViewSet(ModelViewSet):
     filter_backends = [DjangoFilterBackend, drf_filters.OrderingFilter]
     ordering_fields = [
         "name",
-        "creator_price_beginner",
-        "creator_price_advanced",
+        "creator_price_without_video",
+        "creator_price_with_video",
+        "creator_price_ai_built",
         "created_datetime",
     ]
 

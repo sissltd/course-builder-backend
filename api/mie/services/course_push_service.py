@@ -14,9 +14,10 @@ A push creates the idea's course the first time. After a reviewer sends that
 course back to DRAFT, the next push replaces its content and resubmits it.
 While the course is in review or published it cannot be replaced.
 
-Only CREATOR_UPLOADED courses are paid out automatically
-(transaction_services.effect_course_payment), so a pushed course carries its
-price snapshot and nothing else: the developer payout is not built yet.
+A pushed course is paid like a creator's course with its own video
+(course_payout_service): at its with-video price, into the linked creator
+account's wallet, when QA approves it - unless the developer's plan or the
+submission's payout_bypass says it is not paid.
 """
 
 from django.conf import settings as django_settings

@@ -244,7 +244,7 @@ The Production Engine (`api/production`) picks up a course whose video productio
 - **PACKAGE runs.** A PACKAGE run builds the canonical package (`packaging_service.build_package`) and the SCORM 1.2 and 2004 exports. It then delivers to each channel through its active `ChannelMapping`: an API push for SoluDesk, upload kits for Udemy and Coursera. Udemy refuses fully AI (crawler) courses.
 - **Catalogue.** The public catalogue (`/catalogue/courses/`) lists published courses that are live on at least one channel.
 
-Not built yet: payout to developers; unpublishing or editing after publication; adaptive streaming (HLS) and C2PA signing of the engine's video.
+Creators (and paid developers) are paid at approval: see [CREATOR_PAYOUT.md](CREATOR_PAYOUT.md). Not built yet: withdrawals for developers; unpublishing or editing after publication; adaptive streaming (HLS) and C2PA signing of the engine's video.
 
 Dashboard summary numbers are all counts over `Course.status`; they are computed live per request and keyed by every `CourseStatus`, so the new statuses appear without any change.
 

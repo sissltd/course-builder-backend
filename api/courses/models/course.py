@@ -11,6 +11,7 @@ from api.courses.enums import (
     DifficultyLevel,
     VideoProvider,
 )
+from api.catalog.enums import CreatorPriceType
 from api.reviews.enums import ReviewStage
 from core.mixins import (
     DateHistoryModelMixin,
@@ -138,7 +139,41 @@ class Course(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMi
         null=True,
         blank=True,
         help_text=_(
-            "Category creator_price captured at submission time. Null until submitted."
+            "What the creator will be paid: the locked price of the course's "
+            "price type (payout_type). Null until submitted. Changes only if "
+            "the type does (the creator decides who makes the video)."
+        ),
+    )
+    payout_type = models.CharField(
+        verbose_name=_("Payout Type"),
+        max_length=16,
+        choices=CreatorPriceType.choices,
+        blank=True,
+        default="",
+        help_text=_(
+            "Which creator price the course is paid at: AI-built, with video, "
+            "or without video (the Production Engine makes it). Blank until "
+            "submitted."
+        ),
+    )
+    creator_rates_snapshot = models.JSONField(
+        verbose_name=_("Creator Rates Snapshot"),
+        default=dict,
+        blank=True,
+        help_text=_(
+            "The topic's (or category's) three creator prices, locked at "
+            "submission, keyed by CreatorPriceType. A later price change does "
+            "not touch them."
+        ),
+    )
+    creator_paid_at = models.DateTimeField(
+        verbose_name=_("Creator Paid At"),
+        null=True,
+        blank=True,
+        help_text=_(
+            "When the creator's wallet was credited for this course. A course "
+            "is paid once: at Second Review approval when the Production "
+            "Engine makes its video, otherwise at QA approval."
         ),
     )
     preview_video_url = models.URLField(

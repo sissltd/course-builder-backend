@@ -210,13 +210,14 @@ def _sample_reference(status: SubmissionStatus) -> str:
 
 PLAN_EXPLANATIONS = {
     MiePlanType.PAID_PER_SUBMISSION: (
-        "You are paid for each course that is produced from one of your "
-        "approved ideas and published. Approving an idea pays nothing on "
-        "its own. Nothing you send is exempt unless your plan is changed."
+        "You are paid for each course produced from one of your approved "
+        "ideas, when it passes QA verification. Approving an idea pays "
+        "nothing on its own. Nothing you send is exempt unless your plan is "
+        "changed."
     ),
     MiePlanType.BYPASS_PER_SUBMISSION: (
-        "A course published from one of your approved ideas pays out by "
-        "default, but a superadmin can mark an individual submission "
+        "A course from one of your approved ideas pays out by default when "
+        "it passes QA verification, but a superadmin can mark an individual submission "
         "payout_bypass=true, which excludes just that idea. You are told the moment it happens via the "
         "SUBMISSION_PAYOUT_BYPASS_UPDATED webhook."
     ),
@@ -836,6 +837,26 @@ def _integration_flow() -> list[dict]:
         },
         {
             "stage": 9,
+            "name": "Payout",
+            "actor": "Platform",
+            "what_happens": (
+                "You are paid when the course produced from your approved "
+                "idea passes QA verification, the last review step - not "
+                "when the idea is approved, and before publication. The "
+                "amount goes straight into the wallet of your linked creator "
+                "account. Whether it is paid at all is governed by your "
+                "account plan_type and, where the plan allows it, the "
+                "per-submission payout_bypass flag. See plan_and_payouts."
+            ),
+            "your_move": (
+                "Handle SUBMISSION_PAYOUT_BYPASS_UPDATED if your plan is "
+                "BYPASS_PER_SUBMISSION."
+            ),
+            "you_can_authenticate": True,
+            "webhook_fired": "SUBMISSION_PAYOUT_BYPASS_UPDATED (when toggled)",
+        },
+        {
+            "stage": 10,
             "name": "Publication",
             "actor": "Platform",
             "what_happens": (
@@ -846,24 +867,6 @@ def _integration_flow() -> list[dict]:
             "your_move": "Record the publication.",
             "you_can_authenticate": True,
             "webhook_fired": WebhookEventType.COURSE_PUBLISHED.value,
-        },
-        {
-            "stage": 10,
-            "name": "Payout",
-            "actor": "Platform",
-            "what_happens": (
-                "You are paid when a course produced from your approved "
-                "idea is published - not when the idea is approved. Whether "
-                "that publication carries payment is governed by your "
-                "account plan_type and, where the plan allows it, the "
-                "per-submission payout_bypass flag. See plan_and_payouts."
-            ),
-            "your_move": (
-                "Handle SUBMISSION_PAYOUT_BYPASS_UPDATED if your plan is "
-                "BYPASS_PER_SUBMISSION."
-            ),
-            "you_can_authenticate": True,
-            "webhook_fired": "SUBMISSION_PAYOUT_BYPASS_UPDATED (when toggled)",
         },
     ]
 
@@ -1123,21 +1126,20 @@ def _plan_and_payouts(account) -> dict:
             "current plan."
         ),
         "timing": (
-            "Payout settlement is a platform-side wallet concern and is "
-            "not exposed on the developer API. Publication of the course "
-            "produced from your idea is the trigger, not approval; "
-            "the credit itself is not something you can query here."
+            "The course passing QA verification is the trigger: the amount "
+            "is credited to your linked creator account's wallet in the same "
+            "step. The credit itself is not exposed on the developer API."
         ),
         "course_price": (
-            "The amount a course pays is fixed when it is submitted: the "
-            "category's price for the course's difficulty_level at that "
-            "moment. A later price change does not move it."
+            "The amount a course pays is fixed when it is submitted: its "
+            "topic's (or category's) with-video creator price at that "
+            "moment, since your courses carry their own video. A later "
+            "price change does not move it."
         ),
         "settlement_status": (
-            "Automatic settlement for courses pushed over this API is not "
-            "live yet. Published courses are recorded against your "
-            f"account with their price; contact {SUPPORT_EMAIL} about "
-            "settlement until it is."
+            "Automatic: unless your plan or the submission's payout_bypass "
+            "says otherwise, the wallet credit happens when QA approves the "
+            f"course. Contact {SUPPORT_EMAIL} about withdrawals."
         ),
     }
 

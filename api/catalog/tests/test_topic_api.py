@@ -4,7 +4,6 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 
 from api.courses.services import course_service
-from api.reviews.services import review_service
 from api.catalog.models import Topic
 from api.courses.tests.factories import (
     build_compliant_course,
@@ -12,7 +11,8 @@ from api.courses.tests.factories import (
     make_topic,
     make_user,
 )
-from api.wallet.services import wallet_service
+from api.courses.enums import CourseStatus
+from api.courses.models import Course
 from api.users.enums import UserRole
 
 
@@ -21,6 +21,7 @@ class TopicApiTests(APITestCase):
         self.admin = make_user(role=UserRole.ADMIN)
         self.creator = make_user(role=UserRole.COURSE_CREATOR)
         self.reviewer = make_user(role=UserRole.CREATOR_REVIEWER)
+        self.writer = make_user(role=UserRole.STAFF_WRITER)
         self.category = make_category(name="Software Engineering")
 
     def test_list_requires_authentication(self):
@@ -58,7 +59,6 @@ class TopicApiTests(APITestCase):
             {
                 "category": str(self.category.id),
                 "name": "Rust Development",
-                "creator_price": "25.00",
                 "status": "ACTIVE",
             },
         )
@@ -72,7 +72,6 @@ class TopicApiTests(APITestCase):
             {
                 "category": str(self.category.id),
                 "name": "Rust Development",
-                "creator_price": "25.00",
                 "status": "ACTIVE",
             },
         )
@@ -87,97 +86,128 @@ class TopicApiTests(APITestCase):
             {
                 "category": str(self.category.id),
                 "name": "Rust Development",
-                "creator_price": "25.00",
                 "status": "ACTIVE",
             },
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
-    def test_reviewer_can_update_price(self):
+    def test_admin_can_create_a_topic_with_its_own_price(self):
+        self.client.force_authenticate(self.admin)
+
+        response = self.client.post(
+            "/api/v1/topics/",
+            {
+                "category": str(self.category.id),
+                "name": "Rust Development",
+                "creator_price_with_video": "250.00",
+                "status": "ACTIVE",
+            },
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["creator_price_with_video"], "250.00")
+        self.assertIsNone(response.data["creator_price_ai_built"])
+
+    def test_a_reviewer_may_create_a_topic_but_not_give_it_a_price(self):
+        self.client.force_authenticate(self.reviewer)
+
+        response = self.client.post(
+            "/api/v1/topics/",
+            {
+                "category": str(self.category.id),
+                "name": "Rust Development",
+                "creator_price_with_video": "250.00",
+                "status": "ACTIVE",
+            },
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertFalse(Topic.objects.filter(name="Rust Development").exists())
+
+    def test_a_reviewer_may_edit_a_topic_but_not_reprice_it(self):
         topic = make_topic(category=self.category, name="Frontend Development")
         self.client.force_authenticate(self.reviewer)
 
-        response = self.client.patch(
-            f"/api/v1/topics/{topic.id}/", {"creator_price": "30.00"}, format="json"
+        renamed = self.client.patch(f"/api/v1/topics/{topic.id}/", {"name": "Frontend"}, format="json")
+        repriced = self.client.patch(
+            f"/api/v1/topics/{topic.id}/", {"creator_price_with_video": "30.00"}, format="json"
         )
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-    def test_reviewer_price_update_refreshes_submitted_course_queue_snapshot(self):
-        topic = make_topic(
-            category=self.category,
-            name="Frontend Development",
-            creator_price=Decimal("25.00"),
+        self.assertEqual(renamed.status_code, status.HTTP_200_OK)
+        self.assertEqual(repriced.status_code, status.HTTP_403_FORBIDDEN)
+        topic.refresh_from_db()
+        self.assertEqual(topic.creator_price_with_video, Decimal("25.00"))
+
+    def test_the_writer_may_reprice_a_topic_but_not_edit_the_rest(self):
+        topic = make_topic(category=self.category, name="Frontend Development")
+        self.client.force_authenticate(self.writer)
+
+        repriced = self.client.patch(
+            f"/api/v1/topics/{topic.id}/", {"creator_price_with_video": "30.00"}, format="json"
         )
+        renamed = self.client.patch(f"/api/v1/topics/{topic.id}/", {"name": "Frontend"}, format="json")
+        # Re-sending an unchanged name alongside a price is not an edit of it.
+        both = self.client.patch(
+            f"/api/v1/topics/{topic.id}/",
+            {"name": "Frontend Development", "creator_price_with_video": "31.00"},
+            format="json",
+        )
+
+        self.assertEqual(repriced.status_code, status.HTTP_200_OK)
+        self.assertEqual(renamed.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(both.status_code, status.HTTP_200_OK)
+        self.assertEqual(self.client.delete(f"/api/v1/topics/{topic.id}/").status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_a_reprice_re_prices_unpaid_courses_in_the_review_queue(self):
+        topic = make_topic(category=self.category, name="Frontend Development")
         course = build_compliant_course(creator=self.creator, category=self.category)
         course.topic = topic
         course.save(update_fields=["topic"])
         course_service.submit_course(course=course, actor=self.creator)
 
-        self.client.force_authenticate(self.reviewer)
+        self.client.force_authenticate(self.writer)
         response = self.client.patch(
-            f"/api/v1/topics/{topic.id}/", {"creator_price": "30.00"}, format="json"
+            f"/api/v1/topics/{topic.id}/", {"creator_price_with_video": "30.00"}, format="json"
         )
+
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-
-        queue_response = self.client.get("/api/v1/review-queue/")
-        queue_course = queue_response.data["data"]["results"][0]
-        self.assertEqual(queue_course["creator_price_snapshot"], "30.00")
-
         course.refresh_from_db()
         self.assertEqual(course.creator_price_snapshot, Decimal("30.00"))
+        self.assertEqual(course.creator_rates_snapshot["WITH_VIDEO"], "30.00")
 
-        # Use the service directly: the /approve/ endpoint now calls
-        # approve_content (→ QA) which does not credit the wallet.
-        # approve_course is the full-approval path that credits the wallet.
-        review_service.approve_course(course=course, reviewer=self.reviewer)
-        wallet = wallet_service.get_or_create_wallet(user=self.creator)
-        self.assertEqual(wallet.balance, Decimal("30.00"))
-
-    def test_admin_and_superadmin_can_refresh_submitted_course_queue_snapshot(self):
+    def test_admin_and_superadmin_can_reprice_queued_courses(self):
         for role in (UserRole.ADMIN, UserRole.SUPER_ADMIN):
             with self.subTest(role=role):
                 actor = make_user(role=role)
-                topic = make_topic(
-                    category=self.category,
-                    creator_price=Decimal("25.00"),
-                )
-                course = build_compliant_course(
-                    creator=self.creator,
-                    category=self.category,
-                )
+                topic = make_topic(category=self.category)
+                course = build_compliant_course(creator=self.creator, category=self.category)
                 course.topic = topic
                 course.save(update_fields=["topic"])
                 course_service.submit_course(course=course, actor=self.creator)
 
                 self.client.force_authenticate(actor)
                 response = self.client.patch(
-                    f"/api/v1/topics/{topic.id}/",
-                    {"creator_price": "35.00"},
-                    format="json",
+                    f"/api/v1/topics/{topic.id}/", {"creator_price_with_video": "35.00"}, format="json"
                 )
 
                 self.assertEqual(response.status_code, status.HTTP_200_OK)
                 course.refresh_from_db()
                 self.assertEqual(course.creator_price_snapshot, Decimal("35.00"))
 
-    def test_reviewer_price_update_does_not_refresh_approved_course_snapshot(self):
-        topic = make_topic(
-            category=self.category,
-            name="Backend Development",
-            creator_price=Decimal("25.00"),
-        )
+    def test_a_reprice_leaves_approved_and_paid_courses_alone(self):
+        topic = make_topic(category=self.category, name="Backend Development")
         course = build_compliant_course(creator=self.creator, category=self.category)
         course.topic = topic
         course.save(update_fields=["topic"])
         course_service.submit_course(course=course, actor=self.creator)
-        review_service.approve_course(course=course, reviewer=self.reviewer)
+        Course.objects.filter(pk=course.pk).update(status=CourseStatus.APPROVED)
 
-        self.client.force_authenticate(self.reviewer)
+        self.client.force_authenticate(self.writer)
         response = self.client.patch(
-            f"/api/v1/topics/{topic.id}/", {"creator_price": "30.00"}, format="json"
+            f"/api/v1/topics/{topic.id}/", {"creator_price_with_video": "30.00"}, format="json"
         )
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
 
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
         course.refresh_from_db()
         self.assertEqual(course.creator_price_snapshot, Decimal("25.00"))
 
@@ -190,7 +220,6 @@ class TopicApiTests(APITestCase):
             {
                 "category": str(self.category.id),
                 "name": "Frontend Development",
-                "creator_price": "25.00",
                 "status": "ACTIVE",
             },
         )
@@ -206,7 +235,6 @@ class TopicApiTests(APITestCase):
             {
                 "category": str(other_category.id),
                 "name": "Frontend Development",
-                "creator_price": "25.00",
                 "status": "ACTIVE",
             },
         )

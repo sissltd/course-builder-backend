@@ -8,7 +8,7 @@ class WalletAdmin(admin.ModelAdmin):
     """Creator wallets, read-only.
 
     `balance` is deliberately not editable here. It moves only through
-    wallet_service.credit_wallet (course approval) and confirm_withdrawal,
+    the course payout at approval (course_payout_service) and confirm_withdrawal,
     both of which take a row lock and write a Transaction; typing a new number
     into this form would desynchronize the balance from the transaction log
     that is supposed to explain it, with nothing recording who did it or why.
