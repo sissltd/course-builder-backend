@@ -1,5 +1,4 @@
 from decimal import Decimal
-from unittest.mock import patch
 from uuid import uuid4
 
 from django.db import connection
@@ -15,7 +14,7 @@ from api.courses.enums import (
     CourseStatus,
     DistributionStatus,
 )
-from api.courses.models import CourseDistribution, CourseVersion
+from api.courses.models import Course, CourseDistribution, CourseVersion
 from api.courses.services import course_service
 from api.courses.tests.factories import build_compliant_course, make_category, make_user
 from api.platform.services.platform_settings_service import get_settings
@@ -39,9 +38,9 @@ class ReviewQueueApiTests(APITestCase):
         self.qa_reviewer = make_user(role=UserRole.QA_REVIEWER)
         self.admin = make_user(role=UserRole.ADMIN)
         self.category = make_category(
-            creator_price_beginner=Decimal("120.00"),
-            creator_price_intermediate=Decimal("120.00"),
-            creator_price_advanced=Decimal("120.00"),
+            creator_price_without_video=Decimal("120.00"),
+            creator_price_with_video=Decimal("120.00"),
+            creator_price_ai_built=Decimal("120.00"),
         )
         CourseVersion.objects.get_or_create(label="1.0")
 
@@ -50,6 +49,14 @@ class ReviewQueueApiTests(APITestCase):
             creator=self.creator, category=category or self.category
         )
         return course_service.submit_course(course=course, actor=self.creator)
+
+    def _mark_approved(self, course):
+        """A course that has finished review, for tests about what follows."""
+
+        Course.objects.filter(pk=course.pk).update(
+            status=CourseStatus.APPROVED, approved_at=timezone.now()
+        )
+        course.refresh_from_db()
 
     def _pass_content_review(self, course):
         """Claim and approve all three content seats, leaving the course in QA."""
@@ -102,10 +109,10 @@ class ReviewQueueApiTests(APITestCase):
         submitted_course = self._submitted_course()
 
         approved_course = self._submitted_course()
-        review_service.approve_course(course=approved_course, reviewer=self.reviewer)
+        self._mark_approved(approved_course)
 
         published_course = self._submitted_course()
-        review_service.approve_course(course=published_course, reviewer=self.reviewer)
+        self._mark_approved(published_course)
         course_service.publish_course(course=published_course, actor=self.admin)
 
         self.client.force_authenticate(self.reviewer)
@@ -216,8 +223,7 @@ class ReviewQueueApiTests(APITestCase):
         wallet = wallet_service.get_or_create_wallet(user=self.creator)
         self.assertEqual(wallet.balance, Decimal("0.00"))
 
-    @patch("api.payments.services.transaction_services.release_course_payment.apply_async")
-    def test_qa_approval_schedules_payment_after_required_media_is_registered(self, apply_async):
+    def test_qa_approval_pays_the_creator_once_required_media_is_registered(self):
         course = self._submitted_course()
         self._pass_content_review(course)
 
@@ -275,13 +281,14 @@ class ReviewQueueApiTests(APITestCase):
             self.client.post(f"/api/v1/review-queue/{course.id}/qa-claim/").status_code,
             status.HTTP_200_OK,
         )
-        with self.captureOnCommitCallbacks(execute=True):
-            response = self.client.post(f"/api/v1/review-queue/{course.id}/qa-approve/", {}, format="json")
+        response = self.client.post(f"/api/v1/review-queue/{course.id}/qa-approve/", {}, format="json")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         course.refresh_from_db()
         self.assertEqual(course.status, CourseStatus.APPROVED)
-        delay_seconds = get_settings().auto_credit_duration_hours * 3600
-        apply_async.assert_called_once_with(args=[course.id], countdown=delay_seconds)
+        # The creator's own video: paid at the with-video price, at QA.
+        self.assertIsNotNone(course.creator_paid_at)
+        wallet = wallet_service.get_or_create_wallet(user=self.creator)
+        self.assertEqual(wallet.balance, course.creator_price_snapshot)
 
     def test_double_approve_returns_400(self):
         course = self._submitted_course()
@@ -440,7 +447,7 @@ class ReviewQueueApiTests(APITestCase):
 
     def test_publish_logs_activity_for_actor(self):
         course = self._submitted_course()
-        review_service.approve_course(course=course, reviewer=self.reviewer)
+        self._mark_approved(course)
         self.client.force_authenticate(self.admin)
 
         self.client.post(f"/api/v1/courses/{course.id}/publish/")
@@ -474,9 +481,9 @@ class ReviewerCourseScreenApiTests(APITestCase):
         )
         self.category = make_category(
             name=f"Figma Category {uuid4()}",
-            creator_price_beginner=Decimal("120.00"),
-            creator_price_intermediate=Decimal("120.00"),
-            creator_price_advanced=Decimal("120.00"),
+            creator_price_without_video=Decimal("120.00"),
+            creator_price_with_video=Decimal("120.00"),
+            creator_price_ai_built=Decimal("120.00"),
         )
         CourseVersion.objects.get_or_create(label="1.0")
 
@@ -830,9 +837,9 @@ class ReviewServiceRoleEnforcementTests(APITestCase):
     def setUp(self):
         self.creator = make_user(role=UserRole.COURSE_CREATOR)
         self.category = make_category(
-            creator_price_beginner=Decimal("120.00"),
-            creator_price_intermediate=Decimal("120.00"),
-            creator_price_advanced=Decimal("120.00"),
+            creator_price_without_video=Decimal("120.00"),
+            creator_price_with_video=Decimal("120.00"),
+            creator_price_ai_built=Decimal("120.00"),
         )
 
     def _submitted_course(self):
@@ -844,7 +851,7 @@ class ReviewServiceRoleEnforcementTests(APITestCase):
         wrong_role_reviewer = make_user(role=UserRole.COURSE_CREATOR)
 
         with self.assertRaises(PermissionDenied):
-            review_service.approve_course(course=course, reviewer=wrong_role_reviewer)
+            review_service.approve_content(course=course, reviewer=wrong_role_reviewer)
 
     def test_wrong_role_cannot_reject(self):
         course = self._submitted_course()

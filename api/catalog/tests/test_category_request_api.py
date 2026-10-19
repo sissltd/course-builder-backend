@@ -14,6 +14,12 @@ from api.users.enums import UserRole
 
 URL = "/api/v1/category-requests/"
 
+APPROVE_PRICES = {
+    "creator_price_without_video": "100000.00",
+    "creator_price_with_video": "150000.00",
+    "creator_price_ai_built": "60000.00",
+}
+
 
 class CategoryRequestFlowTests(APITestCase):
     def setUp(self):
@@ -68,7 +74,7 @@ class CategoryRequestFlowTests(APITestCase):
 
         response = self.client.post(
             f"{URL}{request_id}/approve/",
-            {"creator_price": "150000.00"},
+            APPROVE_PRICES,
             format="json",
         )
 
@@ -86,7 +92,7 @@ class CategoryRequestFlowTests(APITestCase):
             with self.subTest(action=action):
                 response = self.client.post(
                     f"{URL}{request_id}/{action}/",
-                    {"creator_price": "150000.00"},
+                    APPROVE_PRICES,
                     format="json",
                 )
                 self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
@@ -137,7 +143,7 @@ class CategoryRequestFlowTests(APITestCase):
 
         response = self.client.post(
             f"{URL}{request_id}/approve/",
-            {"creator_price": "150000.00"},
+            APPROVE_PRICES,
             format="json",
         )
 
@@ -145,10 +151,10 @@ class CategoryRequestFlowTests(APITestCase):
         self.assertEqual(response.data["status"], CategoryRequestStatus.APPROVED)
 
         category = Category.objects.get(name="Data Science")
-        # The approving admin supplies one rate; every tier starts there.
-        self.assertEqual(category.creator_price_beginner, Decimal("150000.00"))
-        self.assertEqual(category.creator_price_intermediate, Decimal("150000.00"))
-        self.assertEqual(category.creator_price_advanced, Decimal("150000.00"))
+        # The approver sets all three creator prices.
+        self.assertEqual(category.creator_price_without_video, Decimal("100000.00"))
+        self.assertEqual(category.creator_price_with_video, Decimal("150000.00"))
+        self.assertEqual(category.creator_price_ai_built, Decimal("60000.00"))
         self.assertFalse(hasattr(category, "description"))
         self.assertEqual(category.slug, "data-science")
 
@@ -171,7 +177,7 @@ class CategoryRequestFlowTests(APITestCase):
 
         response = self.client.post(
             f"{URL}{request_id}/approve/",
-            {"creator_price": "150000.00"},
+            APPROVE_PRICES,
             format="json",
         )
 
@@ -190,7 +196,7 @@ class CategoryRequestFlowTests(APITestCase):
     def test_double_approval_is_refused(self):
         request_id = self._file().data["id"]
         self.client.force_authenticate(self.admin)
-        body = {"creator_price": "150000.00"}
+        body = APPROVE_PRICES
         self.client.post(f"{URL}{request_id}/approve/", body, format="json")
 
         again = self.client.post(f"{URL}{request_id}/approve/", body, format="json")
@@ -213,7 +219,7 @@ class CategoryRequestFlowTests(APITestCase):
 
         response = self.client.post(
             f"{URL}{request_id}/approve/",
-            {"creator_price": "150000.00"},
+            APPROVE_PRICES,
             format="json",
         )
 
@@ -232,16 +238,16 @@ class CategoryRequestFlowTests(APITestCase):
         Category.objects.create(
             name="Data Science",
             slug="data-science",
-            creator_price_beginner=Decimal("1.00"),
-            creator_price_intermediate=Decimal("1.00"),
-            creator_price_advanced=Decimal("1.00"),
+            creator_price_without_video=Decimal("1.00"),
+            creator_price_with_video=Decimal("1.00"),
+            creator_price_ai_built=Decimal("1.00"),
         )
         request_id = self._file().data["id"]
         self.client.force_authenticate(self.admin)
 
         response = self.client.post(
             f"{URL}{request_id}/approve/",
-            {"creator_price": "150000.00"},
+            APPROVE_PRICES,
             format="json",
         )
 
@@ -282,7 +288,7 @@ class CategoryRequestEmailTemplateTests(APITestCase):
         mail.outbox.clear()
         response = self.client.post(
             f"{URL}{request_id}/approve/",
-            {"creator_price": "1000.00"},
+            APPROVE_PRICES,
             format="json",
         )
 

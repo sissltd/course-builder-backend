@@ -326,9 +326,10 @@ class NotificationPreference(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
     the alert toggles are checked by the code that raises
     each alert (e.g. `sla_red_critical_alert` in review_sla_service).
     Nothing sends escalation_assigned, sla_amber_warning, sla_breached,
-    account_deletion_detection_alert, mie_recommendation_alert or
-    mie_pipeline_alert yet, so turning those off changes nothing until a
-    sender exists.
+    account_deletion_detection_alert or mie_recommendation_alert yet, so
+    turning those off changes nothing until a sender exists.
+    mie_pipeline_alert gates the Production Engine's alerts (a run blocked
+    by the budget or failed).
 
     Lazily provisioned via notification_preference_service.get_or_create,
     mirroring CreatorProfile/ReviewerAvailability - no row exists until a
@@ -398,8 +399,8 @@ class NotificationPreference(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
         verbose_name=_("MIE Pipeline Alert"),
         default=True,
         help_text=_(
-            "Reserved for the AI Auto-Production Engine, which is not "
-            "implemented in this backend - inert while AI Creator is unavailable."
+            "Production Engine alerts: a production run blocked by the "
+            "budget or failed. Sent to holders of `production.manage`."
         ),
     )
     in_app_enabled = models.BooleanField(

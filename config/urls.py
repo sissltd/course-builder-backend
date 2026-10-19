@@ -73,6 +73,7 @@ urlpatterns = [
     path("api/v1/", include("api.notification.urls")),
     path("api/v1/", include("api.platform.urls")),
     path("api/v1/", include("api.operations.urls")),
+    path("api/v1/", include("api.production.urls")),
     path("api/v1/", include("api.achievements.urls")),
     path("api/v1/", include("api.support.urls")),
     path("api/v1/", include("api.authorization.urls")),

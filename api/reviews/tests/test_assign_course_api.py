@@ -25,9 +25,9 @@ class _AssignBase(APITestCase):
         self.admin = make_user(role=UserRole.ADMIN)
         self.creator = make_user(role=UserRole.COURSE_CREATOR)
         self.category = make_category(
-            creator_price_beginner=Decimal("100"),
-            creator_price_intermediate=Decimal("100"),
-            creator_price_advanced=Decimal("100"),
+            creator_price_without_video=Decimal("100"),
+            creator_price_with_video=Decimal("100"),
+            creator_price_ai_built=Decimal("100"),
         )
         CourseVersion.objects.get_or_create(label="1.0")
         self.course = course_service.submit_course(

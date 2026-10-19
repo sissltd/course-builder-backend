@@ -74,7 +74,10 @@ class NotificationPreferenceUpdateSerializer(serializers.Serializer):
     )
     mie_pipeline_alert = serializers.BooleanField(
         required=False,
-        help_text="Reserved: nothing sends MIE pipeline alerts yet.",
+        help_text=(
+            "Production Engine alerts (a run blocked by the budget or failed), "
+            "sent to holders of `production.manage`."
+        ),
     )
     in_app_enabled = serializers.BooleanField(
         required=False,

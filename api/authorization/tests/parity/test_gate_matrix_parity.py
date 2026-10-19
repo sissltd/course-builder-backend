@@ -61,6 +61,12 @@ def apply_intentional_deltas(baseline: dict) -> dict:
         # a seat, and the QA seat, while the staged flow is off.
         if UserRole.QA_REVIEWER in allowed and UserRole.STAFF_WRITER not in allowed:
             allowed.append(UserRole.STAFF_WRITER)
+        # D5: the Writer sets creator prices (catalog.set_creator_prices,
+        # migration 0008), including a topic's, so topic updates admit it at
+        # the view; topic_service then lets it change prices only, and topic
+        # managers everything but prices.
+        if key.endswith(("[TopicViewSet.update]", "[TopicViewSet.partial_update]")) and UserRole.STAFF_WRITER not in allowed:
+            allowed.append(UserRole.STAFF_WRITER)
     return expected
 
 
@@ -133,3 +139,15 @@ class IntentionalDeltaTests(APITestCase):
         response = self.client.get("/api/v1/course-versions/")
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_d5_the_writer_passes_the_topic_update_gate_but_may_only_change_prices(self):
+        from api.courses.tests.factories import make_topic
+
+        topic = make_topic()
+        self.client.force_authenticate(make_user(role=UserRole.STAFF_WRITER))
+
+        renamed = self.client.patch(f"/api/v1/topics/{topic.id}/", {"name": "Renamed"}, format="json")
+        repriced = self.client.patch(f"/api/v1/topics/{topic.id}/", {"creator_price_with_video": "9.00"}, format="json")
+
+        self.assertEqual(renamed.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(repriced.status_code, status.HTTP_200_OK)

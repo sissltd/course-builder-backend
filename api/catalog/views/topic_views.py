@@ -27,7 +27,9 @@ _TOPIC_EXAMPLE = {
         "name": "Software Engineering",
     },
     "name": "Django REST Framework",
-    "creator_price": "180.00",
+    "creator_price_without_video": None,
+    "creator_price_with_video": "180.00",
+    "creator_price_ai_built": None,
     "status": "ACTIVE",
     "reserved_by": None,
     "reserved_until": None,
@@ -38,9 +40,10 @@ _TOPIC_EXAMPLE = {
 
 _AUTH_LINE = (
     "**Auth:** Writes need `catalog.manage_topics` (Creator Reviewer, "
-    "Verifier, Admin, Approver, Super Admin by default). Everyone else has read "
-    "access only - creators browse topics under a category before creating "
-    "a course."
+    "Verifier, Admin, Approver, Super Admin by default); setting a price "
+    "needs `catalog.set_creator_prices` (Writer, Admin, Super Admin). "
+    "Everyone else has read access only - creators browse topics under a "
+    "category before creating a course."
 )
 
 
@@ -99,17 +102,18 @@ _AUTH_LINE = (
     create=extend_schema(
         summary="Create a topic",
         description=(
-            "Creates a topic under a category, fixing the price paid for a "
-            "course submitted under it - more specific than the category's "
-            "own price, and preferred when set (see submit_course pricing "
-            "rule).\n\n"
+            "Creates a topic under a category. It may override any of the "
+            "category's three creator prices; a price left null uses the "
+            "category's of that type.\n\n"
             "Called from the 'Create topic' action on the Topics screen.\n\n"
             f"{_AUTH_LINE}\n\n"
             "**Prerequisites:** None beyond holding the Admin or Creator "
             "Reviewer role.\n\n"
-            "**Important:** Editing `creator_price` later is not "
-            "retroactive, mirroring Category - it only affects courses "
-            "submitted afterwards."
+            "**Important:** Setting any price needs "
+            "`catalog.set_creator_prices` (Writer, Admin, Super Admin; 403 "
+            "otherwise). Prices are not retroactive: courses already "
+            "submitted keep the prices they locked, except unpaid ones still "
+            "in the review queue, which take the new ones."
         ),
         tags=["Admin — Topics"],
         request=TopicWriteSerializer,
@@ -120,7 +124,7 @@ _AUTH_LINE = (
                 value={
                     "category": "7d2f4b18-3c9a-4e51-b8f0-1a6c5d3e9b74",
                     "name": "Django REST Framework",
-                    "creator_price": "180.00",
+                    "creator_price_with_video": "180.00",
                     "status": "ACTIVE",
                 },
             ),
@@ -146,7 +150,11 @@ _AUTH_LINE = (
             "submitted.\n\n"
             f"{_AUTH_LINE}\n\n"
             "**Prerequisites:** The topic must exist.\n\n"
-            "**Important:** None."
+            "**Important:** Changing a price needs "
+            "`catalog.set_creator_prices` (Writer, Admin, Super Admin); "
+            "changing anything else needs `catalog.manage_topics`. Each is "
+            "checked only for fields whose value changes; 403 otherwise. A "
+            "price change re-prices unpaid courses still in the review queue."
         ),
         tags=["Admin — Topics"],
         request=TopicWriteSerializer,
@@ -174,7 +182,11 @@ _AUTH_LINE = (
             "**Prerequisites:** The topic must exist.\n\n"
             "**Important:** Setting `status` to `INACTIVE` stops new "
             "submissions but leaves courses already using the topic "
-            "untouched."
+            "untouched. Changing a price needs `catalog.set_creator_prices` "
+            "(Writer, Admin, Super Admin); changing anything else needs "
+            "`catalog.manage_topics`. Each is checked only for fields whose "
+            "value changes; 403 otherwise. A price change re-prices unpaid "
+            "courses still in the review queue."
         ),
         tags=["Admin — Topics"],
         request=TopicWriteSerializer,
@@ -182,7 +194,7 @@ _AUTH_LINE = (
             OpenApiExample(
                 name="Reprice",
                 request_only=True,
-                value={"creator_price": "200.00"},
+                value={"creator_price_with_video": "200.00"},
             ),
         ],
         responses={
@@ -225,14 +237,15 @@ class TopicViewSet(ModelViewSet):
     """Admin/Creator-Reviewer-managed course topics nested under a Category.
 
     List/retrieve are open to any authenticated user - creators need to
-    browse topics under a chosen category before creating a course. Mirrors
-    CategoryViewSet exactly, including Reviewer write access for pricing.
+    browse topics under a chosen category before creating a course. Topic
+    managers edit topics; only price setters (the Writer, Admin, Super
+    Admin) change their prices.
     """
 
     queryset = Topic.objects.select_related("category").all()
     filterset_class = TopicFilter
     filter_backends = [DjangoFilterBackend, drf_filters.OrderingFilter]
-    ordering_fields = ["name", "creator_price", "created_datetime"]
+    ordering_fields = ["name", "created_datetime"]
 
     def get_serializer_class(self):
         if self.action in WRITE_ACTIONS:
@@ -240,6 +253,10 @@ class TopicViewSet(ModelViewSet):
         return TopicSerializer
 
     def get_permissions(self):
+        # A Writer reprices topics without managing them, so updates admit
+        # either permission; topic_service checks each changed field.
+        if self.action in ("update", "partial_update"):
+            return [Perm(codenames.CATALOG_MANAGE_TOPICS, codenames.CATALOG_SET_CREATOR_PRICES)()]
         if self.action in WRITE_ACTIONS or self.action == "release_reservation":
             return [Perm(codenames.CATALOG_MANAGE_TOPICS)()]
         return super().get_permissions()

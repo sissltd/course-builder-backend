@@ -56,9 +56,9 @@ class CategorySerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "name",
-            "creator_price_beginner",
-            "creator_price_intermediate",
-            "creator_price_advanced",
+            "creator_price_without_video",
+            "creator_price_with_video",
+            "creator_price_ai_built",
             "icon",
             "track_preference",
             "status",
@@ -72,9 +72,12 @@ class CategorySerializer(serializers.ModelSerializer):
 class CategoryWriteSerializer(serializers.ModelSerializer):
     """Create/update serializer for Category, used by Writers and Super Admins.
 
-    The price levels' non-negativity is enforced by the model fields'
+    The three creator prices' non-negativity is enforced by the model fields'
     MinValueValidator, which ModelSerializer picks up automatically - no
-    duplicate validation here. Includes read-only `id` so a client creating a
+    duplicate validation here. Setting them needs
+    `catalog.set_creator_prices` (category_service.require_price_setter).
+    Price changes are never retroactive: a course locks its prices when it
+    is submitted. Includes read-only `id` so a client creating a
     category gets it back without a second GET round-trip.
 
     Persistence is delegated to category_service so the acting user is recorded
@@ -86,9 +89,9 @@ class CategoryWriteSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "name",
-            "creator_price_beginner",
-            "creator_price_intermediate",
-            "creator_price_advanced",
+            "creator_price_without_video",
+            "creator_price_with_video",
+            "creator_price_ai_built",
             "icon",
             "track_preference",
             "status",
@@ -101,25 +104,19 @@ class CategoryWriteSerializer(serializers.ModelSerializer):
                     "Must be unique across all categories."
                 )
             },
-            "creator_price_beginner": {
+            "creator_price_without_video": {
                 "help_text": (
-                    "Payout for an approved Beginner course, as a decimal "
-                    'string (e.g. "500.00"). Zero or greater. Also the rate '
-                    "a brand-new topic in this category inherits."
+                    "Paid to a creator who writes the course and leaves its video to the Production Engine, when Second Review approves it. Decimal string, zero or greater."
                 )
             },
-            "creator_price_intermediate": {
+            "creator_price_with_video": {
                 "help_text": (
-                    "Payout for an approved Intermediate course, as a "
-                    "decimal string. Zero or greater."
+                    "Paid to a creator who writes the course and adds its video (and to a paid developer), when QA approves it. Decimal string, zero or greater."
                 )
             },
-            "creator_price_advanced": {
+            "creator_price_ai_built": {
                 "help_text": (
-                    "Payout for an approved Advanced course, as a decimal "
-                    "string. Zero or greater. Price changes are never "
-                    "retroactive: a course freezes the rate in effect when "
-                    "it was submitted, so existing payouts are unaffected."
+                    "Paid to a creator who builds the course with our AI: at Second Review if the Production Engine makes its video, at QA if the creator does. Decimal string, zero or greater."
                 )
             },
             "icon": {

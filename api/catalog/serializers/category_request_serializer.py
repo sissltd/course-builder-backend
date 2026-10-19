@@ -90,16 +90,29 @@ class AdminCategoryRequestSerializer(CategoryRequestSerializer):
 class CategoryRequestApproveSerializer(serializers.Serializer):
     """Request body for approving a category request.
 
-    The price is supplied by the deciding admin rather than the requester:
-    it determines what the platform pays a creator per approved course, so
-    it is not the requester's to set.
+    The three creator prices are supplied by the approver rather than the
+    requester: they decide what the platform pays a creator per approved
+    course, so they are not the requester's to set. The approver must hold
+    `catalog.set_creator_prices`.
     """
 
-    creator_price = serializers.DecimalField(
+    creator_price_without_video = serializers.DecimalField(
         max_digits=10,
         decimal_places=2,
         min_value=0,
-        help_text="Fixed payout to a creator for an approved course in this category.",
+        help_text="Paid to a creator who writes the course and leaves its video to the Production Engine, when Second Review approves it. Decimal string, zero or greater.",
+    )
+    creator_price_with_video = serializers.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        min_value=0,
+        help_text="Paid to a creator who writes the course and adds its video (and to a paid developer), when QA approves it. Decimal string, zero or greater.",
+    )
+    creator_price_ai_built = serializers.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        min_value=0,
+        help_text="Paid to a creator who builds the course with our AI: at Second Review if the Production Engine makes its video, at QA if the creator does. Decimal string, zero or greater.",
     )
     track_preference = serializers.CharField(
         required=False,

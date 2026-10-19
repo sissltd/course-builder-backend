@@ -57,3 +57,27 @@ class MediaAssetKind(models.TextChoices):
     SUBTITLE = "SUBTITLE", "Subtitle"
     THUMBNAIL = "THUMBNAIL", "Thumbnail"
     PREVIEW_VIDEO = "PREVIEW_VIDEO", "Preview Video"
+
+
+class ReviewFlagType(models.TextChoices):
+    """The fixed vocabulary for ReviewFlag.flag_type.
+
+    The Production Engine reads it to decide what to redo when a course whose
+    video it made is rejected: the audio, visual and caption types are
+    engine work; the content types change approved words, which only the
+    course's author may do. Matching is case-insensitive, and older free-text
+    values are still accepted (they are treated as OTHER).
+    """
+
+    CONTENT_ACCURACY = "CONTENT_ACCURACY", "Content accuracy"
+    CONTENT_CLARITY = "CONTENT_CLARITY", "Content clarity"
+    SCRIPT_LENGTH = "SCRIPT_LENGTH", "Script length"
+    PRONUNCIATION = "PRONUNCIATION", "Pronunciation"
+    VOICE_QUALITY = "VOICE_QUALITY", "Voice quality"
+    AUDIO_LEVEL = "AUDIO_LEVEL", "Audio level"
+    PACING = "PACING", "Pacing"
+    VISUAL_ERROR = "VISUAL_ERROR", "Visual error"
+    ON_SCREEN_TEXT = "ON_SCREEN_TEXT", "On-screen text"
+    VISUAL_QUALITY = "VISUAL_QUALITY", "Visual quality"
+    CAPTIONS = "CAPTIONS", "Captions"
+    OTHER = "OTHER", "Other"

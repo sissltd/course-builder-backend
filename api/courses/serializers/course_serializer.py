@@ -212,6 +212,8 @@ class CourseListSerializer(serializers.ModelSerializer):
             "issue_count",
             "waiting_seconds",
             "creator_price_snapshot",
+            "payout_type",
+            "creator_paid_at",
             "submitted_at",
             "date_submitted",
             "date_approved",
@@ -438,7 +440,10 @@ class CourseDistributionSerializer(serializers.ModelSerializer):
         decimal_places=2,
         allow_null=True,
         read_only=True,
-        help_text="Fixed creator payout captured when the course was submitted.",
+        help_text=(
+            "What the creator is paid: the course's locked price of its payout "
+            "type (without video, with video, AI-built)."
+        ),
     )
     learner_fee = serializers.DecimalField(
         source="learner_price",
@@ -671,6 +676,8 @@ class CourseDetailSerializer(serializers.ModelSerializer):
             "video_provider",
             "video_attached_at",
             "creator_price_snapshot",
+            "payout_type",
+            "creator_paid_at",
             "preview_video_url",
             "thumbnail_url",
             "terms_accepted_at",
@@ -1080,7 +1087,20 @@ class ReviewRejectSerializer(serializers.Serializer):
     """
 
     feedback = serializers.JSONField(required=True)
-    flags = serializers.JSONField(required=False, default=list)
+    flags = serializers.JSONField(
+        required=False,
+        default=list,
+        help_text=(
+            "Optional itemised issues: a list of {flag_type, title, system_message, "
+            "reviewer_note, lesson_id, module_id}. flag_type takes the ReviewFlagType "
+            "vocabulary (CONTENT_ACCURACY, CONTENT_CLARITY, SCRIPT_LENGTH, "
+            "PRONUNCIATION, VOICE_QUALITY, AUDIO_LEVEL, PACING, VISUAL_ERROR, "
+            "ON_SCREEN_TEXT, VISUAL_QUALITY, CAPTIONS, OTHER). On a course whose "
+            "video the Production Engine made, a rejection whose flags are all "
+            "audio, visual or caption types is fixed and resubmitted by the engine; "
+            "for PRONUNCIATION, put one 'term = spoken form' per line in reviewer_note."
+        ),
+    )
 
     def validate_feedback(self, value):
         if not isinstance(value, dict) or not value.get("summary"):

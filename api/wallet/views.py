@@ -188,7 +188,7 @@ class WithdrawalConfirmView(APIView):
         "role.\n\n"
         "**Important:** Read-only; there is no admin endpoint that adjusts a "
         "balance, deliberately — balances move only through "
-        "`credit_wallet` (course approval) and a confirmed withdrawal. Wallets "
+        "the course payout at approval and a confirmed withdrawal. Wallets "
         "are provisioned lazily, so a creator who has never earned or opened "
         "their wallet has no row here at all. Unlike the creator's own wallet "
         "view this omits `total_earned`/`pending_balance`, which cost an "

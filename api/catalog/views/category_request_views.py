@@ -9,6 +9,7 @@ from api.catalog.serializers import (
     CategoryRequestCreateSerializer,
     CategoryRequestSerializer,
 )
+from api.catalog.services.category_service import PRICE_FIELDS
 from api.catalog.services import category_request_service
 from api.authorization import codenames
 from api.authorization.permissions import Perm
@@ -192,11 +193,12 @@ class CategoryRequestViewSet(ModelViewSet):
             "been checked and the payout decided.\n\n"
             "**Auth:** The `catalog.manage_categories` permission — Writer, Admin and Super Admin by default.\n\n"
             "**Prerequisites:** The request must be Pending.\n\n"
-            "**Important:** `creator_price` is required and is set by you, "
-            "not the requester \u2014 it is what the platform pays per "
-            "approved course in this category, and it seeds all three "
-            "difficulty tiers until they are differentiated in the category "
-            "editor. A name or slug colliding with an existing category "
+            "**Important:** The three creator prices are required and set by "
+            "you, not the requester \u2014 they are what the platform pays "
+            "per approved course in this category: without video (paid at "
+            "Second Review), with video (paid at QA) and AI-built. They need "
+            "`catalog.set_creator_prices` (403 otherwise). A name or slug "
+            "colliding with an existing category "
             "returns 400 and nothing is created. If the notification email "
             "fails the approval still stands."
         ),
@@ -204,7 +206,13 @@ class CategoryRequestViewSet(ModelViewSet):
         request=CategoryRequestApproveSerializer,
         examples=[
             OpenApiExample(
-                "Approve", request_only=True, value={"creator_price": "150000.00"}
+                "Approve",
+                request_only=True,
+                value={
+                    "creator_price_without_video": "100000.00",
+                    "creator_price_with_video": "150000.00",
+                    "creator_price_ai_built": "60000.00",
+                },
             )
         ],
         responses={
@@ -224,10 +232,12 @@ class CategoryRequestViewSet(ModelViewSet):
     def approve(self, request, pk=None):
         serializer = CategoryRequestApproveSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
         updated = category_request_service.approve_request(
             request=self.get_object(),
             actor=request.user,
-            **serializer.validated_data,
+            prices={field: data[field] for field in PRICE_FIELDS},
+            track_preference=data.get("track_preference"),
         )
         return Response(CategoryRequestSerializer(updated).data)
 

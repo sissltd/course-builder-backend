@@ -30,6 +30,7 @@ CUSTOM_APPS = [
     "shared.uploads",
     "api.platform",
     "api.operations",
+    "api.production",
     "api.achievements",
     "api.support",
     "api.search",

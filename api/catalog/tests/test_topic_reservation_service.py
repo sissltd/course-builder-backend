@@ -5,7 +5,7 @@ from django.test import TestCase
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
-from api.catalog.enums import ReservationStatus
+from api.catalog.enums import CreatorPriceType, ReservationStatus
 from api.catalog.models import Topic
 from api.catalog.services import topic_reservation_service
 from api.courses.tests.factories import (
@@ -56,9 +56,9 @@ class ApproveRequestTests(TestCase):
         platform_settings_service.update_settings(topic_reservation_expiry_days=10)
         creator = make_user()
         category = make_category(
-            creator_price_beginner=Decimal("120.00"),
-            creator_price_intermediate=Decimal("120.00"),
-            creator_price_advanced=Decimal("120.00"),
+            creator_price_without_video=Decimal("120.00"),
+            creator_price_with_video=Decimal("120.00"),
+            creator_price_ai_built=Decimal("120.00"),
         )
         request = make_topic_reservation_request(
             requested_by=creator, category=category, name="New Topic"
@@ -72,7 +72,9 @@ class ApproveRequestTests(TestCase):
         topic = Topic.objects.get(id=result.topic_id)
         self.assertEqual(topic.name, "New Topic")
         self.assertEqual(topic.category_id, category.id)
-        self.assertEqual(topic.creator_price, Decimal("120.00"))
+        # No overrides: the new topic pays its category's prices.
+        self.assertIsNone(topic.creator_price_with_video)
+        self.assertEqual(topic.price_for(CreatorPriceType.WITH_VIDEO), Decimal("120.00"))
         self.assertEqual(topic.reserved_by_id, creator.id)
         self.assertEqual(
             topic.reserved_until, timezone.localdate() + timedelta(days=10)
