@@ -1,6 +1,9 @@
-from drf_spectacular.utils import OpenApiExample, extend_schema, extend_schema_view
+from drf_spectacular.utils import extend_schema, extend_schema_view
+from django.db.models import Prefetch
+from django_filters.rest_framework import DjangoFilterBackend
+from django.shortcuts import get_object_or_404
 from rest_framework import status
-from rest_framework.generics import ListCreateAPIView
+from rest_framework.generics import ListCreateAPIView, RetrieveAPIView
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
@@ -8,80 +11,68 @@ from rest_framework.views import APIView
 from rest_framework.viewsets import ReadOnlyModelViewSet
 from rest_framework.decorators import action
 
+from api.authentication.utils.optional_jwt import OptionalJWTAuthentication
 from api.authorization import codenames
 from api.authorization.permissions import Perm
 from api.support.enums import SupportRequestKind
-from api.support.models import SupportRequest
+from api.support.filters import SupportTicketFilter, SupportTicketOrdering
+from api.support.models import SupportRequest, SupportTicketMessage
+from api.support.docs.support_docs import (
+    ADMIN_REQUEST_LIST_DOCS,
+    ADMIN_REQUEST_RESOLVE_DOCS,
+    ADMIN_REQUEST_RETRIEVE_DOCS,
+    ADMIN_TICKET_BULK_STATUS_DOCS,
+    ADMIN_TICKET_LIST_DOCS,
+    ADMIN_TICKET_REPLY_DOCS,
+    ADMIN_TICKET_RETRIEVE_DOCS,
+    ADMIN_TICKET_STATS_DOCS,
+    ADMIN_TICKET_STATUS_DOCS,
+    APPEAL_CREATE_DOCS,
+    APPEAL_LIST_DOCS,
+    SUPPORT_CONTACT_DOCS,
+    TICKET_CREATE_DOCS,
+    TICKET_LIST_DOCS,
+    TICKET_REPLY_DOCS,
+    TICKET_RETRIEVE_DOCS,
+)
 from api.support.serializers import (
     SupportContactCreateSerializer,
     SupportRequestSerializer,
     SupportResolveSerializer,
+    SupportTicketBulkResultSerializer,
+    SupportTicketBulkStatusSerializer,
+    SupportTicketCreateSerializer,
+    SupportTicketDetailSerializer,
+    SupportTicketMessageSerializer,
+    SupportTicketReplySerializer,
+    SupportTicketStatusSerializer,
     SupportTitledRequestCreateSerializer,
 )
-from api.support.services import support_service
-from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
-
-_REQUEST_EXAMPLE = {
-    "id": "0b7c3f5e-6a1d-4e2b-9c8f-2d4a6b8c0e13",
-    "kind": "APPEAL",
-    "first_name": "Ada",
-    "last_name": "Obi",
-    "email": "creator@example.com",
-    "country": "",
-    "title": "My account was suspended in error",
-    "web_link": "https://example.com/portfolio",
-    "message": "The flagged lesson was original work; please review.",
-    "status": "OPEN",
-    "due_at": "2026-10-08T11:00:00Z",
-    "resolution_notes": "",
-    "resolved_at": None,
-    "submitted_by_email": "creator@example.com",
-    "created_datetime": "2026-09-29T11:00:00Z",
-}
+from api.support.services import support_service, ticket_service
 
 
-@extend_schema(tags=["Public — Support"], auth=[{}])
+def _ticket_detail_queryset():
+    """Tickets with the thread and its authors loaded in two queries."""
+
+    return ticket_service.tickets().prefetch_related(
+        Prefetch(
+            "messages",
+            queryset=SupportTicketMessage.objects.select_related("author"),
+        )
+    )
+
+
 class SupportContactView(APIView):
     """Contact-us form (Figma Help > Support > Contact us). Public and
-    IP-throttled since it creates rows without authentication."""
+    IP-throttled since it creates rows without authentication. A valid token
+    links the message to the caller; a stale one is ignored, never 401."""
 
-    authentication_classes = []
+    authentication_classes = [OptionalJWTAuthentication]
     permission_classes = [AllowAny]
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = "support_contact"
 
-    @extend_schema(
-        summary="Send a contact message",
-        description=(
-            "Submits the 'Contact us' form and notifies Support staff in-app.\n\n"
-            "Called from the Support page's 'Contact us' action and the "
-            "public contact page.\n\n"
-            "**Auth:** Public — no credentials required.\n\n"
-            "**Prerequisites:** None.\n\n"
-            "**Important:** `country` is a two-letter ISO code. Rate-limited "
-            "per client IP; exceeding the limit returns 429."
-        ),
-        request=SupportContactCreateSerializer,
-        examples=[
-            OpenApiExample(
-                name="Sample Request",
-                request_only=True,
-                value={
-                    "first_name": "Ada",
-                    "last_name": "Obi",
-                    "email": "ada@example.com",
-                    "country": "NG",
-                    "message": "How do I change my payout bank?",
-                },
-            ),
-        ],
-        responses={
-            201: SupportRequestSerializer,
-            **STANDARD_ERROR_RESPONSES["validation"],
-            **STANDARD_ERROR_RESPONSES["rate_limited"],
-            **STANDARD_ERROR_RESPONSES["server"],
-        },
-    )
+    @extend_schema(**SUPPORT_CONTACT_DOCS)
     def post(self, request):
         serializer = SupportContactCreateSerializer(
             data=request.data, context={"request": request}
@@ -96,6 +87,7 @@ class _TitledRequestListCreateView(ListCreateAPIView):
     files a titled request and lists their own. Subclasses set `kind`."""
 
     kind: str
+    create_serializer_class = SupportTitledRequestCreateSerializer
     permission_classes = [IsAuthenticated]
     http_method_names = ["get", "post", "head", "options"]
 
@@ -104,11 +96,11 @@ class _TitledRequestListCreateView(ListCreateAPIView):
             return SupportRequest.objects.none()
         return SupportRequest.objects.filter(
             kind=self.kind, submitted_by=self.request.user
-        ).select_related("submitted_by")
+        ).select_related("submitted_by", "assigned_to")
 
     def get_serializer_class(self):
         if self.request.method == "POST":
-            return SupportTitledRequestCreateSerializer
+            return self.create_serializer_class
         return SupportRequestSerializer
 
     def get_serializer_context(self):
@@ -116,142 +108,58 @@ class _TitledRequestListCreateView(ListCreateAPIView):
 
 
 @extend_schema_view(
-    get=extend_schema(
-        summary="List my support tickets",
-        description=(
-            "Returns the caller's own tickets, newest first, paginated.\n\n"
-            "**Auth:** Any signed-in user.\n\n"
-            "**Prerequisites:** None."
-        ),
-        tags=["Support — Tickets"],
-        responses={
-            200: SupportRequestSerializer(many=True),
-            **STANDARD_ERROR_RESPONSES["auth"],
-            **STANDARD_ERROR_RESPONSES["server"],
-        },
-    ),
-    post=extend_schema(
-        summary="Create a support ticket",
-        description=(
-            "Files a ticket and notifies Support staff in-app.\n\n"
-            "Called from the Support page's 'Create ticket' action.\n\n"
-            "**Auth:** Any signed-in user.\n\n"
-            "**Prerequisites:** None."
-        ),
-        tags=["Support — Tickets"],
-        request=SupportTitledRequestCreateSerializer,
-        examples=[
-            OpenApiExample(
-                name="Sample Request",
-                request_only=True,
-                value={
-                    "title": "Cannot upload lesson video",
-                    "email": "creator@example.com",
-                    "web_link": "https://example.com/screenshot",
-                    "description": "The upload stalls at 90%.",
-                },
-            ),
-        ],
-        responses={
-            201: SupportRequestSerializer,
-            **STANDARD_ERROR_RESPONSES["validation"],
-            **STANDARD_ERROR_RESPONSES["auth"],
-            **STANDARD_ERROR_RESPONSES["server"],
-        },
-    ),
+    get=extend_schema(**TICKET_LIST_DOCS),
+    post=extend_schema(**TICKET_CREATE_DOCS),
 )
 class SupportTicketListCreateView(_TitledRequestListCreateView):
     kind = SupportRequestKind.TICKET
+    create_serializer_class = SupportTicketCreateSerializer
+    filterset_fields = ["status", "priority"]
+
+
+@extend_schema(**TICKET_RETRIEVE_DOCS)
+class SupportTicketDetailView(RetrieveAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = SupportTicketDetailSerializer
+
+    def get_queryset(self):
+        if getattr(self, "swagger_fake_view", False):
+            return SupportRequest.objects.none()
+        return _ticket_detail_queryset().filter(submitted_by=self.request.user)
+
+
+class SupportTicketReplyView(APIView):
+    """The submitter's side of the ticket thread."""
+
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(**TICKET_REPLY_DOCS)
+    def post(self, request, pk):
+        ticket = get_object_or_404(
+            ticket_service.tickets(), pk=pk, submitted_by=request.user
+        )
+        serializer = SupportTicketReplySerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        message = ticket_service.add_reply(
+            ticket=ticket, author=request.user, body=serializer.validated_data["body"]
+        )
+        return Response(
+            SupportTicketMessageSerializer(message, context={"request": request}).data,
+            status=status.HTTP_201_CREATED,
+        )
 
 
 @extend_schema_view(
-    get=extend_schema(
-        summary="List my appeals",
-        description=(
-            "Returns the caller's own appeals, newest first, paginated.\n\n"
-            "**Auth:** Any signed-in user.\n\n"
-            "**Prerequisites:** None."
-        ),
-        tags=["Support — Appeals"],
-        responses={
-            200: SupportRequestSerializer(many=True),
-            **STANDARD_ERROR_RESPONSES["auth"],
-            **STANDARD_ERROR_RESPONSES["server"],
-        },
-    ),
-    post=extend_schema(
-        summary="Request an appeal",
-        description=(
-            "Files a written appeal (PRD: creators can dispute a rejection "
-            "or suspension in writing; the decision is final). Notifies "
-            "Support staff in-app and sets `due_at` to 7 business days out.\n\n"
-            "This is the Figma 'Request for an appeal' form, called from the "
-            "Support page's 'Request appeal' action.\n\n"
-            "**Auth:** Any signed-in user — including a suspended creator, who "
-            "can still sign in to appeal.\n\n"
-            "**Prerequisites:** None.\n\n"
-            "**Important:** Independent of `POST /course-appeals/`, which "
-            "disputes one specific rejected course."
-        ),
-        tags=["Support — Appeals"],
-        request=SupportTitledRequestCreateSerializer,
-        examples=[
-            OpenApiExample(
-                name="Sample Request",
-                request_only=True,
-                value={
-                    "title": "My account was suspended in error",
-                    "email": "creator@example.com",
-                    "web_link": "https://example.com/portfolio",
-                    "description": "The flagged lesson was original work.",
-                },
-            ),
-            OpenApiExample(name="Created", response_only=True, value=_REQUEST_EXAMPLE),
-        ],
-        responses={
-            201: SupportRequestSerializer,
-            **STANDARD_ERROR_RESPONSES["validation"],
-            **STANDARD_ERROR_RESPONSES["auth"],
-            **STANDARD_ERROR_RESPONSES["server"],
-        },
-    ),
+    get=extend_schema(**APPEAL_LIST_DOCS),
+    post=extend_schema(**APPEAL_CREATE_DOCS),
 )
 class SupportAppealListCreateView(_TitledRequestListCreateView):
     kind = SupportRequestKind.APPEAL
 
 
 @extend_schema_view(
-    list=extend_schema(
-        summary="List support requests (staff queue)",
-        description=(
-            "Every contact message, ticket and appeal, newest first, "
-            "paginated. Filter with `kind` and `status`.\n\n"
-            "**Auth:** `support.manage_requests` (Admin and Super Admin by default).\n\n"
-            "**Prerequisites:** None."
-        ),
-        tags=["Admin — Support"],
-        responses={
-            200: SupportRequestSerializer(many=True),
-            **STANDARD_ERROR_RESPONSES["auth"],
-            **STANDARD_ERROR_RESPONSES["permission"],
-            **STANDARD_ERROR_RESPONSES["server"],
-        },
-    ),
-    retrieve=extend_schema(
-        summary="Retrieve a support request",
-        description=(
-            "**Auth:** `support.manage_requests` (Admin and Super Admin by default).\n\n"
-            "**Prerequisites:** The request must exist."
-        ),
-        tags=["Admin — Support"],
-        responses={
-            200: SupportRequestSerializer,
-            **STANDARD_ERROR_RESPONSES["auth"],
-            **STANDARD_ERROR_RESPONSES["permission"],
-            **STANDARD_ERROR_RESPONSES["not_found"],
-            **STANDARD_ERROR_RESPONSES["server"],
-        },
-    ),
+    list=extend_schema(**ADMIN_REQUEST_LIST_DOCS),
+    retrieve=extend_schema(**ADMIN_REQUEST_RETRIEVE_DOCS),
 )
 class SupportRequestAdminViewSet(ReadOnlyModelViewSet):
     """Staff review queue for everything filed from the Support page."""
@@ -262,32 +170,14 @@ class SupportRequestAdminViewSet(ReadOnlyModelViewSet):
     def get_queryset(self):
         if getattr(self, "swagger_fake_view", False):
             return SupportRequest.objects.none()
-        queryset = SupportRequest.objects.select_related("submitted_by")
+        queryset = SupportRequest.objects.select_related("submitted_by", "assigned_to")
         for field in ("kind", "status"):
             value = self.request.query_params.get(field)
             if value:
                 queryset = queryset.filter(**{field: value.upper()})
         return queryset
 
-    @extend_schema(
-        summary="Resolve a support request",
-        description=(
-            "Closes an Open request with optional notes and notifies the "
-            "submitter in-app. Final: it cannot be resolved twice.\n\n"
-            "**Auth:** `support.manage_requests` (Admin and Super Admin by default).\n\n"
-            "**Prerequisites:** The request must be `OPEN`."
-        ),
-        tags=["Admin — Support"],
-        request=SupportResolveSerializer,
-        responses={
-            200: SupportRequestSerializer,
-            **STANDARD_ERROR_RESPONSES["validation"],
-            **STANDARD_ERROR_RESPONSES["auth"],
-            **STANDARD_ERROR_RESPONSES["permission"],
-            **STANDARD_ERROR_RESPONSES["not_found"],
-            **STANDARD_ERROR_RESPONSES["server"],
-        },
-    )
+    @extend_schema(**ADMIN_REQUEST_RESOLVE_DOCS)
     @action(detail=True, methods=["post"])
     def resolve(self, request, pk=None):
         serializer = SupportResolveSerializer(data=request.data)
@@ -298,3 +188,73 @@ class SupportRequestAdminViewSet(ReadOnlyModelViewSet):
             notes=serializer.validated_data["notes"],
         )
         return Response(SupportRequestSerializer(resolved).data)
+
+
+@extend_schema_view(
+    list=extend_schema(**ADMIN_TICKET_LIST_DOCS),
+    retrieve=extend_schema(**ADMIN_TICKET_RETRIEVE_DOCS),
+)
+class SupportTicketAdminViewSet(ReadOnlyModelViewSet):
+    """Admin Tickets page (Figma): cards, filtered table, Ticket Overview,
+    replies and single/bulk status actions."""
+
+    permission_classes = [Perm(codenames.SUPPORT_MANAGE_REQUESTS)]
+    filter_backends = [DjangoFilterBackend, SupportTicketOrdering]
+    filterset_class = SupportTicketFilter
+    ordering_fields = ["created_datetime", "updated_datetime", "priority", "status"]
+
+    def get_queryset(self):
+        if getattr(self, "swagger_fake_view", False):
+            return SupportRequest.objects.none()
+        if self.action == "retrieve":
+            return _ticket_detail_queryset()
+        return ticket_service.tickets()
+
+    def get_serializer_class(self):
+        if self.action == "retrieve":
+            return SupportTicketDetailSerializer
+        return SupportRequestSerializer
+
+    @extend_schema(**ADMIN_TICKET_STATS_DOCS)
+    @action(detail=False, methods=["get"])
+    def stats(self, request):
+        return Response(ticket_service.status_counts())
+
+    @extend_schema(**ADMIN_TICKET_STATUS_DOCS)
+    @action(detail=True, methods=["post"], url_path="status")
+    def change_status(self, request, pk=None):
+        serializer = SupportTicketStatusSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        ticket = ticket_service.change_status(
+            ticket=self.get_object(),
+            actor=request.user,
+            status=serializer.validated_data["status"],
+        )
+        return Response(SupportRequestSerializer(ticket).data)
+
+    @extend_schema(**ADMIN_TICKET_BULK_STATUS_DOCS)
+    @action(detail=False, methods=["post"], url_path="bulk-status")
+    def bulk_status(self, request):
+        serializer = SupportTicketBulkStatusSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        result = ticket_service.bulk_change_status(
+            ticket_ids=serializer.validated_data["ids"],
+            actor=request.user,
+            status=serializer.validated_data["status"],
+        )
+        return Response(SupportTicketBulkResultSerializer(result).data)
+
+    @extend_schema(**ADMIN_TICKET_REPLY_DOCS)
+    @action(detail=True, methods=["post"])
+    def messages(self, request, pk=None):
+        serializer = SupportTicketReplySerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        message = ticket_service.add_reply(
+            ticket=self.get_object(),
+            author=request.user,
+            body=serializer.validated_data["body"],
+        )
+        return Response(
+            SupportTicketMessageSerializer(message, context={"request": request}).data,
+            status=status.HTTP_201_CREATED,
+        )

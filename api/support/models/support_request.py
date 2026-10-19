@@ -1,7 +1,11 @@
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
-from api.support.enums import SupportRequestKind, SupportRequestStatus
+from api.support.enums import (
+    SupportRequestKind,
+    SupportRequestStatus,
+    SupportTicketPriority,
+)
 from core.mixins import DateHistoryModelMixin, UUIDPrimaryKeyModelMixin
 
 
@@ -54,9 +58,27 @@ class SupportRequest(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
     )
     status = models.CharField(
         verbose_name=_("Status"),
-        max_length=10,
+        max_length=12,
         choices=SupportRequestStatus.choices,
         default=SupportRequestStatus.OPEN,
+    )
+    priority = models.CharField(
+        verbose_name=_("Priority"),
+        max_length=6,
+        choices=SupportTicketPriority.choices,
+        blank=True,
+        help_text=_("Tickets only: priority chosen on the 'Submit a ticket' form."),
+    )
+    assigned_to = models.ForeignKey(
+        "users.User",
+        verbose_name=_("Support Officer"),
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text=_(
+            "Tickets only: the staff member who first replied to or moved the ticket."
+        ),
     )
     due_at = models.DateTimeField(
         verbose_name=_("Due At"),

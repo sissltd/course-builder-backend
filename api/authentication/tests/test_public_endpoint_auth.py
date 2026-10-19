@@ -28,6 +28,7 @@ PUBLIC_ROUTES = [
     ("auth-reset-password", "post", {}),
     ("auth-resend-verification", "post", {}),
     ("banks-list", "get", None),
+    ("support-contact", "post", {}),
 ]
 
 
