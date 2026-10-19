@@ -57,6 +57,9 @@ REST_FRAMEWORK = {
         "mie_register": "5/hour",
         # Public Support "Contact us" form - per client IP, creates rows pre-auth.
         "support_contact": "5/hour",
+        # Public course catalogue - per client IP. Read-only and cacheable,
+        # so generous; it only stops scraping at machine speed.
+        "catalogue": "120/min",
     },
 }
 
@@ -81,6 +84,13 @@ SPECTACULAR_SETTINGS = {
             "description": (
                 "Bank lookup endpoints (no authentication required): the "
                 "supported-banks list and one-off account-number verification."
+            ),
+        },
+        {
+            "name": "Public — Course Catalogue",
+            "description": (
+                "Published courses that are live on at least one channel (no "
+                "authentication required): the catalogue list and course pages."
             ),
         },
         {
@@ -290,6 +300,15 @@ SPECTACULAR_SETTINGS = {
             "description": ("The AI production funnel: job counts per stage and external provider load."),
         },
         {
+            "name": "Admin — Production Engine",
+            "description": (
+                "The Production Engine: video production runs (retry, cancel), "
+                "channel mappings that shape each distribution channel's "
+                "payload, a published course's package downloads, and "
+                "recording a manual channel upload."
+            ),
+        },
+        {
             "name": "Admin — Profile",
             "description": (
                 "The signed-in admin's own account for the Settings › Account tab: "
@@ -453,6 +472,8 @@ SPECTACULAR_SETTINGS = {
     "ENUM_NAME_OVERRIDES": {
         "CategoryStatusEnum": "api.catalog.enums.CategoryStatus",
         "CourseStatusEnum": "api.courses.enums.CourseStatus",
+        "ProductionRunStatusEnum": "api.production.enums.ProductionRunStatus",
+        "ProductionRunKindEnum": "api.production.enums.RunKind",
         # Course.review_stage and Course.revision_seat draw on the same seats.
         "ReviewStageEnum": "api.reviews.enums.ReviewStage",
         "TransactionStatusEnum": "api.wallet.enums.TransactionStatus",

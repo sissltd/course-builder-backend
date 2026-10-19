@@ -133,6 +133,52 @@ OPENAI_IMAGE_MODEL = config("OPENAI_IMAGE_MODEL", default="")
 # burning provider quota into hard 429s. Set to 0 to disable the limiter.
 COURSE_AI_CALLS_PER_MINUTE = config("COURSE_AI_CALLS_PER_MINUTE", default=20, cast=int)
 
+# Production Engine text pricing, USD per million tokens, for the configured
+# OPENAI_TEXT_MODEL. Used to record what each storyboard call cost; set them
+# to the model's list price when the model changes.
+PRODUCTION_TEXT_INPUT_USD_PER_MTOK = config(
+    "PRODUCTION_TEXT_INPUT_USD_PER_MTOK", default="5.00"
+)
+PRODUCTION_TEXT_OUTPUT_USD_PER_MTOK = config(
+    "PRODUCTION_TEXT_OUTPUT_USD_PER_MTOK", default="30.00"
+)
+
+# Production Engine narration: English stock voices only. ElevenLabs is the
+# primary (its timestamps time the captions exactly), Google Chirp 3 HD the
+# fallback. A voice with no API key is skipped; with neither, runs fail with
+# a clear reason. Prices are list prices, used to record each call's cost.
+ELEVENLABS_API_KEY = config("ELEVENLABS_API_KEY", default="")
+ELEVENLABS_VOICE_ID = config("ELEVENLABS_VOICE_ID", default="JBFqnCBsd6RMkjVDRZzb")
+ELEVENLABS_MODEL_ID = config("ELEVENLABS_MODEL_ID", default="eleven_multilingual_v2")
+GOOGLE_TTS_API_KEY = config("GOOGLE_TTS_API_KEY", default="")
+GOOGLE_TTS_VOICE = config("GOOGLE_TTS_VOICE", default="en-US-Chirp3-HD-Charon")
+PRODUCTION_VOICE_USD_PER_1K_CHARS = config("PRODUCTION_VOICE_USD_PER_1K_CHARS", default="0.10")
+PRODUCTION_FALLBACK_VOICE_USD_PER_1M_CHARS = config(
+    "PRODUCTION_FALLBACK_VOICE_USD_PER_1M_CHARS", default="30.00"
+)
+# Scene illustrations (OPENAI_IMAGE_MODEL) and the caption-accuracy check's
+# transcription, per call.
+PRODUCTION_IMAGE_USD_PER_IMAGE = config("PRODUCTION_IMAGE_USD_PER_IMAGE", default="0.06")
+PRODUCTION_TRANSCRIBE_MODEL = config("PRODUCTION_TRANSCRIBE_MODEL", default="gpt-4o-mini-transcribe")
+PRODUCTION_TRANSCRIBE_USD_PER_MINUTE = config("PRODUCTION_TRANSCRIBE_USD_PER_MINUTE", default="0.003")
+# AI b-roll: faceless motion clips from Veo (Gemini API). Used only when
+# PlatformSettings.production_broll_per_lesson is above 0 and a key is set;
+# without one, b-roll scenes are drawn as stills.
+GEMINI_API_KEY = config("GEMINI_API_KEY", default="")
+VEO_MODEL = config("VEO_MODEL", default="veo-3.1-fast-generate-preview")
+PRODUCTION_BROLL_USD_PER_SECOND = config("PRODUCTION_BROLL_USD_PER_SECOND", default="0.15")
+# Evaluation tracing (Langfuse): every model and vendor call of a run, and
+# the quality scores of what it made. Off unless both keys are set. Course
+# text is sent, so use a self-hosted LANGFUSE_HOST to keep it in-house.
+LANGFUSE_HOST = config("LANGFUSE_HOST", default="https://cloud.langfuse.com")
+LANGFUSE_PUBLIC_KEY = config("LANGFUSE_PUBLIC_KEY", default="")
+LANGFUSE_SECRET_KEY = config("LANGFUSE_SECRET_KEY", default="")
+# Where the engine pushes a published course for SoluDesk (the SoluDesk
+# channel mapping shapes the payload). Unset, SoluDesk delivery fails with
+# that reason and the course can be pushed again once it is set.
+SOLUDESK_API_URL = config("SOLUDESK_API_URL", default="")
+SOLUDESK_API_KEY = config("SOLUDESK_API_KEY", default="")
+
 # Cache
 # Backs DRF's ScopedRateThrottle (see config/settings/drf.py) - a shared
 # cache is required so rate-limit counts stay consistent across gunicorn

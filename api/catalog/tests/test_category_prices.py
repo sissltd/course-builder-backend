@@ -1,8 +1,9 @@
-"""Three difficulty-keyed payout levels, archiving, and the header stats.
+"""Three creator prices by how a course is made, archiving, and the header
+stats.
 
-The load-bearing test here is that a course's payout follows its own
-difficulty. Getting that wrong pays creators the wrong amount, which is
-the single most expensive way this change could fail.
+The load-bearing tests here are that a course locks the right prices at
+submission and is priced at the one of its type. Getting that wrong pays
+creators the wrong amount, which is the most expensive way this could fail.
 """
 
 from decimal import Decimal
@@ -10,12 +11,13 @@ from decimal import Decimal
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from api.catalog.enums import CategoryStatus
+from api.catalog.enums import CategoryStatus, CreatorPriceType
 from api.catalog.models import Category
-from api.courses.enums import CourseStatus, DifficultyLevel
+from api.courses.enums import CourseSourceType, CourseStatus
 from api.courses.tests.factories import (
     build_compliant_course,
     make_category,
+    make_topic,
     make_user,
 )
 from api.users.enums import UserRole
@@ -23,73 +25,77 @@ from api.users.enums import UserRole
 LIST_URL = "/api/v1/categories/"
 STATS_URL = "/api/v1/categories/stats/"
 
+PRICES = {
+    "creator_price_without_video": Decimal("400.00"),
+    "creator_price_with_video": Decimal("600.00"),
+    "creator_price_ai_built": Decimal("250.00"),
+}
 
-class CategoryPriceLevelTests(APITestCase):
-    def test_price_for_maps_each_difficulty_to_its_own_tier(self):
-        category = make_category(
-            creator_price_beginner=Decimal("500.00"),
-            creator_price_intermediate=Decimal("520.00"),
-            creator_price_advanced=Decimal("600.00"),
+
+class CreatorPriceTests(APITestCase):
+    def test_each_price_type_reads_its_own_price(self):
+        category = make_category(**PRICES)
+
+        self.assertEqual(category.price_for(CreatorPriceType.WITHOUT_VIDEO), Decimal("400.00"))
+        self.assertEqual(category.price_for(CreatorPriceType.WITH_VIDEO), Decimal("600.00"))
+        self.assertEqual(category.price_for(CreatorPriceType.AI_BUILT), Decimal("250.00"))
+
+    def test_a_topic_overrides_only_the_prices_it_sets(self):
+        category = make_category(**PRICES)
+        topic = make_topic(
+            category=category,
+            creator_price_without_video=None,
+            creator_price_with_video=Decimal("700.00"),
+            creator_price_ai_built=None,
         )
 
-        self.assertEqual(
-            category.price_for(DifficultyLevel.BEGINNER), Decimal("500.00")
-        )
-        self.assertEqual(
-            category.price_for(DifficultyLevel.INTERMEDIATE), Decimal("520.00")
-        )
-        self.assertEqual(
-            category.price_for(DifficultyLevel.ADVANCED), Decimal("600.00")
-        )
-
-    def test_unknown_difficulty_falls_back_to_the_entry_rate(self):
-        """A payout must always resolve to a number, and erring low is the
-        safe direction."""
-
-        category = make_category(
-            creator_price_beginner=Decimal("500.00"),
-            creator_price_advanced=Decimal("600.00"),
-        )
-
-        self.assertEqual(category.price_for(None), Decimal("500.00"))
-        self.assertEqual(category.price_for("NOT_A_LEVEL"), Decimal("500.00"))
+        self.assertEqual(topic.price_for(CreatorPriceType.WITH_VIDEO), Decimal("700.00"))
+        self.assertEqual(topic.price_for(CreatorPriceType.WITHOUT_VIDEO), Decimal("400.00"))
+        self.assertEqual(topic.price_for(CreatorPriceType.AI_BUILT), Decimal("250.00"))
 
 
-class SubmissionSnapshotTests(APITestCase):
-    """The payout a course freezes at submission must match its difficulty."""
+class SubmissionLocksPricesTests(APITestCase):
+    """At submission a course locks all three prices and is priced at the
+    one of its type."""
 
-    def _submit(self, difficulty):
-        category = make_category(
-            creator_price_beginner=Decimal("500.00"),
-            creator_price_intermediate=Decimal("520.00"),
-            creator_price_advanced=Decimal("600.00"),
-        )
-        course = build_compliant_course(category=category)
-        course.difficulty_level = difficulty
+    def _submit(self, **fields):
+        course = build_compliant_course(category=make_category(**PRICES))
         course.topic = None
-        course.save(update_fields=["difficulty_level", "topic"])
+        for name, value in fields.items():
+            setattr(course, name, value)
+        course.save()
 
         self.client.force_authenticate(course.creator)
         response = self.client.post(f"/api/v1/courses/{course.id}/submit/")
         course.refresh_from_db()
         return response, course
 
-    def test_advanced_course_snapshots_the_advanced_rate(self):
-        response, course = self._submit(DifficultyLevel.ADVANCED)
+    def test_a_creators_own_course_is_priced_with_video_and_locks_all_three(self):
+        response, course = self._submit()
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(course.status, CourseStatus.SUBMITTED)
+        self.assertEqual(course.payout_type, CreatorPriceType.WITH_VIDEO)
         self.assertEqual(course.creator_price_snapshot, Decimal("600.00"))
+        self.assertEqual(
+            course.creator_rates_snapshot,
+            {"WITHOUT_VIDEO": "400.00", "WITH_VIDEO": "600.00", "AI_BUILT": "250.00"},
+        )
+        self.assertIsNone(course.creator_paid_at)
 
-    def test_beginner_course_snapshots_the_beginner_rate(self):
-        _response, course = self._submit(DifficultyLevel.BEGINNER)
+    def test_an_ai_built_course_is_priced_at_the_ai_price(self):
+        _response, course = self._submit(source_type=CourseSourceType.AI_GENERATED)
 
-        self.assertEqual(course.creator_price_snapshot, Decimal("500.00"))
+        self.assertEqual(course.payout_type, CreatorPriceType.AI_BUILT)
+        self.assertEqual(course.creator_price_snapshot, Decimal("250.00"))
 
-    def test_intermediate_course_snapshots_the_intermediate_rate(self):
-        _response, course = self._submit(DifficultyLevel.INTERMEDIATE)
+    def test_a_later_price_change_does_not_touch_a_locked_course(self):
+        _response, course = self._submit()
 
-        self.assertEqual(course.creator_price_snapshot, Decimal("520.00"))
+        Category.objects.filter(pk=course.category_id).update(creator_price_with_video=Decimal("999.00"))
+
+        course.refresh_from_db()
+        self.assertEqual(course.creator_price_snapshot, Decimal("600.00"))
 
 
 class CategoryArchiveTests(APITestCase):
@@ -173,13 +179,13 @@ class CategoryStatsTests(APITestCase):
 
 
 class CategoryListShapeTests(APITestCase):
-    """The full list (per-tier pricing, ARCHIVED filter) is an Admin Writer
+    """The full list (the creator prices, ARCHIVED filter) is an Admin Writer
     surface; creators never see it - only the picker payload."""
 
     def setUp(self):
         self.client.force_authenticate(make_user(role=UserRole.STAFF_WRITER))
 
-    def test_list_exposes_the_three_tiers_and_icon(self):
+    def test_list_exposes_the_three_prices_and_icon(self):
         category = make_category(icon="rocket")
 
         row = {
@@ -192,9 +198,9 @@ class CategoryListShapeTests(APITestCase):
         ).data
 
         for field in (
-            "creator_price_beginner",
-            "creator_price_intermediate",
-            "creator_price_advanced",
+            "creator_price_without_video",
+            "creator_price_with_video",
+            "creator_price_ai_built",
             "icon",
             "total_courses",
         ):

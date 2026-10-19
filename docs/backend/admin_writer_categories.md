@@ -1,8 +1,9 @@
 # Admin Writer — Categories
 
 This guide explains how an Admin Writer consumes the category API. Categories
-control where creators file courses and the creator payout for each difficulty
-level.
+control where creators file courses and what creators are paid: three
+prices, by how a course is made (without video, with video, AI-built). See
+[CREATOR_PAYOUT.md](CREATOR_PAYOUT.md).
 
 ## Access
 
@@ -52,9 +53,9 @@ Content-Type: application/json
 
 {
   "name": "Software Engineering",
-  "creator_price_beginner": "150.00",
-  "creator_price_intermediate": "200.00",
-  "creator_price_advanced": "300.00",
+  "creator_price_without_video": "100.00",
+  "creator_price_with_video": "150.00",
+  "creator_price_ai_built": "60.00",
   "icon": "code",
   "track_preference": "OPEN",
   "status": "ACTIVE"
@@ -108,13 +109,14 @@ Useful filters are `status`, `search`, `requested_by`, `date_from`, and
 GET /api/v1/admin/category-requests/{request_id}/
 ```
 
-Approve a pending request by supplying the starting payout rate:
+Approve a pending request by supplying its three creator prices (needs `catalog.set_creator_prices`):
 
 ```http
 POST /api/v1/admin/category-requests/{request_id}/approve/
 Content-Type: application/json
 
-{ "creator_price": "150.00", "track_preference": "OPEN" }
+{ "creator_price_without_video": "100.00", "creator_price_with_video": "150.00",
+  "creator_price_ai_built": "60.00", "track_preference": "OPEN" }
 ```
 
 Reject a pending request with:
@@ -147,7 +149,7 @@ Content-Type: application/json
 { "reason": "A matching topic already exists." }
 ```
 
-Approval creates and reserves the topic using the category's beginner payout;
+Approval creates and reserves the topic with no price overrides (it pays the category's prices);
 rejection keeps the request in history with its reason.
 
 ## Delete safely

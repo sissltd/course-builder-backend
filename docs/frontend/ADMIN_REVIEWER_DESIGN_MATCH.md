@@ -240,19 +240,19 @@ Both trend arrays are 7 days, zero-filled, oldest first.
 
 ## Categories
 
-### Three payout levels
+### Three creator prices
 
-`creator_price` is replaced by three fields keyed to course difficulty:
+Prices follow how a course is made, not its difficulty:
 
 ```json
-{ "creator_price_beginner": "500.00",
-  "creator_price_intermediate": "520.00",
-  "creator_price_advanced": "600.00" }
+{ "creator_price_without_video": "400.00",
+  "creator_price_with_video": "600.00",
+  "creator_price_ai_built": "250.00" }
 ```
 
-A course freezes the tier matching **its own `difficulty_level`** at
-submission. A topic-specific price still overrides the category, as
-before.
+A course locks all three at submission and is paid the one of its type.
+A topic may override any of them (null = the category's). See
+[CREATOR_PAYOUT_HANDOVER.md](CREATOR_PAYOUT_HANDOVER.md).
 
 Existing categories were migrated with all three tiers set to the old
 single price, so **no creator's pay changed**. Differentiating a tier is

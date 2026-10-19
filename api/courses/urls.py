@@ -19,6 +19,7 @@ from api.courses.views import (
     lesson_sub_resource_views,
     lesson_views,
     module_views,
+    public_catalogue_views,
 )
 
 router = DefaultRouter()
@@ -39,6 +40,16 @@ router.register(
 )
 
 urlpatterns = router.urls + [
+    path(
+        "catalogue/courses/",
+        public_catalogue_views.PublicCourseListView.as_view(),
+        name="catalogue-course-list",
+    ),
+    path(
+        "catalogue/courses/<slug:slug>/",
+        public_catalogue_views.PublicCourseDetailView.as_view(),
+        name="catalogue-course-detail",
+    ),
     path(
         "courses/<uuid:course_pk>/video-decision/",
         course_video_views.CourseVideoDecisionView.as_view(),

@@ -105,7 +105,7 @@ It clears by itself once the course gets a decision or re-enters review.
 |---|---|---|
 | Payment provider dropdown | `payment_processor` | ✅ |
 | Saved provider account card | — | ❌ No platform provider account is modelled; provider credentials live in server config. Hide or show static text. |
-| Payment auto-credit duration | `auto_credit_duration_hours` | ✅ Hours after QA approval before a creator-uploaded course's payment is credited. Default 24, `0` = straight away. |
+| Payment auto-credit duration | — | ❌ **Removed.** Creators are paid straight into their wallet at approval (Second Review for engine-made video, QA otherwise). Hide the field. |
 | Creator verification toggle | `withdrawal_require_verification` | ✅ Default `true`. `false` lets creators withdraw without completing KYC. |
 
 > Both payment fields are on the same `platform-settings/` endpoint. Until

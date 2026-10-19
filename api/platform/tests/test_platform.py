@@ -154,21 +154,18 @@ class PlatformSettingsApiTests(APITestCase):
         self.client.force_authenticate(self.admin)
 
         before = self.client.get("/api/v1/platform-settings/")
-        self.assertEqual(before.data["auto_credit_duration_hours"], 24)
         self.assertIs(before.data["withdrawal_require_verification"], True)
+        # Creators are paid at approval, so there is no credit delay to set.
+        self.assertNotIn("auto_credit_duration_hours", before.data)
 
         self.client.patch(
             "/api/v1/platform-settings/",
-            {
-                "auto_credit_duration_hours": 6,
-                "withdrawal_require_verification": False,
-            },
+            {"withdrawal_require_verification": False},
             format="json",
         )
 
         after = self.client.get("/api/v1/platform-settings/")
         self.assertEqual(after.status_code, status.HTTP_200_OK)
-        self.assertEqual(after.data["auto_credit_duration_hours"], 6)
         self.assertIs(after.data["withdrawal_require_verification"], False)
 
     def test_negative_hold_hours_rejected(self):

@@ -42,7 +42,8 @@ badge, Security) are in
    be saved and ignored.
 
 8. **Settings → Payments: `GET platform-settings/` now returns
-   `auto_credit_duration_hours` and `withdrawal_require_verification`.**
+   `withdrawal_require_verification`.** (`auto_credit_duration_hours` has
+   since been removed: creators are paid at approval.)
    `PATCH` already accepted them, but `GET` left them out, so the Payments tab
    couldn't show saved values. Details are in
    [settings_and_achievements_handover.md](settings_and_achievements_handover.md).
@@ -346,7 +347,8 @@ Fields the API returns that aren't on the admin design:
 | `new_course_assigned` | ✅ Reviewers: "Course assigned to you" |
 | `creator_feedback` | ✅ Appeal deciders: "New course-rejection appeal" (now enforced) |
 | `kyc_submission_alert` | ✅ Account approvers: new KYC submission |
-| `escalation_assigned`, `sla_amber_warning`, `sla_breached`, `account_deletion_detection_alert`, `mie_pipeline_alert` | ❌ Saved but no sender exists. Don't show them as working toggles. |
+| `escalation_assigned`, `sla_amber_warning`, `sla_breached`, `account_deletion_detection_alert` | ❌ Saved but no sender exists. Don't show them as working toggles. |
+| `mie_pipeline_alert` | ✅ Production Engine alerts: a run blocked by the budget, or failed. Sent to holders of `production.manage` (Admin, Super Admin). |
 | `sla_amber_threshold_hours_override`, `sla_red_threshold_hours_override` | Reviewer-only overrides for review-queue ordering. Integer ≥ 1, or `null` for the platform default. |
 
 > "Show disabled" means the backend has nothing behind the toggle. Hiding

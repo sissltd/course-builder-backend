@@ -32,7 +32,7 @@ class TopicAdminTests(TestCase):
         topic = make_topic(
             category=self.category,
             name="Backend Development",
-            creator_price=Decimal("25.00"),
+            creator_price_with_video=Decimal("25.00"),
         )
         course = build_compliant_course(creator=self.creator, category=self.category)
         course.topic = topic
@@ -44,14 +44,14 @@ class TopicAdminTests(TestCase):
             {
                 "category": str(self.category.id),
                 "name": topic.name,
-                "creator_price": "40.00",
+                "creator_price_with_video": "40.00",
                 "status": topic.status,
             },
         )
         self.assertEqual(response.status_code, 302)
 
         topic.refresh_from_db()
-        self.assertEqual(topic.creator_price, Decimal("40.00"))
+        self.assertEqual(topic.creator_price_with_video, Decimal("40.00"))
         self.assertEqual(topic.updated_by_id, self.superadmin.id)
 
         course.refresh_from_db()
@@ -63,7 +63,7 @@ class TopicAdminTests(TestCase):
             {
                 "category": str(self.category.id),
                 "name": "Data Engineering",
-                "creator_price": "50.00",
+                "creator_price_with_video": "50.00",
                 "status": "ACTIVE",
             },
         )

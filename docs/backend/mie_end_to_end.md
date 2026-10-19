@@ -123,15 +123,15 @@ admin acts on that course through the course tools instead. Earlier
 versions of this service set such a course to `NEEDS_REVISION`, a status
 the course lifecycle has no way out of.
 
-**Developer payment is per published course, never per approval.** A
-developer is paid for each course that is produced from one of their
-approved ideas and then published successfully. Approving an idea pays
-nothing. `plan_type` and `payout_bypass` decide whether that publication
-carries payment for the developer. The pushed course snapshots
-`creator_price_snapshot` at submit like any non-AI course, but no code path
-pays the developer automatically yet: `effect_course_payment` only schedules
-`CREATOR_UPLOADED` courses, and how a no-login developer withdraws is its
-own design (plan types, KYC).
+**Developer payment is per course that passes QA, never per approval.** A
+developer is paid for each course produced from one of their approved ideas,
+when QA approves it (their courses carry their own video), at its locked
+with-video price, straight into the linked creator account's wallet
+(`course_payout_service`). Approving an idea pays nothing. `plan_type` and
+`payout_bypass` decide whether the course is paid at all: BYPASS_ACCOUNT
+never pays (the crawler is on it), and BYPASS_PER_SUBMISSION skips a
+submission marked `payout_bypass`. How a no-login developer withdraws is its
+own design (plan types, KYC). See [CREATOR_PAYOUT.md](CREATOR_PAYOUT.md).
 
 **What a push cannot carry**: `topic` (topic reservation is a creator
 dashboard flow; a pushed course is placed by its idea's category) and

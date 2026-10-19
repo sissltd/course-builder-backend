@@ -168,9 +168,9 @@ def _get_or_create_catalog() -> tuple[Category, Topic, CourseVersion]:
         name=CATEGORY_NAME,
         defaults={
             "slug": slugify(CATEGORY_NAME)[:160],
-            "creator_price_beginner": "150000.00",
-            "creator_price_intermediate": "160000.00",
-            "creator_price_advanced": "170000.00",
+            "creator_price_without_video": "100000.00",
+            "creator_price_with_video": "150000.00",
+            "creator_price_ai_built": "60000.00",
             "status": CategoryStatus.ACTIVE,
         },
     )
@@ -179,7 +179,6 @@ def _get_or_create_catalog() -> tuple[Category, Topic, CourseVersion]:
         name=TOPIC_NAME,
         defaults={
             "slug": slugify(TOPIC_NAME)[:160],
-            "creator_price": category.creator_price_intermediate,
             "status": CategoryStatus.ACTIVE,
         },
     )

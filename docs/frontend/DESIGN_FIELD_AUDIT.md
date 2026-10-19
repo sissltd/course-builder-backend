@@ -252,9 +252,9 @@ degraded-service count and a recovery time.
 | Tab: Archive | `?status=ARCHIVED` | ✓ |
 | Column: Category | `name` | ✓ |
 | Column: Track | `track_preference` | ✓ |
-| Price: Beg $300 | `creator_price_beginner` | ✓ |
-| Price: Int $400 | `creator_price_intermediate` | ✓ |
-| Price: Adv $500 | `creator_price_advanced` | ✓ |
+| Price: Without video | `creator_price_without_video` | ✓ (relabel the Beginner column) |
+| Price: With video | `creator_price_with_video` | ✓ (relabel the Intermediate column) |
+| Price: AI-built | `creator_price_ai_built` | ✓ (relabel the Advanced column) |
 | Column: Total Courses | `total_courses` | ✓ |
 | Column: Date created | `created_datetime` | ✓ |
 | Modal: Category name | `name` | ✓ |

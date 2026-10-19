@@ -15,7 +15,8 @@ from api.courses.models import Course
 from api.courses.services import course_update_alert_service
 from api.notification.models import Notification, NotificationPreference
 from api.platform.services import platform_settings_service
-from api.payments.services.transaction_services import effect_course_payment
+from api.production.services import production_service
+from api.payments.services import course_payout_service
 from api.reviews.enums import ReviewActionType, ReviewStage
 from api.reviews.models import ReviewAction, ReviewAssignment
 from api.reviews.services import quality_review_service
@@ -26,7 +27,6 @@ from api.users.enums import (
 )
 from api.users.models import User
 from api.users.services import reviewer_availability_service
-from api.wallet.services import wallet_service
 
 logger = logging.getLogger(__name__)
 
@@ -527,77 +527,6 @@ def _hold_seat(*, course: Course, seat: str, reviewer: User) -> ReviewAssignment
     return assignment
 
 
-def approve_course(
-    *, course: Course, reviewer: User, feedback: dict | None = None
-) -> ReviewAction:
-    """Approve a course under review.
-
-    Raises ValidationError if the course is not Submitted/In Review - this is
-    what prevents double-approval (an already Approved/Published/Draft course
-    cannot be approved again). On success: records a ReviewAction, transitions
-    the course to Approved, credits creator-uploaded work with the price
-    snapshotted at submission, and notifies the creator. AI-generated courses
-    are approved without a payout. All changes are atomic.
-    """
-
-    permission_service.require_permission(reviewer, codenames.COURSES_APPROVE)
-    if course.status not in REVIEWABLE_STATUSES:
-        raise exceptions.ValidationError(
-            f"Course cannot be approved from status '{course.status}'."
-        )
-    reviewer_availability_service.require_reviewer_available(user=reviewer)
-
-    with transaction.atomic():
-        review_action = ReviewAction.objects.create(
-            course=course,
-            reviewer=reviewer,
-            action=ReviewActionType.APPROVE,
-            feedback=feedback or {},
-            stage=ReviewStage.CONTENT,
-        )
-        course.status = CourseStatus.APPROVED
-        course.approved_at = timezone.now()
-        course.updated_by = reviewer
-        course.save(
-            update_fields=["status", "approved_at", "updated_by", "updated_datetime"]
-        )
-
-        if course.source_type == CourseSourceType.CREATOR_UPLOADED:
-            wallet_service.credit_wallet(
-                user=course.creator,
-                amount=course.creator_price_snapshot,
-                course=course,
-                description=f"Course '{course.title}' approved",
-            )
-
-        Notification.emit_in_app_notification(
-            receivers=[course.creator],
-            title="Course approved",
-            content=(
-                f"Your course '{course.title}' has been approved and your wallet has been credited."
-                if course.source_type == CourseSourceType.CREATOR_UPLOADED
-                else f"Your AI-generated course '{course.title}' has been approved."
-            ),
-            metadata={
-                "course_id": course.id,
-                "amount": (
-                    course.creator_price_snapshot
-                    if course.source_type == CourseSourceType.CREATOR_UPLOADED
-                    else None
-                ),
-            },
-        )
-        activity_service.log_activity(
-            user=reviewer,
-            category=UserActivityCategoryEnums.APPROVAL,
-            action=UserActivityActionEnums.COURSE_APPROVED,
-            summary=f"You approved '{course.title}'.",
-            target=course,
-        )
-
-    return review_action
-
-
 def _return_for_revision(*, course: Course, seat: str) -> str:
     """Send `course` back to its creator after `seat` rejected it, and say
     where it went, for the notifications.
@@ -693,6 +622,9 @@ def reject_course(
             content=f"'{course.title}' was rejected and returned to {returned_to}.",
         )
         _notify_mie_revision(course=course, review_action=review_action)
+        production_service.handle_rejection(
+            course=course, review_action=review_action, reviewer=reviewer
+        )
         activity_service.log_activity(
             user=reviewer,
             category=UserActivityCategoryEnums.APPROVAL,
@@ -873,6 +805,9 @@ def approve_content(
             course.status = CourseStatus.AWAITING_VIDEO
             course.review_stage = ""
             course.video_provider = _video_provider_for_approved_text(course)
+            # A developer's or the crawler's video is known now, and with it
+            # which price the course is paid at.
+            course_payout_service.refresh_expected_payout(course)
         else:
             course.status = (
                 CourseStatus.SUBMITTED if next_seat else CourseStatus.QA_VERIFICATION
@@ -884,12 +819,18 @@ def approve_content(
                 "status",
                 "review_stage",
                 "video_provider",
+                "payout_type",
+                "creator_price_snapshot",
                 "updated_by",
                 "updated_datetime",
             ]
         )
+        # Engine-made video is paid when Second Review passes it on.
+        course_payout_service.pay_on_approval(course=course, seat=seat)
         if awaiting_video:
             _announce_text_approved(course=course)
+            if course.video_provider == VideoProvider.PRODUCTION_ENGINE:
+                production_service.request_production(course=course, actor=reviewer)
         activity_service.log_activity(
             user=reviewer,
             category=UserActivityCategoryEnums.APPROVAL,
@@ -947,6 +888,12 @@ def approve_qa(
         raise exceptions.ValidationError({"qa_verification": failures})
     reviewer_availability_service.require_reviewer_available(user=reviewer)
     with transaction.atomic():
+        # Locked, so two simultaneous approvals cannot both pay the creator.
+        course = Course.objects.select_for_update().get(pk=course.pk)
+        if course.status != CourseStatus.QA_VERIFICATION:
+            raise exceptions.ValidationError(
+                f"Course cannot be QA-approved from status '{course.status}'."
+            )
         action = ReviewAction.objects.create(
             course=course,
             reviewer=reviewer,
@@ -967,7 +914,8 @@ def approve_qa(
         assignment.claimed_at = assignment.claimed_at or timezone.now()
         assignment.completed_at = timezone.now()
         assignment.save()
-        transaction.on_commit(lambda: effect_course_payment(course=course))
+        # A creator's or developer's own video is paid when QA approves it.
+        course_payout_service.pay_on_approval(course=course, seat=ReviewStage.QA)
         course_update_alert_service.notify_course_status_change(
             course=course,
             actor=reviewer,
@@ -992,7 +940,15 @@ def approve_qa(
     return action
 
 
-def reject_qa(*, course: Course, reviewer: User, feedback: dict) -> ReviewAction:
+def reject_qa(
+    *, course: Course, reviewer: User, feedback: dict, flags: list[dict] | None = None
+) -> ReviewAction:
+    """Reject a course at QA verification and send it back for revision.
+
+    `flags`, as on reject_course, itemise the issues. On a course whose
+    video the Production Engine made, flags it can fix start a rework.
+    """
+
     permission_service.require_permission(reviewer, codenames.COURSES_REJECT)
     require_qa_seat_access(user=reviewer)
     if not feedback.get("summary"):
@@ -1011,6 +967,7 @@ def reject_qa(*, course: Course, reviewer: User, feedback: dict) -> ReviewAction
             stage=ReviewStage.QA,
             feedback=feedback,
         )
+        _create_review_flags(review_action=action, flags=flags or [])
         # QA's decision is recorded on its assignment, as approve_qa does.
         assignment, _ = ReviewAssignment.objects.get_or_create(
             course=course, stage=ReviewStage.QA
@@ -1050,6 +1007,7 @@ def reject_qa(*, course: Course, reviewer: User, feedback: dict) -> ReviewAction
             content=f"'{course.title}' failed QA and was returned to {returned_to}.",
         )
         _notify_mie_revision(course=course, review_action=action)
+        production_service.handle_rejection(course=course, review_action=action, reviewer=reviewer)
         activity_service.log_activity(
             user=reviewer,
             category=UserActivityCategoryEnums.APPROVAL,
