@@ -1,0 +1,8 @@
+Hi {{ first_name }},
+
+{{ update }}
+{% if reply %}
+{{ reply }}
+{% endif %}
+Subject: {{ ticket_title }}
+Ticket ID: {{ ticket_id }}

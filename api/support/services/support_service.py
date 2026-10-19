@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timedelta
 
 from django.db import transaction
@@ -8,10 +9,13 @@ from api.authentication.services import activity_service
 from api.authorization import codenames
 from api.authorization.services import permission_service
 from api.notification.models import Notification
+from api.notification.services.email_service import send_templated_email
 from api.support.enums import SupportRequestKind, SupportRequestStatus
 from api.support.models import SupportRequest
 from api.users.enums import UserActivityActionEnums, UserActivityCategoryEnums
 from api.users.models import User
+
+logger = logging.getLogger(__name__)
 
 #: PRD Section 30 SLA table: dispute resolution < 7 business days.
 APPEAL_SLA_BUSINESS_DAYS = 7
@@ -35,20 +39,60 @@ def add_business_days(start: datetime, days: int) -> datetime:
     return current
 
 
-def _notify_staff(*, request: SupportRequest) -> None:
+def notify_staff(
+    *, request: SupportRequest, title: str, content: str, receivers=None
+) -> None:
+    """In-app notice to `receivers`, defaulting to everyone who can manage
+    support requests."""
+
     staff = list(
-        permission_service.users_with_permission(codenames.SUPPORT_MANAGE_REQUESTS)
+        receivers
+        if receivers is not None
+        else permission_service.users_with_permission(codenames.SUPPORT_MANAGE_REQUESTS)
     )
     if not staff:
         return
-    label = _KIND_LABELS[request.kind]
     Notification.emit_in_app_notification(
         receivers=staff,
+        title=title,
+        content=content,
+        metadata={"support_request_id": request.id, "kind": request.kind},
+    )
+
+
+def _notify_staff(*, request: SupportRequest) -> None:
+    label = _KIND_LABELS[request.kind]
+    notify_staff(
+        request=request,
         title=f"New {label}",
         content=f"{request.email} sent a {label}"
         + (f": {request.title}" if request.title else "."),
-        metadata={"support_request_id": request.id, "kind": request.kind},
     )
+
+
+def email_submitter(
+    *, request: SupportRequest, subject: str, template_name: str, context: dict
+) -> None:
+    """Email the address typed on the form once the transaction commits.
+    A delivery failure is logged, never raised: the ticket change stands."""
+
+    def _send() -> None:
+        try:
+            send_templated_email(
+                receivers=[request.email],
+                subject=subject,
+                template_name=template_name,
+                context={
+                    "first_name": request.first_name or "there",
+                    "ticket_id": str(request.id),
+                    "ticket_title": request.title,
+                    **context,
+                },
+            )
+        except Exception:  # noqa: BLE001 - see docstring
+            logger.exception("support request %s email failed", request.id)
+
+    transaction.on_commit(_send)
 
 
 @transaction.atomic
@@ -85,10 +129,13 @@ def submit_titled_request(
     email: str,
     description: str,
     web_link: str = "",
+    priority: str = "",
 ) -> SupportRequest:
     """Record a ticket or an appeal (same form shape: title, email, link,
-    description). Appeals get the PRD's 7-business-day resolution deadline
-    and are written to the submitter's activity log."""
+    description). Tickets also carry a priority and email the submitter a
+    confirmation (Figma: "check your email to track the progress"). Appeals
+    get the PRD's 7-business-day resolution deadline and are written to the
+    submitter's activity log."""
 
     if kind not in (SupportRequestKind.TICKET, SupportRequestKind.APPEAL):
         raise ValueError(f"Unsupported kind for a titled request: {kind}")
@@ -103,6 +150,7 @@ def submit_titled_request(
         title=title,
         web_link=web_link,
         message=description,
+        priority="" if is_appeal else priority,
         due_at=(
             add_business_days(timezone.now(), APPEAL_SLA_BUSINESS_DAYS)
             if is_appeal
@@ -110,6 +158,13 @@ def submit_titled_request(
         ),
     )
     _notify_staff(request=request)
+    if not is_appeal:
+        email_submitter(
+            request=request,
+            subject=f"Ticket created: {title}",
+            template_name="emails/support_ticket_created",
+            context={"description": description},
+        )
     if is_appeal:
         activity_service.log_activity(
             user=user,

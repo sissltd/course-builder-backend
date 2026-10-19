@@ -5,12 +5,18 @@ from api.support.views.support_views import (
     SupportAppealListCreateView,
     SupportContactView,
     SupportRequestAdminViewSet,
+    SupportTicketAdminViewSet,
+    SupportTicketDetailView,
     SupportTicketListCreateView,
+    SupportTicketReplyView,
 )
 
 router = DefaultRouter()
 router.register(
     "support/requests", SupportRequestAdminViewSet, basename="support-request"
+)
+router.register(
+    "support/admin/tickets", SupportTicketAdminViewSet, basename="support-admin-ticket"
 )
 
 urlpatterns = [
@@ -19,6 +25,16 @@ urlpatterns = [
         "support/tickets/",
         SupportTicketListCreateView.as_view(),
         name="support-ticket-list",
+    ),
+    path(
+        "support/tickets/<uuid:pk>/",
+        SupportTicketDetailView.as_view(),
+        name="support-ticket-detail",
+    ),
+    path(
+        "support/tickets/<uuid:pk>/messages/",
+        SupportTicketReplyView.as_view(),
+        name="support-ticket-reply",
     ),
     path(
         "support/appeals/",

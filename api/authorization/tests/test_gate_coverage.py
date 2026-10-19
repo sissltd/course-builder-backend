@@ -98,6 +98,8 @@ SELF_SERVICE_HANDLERS = {
     "SupportContactView.post",
     "SupportTicketListCreateView.get",
     "SupportTicketListCreateView.post",
+    "SupportTicketDetailView.get",
+    "SupportTicketReplyView.post",
     "SuperAdminBootstrapView.post",
     "TokenRefreshView.post",
     "TopicViewSet.list",

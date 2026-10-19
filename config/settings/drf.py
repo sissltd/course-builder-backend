@@ -512,5 +512,8 @@ SPECTACULAR_SETTINGS = {
         # plagiarism_status uses QualityCheckStatus but the field name is
         # different; the same component is already named QualityCheckStatusEnum
         # above so no second override is needed.
+        # SupportRequest.status and the ticket thread's from_status/to_status
+        # share one choice set; pin a single name for all three fields.
+        "SupportRequestStatusEnum": "api.support.enums.SupportRequestStatus",
     },
 }

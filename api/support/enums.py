@@ -11,5 +11,26 @@ class SupportRequestKind(models.TextChoices):
 
 
 class SupportRequestStatus(models.TextChoices):
+    """Contact messages and appeals only move OPEN -> RESOLVED. Tickets use
+    the full admin Tickets-page lifecycle (Figma: Opened, In-Progress,
+    Resolved, Closed)."""
+
     OPEN = "OPEN", _("Open")
+    IN_PROGRESS = "IN_PROGRESS", _("In-progress")
     RESOLVED = "RESOLVED", _("Resolved")
+    CLOSED = "CLOSED", _("Closed")
+
+
+class SupportTicketPriority(models.TextChoices):
+    """Figma 'Submit a ticket' Priority dropdown / admin 'Priority Level'."""
+
+    LOW = "LOW", _("Low")
+    MEDIUM = "MEDIUM", _("Medium")
+    HIGH = "HIGH", _("High")
+
+
+class SupportTicketMessageKind(models.TextChoices):
+    """One entry in a ticket's conversation thread."""
+
+    REPLY = "REPLY", _("Reply")
+    STATUS_CHANGE = "STATUS_CHANGE", _("Status change")
