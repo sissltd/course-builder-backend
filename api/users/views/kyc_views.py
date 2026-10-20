@@ -291,10 +291,67 @@ class LivenessVerificationView(APIView):
     permission_classes: ClassVar[list] = [IsAuthenticated]
 
     @extend_schema(
+        summary="Get liveness status",
+        description=(
+            "Returns the current user's most recent liveness outcome, so the "
+            "client can tell whether liveness has already been done.\n\n"
+            "**Auth:** Any authenticated user.\n\n"
+            "**Prerequisites:** None.\n\n"
+            "**Important:** `has_done_liveness` is `true` once any liveness "
+            "check has completed (pass or fail); `is_real` says whether it "
+            "passed. `score` and `liveness_selfie` are `null` until then."
+        ),
+        responses={
+            200: OpenApiResponse(
+                response=inline_serializer(
+                    name="LivenessStatusResult",
+                    fields={
+                        "has_done_liveness": serializers.BooleanField(),
+                        "is_real": serializers.BooleanField(),
+                        "score": serializers.FloatField(allow_null=True),
+                        "liveness_threshold": serializers.FloatField(),
+                        "liveness_selfie": serializers.URLField(allow_null=True),
+                    },
+                ),
+                description="Liveness status retrieved",
+                examples=[
+                    OpenApiExample(
+                        name="Success",
+                        value={
+                            "status": 200,
+                            "success": True,
+                            "message": "Retrieved successfully",
+                            "data": {
+                                "has_done_liveness": True,
+                                "is_real": True,
+                                "score": 92.0,
+                                "liveness_threshold": 80.0,
+                                "liveness_selfie": "https://cdn.example.com/selfie.jpg",
+                            },
+                        },
+                    )
+                ],
+            ),
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+        tags=["Creator — KYC"],
+    )
+    def get(self, request):
+        return custom_success_response(
+            status=status.HTTP_200_OK,
+            message="Retrieved successfully",
+            data=SISSLServices.get_liveness_status(request.user),
+        )
+
+    @extend_schema(
         summary="Verify a selfie liveness (SISSL)",
         description=(
             "Runs the supplied selfie against SISSL's liveness model. "
-            "Pass = the photo is classified as a real, live human .\n\n"
+            "Pass = the photo is classified as a real, live human AND the "
+            "score meets the liveness threshold. The score and pass/fail of "
+            "every completed check are saved on the user and can be read via "
+            "GET on this route.\n\n"
             "**Cost discipline:** rate-limited to a fixed number of calls "
             "per user per hour. Excess attempts return 503 without hitting "
             "the vendor.\n\n"
