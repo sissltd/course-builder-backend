@@ -37,6 +37,7 @@ SELF_SERVICE_HANDLERS = {
     "GoogleSignupView.post",
     "KYCVerificationView.get",
     "KYCVerificationView.post",
+    "LivenessVerificationView.get",
     "LivenessVerificationView.post",
     "LoginView.post",
     "LogoutAllView.post",

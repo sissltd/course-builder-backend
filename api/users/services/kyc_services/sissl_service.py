@@ -283,6 +283,32 @@ class SISSLServices:
             )
             raise SISSLError("Too many liveness attempts. Please try again later.")
 
+    @staticmethod
+    def _persist_liveness_result(user, *, score: Decimal, is_real: bool) -> None:
+        """Saves the latest liveness score and pass/fail onto the user."""
+        if user is None or not getattr(user, "pk", None):
+            return
+        user.liveness_score = float(score)
+        user.liveness_passes = is_real
+        user.save(update_fields=["liveness_score", "liveness_passes", "updated_datetime"])
+
+    # >>>>>>>>>>>>>>>>>>>> Liveness Status <<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+    @staticmethod
+    def get_liveness_status(user: User) -> dict[str, Any]:
+        """
+        Returns the user's most recent liveness outcome.
+
+        `has_done_liveness` is True once any liveness check has completed
+        (pass or fail) — `is_real` says whether that check passed.
+        """
+        return {
+            "has_done_liveness": user.liveness_score is not None,
+            "is_real": user.liveness_passes,
+            "score": user.liveness_score,
+            "liveness_threshold": float(SISSLServices._liveness_threshold()),
+            "liveness_selfie": user.liveness_selfie or None,
+        }
+
     # >>>>>>>>>>>>>>>>>>>> BVN Lookup <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
     @staticmethod
     def bvn_lookup(user, bvn, kyc_request=None, ip=None, user_agent=""):
@@ -475,7 +501,13 @@ class SISSLServices:
         # [3] Apply threshold
         score = Decimal(str(raw.get("score") or 0))
         threshold = SISSLServices._liveness_threshold()
-        is_real = raw.get("passes") or raw.get("live")  # Documentation is not clear
+        is_live = raw.get("passes") or raw.get("live")  # Documentation is not clear
+        is_real = bool(is_live) and score >= threshold
+
+        # [4] Persist the outcome of every completed check (pass or fail) so
+        # the user and admin review can read it back. Vendor errors above
+        # never reach here, so a previous result is not overwritten by them.
+        SISSLServices._persist_liveness_result(user, score=score, is_real=is_real)
 
         # [5] Hard-fail if the user isn't real / score too low
         if not is_real:
