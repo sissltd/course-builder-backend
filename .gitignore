@@ -20,6 +20,7 @@ env/
 # Tooling caches
 .mypy_cache/
 .pytest_cache/
+temp_auto_push.bat
 .ruff_cache/
 .coverage
 htmlcov/
@@ -36,10 +37,11 @@ pullrequest.md
 
 
 # VS Code
-.vscode
 PRD.md
 .DS_Store
 dump.rdb
 
 pyproject.toml
 .DS_Store
+.gitignore
+branch_structure.json
