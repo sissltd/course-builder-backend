@@ -875,6 +875,157 @@ class LivenessVerificationApiTests(APITestCase):
         liveness.assert_called_once()
         persist_avatar.assert_not_called()
 
+    def test_get_requires_authentication(self):
+        self.client.force_authenticate(user=None)
+
+        response = self.client.get(self.endpoint)
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    @patch("api.users.services.kyc_services.sissl_service.SISSLServices._liveness_threshold", return_value=80)
+    def test_get_before_any_liveness_reports_not_done(self, _threshold):
+        response = self.client.get(self.endpoint)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            response.data["data"],
+            {
+                "has_done_liveness": False,
+                "is_real": False,
+                "score": None,
+                "liveness_threshold": 80.0,
+                "liveness_selfie": None,
+            },
+        )
+
+    @patch("api.users.services.kyc_services.sissl_service.SISSLServices._liveness_threshold", return_value=80)
+    def test_get_after_liveness_returns_saved_result(self, _threshold):
+        self.user.liveness_score = 92.0
+        self.user.liveness_passes = True
+        self.user.liveness_selfie = "https://cdn.example.com/selfie.jpg"
+        self.user.save()
+
+        response = self.client.get(self.endpoint)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            response.data["data"],
+            {
+                "has_done_liveness": True,
+                "is_real": True,
+                "score": 92.0,
+                "liveness_threshold": 80.0,
+                "liveness_selfie": "https://cdn.example.com/selfie.jpg",
+            },
+        )
+
+
+@patch("api.users.services.kyc_services.sissl_service.log_activity")
+@patch("api.users.services.kyc_services.sissl_service.SISSLServices._liveness_threshold", return_value=80)
+@patch("api.users.services.kyc_services.sissl_service.SISSLServices._enforce_liveness_rate_limit")
+@patch("api.users.services.kyc_services.sissl_service.SISSLServices._provider")
+class SISSLLivenessServiceTests(TestCase):
+    def setUp(self):
+        self.user = _make_user()
+
+    def _liveness(self):
+        from api.users.services.kyc_services.sissl_service import SISSLServices
+
+        return SISSLServices.liveness(user=self.user, photo="https://example.com/selfie.jpg")
+
+    def test_pass_above_threshold_persists_score_and_passes(self, provider, *_):
+        provider.return_value.liveness.return_value = {"passes": True, "score": 92}
+
+        result = self._liveness()
+
+        self.assertTrue(result.is_real)
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.liveness_score, 92.0)
+        self.assertTrue(self.user.liveness_passes)
+
+    def test_score_below_threshold_fails_and_persists_failure(self, provider, *_):
+        provider.return_value.liveness.return_value = {"passes": True, "score": 50}
+
+        with self.assertRaises(SISSLLivenessFailed):
+            self._liveness()
+
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.liveness_score, 50.0)
+        self.assertFalse(self.user.liveness_passes)
+
+    def test_vendor_error_keeps_previous_result(self, provider, *_):
+        self.user.liveness_score = 90.0
+        self.user.liveness_passes = True
+        self.user.save()
+        provider.return_value.liveness.side_effect = SISSLError("down")
+
+        with self.assertRaises(SISSLError):
+            self._liveness()
+
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.liveness_score, 90.0)
+        self.assertTrue(self.user.liveness_passes)
+
+
+class SISSLLivenessRateLimitTests(TestCase):
+    """
+    The liveness cost-discipline guard itself — `_enforce_liveness_rate_limit`
+    is patched out of SISSLLivenessServiceTests, so the limiter's own behavior
+    is verified here against a mocked Redis counter. Excess attempts must fail
+    BEFORE the vendor call is made.
+    """
+
+    cap = 2
+
+    def setUp(self):
+        from api.users.services.kyc_services.sissl_service import SISSLServices
+
+        self.SISSLServices = SISSLServices
+        self.user = _make_user()
+
+    @patch("api.users.services.kyc_services.sissl_service.SISSL_LIVENESS_HOURLY_CAP", 2)
+    @patch("api.users.services.kyc_services.sissl_service.RedisService._atomic_increment")
+    @patch("api.users.services.kyc_services.sissl_service.log_activity")
+    @patch("api.users.services.kyc_services.sissl_service.SISSLServices._liveness_threshold", return_value=80)
+    @patch("api.users.services.kyc_services.sissl_service.SISSLServices._provider")
+    def test_attempt_over_the_hourly_cap_fails_before_the_vendor_call(self, provider, threshold, _activity, incr):
+        incr.return_value = (self.cap + 1, 3600)  # third call of the hour
+
+        with self.assertRaises(SISSLError):
+            self.SISSLServices.liveness(user=self.user, photo="https://example.com/selfie.jpg")
+
+        incr.assert_called_once_with(f"sissl:liveness:{self.user.id}", 3600)
+        provider.return_value.liveness.assert_not_called()
+        self.user.refresh_from_db()
+        self.assertIsNone(self.user.liveness_score)
+
+    @patch("api.users.services.kyc_services.sissl_service.SISSL_LIVENESS_HOURLY_CAP", 2)
+    @patch("api.users.services.kyc_services.sissl_service.RedisService._atomic_increment")
+    @patch("api.users.services.kyc_services.sissl_service.log_activity")
+    @patch("api.users.services.kyc_services.sissl_service.SISSLServices._liveness_threshold", return_value=80)
+    @patch("api.users.services.kyc_services.sissl_service.SISSLServices._provider")
+    def test_attempt_under_the_hourly_cap_reaches_the_vendor(self, provider, threshold, _activity, incr):
+        incr.return_value = (1, 3600)  # first call of the hour
+        provider.return_value.liveness.return_value = {"passes": True, "score": 92}
+
+        result = self.SISSLServices.liveness(user=self.user, photo="https://example.com/selfie.jpg")
+
+        self.assertTrue(result.is_real)
+        provider.return_value.liveness.assert_called_once()
+
+    @patch("api.users.services.kyc_services.sissl_service.log_activity")
+    @patch("api.users.services.kyc_services.sissl_service.SISSLServices._liveness_threshold", return_value=80)
+    @patch("api.users.services.kyc_services.sissl_service.SISSLServices._provider")
+    @patch("api.users.services.kyc_services.sissl_service.RedisService._atomic_increment")
+    def test_system_calls_are_not_rate_limited(self, incr, provider, threshold, _activity):
+        provider.return_value.liveness.return_value = {"passes": True, "score": 92}
+
+        result = self.SISSLServices.liveness(user=None, photo="https://example.com/selfie.jpg")
+
+        self.assertTrue(result.is_real)
+        incr.assert_not_called()
+        provider.return_value.liveness.assert_called_once()
+
 
 class LivenessAvatarSettingViewTests(APITestCase):
     endpoint_template = "/api/v1/users/kyc/set-avatar/{}/"
