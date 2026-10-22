@@ -933,13 +933,27 @@ Full-course generation follows the two Figma phases exposed on each progress
 item's `phase` field. `CREATING_CONTENT` generates one compact course outline;
 `PREPARING_DETAILS` expands each module in a separate provider request and then
 creates the final assessment separately. This keeps individual responses
-bounded while the creator polls one job and can cancel between requests.
+bounded. Each creator may have one in-flight AI job (course, assist, or
+thumbnail); in the configured deployment, the dedicated AI worker executes one
+job at a time globally. Provider capacity waits and transient retries return the
+job to `QUEUED` with an explanatory stage. Cancellation is cooperative between
+provider/storage operations, not an interruption of the remote request.
+
+Per-task Celery limits are 30 minutes soft / 35 minutes hard for full-course
+generation and 5 minutes soft / 5 minutes 30 seconds hard for assist/thumbnail.
+These bound one task attempt, not total wall-clock time: provider retries, queue
+wait, and rate-limit rescheduling can extend a job. Jobs without a heartbeat for
+six hours are marked stale/failed when a job list, detail, or create request
+triggers stale-job cleanup; this is not an end-to-end SLA.
 
 - `GET /api/v1/course-ai-generations/` lists the creator's in-progress jobs
   for page-refresh recovery; pass `?status=FAILED` or another concrete status
   to inspect older terminal jobs.
 - `POST /api/v1/course-ai-generations/` starts a course draft.
 - `GET` or `DELETE /api/v1/course-ai-generations/{id}/` polls or cancels it.
+- `GET /api/v1/course-ai-generations/{id}/stream/` opens an authenticated SSE
+  stream. It sends an initial job snapshot followed by progress events; reconnect
+  with backoff and fall back to polling if the stream closes or Redis is unavailable.
 - `POST /api/v1/course-ai-generations/{id}/retry/` safely resumes a failed or cancelled job.
 - `POST /api/v1/courses/{id}/ai-assists/` drafts a contextual field rewrite;
   applying remains an explicit creator action.
