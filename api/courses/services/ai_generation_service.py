@@ -1,4 +1,3 @@
-import math
 from datetime import timedelta
 
 from django.db import transaction
@@ -7,11 +6,6 @@ from django.utils import timezone
 from rest_framework import exceptions
 
 from api.catalog.models import Category, Topic
-from api.courses.ai.providers import (
-    LESSON_DURATION_MAX_MINUTES,
-    LESSON_DURATION_MIN_MINUTES,
-    GenerationStandards,
-)
 from api.courses.enums import (
     AIGenerationItemStatus,
     AIGenerationKind,
@@ -27,9 +21,7 @@ from api.courses.models import (
     Lesson,
     Module,
 )
-from api.courses.services import course_service, course_version_service
-from api.platform.services import platform_settings_service
-from api.reviews.services import quality_check_service
+from api.courses.services import course_service
 
 
 # Backend-published AI generation progress events are sent on one Redis
@@ -65,12 +57,6 @@ def publish_ai_generation_progress(*, job, payload):
 # on their behalf, so no new AI request is accepted until it returns a result.
 IN_FLIGHT_JOB_STATUSES = (
     AIGenerationStatus.QUEUED,
-    AIGenerationStatus.RUNNING,
-    AIGenerationStatus.STRUCTURE_READY,
-)
-# A worker holds the job in one of these states while executing it; both must
-# keep heartbeating so duplicate deliveries and the watchdog see a live claim.
-EXECUTING_JOB_STATUSES = (
     AIGenerationStatus.RUNNING,
     AIGenerationStatus.STRUCTURE_READY,
 )
@@ -158,123 +144,6 @@ def normalize_ai_learning_objectives(objectives: list) -> list[str]:
     return normalized
 
 
-def get_generation_standards() -> GenerationStandards:
-    """The submission thresholds generation must meet, from PlatformSettings."""
-
-    return GenerationStandards.from_platform_settings(
-        platform_settings_service.get_settings()
-    )
-
-
-def _rescaled_durations(
-    durations: list[int], *, min_total: int, max_total: int
-) -> list[int]:
-    """Scale lesson durations proportionally so their sum lands in range.
-
-    Rounds up when growing and down when shrinking, so the per-lesson rounding
-    never pushes the total back across the bound it was scaled to. Returns the
-    input unchanged when it is already in range (or empty).
-    """
-
-    total = sum(durations)
-    if not durations or min_total <= total <= max_total:
-        return durations
-    target = min_total if total < min_total else max_total
-    factor = target / total if total else 0
-    rounding = math.ceil if total < min_total else math.floor
-    return [
-        max(
-            LESSON_DURATION_MIN_MINUTES,
-            min(LESSON_DURATION_MAX_MINUTES, rounding(duration * factor)),
-        )
-        for duration in durations
-    ]
-
-
-def repair_outline(*, outline: dict, standards: GenerationStandards, provider):
-    """Fix the outline fields a JSON schema cannot constrain.
-
-    Word counts and summed durations are not expressible in the provider's
-    structured-output schema, so they are checked here with the same rules as
-    the submission quality check. A short/long description gets one rewrite
-    through the existing assist call; durations are rescaled locally. Returns
-    (outline, usage) where usage covers any extra provider call.
-    """
-
-    usage = {"input_tokens": 0, "output_tokens": 0}
-    description = outline["description"]
-    words = quality_check_service.word_count(description)
-    if not (
-        standards.description_words_min <= words <= standards.description_words_max
-    ):
-        rewritten, assist_usage = provider.generate_assist(
-            target="course description",
-            current_value=description,
-            instruction=(
-                f"Rewrite this as a learner-facing course description of "
-                f"{standards.description_words_min}-"
-                f"{standards.description_words_max} words (aim for about "
-                f"{standards.description_words_target}). Cover who the course "
-                "is for, what learners will be able to do, and how the course "
-                "is structured. Return plain prose only."
-            ),
-            context={
-                "title": outline["title"],
-                "learning_objectives": outline["learning_objectives"],
-                "modules": [module["title"] for module in outline["modules"]],
-            },
-        )
-        usage["input_tokens"] += assist_usage.get("input_tokens", 0)
-        usage["output_tokens"] += assist_usage.get("output_tokens", 0)
-        rewritten = (rewritten or "").strip()
-        if (
-            standards.description_words_min
-            <= quality_check_service.word_count(rewritten)
-            <= standards.description_words_max
-        ):
-            outline = {**outline, "description": rewritten}
-
-    lessons = [
-        lesson for module in outline["modules"] for lesson in module["lessons"]
-    ]
-    durations = _rescaled_durations(
-        [lesson["duration_minutes"] for lesson in lessons],
-        min_total=standards.duration_min_minutes,
-        max_total=standards.duration_max_minutes,
-    )
-    for lesson, duration in zip(lessons, durations, strict=True):
-        lesson["duration_minutes"] = duration
-    return outline, usage
-
-
-def rescale_course_lesson_durations(*, course, standards: GenerationStandards):
-    """Bring stored lesson durations back in range after module content runs.
-
-    The module-content call may adjust per-lesson durations, so the outline
-    repair alone cannot guarantee the final course total.
-    """
-
-    lessons = list(Lesson.objects.filter(module__course=course).order_by("pk"))
-    durations = _rescaled_durations(
-        [lesson.duration_minutes for lesson in lessons],
-        min_total=standards.duration_min_minutes,
-        max_total=standards.duration_max_minutes,
-    )
-    changed = []
-    for lesson, duration in zip(lessons, durations, strict=True):
-        if lesson.duration_minutes != duration:
-            lesson.duration_minutes = duration
-            changed.append(lesson)
-    if changed:
-        Lesson.objects.bulk_update(changed, ["duration_minutes"])
-
-
-def quality_report(*, course) -> list[str]:
-    """Submission checks the generated course still fails (e.g. preview video)."""
-
-    return quality_check_service.validate_structural_standards(course)
-
-
 @transaction.atomic
 def create_course_job(*, creator, validated_data):
     """Create one course job while serializing all AI requests per creator."""
@@ -288,9 +157,6 @@ def create_course_job(*, creator, validated_data):
         ).first()
         if existing:
             return existing, False
-    # Refused here rather than when the worker builds the course, so the
-    # creator hears about it from the request and no job is queued.
-    course_service.require_approved_topic(topic=validated_data.get("topic"))
     reject_while_in_flight(creator=creator)
     job = AIGenerationJob.objects.create(
         creator=creator,
@@ -334,17 +200,10 @@ def check_cancelled(job):
     job.refresh_from_db(fields=["cancel_requested"])
     if job.cancel_requested:
         job.status = AIGenerationStatus.CANCELLED
-        job.stage = "Generation cancelled"
         job.completed_at = timezone.now()
-        job.save(
-            update_fields=["status", "stage", "completed_at", "updated_datetime"]
-        )
+        job.save(update_fields=["status", "completed_at", "updated_datetime"])
         job.items.exclude(status=AIGenerationItemStatus.COMPLETED).update(
             status=AIGenerationItemStatus.CANCELLED
-        )
-        publish_ai_generation_progress(
-            job=job,
-            payload={"type": "cancelled", "stage": job.stage},
         )
         return True
     return False
@@ -369,7 +228,7 @@ def claim_job_for_execution(*, job_id, task_id, stage):
     now = timezone.now()
     heartbeat = job.last_heartbeat_at or job.updated_datetime
     if (
-        job.status in EXECUTING_JOB_STATUSES
+        job.status == AIGenerationStatus.RUNNING
         and heartbeat
         and now - heartbeat < HEARTBEAT_TIMEOUT
     ):
@@ -397,31 +256,8 @@ def heartbeat(*, job):
 
     now = timezone.now()
     AIGenerationJob.objects.filter(
-        pk=job.pk, status__in=EXECUTING_JOB_STATUSES
+        pk=job.pk, status=AIGenerationStatus.RUNNING
     ).update(last_heartbeat_at=now, updated_datetime=now)
-
-
-@transaction.atomic
-def queue_job_for_retry(*, job, stage):
-    """Queue a retry only if cancellation or another terminal state has not won."""
-
-    job = AIGenerationJob.objects.select_for_update().get(pk=job.pk)
-    if job.status in {
-        AIGenerationStatus.COMPLETED,
-        AIGenerationStatus.FAILED,
-        AIGenerationStatus.CANCELLED,
-    }:
-        return False
-    if job.cancel_requested:
-        check_cancelled(job)
-        return False
-    job.status = AIGenerationStatus.QUEUED
-    job.stage = stage
-    job.last_heartbeat_at = None
-    job.save(
-        update_fields=["status", "stage", "last_heartbeat_at", "updated_datetime"]
-    )
-    return True
 
 
 @transaction.atomic
@@ -506,11 +342,17 @@ def fail_stale_in_flight_jobs(*, creator):
             updated_datetime__lt=stale_before,
         )
         | Q(
-            status__in=EXECUTING_JOB_STATUSES,
+            status__in=[
+                AIGenerationStatus.RUNNING,
+                AIGenerationStatus.STRUCTURE_READY,
+            ],
             last_heartbeat_at__lt=stale_before,
         )
         | Q(
-            status__in=EXECUTING_JOB_STATUSES,
+            status__in=[
+                AIGenerationStatus.RUNNING,
+                AIGenerationStatus.STRUCTURE_READY,
+            ],
             last_heartbeat_at__isnull=True,
             updated_datetime__lt=stale_before,
         )
@@ -555,7 +397,6 @@ def materialize_structure(*, job, generated):
         ),
         tags=generated["tags"],
         duration_seconds=generated["planned_duration_seconds"],
-        version=course_version_service.get_default_course_version(),
         terms_accepted=True,
         source_type=CourseSourceType.AI_GENERATED,
     )
@@ -652,14 +493,14 @@ def materialize_module_content(*, job, module, generated):
         job=job,
         payload={
             "type": "module_done",
-            "module_index": module.order - 1,
-            "stage": f"Generated module {module.order}.",
+            "module_index": module_order - 1,
+            "stage": f"Generated module {module_order} of {total_modules}.",
         },
     )
 
 
 @transaction.atomic
-def materialize_final_assessment(*, job, generated, standards):
+def materialize_final_assessment(*, job, generated):
     Assessment.objects.create(
         level=AssessmentLevel.COURSE,
         course=job.course,
@@ -668,7 +509,6 @@ def materialize_final_assessment(*, job, generated, standards):
         created_by=job.creator,
         updated_by=job.creator,
     )
-    rescale_course_lesson_durations(course=job.course, standards=standards)
     course_service.recalculate_duration_estimate(course=job.course)
     publish_ai_generation_progress(
         job=job,
@@ -699,53 +539,9 @@ def add_usage(*, job, usage):
     job.save(update_fields=["input_tokens", "output_tokens", "updated_datetime"])
 
 
-@transaction.atomic
-def complete_job(
-    *,
-    job,
-    stage,
-    result=None,
-    provider=None,
-    model=None,
-    input_tokens=None,
-    output_tokens=None,
-):
-    """Atomically finish a job unless cancellation won the completion race."""
-
-    job = AIGenerationJob.objects.select_for_update().get(pk=job.pk)
-    if job.status in {
-        AIGenerationStatus.COMPLETED,
-        AIGenerationStatus.FAILED,
-        AIGenerationStatus.CANCELLED,
-    }:
-        return False
-    if job.cancel_requested:
-        check_cancelled(job)
-        return False
-
-    job.status = AIGenerationStatus.COMPLETED
-    job.stage = stage
-    job.completed_at = timezone.now()
-    update_fields = ["status", "stage", "completed_at", "updated_datetime"]
-    for field, value in (
-        ("result", result),
-        ("provider", provider),
-        ("model", model),
-        ("input_tokens", input_tokens),
-        ("output_tokens", output_tokens),
-    ):
-        if value is not None:
-            setattr(job, field, value)
-            update_fields.append(field)
-    job.save(update_fields=update_fields)
-    return True
-
-
-@transaction.atomic
 def cancel_job(*, job, actor):
     if job.creator_id != actor.id:
         raise exceptions.PermissionDenied()
-    job = AIGenerationJob.objects.select_for_update().get(pk=job.pk)
     if job.status in {
         AIGenerationStatus.COMPLETED,
         AIGenerationStatus.FAILED,
@@ -754,8 +550,6 @@ def cancel_job(*, job, actor):
         return job
     job.cancel_requested = True
     job.save(update_fields=["cancel_requested", "updated_datetime"])
-    if job.status == AIGenerationStatus.QUEUED:
-        check_cancelled(job)
     return job
 
 

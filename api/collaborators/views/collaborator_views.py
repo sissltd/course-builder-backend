@@ -9,11 +9,12 @@ from rest_framework import exceptions, status
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 
-from api.collaborators.models import CourseCollaborator
-from api.collaborators.filters import CollaboratorFilter
+from api.collaborators.models import CourseCollaborator, WorkspaceCollaborator
+from api.collaborators.filters import CollaboratorFilter, WorkspaceCollaboratorFilter
 from api.collaborators.serializers import (
     CollaboratorRoleUpdateSerializer,
     CollaboratorSerializer,
+    WorkspaceMemberCollaboratorSerializer,
 )
 from api.collaborators.services import collaborator_service
 from api.courses.models import Course
@@ -42,6 +43,22 @@ _COLLABORATOR_EXAMPLE = {
             "order": 1,
         }
     ],
+    "source": "course",
+}
+
+_WORKSPACE_MEMBER_EXAMPLE = {
+    "id": "c1d2e3f4-a5b6-4c7d-8e9f-0a1b2c3d4e5f",
+    "name": "Sam Lee",
+    "email": "sam.lee@example.com",
+    "country_of_origin": "GH",
+    "date_added": "2026-07-22T09:30:00.000Z",
+    "role": "AUTHOR",
+    "role_label": "Author",
+    "course_id": None,
+    "course_title": None,
+    "category": None,
+    "assigned_modules": [],
+    "source": "workspace",
 }
 
 _AUTH_LINE = (
@@ -86,6 +103,14 @@ _MANAGE_ACCESS_403 = OpenApiResponse(
             "screen field names: `name`, `email`, `date_added`, and `role`. "
             "It also identifies the course and category for filtering and "
             "display. The same person appears once per course assignment.\n\n"
+            "Without `course_id`, the list also includes ACTIVE members of "
+            "the caller's workspace roster who have no assignment on any of "
+            "the caller's courses yet (e.g. they accepted a workspace invite "
+            "but haven't been put on a course). Those rows have "
+            '`source: "workspace"`, null `course_id`/`course_title`/'
+            "`category`, an empty `assigned_modules`, and `id` is the "
+            "workspace roster id - the `/collaborators/{id}/` detail actions "
+            'only apply to `source: "course"` rows.\n\n'
             "Called from the global Collaborators screen, or with `course_id` "
             "from a course's manage-collaborators panel.\n\n"
             f"{_AUTH_LINE}\n\n"
@@ -144,7 +169,11 @@ _MANAGE_ACCESS_403 = OpenApiResponse(
                 response=CollaboratorSerializer(many=True),
                 description="Collaborator assignments across the selected courses.",
                 examples=[
-                    OpenApiExample(name="Success", value=[_COLLABORATOR_EXAMPLE])
+                    OpenApiExample(name="Success", value=[_COLLABORATOR_EXAMPLE]),
+                    OpenApiExample(
+                        name="With unassigned workspace member",
+                        value=[_COLLABORATOR_EXAMPLE, _WORKSPACE_MEMBER_EXAMPLE],
+                    ),
                 ],
             ),
             **STANDARD_ERROR_RESPONSES["auth"],
@@ -240,6 +269,35 @@ class CourseCollaboratorViewSet(ModelViewSet):
         if self.action in {"update", "partial_update"}:
             return CollaboratorRoleUpdateSerializer
         return CollaboratorSerializer
+
+    def list(self, request, *args, **kwargs):
+        # A course-scoped list (manage panel, builder header) stays
+        # assignments-only; workspace members aren't on that course.
+        if request.query_params.get("course_id"):
+            return super().list(request, *args, **kwargs)
+
+        course_rows = self.filter_queryset(self.get_queryset())
+        workspace_rows = WorkspaceCollaboratorFilter(
+            request.query_params,
+            queryset=collaborator_service.get_unassigned_workspace_members(
+                request.user
+            ),
+            request=request,
+        ).qs
+        rows = collaborator_service.merge_collaborator_rows(course_rows, workspace_rows)
+
+        page = self.paginate_queryset(rows)
+        data = [
+            (
+                WorkspaceMemberCollaboratorSerializer(row).data
+                if isinstance(row, WorkspaceCollaborator)
+                else CollaboratorSerializer(row).data
+            )
+            for row in (page if page is not None else rows)
+        ]
+        if page is not None:
+            return self.get_paginated_response(data)
+        return Response(data)
 
     def _require_manage_access(self, course: Course) -> None:
         if not collaborator_service.has_manage_access(

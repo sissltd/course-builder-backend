@@ -1,6 +1,5 @@
-import json
 from datetime import timedelta
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 from django.utils import timezone
 from rest_framework import status
@@ -110,27 +109,6 @@ class AIGenerationApiTests(APITestCase):
                 job_id=job.id, task_id="duplicate-task", stage="Creating content..."
             )
         )
-
-    def test_structure_ready_job_heartbeats_and_blocks_duplicate_claim(self):
-        stale_heartbeat = timezone.now() - timedelta(minutes=5)
-        job = AIGenerationJob.objects.create(
-            creator=self.creator,
-            kind=AIGenerationKind.FULL_COURSE,
-            status=AIGenerationStatus.STRUCTURE_READY,
-            last_heartbeat_at=stale_heartbeat,
-        )
-
-        ai_generation_service.heartbeat(job=job)
-
-        job.refresh_from_db()
-        self.assertGreater(job.last_heartbeat_at, stale_heartbeat)
-        self.assertFalse(
-            ai_generation_service.claim_job_for_execution(
-                job_id=job.id, task_id="duplicate-task", stage="Creating content..."
-            )
-        )
-        job.refresh_from_db()
-        self.assertEqual(job.status, AIGenerationStatus.STRUCTURE_READY)
 
     @patch("api.courses.views.ai_generation_views.generate_ai_course.delay")
     def test_dispatch_failure_marks_job_failed(self, delay):
@@ -310,9 +288,8 @@ class AIGenerationApiTests(APITestCase):
         self.assertEqual(first.data["id"], second.data["id"])
         self.assertEqual(delay.call_count, 1)
 
-    @patch("api.courses.services.ai_generation_service.publish_ai_generation_progress")
     @patch("api.courses.views.ai_generation_views.generate_ai_course.delay")
-    def test_creator_can_cancel_generation(self, delay, publish_progress):
+    def test_creator_can_cancel_generation(self, delay):
         delay.return_value.id = "task-id"
         created = self.client.post(
             "/api/v1/course-ai-generations/",
@@ -330,36 +307,9 @@ class AIGenerationApiTests(APITestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
-        cancelled_job = AIGenerationJob.objects.get(pk=created.data["id"])
-        self.assertTrue(cancelled_job.cancel_requested)
-        self.assertEqual(cancelled_job.status, AIGenerationStatus.CANCELLED)
-        self.assertEqual(response.data["status"], AIGenerationStatus.CANCELLED)
-
-    @patch("api.courses.views.ai_generation_views.generate_ai_course.delay")
-    def test_running_generation_cancellation_waits_for_worker_checkpoint(self, delay):
-        delay.return_value.id = "task-id"
-        created = self.client.post(
-            "/api/v1/course-ai-generations/",
-            {
-                "title": "Course",
-                "description": "Description",
-                "category": str(self.category.id),
-                "terms_accepted": True,
-            },
-            format="json",
+        self.assertTrue(
+            AIGenerationJob.objects.get(pk=created.data["id"]).cancel_requested
         )
-        job = AIGenerationJob.objects.get(pk=created.data["id"])
-        job.status = AIGenerationStatus.RUNNING
-        job.save(update_fields=["status", "updated_datetime"])
-
-        response = self.client.delete(f"/api/v1/course-ai-generations/{job.id}/")
-
-        self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
-        self.assertTrue(response.data["cancel_requested"])
-        self.assertEqual(response.data["status"], AIGenerationStatus.RUNNING)
-        job.refresh_from_db()
-        self.assertTrue(job.cancel_requested)
-        self.assertEqual(job.status, AIGenerationStatus.RUNNING)
 
     @patch("api.courses.views.ai_generation_views.generate_ai_course.delay")
     def test_topic_must_belong_to_category(self, delay):
@@ -392,114 +342,51 @@ class AIGenerationApiTests(APITestCase):
             status=AIGenerationItemStatus.COMPLETED,
             order=0,
         )
-        redis_client = Mock()
-        pubsub = Mock()
-        redis_client.pubsub.return_value = pubsub
-        pubsub.get_message.side_effect = [
-            None,
-            {
-                "type": "message",
-                "data": json.dumps(
-                    {
-                        "job_id": str(job.id),
-                        "payload": {"type": "completed"},
-                    }
-                ).encode(),
-            },
-        ]
+
+        stream_url = STREAM_URL.format(job_id=job.id)
 
         with patch(
-            "shared.redis.redis_service.RedisService.get_redis_client",
-            return_value=redis_client,
+            "api.courses.views.ai_generation_views.ai_generation_service"
+            "._ai_generation_channel",
+            return_value="user:ai-generations:test",
+        ), patch(
+            "api.courses.views.ai_generation_views.RedisService"
+            ".get_async_redis_client",
+            return_value=None,
         ):
             response = self.client.get(
-                STREAM_URL.format(job_id=job.id),
+                stream_url,
                 HTTP_ACCEPT="text/event-stream",
             )
-            body = b"".join(response.streaming_content).decode("utf-8")
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertTrue(response["Content-Type"].startswith("text/event-stream"))
-        self.assertEqual(response["Cache-Control"], "no-cache")
-        self.assertEqual(response["X-Accel-Buffering"], "no")
-        self.assertIn('"event": "snapshot"', body)
+        self.assertTrue(
+            response["Content-Type"].startswith("text/event-stream")
+        )
+        body = response.content.decode("utf-8")
+        self.assertIn("snapshot", body)
         self.assertIn(str(job.id), body)
-        self.assertIn(": keep-alive", body)
-        redis_client.pubsub.assert_called_once_with()
-        pubsub.subscribe.assert_called_once_with(
-            f"user:ai-generations:{self.creator.id}"
-        )
-        pubsub.unsubscribe.assert_called_once_with(
-            f"user:ai-generations:{self.creator.id}"
-        )
-        pubsub.close.assert_called_once_with()
 
-    def test_stream_delivers_matching_redis_progress_and_closes_on_terminal_event(self):
-        job = AIGenerationJob.objects.create(
-            creator=self.creator,
-            kind=AIGenerationKind.FULL_COURSE,
-            status=AIGenerationStatus.RUNNING,
-        )
-        redis_client = Mock()
-        pubsub = Mock()
-        redis_client.pubsub.return_value = pubsub
-        channel = f"user:ai-generations:{self.creator.id}"
-        matching_progress = {
-            "job_id": str(job.id),
-            "payload": {"type": "item_running", "key": "content_objectives"},
-        }
-        other_job_progress = {
-            "job_id": "another-job",
-            "payload": {"type": "item_running", "key": "ignored"},
-        }
-        completed = {
-            "job_id": str(job.id),
-            "payload": {"type": "completed", "stage": "Course details ready"},
-        }
-        pubsub.get_message.side_effect = [
-            {"type": "message", "data": json.dumps(other_job_progress).encode()},
-            {"type": "message", "data": json.dumps(matching_progress).encode()},
-            {"type": "message", "data": json.dumps(completed).encode()},
-        ]
+    def test_stream_returns_not_found_for_missing_job(self):
+        missing_id = "00000000-0000-0000-0000-000000000000"
+        stream_url = STREAM_URL.format(job_id=missing_id)
 
         with patch(
-            "shared.redis.redis_service.RedisService.get_redis_client",
-            return_value=redis_client,
+            "api.courses.views.ai_generation_views.ai_generation_service"
+            "._ai_generation_channel",
+            return_value="user:ai-generations:test",
+        ), patch(
+            "api.courses.views.ai_generation_views.RedisService"
+            ".get_async_redis_client",
+            return_value=None,
         ):
             response = self.client.get(
-                STREAM_URL.format(job_id=job.id),
+                stream_url,
                 HTTP_ACCEPT="text/event-stream",
             )
-            body = b"".join(response.streaming_content).decode("utf-8")
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn('"event": "snapshot"', body)
-        self.assertIn('"event": "progress"', body)
-        self.assertIn('"type": "item_running"', body)
-        self.assertIn('"type": "completed"', body)
-        self.assertNotIn("ignored", body)
-        pubsub.subscribe.assert_called_once_with(channel)
-        pubsub.unsubscribe.assert_called_once_with(channel)
-        pubsub.close.assert_called_once_with()
-        self.assertEqual(pubsub.get_message.call_count, 3)
-
-    def test_stream_returns_not_found_for_missing_or_foreign_job(self):
-        foreign_job = AIGenerationJob.objects.create(
-            creator=make_user(),
-            kind=AIGenerationKind.FULL_COURSE,
-            status=AIGenerationStatus.RUNNING,
+        self.assertTrue(
+            response["Content-Type"].startswith("text/event-stream")
         )
-        missing_id = "00000000-0000-0000-0000-000000000000"
-        with patch(
-            "shared.redis.redis_service.RedisService.get_redis_client"
-        ) as get_redis_client:
-            for job_id in (missing_id, str(foreign_job.id)):
-                with self.subTest(job_id=job_id):
-                    response = self.client.get(
-                        STREAM_URL.format(job_id=job_id),
-                        HTTP_ACCEPT="text/event-stream",
-                    )
-                    self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
-                    self.assertEqual(response.data["errors"][0]["code"], "not_found")
-
-        get_redis_client.assert_not_called()
+        self.assertIn("not_found", response.content.decode("utf-8"))

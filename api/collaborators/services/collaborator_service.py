@@ -1,8 +1,10 @@
+from collections.abc import Iterable
+
 from django.db.models import Q, QuerySet
 from rest_framework import exceptions
 
 from api.collaborators.enums import CollaboratorRole
-from api.collaborators.models import CourseCollaborator
+from api.collaborators.models import CourseCollaborator, WorkspaceCollaborator
 from api.courses.models import Course, Module
 from api.users.models import User
 
@@ -64,6 +66,72 @@ def can_access_module(*, user: User, module: Module) -> bool:
         get_modules_accessible_to(user=user, course_id=module.course_id)
         .filter(pk=module.pk)
         .exists()
+    )
+
+
+def accept_workspace_invite(
+    *, invite: WorkspaceCollaborator, user: User
+) -> WorkspaceCollaborator:
+    """Link an accepted workspace invite to `user`'s account and mark it
+    ACTIVE. The single acceptance step shared by the signup auto-accept
+    signal (signing up with the invited email means they accepted) and the
+    /workspace-collaborators/{id}/accept/ endpoint for people who already
+    had an account when the invite was sent. Notifies the workspace owner."""
+
+    if invite.status != WorkspaceCollaborator.Status.PENDING:
+        raise exceptions.ValidationError(
+            f"This invite is no longer open (status: {invite.status})."
+        )
+
+    invite.user_id = user.id
+    invite.status = WorkspaceCollaborator.Status.ACTIVE
+    invite.save(update_fields=["user_id", "status", "updated_datetime"])
+
+    from api.notification.models import Notification
+
+    Notification.emit_in_app_notification(
+        receivers=[invite.owner],
+        title="Workspace invite accepted",
+        content=(
+            f"{user.get_full_name() or user.email} accepted your "
+            "invitation to join your workspace."
+        ),
+        metadata={"workspace_collaborator_id": str(invite.id)},
+    )
+
+    return invite
+
+
+def get_unassigned_workspace_members(owner: User) -> QuerySet[WorkspaceCollaborator]:
+    """ACTIVE members of `owner`'s workspace roster with no assignment on any
+    course `owner` created. Accepting a workspace invite grants no course
+    access, so without these the global Collaborators list would miss
+    people who have joined the team but aren't on a course yet. Members
+    who do have an assignment are excluded - they already appear as their
+    course rows."""
+
+    return (
+        WorkspaceCollaborator.objects.filter(
+            owner=owner,
+            status=WorkspaceCollaborator.Status.ACTIVE,
+            user__isnull=False,
+        )
+        .exclude(user__course_collaborations__course__creator=owner)
+        .select_related("user")
+    )
+
+
+def merge_collaborator_rows(
+    course_rows: Iterable[CourseCollaborator],
+    workspace_rows: Iterable[WorkspaceCollaborator],
+) -> list[CourseCollaborator | WorkspaceCollaborator]:
+    """Combine course assignments and unassigned workspace members, newest
+    first - the same -created_datetime order both models default to."""
+
+    return sorted(
+        [*course_rows, *workspace_rows],
+        key=lambda row: row.created_datetime,
+        reverse=True,
     )
 
 

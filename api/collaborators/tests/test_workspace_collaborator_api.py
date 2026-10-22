@@ -173,6 +173,132 @@ class WorkspaceCollaboratorAutoAcceptSignalTest(APITestCase):
         self.assertEqual(invite.status, WorkspaceCollaborator.Status.ACTIVE)
 
 
+class WorkspaceInviteAcceptApiTests(APITestCase):
+    """Accepting a workspace invite with an account that already existed
+    when the invite was sent. Signing up is not the only acceptance step -
+    these actions are the equivalent, and acceptance is what makes the
+    person show up on the owner's Collaborators list."""
+
+    def setUp(self):
+        self.owner = make_user(role=UserRole.COURSE_CREATOR)
+
+    def _invite(self, email, **kwargs):
+        defaults = {"owner": self.owner, "invited_email": email}
+        defaults.update(kwargs)
+        return WorkspaceCollaborator.objects.create(**defaults)
+
+    def test_accept_links_existing_user_and_marks_active(self):
+        invitee = make_user(role=UserRole.COURSE_CREATOR)
+        invite = self._invite(invitee.email)
+        self.client.force_authenticate(invitee)
+
+        response = self.client.post(
+            f"/api/v1/workspace-collaborators/{invite.id}/accept/"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        invite.refresh_from_db()
+        self.assertEqual(invite.user_id, invitee.id)
+        self.assertEqual(invite.status, WorkspaceCollaborator.Status.ACTIVE)
+
+    def test_accepted_invite_appears_on_owners_global_collaborators_list(self):
+        invitee = make_user(role=UserRole.COURSE_CREATOR)
+        invite = self._invite(
+            invitee.email, role=WorkspaceCollaborator.Role.AUTHOR
+        )
+        self.client.force_authenticate(invitee)
+        self.client.post(f"/api/v1/workspace-collaborators/{invite.id}/accept/")
+        self.client.force_authenticate(self.owner)
+
+        response = self.client.get("/api/v1/collaborators/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        rows = response.data["data"]["results"]
+        self.assertEqual([row["id"] for row in rows], [str(invite.id)])
+        self.assertEqual(rows[0]["email"], invitee.email)
+        self.assertEqual(rows[0]["role"], "AUTHOR")
+        self.assertEqual(rows[0]["source"], "workspace")
+
+    def test_accept_invite_addressed_to_other_email_404s(self):
+        invite = self._invite("someone-else@example.com")
+        self.client.force_authenticate(make_user(role=UserRole.COURSE_CREATOR))
+
+        response = self.client.post(
+            f"/api/v1/workspace-collaborators/{invite.id}/accept/"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        invite.refresh_from_db()
+        self.assertEqual(invite.status, WorkspaceCollaborator.Status.PENDING)
+
+    def test_accept_already_accepted_invite_returns_400(self):
+        invitee = make_user(role=UserRole.COURSE_CREATOR)
+        invite = self._invite(
+            invitee.email,
+            status=WorkspaceCollaborator.Status.ACTIVE,
+        )
+        self.client.force_authenticate(invitee)
+
+        response = self.client.post(
+            f"/api/v1/workspace-collaborators/{invite.id}/accept/"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIsNone(invite.user_id)
+
+    def test_accept_removed_invite_returns_400(self):
+        invitee = make_user(role=UserRole.COURSE_CREATOR)
+        invite = self._invite(
+            invitee.email,
+            status=WorkspaceCollaborator.Status.REMOVED,
+        )
+        self.client.force_authenticate(invitee)
+
+        response = self.client.post(
+            f"/api/v1/workspace-collaborators/{invite.id}/accept/"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        invite.refresh_from_db()
+        self.assertIsNone(invite.user_id)
+
+    def test_incoming_lists_only_pending_invites_for_caller_email(self):
+        invitee = make_user(role=UserRole.COURSE_CREATOR)
+        pending = self._invite(invitee.email)
+        self._invite(
+            invitee.email.replace("@example.com", "2@example.com"),
+            owner=make_user(role=UserRole.COURSE_CREATOR),
+        )  # addressed to someone else
+        self._invite(
+            "stranger@example.com",
+            status=WorkspaceCollaborator.Status.ACTIVE,
+        )  # accepted, not actionable
+        self.client.force_authenticate(invitee)
+
+        response = self.client.get("/api/v1/workspace-collaborators/incoming/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        rows = response.data["data"]["results"]
+        self.assertEqual([row["id"] for row in rows], [str(pending.id)])
+        self.assertEqual(rows[0]["email"], invitee.email)
+        self.assertEqual(rows[0]["name"], invitee.email)
+
+    def test_incoming_scoped_by_email_not_owner(self):
+        """The invitee sees the invite across workspaces; the owner-only
+        roster scoping doesn't apply to the invitee's inbox."""
+        invitee = make_user(role=UserRole.COURSE_CREATOR)
+        stranger_owner = make_user(role=UserRole.COURSE_CREATOR)
+        invite = WorkspaceCollaborator.objects.create(
+            owner=stranger_owner, invited_email=invitee.email
+        )
+        self.client.force_authenticate(invitee)
+
+        response = self.client.get("/api/v1/workspace-collaborators/incoming/")
+
+        rows = response.data["data"]["results"]
+        self.assertEqual([row["id"] for row in rows], [str(invite.id)])
+
+
 class WorkspaceCollaboratorApiTests(APITestCase):
     def setUp(self):
         self.owner = make_user(role=UserRole.COURSE_CREATOR)
