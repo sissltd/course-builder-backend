@@ -3,6 +3,7 @@ from .collaborator_serializer import (
     CollaboratorInviteSerializer,
     CollaboratorRoleUpdateSerializer,
     CollaboratorSerializer,
+    WorkspaceMemberCollaboratorSerializer,
 )
 from .workspace_collaborator_serializer import WorkspaceCollaboratorSerializer
 
@@ -12,4 +13,5 @@ __all__ = [
     "CollaboratorRoleUpdateSerializer",
     "CollaboratorSerializer",
     "WorkspaceCollaboratorSerializer",
+    "WorkspaceMemberCollaboratorSerializer",
 ]

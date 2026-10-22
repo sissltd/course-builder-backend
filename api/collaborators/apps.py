@@ -11,13 +11,14 @@ class CollaboratorsConfig(AppConfig):
         from api.users.models import User
 
         def link_pending_workspace_invites_to_user(sender, instance, created, **kwargs):
-            """When a User is created, link them to any pending workspace invites
+            """When a User is created, accept any pending workspace invites
             matching their email.
 
-            This is the missing acceptance step for workspace-level collaboration
-            invites: the creator sends an invite by email, the invitee signs up with
-            that email, and this signal automatically connects the two so the
-            collaborator appears in the creator's Collaborators list.
+            Signing up with the invited email means they accepted, so this
+            connects the two immediately - via the same
+            collaborator_service.accept_workspace_invite step the explicit
+            accept endpoint uses - so the collaborator appears in the
+            creator's Collaborators list.
             """
             if not isinstance(instance, User) or not created:
                 return
@@ -30,9 +31,11 @@ class CollaboratorsConfig(AppConfig):
             if not pending_invites.exists():
                 return
 
+            from api.collaborators.services import collaborator_service
+
             for invite in pending_invites:
-                invite.user = instance
-                invite.status = WorkspaceCollaborator.Status.ACTIVE
-                invite.save(update_fields=["user_id", "status", "updated_datetime"])
+                collaborator_service.accept_workspace_invite(
+                    invite=invite, user=instance
+                )
 
         post_save.connect(link_pending_workspace_invites_to_user, sender=User)

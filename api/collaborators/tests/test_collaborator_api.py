@@ -3,7 +3,7 @@ from rest_framework.test import APITestCase
 from django.utils import timezone
 
 from api.collaborators.enums import CollaboratorRole
-from api.collaborators.models import CourseCollaborator
+from api.collaborators.models import CourseCollaborator, WorkspaceCollaborator
 from api.collaborators.tests.factories import make_collaborator
 from api.courses.tests.factories import make_category, make_draft_course, make_user
 from api.users.enums import UserRole
@@ -156,3 +156,103 @@ class CollaboratorApiTests(APITestCase):
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+
+class GlobalCollaboratorListWorkspaceMemberTests(APITestCase):
+    """The global Collaborators list also shows ACTIVE workspace members who
+    accepted a workspace invite but have no course assignment yet."""
+
+    def setUp(self):
+        self.owner = make_user(role=UserRole.COURSE_CREATOR)
+        self.course = make_draft_course(creator=self.owner)
+        self.client.force_authenticate(self.owner)
+
+    def _member(
+        self, *, owner=None, status=WorkspaceCollaborator.Status.ACTIVE, **kwargs
+    ):
+        user = kwargs.pop("user", None) or make_user()
+        return WorkspaceCollaborator.objects.create(
+            owner=owner or self.owner,
+            user=user,
+            invited_email=user.email,
+            status=status,
+            **kwargs,
+        )
+
+    def _rows(self, params=None):
+        response = self.client.get("/api/v1/collaborators/", params or {})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        return response.data["data"]
+
+    def test_active_unassigned_member_listed_with_null_course_fields(self):
+        member = self._member(role=WorkspaceCollaborator.Role.AUTHOR)
+
+        data = self._rows()
+
+        self.assertEqual(data["paginator"]["count"], 1)
+        row = data["results"][0]
+        self.assertEqual(row["id"], str(member.id))
+        self.assertEqual(row["email"], member.user.email)
+        self.assertEqual(row["name"], "Test User")
+        self.assertEqual(row["role"], "AUTHOR")
+        self.assertEqual(row["role_label"], "Author")
+        self.assertEqual(row["source"], "workspace")
+        self.assertIsNone(row["course_id"])
+        self.assertIsNone(row["course_title"])
+        self.assertIsNone(row["category"])
+        self.assertEqual(row["assigned_modules"], [])
+
+    def test_member_with_course_assignment_appears_only_as_course_row(self):
+        member = self._member()
+        assignment = make_collaborator(course=self.course, user=member.user)
+
+        rows = self._rows()["results"]
+
+        self.assertEqual([row["id"] for row in rows], [str(assignment.id)])
+        self.assertEqual(rows[0]["source"], "course")
+
+    def test_pending_removed_and_other_owners_members_excluded(self):
+        self._member(status=WorkspaceCollaborator.Status.PENDING)
+        self._member(status=WorkspaceCollaborator.Status.REMOVED)
+        self._member(owner=make_user())
+
+        self.assertEqual(self._rows()["paginator"]["count"], 0)
+
+    def test_course_scoped_list_excludes_workspace_members(self):
+        self._member()
+        assignment = make_collaborator(course=self.course, user=make_user())
+
+        rows = self._rows({"course_id": str(self.course.id)})["results"]
+
+        self.assertEqual([row["id"] for row in rows], [str(assignment.id)])
+
+    def test_search_and_role_filters_apply_to_workspace_members(self):
+        match = self._member(
+            user=make_user(first_name="Grace"), role=WorkspaceCollaborator.Role.ADMIN
+        )
+        self._member(user=make_user(first_name="Grace"))
+        self._member(
+            user=make_user(first_name="Linus"), role=WorkspaceCollaborator.Role.ADMIN
+        )
+
+        rows = self._rows({"search": "Grace", "role": "ADMIN"})["results"]
+
+        self.assertEqual([row["id"] for row in rows], [str(match.id)])
+
+    def test_category_filter_excludes_unassigned_members(self):
+        self._member()
+
+        data = self._rows({"category": str(self.course.category_id)})
+
+        self.assertEqual(data["paginator"]["count"], 0)
+
+    def test_mixed_rows_paginate_newest_first(self):
+        assignment = make_collaborator(course=self.course, user=make_user())
+        member = self._member()
+
+        data = self._rows({"size": 1})
+
+        self.assertEqual(data["paginator"]["count"], 2)
+        self.assertEqual(data["results"][0]["id"], str(member.id))
+        second_page = self._rows({"size": 1, "page": 2})["results"]
+        self.assertEqual(second_page[0]["id"], str(assignment.id))

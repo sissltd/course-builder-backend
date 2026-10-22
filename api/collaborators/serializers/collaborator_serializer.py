@@ -2,7 +2,11 @@ from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from api.collaborators.enums import CollaboratorRole
-from api.collaborators.models import CollaboratorInvite, CourseCollaborator
+from api.collaborators.models import (
+    CollaboratorInvite,
+    CourseCollaborator,
+    WorkspaceCollaborator,
+)
 from api.catalog.serializers.category_serializer import CategoryMiniSerializer
 from api.courses.models import Module
 from api.courses.serializers.module_serializer import ModuleMiniSerializer
@@ -24,6 +28,7 @@ class CollaboratorSerializer(serializers.ModelSerializer):
     course_id = serializers.UUIDField(source="course.id", read_only=True)
     course_title = serializers.CharField(source="course.title", read_only=True)
     category = CategoryMiniSerializer(source="course.category", read_only=True)
+    source = serializers.SerializerMethodField()
 
     class Meta:
         model = CourseCollaborator
@@ -39,6 +44,7 @@ class CollaboratorSerializer(serializers.ModelSerializer):
             "course_title",
             "category",
             "assigned_modules",
+            "source",
         ]
         read_only_fields = fields
 
@@ -50,6 +56,53 @@ class CollaboratorSerializer(serializers.ModelSerializer):
             ).strip()
             or obj.user.email
         )
+
+    @extend_schema_field(serializers.ChoiceField(choices=["course", "workspace"]))
+    def get_source(self, obj) -> str:
+        """`course` rows support the /collaborators/{id}/ detail actions."""
+
+        return "course"
+
+
+class WorkspaceMemberCollaboratorSerializer(CollaboratorSerializer):
+    """An ACTIVE workspace member with no course assignment yet, shaped like a
+    CollaboratorSerializer row so the global Collaborators list can show
+    them. The course fields are null and `id` is the workspace roster id -
+    /collaborators/{id}/ detail actions don't apply to these rows."""
+
+    country_of_origin = serializers.SerializerMethodField()
+    role_label = serializers.CharField(source="get_role_display", read_only=True)
+    course_id = serializers.SerializerMethodField()
+    course_title = serializers.SerializerMethodField()
+    category = serializers.SerializerMethodField()
+    assigned_modules = serializers.SerializerMethodField()
+
+    class Meta(CollaboratorSerializer.Meta):
+        model = WorkspaceCollaborator
+
+    @extend_schema_field(serializers.CharField())
+    def get_country_of_origin(self, obj) -> str:
+        return obj.user.country or obj.country_of_origin
+
+    @extend_schema_field(serializers.UUIDField(allow_null=True))
+    def get_course_id(self, obj) -> None:
+        return None
+
+    @extend_schema_field(serializers.CharField(allow_null=True))
+    def get_course_title(self, obj) -> None:
+        return None
+
+    @extend_schema_field(CategoryMiniSerializer(allow_null=True))
+    def get_category(self, obj) -> None:
+        return None
+
+    @extend_schema_field(ModuleMiniSerializer(many=True))
+    def get_assigned_modules(self, obj) -> list:
+        return []
+
+    @extend_schema_field(serializers.ChoiceField(choices=["course", "workspace"]))
+    def get_source(self, obj) -> str:
+        return "workspace"
 
 
 class CollaboratorInviteCreateSerializer(serializers.Serializer):

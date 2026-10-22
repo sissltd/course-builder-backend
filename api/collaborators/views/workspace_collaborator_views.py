@@ -8,11 +8,14 @@ from drf_spectacular.utils import (
 )
 from rest_framework import exceptions
 from rest_framework import filters as drf_filters
+from rest_framework.decorators import action
+from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 
 from api.collaborators.filters import WorkspaceCollaboratorFilter
 from api.collaborators.models import CourseCollaborator, WorkspaceCollaborator
 from api.collaborators.serializers import WorkspaceCollaboratorSerializer
+from api.collaborators.services import collaborator_service
 from api.authorization import codenames
 from api.authorization.permissions import Perm
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
@@ -95,6 +98,13 @@ class WorkspaceCollaboratorViewSet(ModelViewSet):
     not on any course. All actions are scoped to the caller's own roster -
     another creator's workspace entries 404 rather than leaking existence.
     Removal is a soft REMOVED status, per the target schema's design.
+
+    Acceptance: signing up with the invited email auto-accepts (post_save
+    signal); the `incoming`/`accept` actions are the equivalent for an
+    invitee who already had an account when the invite was sent. Like the
+    course-invite endpoints, those actions resolve by email match instead
+    of owner scoping, so an invite addressed to someone else 404s rather
+    than leaking existence.
     """
 
     serializer_class = WorkspaceCollaboratorSerializer
@@ -107,6 +117,18 @@ class WorkspaceCollaboratorViewSet(ModelViewSet):
     def get_queryset(self):
         if getattr(self, "swagger_fake_view", False):
             return WorkspaceCollaborator.objects.none()
+        if self.action == "incoming":
+            return WorkspaceCollaborator.objects.filter(
+                invited_email__iexact=self.request.user.email,
+                status=WorkspaceCollaborator.Status.PENDING,
+            ).select_related("user", "owner")
+        if self.action == "accept":
+            # Keep the status filter out of this queryset so an already
+            # responded/removed invite resolves and 400s with the reason
+            # instead of 404ing - it exists and WAS addressed to you.
+            return WorkspaceCollaborator.objects.filter(
+                invited_email__iexact=self.request.user.email,
+            ).select_related("user", "owner")
         queryset = WorkspaceCollaborator.objects.filter(
             owner=self.request.user
         ).select_related("user")
@@ -123,6 +145,72 @@ class WorkspaceCollaboratorViewSet(ModelViewSet):
             raise exceptions.ValidationError(
                 "This email is already on your workspace roster."
             ) from exc
+
+    @extend_schema(
+        summary="List my incoming workspace invites",
+        description=(
+            "Returns PENDING workspace roster invites addressed to the "
+            "authenticated user's email, across every workspace - the "
+            "inbox behind 'You've been invited to join a workspace' "
+            "banners, and what a deep-linked invite_id resolves against.\n\n"
+            "This is the acceptance path for an invitee who already had an "
+            "account when the invite was sent; signing up with the invited "
+            "email auto-accepts instead.\n\n"
+            "**Auth:** Any authenticated session; no roster-ownership "
+            "requirements." 
+        ),
+        tags=["Creator — Collaborators"],
+        responses={
+            200: OpenApiResponse(response=WorkspaceCollaboratorSerializer(many=True)),
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
+    @action(detail=False, methods=["get"])
+    def incoming(self, request):
+        page = self.paginate_queryset(self.get_queryset())
+        serializer = self.get_serializer(page, many=True)
+        return self.get_paginated_response(serializer.data)
+
+    @extend_schema(
+        summary="Accept a workspace invite",
+        description=(
+            "Accepts a PENDING workspace roster invite addressed to the "
+            "authenticated user's email: the row is linked to their account "
+            "and marked ACTIVE, which is what makes them appear on the "
+            "workspace owner's Collaborators list. Sends the workspace "
+            "owner an in-app notification.\n\n"
+            "This is the acceptance path for an invitee who already had an "
+            "account when the invite was sent (signing up with the invited "
+            "email auto-accepts, so those users never need this endpoint). "
+            "The invite resolves by email match, so invites addressed to a "
+            "different address 404 without leaking existence.\n\n"
+            "Already accepted or removed invites return 400 - ask the "
+            "owner to re-add them to the roster instead (a POST to "
+            "`/workspace-collaborators/` with the same email)."
+        ),
+        tags=["Creator — Collaborators"],
+        request=None,
+        responses={
+            200: OpenApiResponse(description="Invite accepted."),
+            **STANDARD_ERROR_RESPONSES["validation"],
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["not_found"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
+    @action(detail=True, methods=["post"])
+    def accept(self, request, pk=None):
+        invite = self.get_object()
+        collaborator_service.accept_workspace_invite(
+            invite=invite, user=request.user
+        )
+        return Response(
+            {
+                "detail": "Invite accepted.",
+                "workspace_collaborator_id": str(invite.id),
+            }
+        )
 
     @transaction.atomic
     def perform_destroy(self, instance):
