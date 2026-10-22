@@ -63,57 +63,68 @@ class RedisService:
         return get_async_redis_client()
 
     @staticmethod
-    async def publish_user_notification(user_id: UUID, message: str) -> None:
+    async def publish_user_notification(user_id: UUID, payload) -> None:
         """
-        Publish a user notification to Redis channel.
+        Publish a JSON-serialisable payload to the user's notification channel.
+
+        The payload goes out as-is, so a subscriber's SSE event has exactly
+        the shape that was published. Never raises: a failure is logged.
         """
+        client = None
         try:
             client = RedisService.get_async_redis_client()
             if client is None:
                 logger.debug("Skipping notification publishing because the default cache has no Redis URL")
                 return
             channel = f"user:notifications:{user_id}"
-            payload = json.dumps({"message": message})
-            await client.publish(channel, payload)
+            await client.publish(channel, json.dumps(payload))
             logger.info(
                 f"Published notification to user {user_id} on channel {channel}"
             )
         except Exception as e:
             logger.error(f"Error publishing notification for user {user_id}: {e}")
+        finally:
+            if client is not None:
+                await client.aclose()
 
     @staticmethod
     async def publish_ai_generation_progress(
         job_id: UUID, user_id: UUID, payload: dict
     ) -> None:
-        """
-        Publish an AI generation progress event for a job owner.
-
-        Frontend SSE subscribers listen on this channel so they see
-        generation progress in real time without polling the job endpoint.
-        """
+        """Publish a best-effort progress event on the owner's Redis channel."""
         try:
             client = RedisService.get_async_redis_client()
-            if client is None:
-                logger.debug(
-                    "Skipping AI generation progress publish because the default "
-                    "cache has no Redis URL"
-                )
-                return
-            channel = f"user:ai-generations:{user_id}"
-            payload = json.dumps({
-                "job_id": str(job_id),
-                "payload": payload,
-            })
-            await client.publish(channel, payload)
+        except Exception:
+            logger.exception("Unable to create AI generation Redis client")
+            return
+        if client is None:
             logger.debug(
-                "Published AI generation progress for job %s", job_id
+                "Skipping AI generation progress publish because the default "
+                "cache has no Redis URL"
             )
-        except Exception as e:
-            logger.error(
-                "Error publishing AI generation progress for job %s: %s",
-                job_id,
-                e,
+            return
+
+        channel = f"user:ai-generations:{user_id}"
+        message = json.dumps(
+            {"job_id": str(job_id), "payload": payload},
+            default=str,
+        )
+        try:
+            await client.publish(channel, message)
+            logger.debug("Published AI generation progress for job %s", job_id)
+        except Exception:
+            logger.exception(
+                "Error publishing AI generation progress for job %s", job_id
             )
+        finally:
+            try:
+                await client.aclose()
+            except Exception:
+                logger.debug(
+                    "Error closing AI generation Redis client for job %s",
+                    job_id,
+                    exc_info=True,
+                )
 
     # --- Generic Redis Operations ---
     @staticmethod

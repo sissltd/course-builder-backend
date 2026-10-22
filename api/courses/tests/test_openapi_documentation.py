@@ -68,3 +68,29 @@ class OpenApiDocumentationTests(SimpleTestCase):
         self.assertIn("version", create_example)
         self.assertIn("version", replace_example)
         self.assertIn("version", update_example)
+
+    def test_ai_generation_stream_documents_sse_contract(self):
+        _, schema = self.get_schema()
+        operation = schema["paths"][
+            "/api/v1/course-ai-generations/{id}/stream/"
+        ]["get"]
+
+        self.assertEqual(operation["summary"], "Stream AI generation progress")
+        self.assertEqual(operation["tags"], ["Creator — AI"])
+        self.assertIn("**Auth:**", operation["description"])
+        self.assertIn("**Prerequisites:**", operation["description"])
+        self.assertIn("**Important:**", operation["description"])
+
+        responses = operation["responses"]
+        self.assertIn("401", responses)
+        self.assertIn("403", responses)
+        self.assertIn("404", responses)
+        self.assertIn("500", responses)
+        stream_content = responses["200"]["content"]["text/event-stream"]
+        self.assertEqual(stream_content["schema"]["type"], "string")
+        examples = stream_content["examples"]
+        self.assertIn("InitialJobSnapshot", examples)
+        self.assertIn("ProgressEvent", examples)
+        self.assertTrue(
+            examples["InitialJobSnapshot"]["value"].startswith("data: ")
+        )
