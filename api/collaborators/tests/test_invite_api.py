@@ -148,6 +148,88 @@ class InviteLifecycleApiTests(APITestCase):
         results = response.data["data"]["results"]
         self.assertEqual([r["id"] for r in results], [str(mine.id)])
 
+    def test_incoming_omits_expired_invites(self):
+        live = self._invite(email=self.invitee.email)
+        self._invite(
+            course=make_draft_course(creator=self.creator),
+            email=self.invitee.email,
+            expires_at=timezone.now() - timedelta(days=1),
+        )
+
+        self.client.force_authenticate(self.invitee)
+        response = self.client.get("/api/v1/course-invites/incoming/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        results = response.data["data"]["results"]
+        # A lapsed invite would render an Accept button that can only 400.
+        self.assertEqual([r["id"] for r in results], [str(live.id)])
+
+    def test_invitee_without_course_permission_sees_and_accepts_invite(self):
+        # An invite is addressed to an email, not to a role: a recipient whose
+        # role lacks courses.create must still reach their own invite.
+        reviewer = make_user(role=UserRole.CREATOR_REVIEWER)
+        invite = self._invite(email=reviewer.email)
+
+        self.client.force_authenticate(reviewer)
+        incoming = self.client.get("/api/v1/course-invites/incoming/")
+        self.assertEqual(incoming.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            [r["id"] for r in incoming.data["data"]["results"]], [str(invite.id)]
+        )
+
+        accepted = self.client.post(f"/api/v1/course-invites/{invite.id}/accept/")
+        self.assertEqual(accepted.status_code, status.HTTP_200_OK)
+        self.assertTrue(
+            CourseCollaborator.objects.filter(course=self.course, user=reviewer).exists()
+        )
+
+    # --- reading a single invite (the emailed deep-link target) -----------
+
+    def test_invitee_retrieves_own_invite(self):
+        invite = self._invite()
+        self.client.force_authenticate(self.invitee)
+        response = self.client.get(f"/api/v1/course-invites/{invite.id}/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["id"], str(invite.id))
+        self.assertEqual(response.data["status"], "PENDING")
+        self.assertFalse(response.data["is_expired"])
+
+    def test_invite_payload_names_the_course_and_the_inviter(self):
+        # The invitee has no access to the course until they accept, so
+        # /courses/{id}/ would 404 for them - the inbox can only name the
+        # course and inviter if the invite payload carries them.
+        self.creator.first_name, self.creator.last_name = "Banjo", "Joshua"
+        self.creator.save(update_fields=["first_name", "last_name"])
+        invite = self._invite()
+
+        self.client.force_authenticate(self.invitee)
+        response = self.client.get(f"/api/v1/course-invites/{invite.id}/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["course_title"], self.course.title)
+        self.assertEqual(response.data["invited_by"]["name"], "Banjo Joshua")
+        self.assertEqual(response.data["role_label"], "Collaborator")
+
+    def test_retrieve_returns_closed_invite_so_the_page_can_explain(self):
+        invite = self._invite(expires_at=timezone.now() - timedelta(days=1))
+        self.client.force_authenticate(self.invitee)
+        response = self.client.get(f"/api/v1/course-invites/{invite.id}/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data["is_expired"])
+
+    def test_course_manager_retrieves_invite(self):
+        invite = self._invite(email="someone-else@example.com")
+        self.client.force_authenticate(self.creator)
+        response = self.client.get(f"/api/v1/course-invites/{invite.id}/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["id"], str(invite.id))
+
+    def test_retrieve_404s_for_an_unrelated_user(self):
+        invite = self._invite(email="intended@example.com")
+        stranger = make_user(role=UserRole.COURSE_CREATOR)
+        self.client.force_authenticate(stranger)
+        response = self.client.get(f"/api/v1/course-invites/{invite.id}/")
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
     # --- accepting --------------------------------------------------------
 
     def test_accept_flow_grants_access_and_notifies_inviter(self):

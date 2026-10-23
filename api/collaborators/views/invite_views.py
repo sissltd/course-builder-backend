@@ -1,3 +1,5 @@
+from django.db.models import Q
+from django.utils import timezone
 from drf_spectacular.utils import (
     OpenApiExample,
     OpenApiParameter,
@@ -6,6 +8,7 @@ from drf_spectacular.utils import (
 )
 from rest_framework import exceptions, status
 from rest_framework.decorators import action
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 
@@ -22,11 +25,20 @@ from api.authorization.permissions import Perm
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 
 _AUTH_LINE = (
-    "**Auth:** The `courses.create` permission (Course Creator and Writer by default). Creating/revoking invites requires "
-    "manage access to the course (its creator or an Admin-role collaborator); "
-    "accepting/declining requires being the signed-in owner of the invite's "
-    "email address."
+    "**Auth:** Sending, listing and revoking invites needs the "
+    "`courses.create` permission (Course Creator and Writer by default) plus "
+    "manage access to the course (its creator or an Admin-role collaborator). "
+    "The invitee-side actions - reading your own invite, `/incoming/`, accept "
+    "and decline - need only a signed-in session whose email matches the "
+    "invite, since an invitee holds no permission on the course yet."
 )
+
+#: Actions an invitee performs on their own invite. These deliberately drop the
+#: `courses.create` gate: an invite is addressed to an email, not to a role, so
+#: requiring a course permission would lock the recipient out of the very offer
+#: that would grant them access. Scoping to the caller's own email in
+#: `get_queryset` (and the email match in `invite_service`) is the real guard.
+_SELF_SERVICE_ACTIONS = frozenset({"retrieve", "incoming", "accept", "decline"})
 
 _NOT_OPEN_400 = OpenApiResponse(
     description="The invite is not in an actionable state (already responded, revoked, or expired).",
@@ -59,6 +71,14 @@ class CollaboratorInviteViewSet(ModelViewSet):
     permission_classes = [Perm(codenames.COURSES_CREATE)]
     serializer_class = CollaboratorInviteSerializer
 
+    def get_permissions(self):
+        """Gate the manage surface on `courses.create`, the invitee surface on
+        a session alone - see `_SELF_SERVICE_ACTIONS`."""
+
+        if self.action in _SELF_SERVICE_ACTIONS:
+            return [IsAuthenticated()]
+        return super().get_permissions()
+
     def get_queryset(self):
         if getattr(self, "swagger_fake_view", False):
             return CollaboratorInvite.objects.none()
@@ -73,9 +93,28 @@ class CollaboratorInviteViewSet(ModelViewSet):
                 )
             queryset = queryset.filter(course=self._get_accessible_course(course_id))
         elif self.action == "incoming":
+            # Expired invites are excluded rather than shown as actionable:
+            # accept would reject them anyway, so listing one would offer the
+            # invitee a button that can only fail.
             queryset = queryset.filter(
                 email__iexact=self.request.user.email,
                 status=CollaboratorInviteStatus.PENDING,
+                expires_at__gt=timezone.now(),
+            )
+        elif self.action == "retrieve":
+            # The target of the emailed deep-link, which carries an invite id
+            # and nothing else. Resolvable from either side: the invitee by
+            # email match, the course's manager by access. Unlike /incoming/
+            # this does NOT hide closed or expired invites - the page needs to
+            # read `status`/`is_expired` to explain why there is no action,
+            # instead of rendering an empty screen.
+            queryset = queryset.filter(
+                Q(email__iexact=self.request.user.email)
+                | Q(
+                    course__in=collaborator_service.get_courses_accessible_to(
+                        self.request.user
+                    )
+                )
             )
         elif self.action in {"accept", "decline"}:
             # The invitee usually has NO access to the course yet - that's
@@ -173,10 +212,38 @@ class CollaboratorInviteViewSet(ModelViewSet):
         return super().list(request, *args, **kwargs)
 
     @extend_schema(
+        summary="Read a single invite",
+        description=(
+            "Resolves one invite by id - the endpoint behind the emailed "
+            "deep-link `/creator/invitations?invite_id={id}`. Readable by the "
+            "invitee (matched on the session email) or by someone with access "
+            "to the course; to anyone else the invite 404s rather than "
+            "confirming it exists.\n\n"
+            "Invites in any state are returned, so read `status` and "
+            "`is_expired` to decide what to render: PENDING and not expired "
+            "means show Accept/Decline, anything else means explain why the "
+            "invite is closed.\n\n"
+            "**Auth:** a signed-in session; no course permission is required."
+        ),
+        tags=["Creator — Collaborators"],
+        responses={
+            200: OpenApiResponse(response=CollaboratorInviteSerializer),
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["not_found"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
+    def retrieve(self, request, *args, **kwargs):
+        return super().retrieve(request, *args, **kwargs)
+
+    @extend_schema(
         summary="List my incoming invites",
         description=(
-            "Returns the caller's own PENDING invites - the inbox behind "
-            "'You've been invited to collaborate' banners."
+            "Returns the caller's own open invites - PENDING and not yet "
+            "expired - the inbox behind 'You've been invited to collaborate' "
+            "banners. Expired invites are omitted because they can no longer "
+            "be accepted.\n\n"
+            "**Auth:** a signed-in session; no course permission is required."
         ),
         tags=["Creator — Collaborators"],
         responses={

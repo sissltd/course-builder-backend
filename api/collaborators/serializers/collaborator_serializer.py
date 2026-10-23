@@ -12,6 +12,28 @@ from api.courses.models import Module
 from api.courses.serializers.module_serializer import ModuleMiniSerializer
 
 
+def user_display_name(user) -> str:
+    """How every collaborator screen labels a person: their full name when
+    set, their email otherwise."""
+
+    return (
+        " ".join(part for part in (user.first_name, user.last_name) if part).strip()
+        or user.email
+    )
+
+
+def user_mini(user) -> dict | None:
+    """A user as the collaborator screens embed one: id, display name, email.
+
+    Shared by every "who is this person" field below, so a name is derived the
+    same way whether it names a collaborator, an invitee or an inviter.
+    """
+
+    if user is None:
+        return None
+    return {"id": user.id, "name": user_display_name(user), "email": user.email}
+
+
 class CollaboratorSerializer(serializers.ModelSerializer):
     """Collaborator fields named for the Collaborators screen.
 
@@ -50,12 +72,7 @@ class CollaboratorSerializer(serializers.ModelSerializer):
 
     @extend_schema_field(serializers.CharField())
     def get_name(self, obj) -> str:
-        return (
-            " ".join(
-                part for part in (obj.user.first_name, obj.user.last_name) if part
-            ).strip()
-            or obj.user.email
-        )
+        return user_display_name(obj.user)
 
     @extend_schema_field(serializers.ChoiceField(choices=["course", "workspace"]))
     def get_source(self, obj) -> str:
@@ -127,10 +144,19 @@ class CollaboratorInviteSerializer(serializers.ModelSerializer):
     manage panel can show a name instead of just an address. The token is
     excluded from list output - it identifies the invite in notification
     deep-links and isn't part of the management surface.
+
+    `course_title`, `role_label` and `invited_by` are what the invitee's inbox
+    renders ("<inviter> invited you to collaborate on <course> as <role>").
+    They are embedded rather than left to a follow-up fetch because an invitee
+    has no access to the course until they accept - `GET /courses/{id}/` would
+    404 for the one person this payload is for.
     """
 
     assigned_modules = ModuleMiniSerializer(many=True, read_only=True)
+    course_title = serializers.CharField(source="course.title", read_only=True)
+    role_label = serializers.CharField(source="get_role_display", read_only=True)
     invitee = serializers.SerializerMethodField()
+    invited_by = serializers.SerializerMethodField()
     is_expired = serializers.SerializerMethodField()
 
     class Meta:
@@ -138,9 +164,12 @@ class CollaboratorInviteSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "course",
+            "course_title",
             "email",
             "invitee",
+            "invited_by",
             "role",
+            "role_label",
             "assigned_modules",
             "status",
             "is_expired",
@@ -158,16 +187,17 @@ class CollaboratorInviteSerializer(serializers.ModelSerializer):
     @extend_schema_field(serializers.DictField(allow_null=True))
     def get_invitee(self, obj) -> dict | None:
         """Resolve the invite's email to an account when one exists, flat
-        style matching CollaboratorSerializer's screen fields."""
+        style matching CollaboratorSerializer's screen fields. Null while the
+        recipient has not signed up yet."""
 
-        user = obj.invitee_user
-        if user is None:
-            return None
-        name = (
-            " ".join(part for part in (user.first_name, user.last_name) if part).strip()
-            or user.email
-        )
-        return {"id": user.id, "name": name, "email": user.email}
+        return user_mini(obj.invitee_user)
+
+    @extend_schema_field(serializers.DictField(allow_null=True))
+    def get_invited_by(self, obj) -> dict | None:
+        """Who sent the invite, for the invitee's "<name> invited you" line.
+        Null if that account has since been deleted."""
+
+        return user_mini(obj.invited_by)
 
 
 class CollaboratorRoleUpdateSerializer(serializers.Serializer):

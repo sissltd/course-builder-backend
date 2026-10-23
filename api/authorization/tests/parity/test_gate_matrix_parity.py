@@ -23,6 +23,14 @@ BASELINE_PATH = Path(__file__).resolve().parent / "gate_matrix_baseline.json"
 
 QA_ACTIONS = ("qa_claim", "qa_approve", "qa_reject")
 
+#: Invite handlers the recipient calls on their own invite (see D6).
+INVITEE_SELF_SERVICE_HANDLERS = (
+    "[CollaboratorInviteViewSet.retrieve]",
+    "[CollaboratorInviteViewSet.incoming]",
+    "[CollaboratorInviteViewSet.accept]",
+    "[CollaboratorInviteViewSet.decline]",
+)
+
 #: Gates whose view class was replaced without changing who passes them.
 RENAMED_GATES = {
     # The read-only roles catalogue became the Roles & Permissions list.
@@ -67,6 +75,16 @@ def apply_intentional_deltas(baseline: dict) -> dict:
         # managers everything but prices.
         if key.endswith(("[TopicViewSet.update]", "[TopicViewSet.partial_update]")) and UserRole.STAFF_WRITER not in allowed:
             allowed.append(UserRole.STAFF_WRITER)
+        # D6: a collaboration invite is addressed to an email, not to a role,
+        # so the invitee-side handlers (read your own invite, /incoming/,
+        # accept, decline) dropped courses.create for a plain authenticated
+        # session. Under the old gate a recipient whose role lacks that
+        # permission could never see - let alone accept - the invite that
+        # would grant them access. The rows stay scoped to the caller's own
+        # email in get_queryset, and invite_service re-checks the match, so
+        # admitting every role at the view leaks nothing.
+        if key.endswith(INVITEE_SELF_SERVICE_HANDLERS):
+            allowed[:] = [*UserRole.values, SUPERUSER]
     return expected
 
 
@@ -115,6 +133,47 @@ class IntentionalDeltaTests(APITestCase):
         self.assertEqual(listed.status_code, status.HTTP_200_OK)
         self.assertEqual(claimed.status_code, status.HTTP_403_FORBIDDEN)
         self.assertEqual(qa.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_d6_invitee_without_courses_create_reaches_their_invite_but_not_others(
+        self,
+    ):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from api.collaborators.models import CollaboratorInvite
+
+        # CREATOR_REVIEWER holds no courses.create, so the old gate 403'd it.
+        reviewer = make_user(role=UserRole.CREATOR_REVIEWER)
+        course = make_draft_course()
+        mine = CollaboratorInvite.objects.create(
+            course=course,
+            email=reviewer.email,
+            invited_by=course.creator,
+            expires_at=timezone.now() + timedelta(days=14),
+        )
+        someone_elses = CollaboratorInvite.objects.create(
+            course=course,
+            email="not-me@example.com",
+            invited_by=course.creator,
+            expires_at=timezone.now() + timedelta(days=14),
+        )
+        self.client.force_authenticate(reviewer)
+
+        self.assertEqual(
+            self.client.get("/api/v1/course-invites/incoming/").status_code,
+            status.HTTP_200_OK,
+        )
+        self.assertEqual(
+            self.client.get(f"/api/v1/course-invites/{mine.id}/").status_code,
+            status.HTTP_200_OK,
+        )
+        # The gate opened; the queryset scoping is what still keeps other
+        # people's invites invisible.
+        self.assertEqual(
+            self.client.get(f"/api/v1/course-invites/{someone_elses.id}/").status_code,
+            status.HTTP_404_NOT_FOUND,
+        )
 
     def test_d1_creator_reviewer_is_refused_the_qa_seat_by_the_service(self):
         course = make_draft_course(status=CourseStatus.QA_VERIFICATION)
