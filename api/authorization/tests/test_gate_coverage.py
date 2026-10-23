@@ -27,6 +27,12 @@ SELF_SERVICE_HANDLERS = {
     "ChangeEmailConfirmView.post",
     "ChangeEmailRequestView.post",
     "ChangePasswordView.post",
+    # A course invite is addressed to an email, not a role: the recipient acts
+    # on their own invite, scoped to the session email in get_queryset.
+    "CollaboratorInviteViewSet.accept",
+    "CollaboratorInviteViewSet.decline",
+    "CollaboratorInviteViewSet.incoming",
+    "CollaboratorInviteViewSet.retrieve",
     "CourseVersionListView.get",
     "CreatorOverviewView.get",
     "FlutterwaveWebhookView.post",

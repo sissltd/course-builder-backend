@@ -126,13 +126,28 @@ The response uses the standard paginated envelope:
 GET /api/v1/course-invites/incoming/
 ```
 
-This returns only `PENDING` invites whose email matches the authenticated
-user's email address. It is the source of truth for the invitee inbox and for
-resolving an email deep link after login or signup.
+This returns open invites — `PENDING` and not yet expired — whose email
+matches the authenticated user's email address. It is the source of truth for
+the invitee inbox. No course permission is required; any signed-in session can
+call it.
 
-Do not rely on `GET /course-invites/{invite_id}/` to load an invite for a user
-who has not accepted it yet. The invitee should load `/incoming/`, find the
-matching `id`, and then accept or decline it.
+Expired invites are omitted, so every row returned here is safe to render with
+an Accept button.
+
+### Read one invite by id
+
+```http
+GET /api/v1/course-invites/{invite_id}/
+```
+
+The target of the emailed deep link. Readable by the invitee (matched on the
+session email) or by anyone with access to the course; to everyone else it
+returns `404` rather than confirming the invite exists.
+
+Unlike `/incoming/`, this returns invites in **any** state, so read `status`
+and `is_expired` to decide what to show: `PENDING` and not expired means render
+Accept/Decline, anything else means explain why the invite is closed instead of
+rendering an empty screen.
 
 ### Accept an invite
 
@@ -460,7 +475,8 @@ permission boundaries, and invite transitions.
 - [ ] Validate callback URLs as internal paths.
 - [ ] Add an incoming invitations page or drawer.
 - [ ] Load incoming invites from `/course-invites/incoming/`.
-- [ ] Match the deep-linked `invite_id` against incoming results.
+- [ ] Resolve a deep-linked `invite_id` with `GET /course-invites/{id}/`.
+- [ ] Make the in-app invite notification clickable (`metadata.invite_id`).
 - [ ] Implement Accept and Decline actions with loading and error states.
 - [ ] Redirect to the course after acceptance.
 - [ ] Add creator course invite management.
