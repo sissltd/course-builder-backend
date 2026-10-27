@@ -12,8 +12,10 @@ An invite was sent to a real account. The invite existed, the invitee received
 the in-app notifica
 tion — and still saw nothing actionable. Two causes:
 
-1. The emailed link lands on `/auth/login?callbackUrl=...`, and `callbackUrl`
-   was dropped at login, so the user ended up on the dashboard.
+1. The emailed link aimed at `/auth/login?callbackUrl=...`. A recipient who
+   already had a session hit the route guard's "already authenticated, leave
+   /auth" redirect, which sent them to the dashboard and discarded the
+   callback — so the invite was never reached.
 2. The invitee's Invitations page queried the **sender's** endpoint
    (`GET /course-invites/?course_id=…`), which `404`s for someone who does not
    own the course. The page rendered empty.
@@ -58,20 +60,60 @@ Route a click on any notification with `metadata.invite_id` to
 authenticated, so this path has none of the email link's fragility. For anyone
 who already has an account it is the better entry point.
 
-### Layer 3 — preserve `callbackUrl` through auth (still needed)
+### Layer 3 — route by session state, not by always landing on login
+
+The email now links straight at the invite:
 
 ```text
-https://www.soludeskscb.com/auth/login?callbackUrl=%2Fcreator%2Finvitations%3Finvite_id%3D{invite_id}
+https://www.soludeskscb.com/creator/invitations?invite_id={invite_id}
 ```
 
-1. Retain `callbackUrl` on the login page and redirect there after login
-   instead of to the dashboard.
-2. Carry it through signup **and email verification** — an invite can be sent
-   to an address with no account, which is the only path those users have.
-3. Accept only internal paths beginning with `/creator/` — anything else is an
-   open redirect.
-4. If the callback is missing or rejected, land on the Invitations page, never
+The route guard splits the two cases on its own:
+
+| Recipient | What happens |
+|---|---|
+| Already signed in | Lands on the invite directly — no login hop |
+| No session / no account | Guard redirects to login or signup, then back here |
+
+Aiming the email at `/auth/login?callbackUrl=…` breaks the first row. A
+signed-in caller hits the "already authenticated, leave /auth" redirect, which
+sends them to the dashboard and **drops the callback** — the invite is never
+shown. That was the original bug.
+
+**No frontend change is needed for this.** It was fixed entirely in the
+backend by changing the link the email carries. Verified in a browser against
+the current frontend, unmodified:
+
+| Scenario | Lands on | Invite shown |
+|---|---|---|
+| Already signed in | `/creator/invitations?invite_id=…` | yes |
+| No session | login hop → `/creator/invitations?invite_id=…` | yes |
+
+What must stay true on the frontend — all of it already does:
+
+1. `/creator/*` stays behind the route guard, so a session-less visit
+   redirects to login with `callbackUrl` set to the requested path.
+2. The callback survives signup **and email verification** — an invite can be
+   sent to an address with no account, which is the only path those users have.
+3. Only same-site paths are accepted as a callback — anything else is an open
+   redirect — and a callback never points back into `/auth/*`, or the guard
+   loops.
+4. If `invite_id` is missing or rejected, land on the Invitations page, never
    the dashboard.
+
+#### Optional: invites mailed before this change
+
+Invites already in people's inboxes still carry the old
+`/auth/login?callbackUrl=…` shape and keep it for their remaining 14 days. For
+a recipient who already has a session those links still land on the dashboard,
+because the guard's "already authenticated, leave `/auth`" branch drops the
+callback.
+
+If you want to rescue them, honour a safe internal `callbackUrl` in that branch
+instead of sending the caller to the dashboard — reusing the existing
+`sanitizeInternalPath`, and refusing any target under `/auth/*` so the guard
+cannot loop. Purely optional: every invite sent from now on bypasses `/auth`
+entirely, so this only shortens the tail.
 
 ## Endpoints
 
@@ -205,6 +247,8 @@ one course will find the older one `REVOKED`.
 - [ ] Bell notifications with `metadata.invite_id` deep-link internally
 - [ ] `callbackUrl` preserved through login, signup, and email verification
 - [ ] Callback validated as an internal `/creator/` path
+- [ ] Signed-in recipient reaches the invite without a login hop
+- [ ] *(optional)* Legacy `/auth/login?callbackUrl=…` invites rescued
 - [ ] Deep link resolved with `GET /course-invites/{id}/`, all five states handled
 - [ ] Accept/Decline wired with loading and error states
 - [ ] Permissions and course lists refreshed after accepting
@@ -225,3 +269,9 @@ Shipped alongside it, in `api/collaborators/`:
 3. `/incoming/` excludes expired invites, which previously appeared actionable
    and then failed with a `400` on accept.
 4. The invite payload gained `course_title`, `role_label` and `invited_by`.
+5. The invitation email links to `/creator/invitations?invite_id={id}` instead
+   of `/auth/login?callbackUrl=…`, so a recipient who already has a session
+   reaches the invite instead of being redirected to their dashboard.
+
+Every fix above is backend-only. No frontend change was required for any of
+them.

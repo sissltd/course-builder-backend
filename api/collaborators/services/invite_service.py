@@ -1,6 +1,5 @@
 import logging
 from datetime import timedelta
-from urllib.parse import urlencode
 
 from django.conf import settings
 from django.db import transaction
@@ -130,9 +129,14 @@ def create_invite(
             course.id,
         )
 
+    # Point at the invite itself, not at the login page. The frontend's route
+    # guard sends a caller without a session to /auth/login and carries this
+    # path through as `callbackUrl`, so a recipient who is already signed in
+    # goes straight to the invite instead of being bounced to their dashboard
+    # by the "already authenticated, leave /auth" redirect.
     invitation_link = (
-        f"{settings.FRONTEND_URL.rstrip('/')}/auth/login?"
-        f"{urlencode({'callbackUrl': f'/creator/invitations?invite_id={invite.id}'})}"
+        f"{settings.FRONTEND_URL.rstrip('/')}/creator/invitations"
+        f"?invite_id={invite.id}"
     )
     try:
         send_templated_email(
