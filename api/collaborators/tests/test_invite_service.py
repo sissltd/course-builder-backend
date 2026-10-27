@@ -79,11 +79,14 @@ class CreateInviteTests(TestCase):
             send_email.call_args.kwargs["template_name"],
             "emails/collaboration_invitation",
         )
+        # The link points at the invite itself, not at /auth/login: the route
+        # guard adds the login hop only for a caller without a session, so a
+        # signed-in recipient lands on the invite rather than their dashboard.
         invitation_link = send_email.call_args.kwargs["context"]["invitation_link"]
-        query = parse_qs(urlparse(invitation_link).query)
+        parsed = urlparse(invitation_link)
+        self.assertEqual(parsed.path, "/creator/invitations")
         self.assertEqual(
-            query["callbackUrl"],
-            [f"/creator/invitations?invite_id={invite.id}"],
+            parse_qs(parsed.query)["invite_id"], [str(invite.id)]
         )
 
     def test_raises_when_inviting_the_creator(self):

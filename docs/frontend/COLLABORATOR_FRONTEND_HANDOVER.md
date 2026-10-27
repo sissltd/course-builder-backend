@@ -1,3 +1,4 @@
+
 # Course Collaborator Frontend Handover
 
 This document describes the frontend integration for course collaboration:
@@ -286,33 +287,47 @@ access is revoked immediately. There is no undo operation.
 
 ## Email and deep-link flow
 
-When an invite is created, the backend sends a link in this shape:
+When an invite is created, the backend sends a link straight to the invite:
 
 ```text
-{FRONTEND_URL}/auth/login?callbackUrl=%2Fcreator%2Finvitations%3Finvite_id%3D{invite_id}
+{FRONTEND_URL}/creator/invitations?invite_id={invite_id}
 ```
 
-Example after URL decoding:
+It deliberately does **not** point at `/auth/login`. The route guard already
+sends a caller without a session to login and carries this path through as
+`callbackUrl`, so the two cases split themselves:
 
-```text
-/auth/login?callbackUrl=/creator/invitations?invite_id=invite-uuid
-```
+| Recipient | What happens |
+|---|---|
+| Already signed in | Lands on the invite directly — no login hop |
+| No session / no account | Guard redirects to login (or signup), then back here |
+
+Aiming the email at `/auth/login` instead breaks the first row: a signed-in
+caller hits the "already authenticated, leave /auth" redirect and is sent to
+their dashboard with the callback dropped, so the invite is never shown.
 
 ### Required frontend behavior
 
-1. Read and retain the `callbackUrl` query parameter on the login page.
-2. After successful login, redirect to the callback URL instead of the
-   default dashboard.
-3. If the user does not have an account, preserve the same callback through
-   signup and email verification.
-4. On `/creator/invitations?invite_id={id}`, call
-   `GET /api/v1/course-invites/incoming/`.
-5. Find the invite by `id`; do not trust an invite ID without checking that it
-   is present in the authenticated user's incoming results.
-6. Show the course, role, assigned modules, expiry, and Accept/Decline actions.
-7. After accepting, redirect to the course and refresh permissions/data.
+This needed no frontend change — the fix was the link shape alone, and the
+behavior above was verified in a browser against the unmodified frontend. What
+must stay true:
 
-If the callback is missing, show the regular incoming-invites page rather than
+1. Keep `/creator/*` behind the route guard so a session-less visit redirects
+   to login with `callbackUrl` set to the path that was requested.
+2. If the user has no account, preserve the callback through signup and email
+   verification.
+3. On `/creator/invitations?invite_id={id}`, resolve it with
+   `GET /api/v1/course-invites/{id}/` and list the inbox with
+   `GET /api/v1/course-invites/incoming/`.
+4. Show the course, role, assigned modules, expiry, and Accept/Decline actions.
+5. After accepting, redirect to the course and refresh permissions/data.
+
+Invites mailed before this change keep the old `/auth/login?callbackUrl=…`
+link for their remaining 14 days, and still land a signed-in recipient on the
+dashboard. See "Optional: invites mailed before this change" in
+`COLLABORATOR_INVITE_VISIBILITY_INTEGRATION.md` if you want to rescue those.
+
+If `invite_id` is missing, show the regular incoming-invites page rather than
 redirecting the user to the dashboard and hiding the pending invite.
 
 The callback is an internal path. The frontend must reject external callback
