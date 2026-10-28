@@ -72,6 +72,7 @@ class DeveloperAccountAdminSerializer(serializers.ModelSerializer):
             "webhook_endpoints",
             "status",
             "plan_type",
+            "requires_video_assignment",
             "source_type",
             "api_key_preview",
             "api_key_issued_at",
@@ -121,4 +122,17 @@ class DeveloperActionResponseSerializer(serializers.Serializer):
 
     detail = serializers.CharField(
         help_text="Human-readable confirmation of what changed."
+    )
+
+
+class VideoAssignmentSettingSerializer(serializers.Serializer):
+    """Whether a developer's courses wait for an admin to assign their video."""
+
+    requires_video_assignment = serializers.BooleanField(
+        help_text=(
+            "true: once a course's text passes, it waits with no video "
+            "producer until an admin assigns one (COURSE_VIDEO_ASSIGNED tells "
+            "the developer). false: the developer sends the video as soon as "
+            "the text passes. Applies to texts approved from now on."
+        )
     )

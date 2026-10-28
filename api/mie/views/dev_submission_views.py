@@ -23,6 +23,12 @@ from api.mie.serializers.submission_serializer import (
 )
 from api.mie.services import submission_service
 from api.mie.throttling import MieDeveloperRateThrottle
+from api.mie.views.idempotency import (
+    IDEMPOTENCY_KEY_PARAMETER,
+    INVALID_KEY_EXAMPLE,
+    idempotency_conflict_response,
+    respond_idempotently,
+)
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 
 QUEUE_FILTER_PARAMETERS = [
@@ -42,6 +48,24 @@ QUEUE_FILTER_PARAMETERS = [
 ]
 
 DAILY_CAP_DETAIL = "Daily submission cap reached for this system account."
+
+# The shared validation bucket plus the one header this endpoint reads.
+INGEST_VALIDATION_RESPONSES = {
+    status.HTTP_400_BAD_REQUEST: OpenApiResponse(
+        response=STANDARD_ERROR_RESPONSES["validation"][
+            status.HTTP_400_BAD_REQUEST
+        ].response,
+        description=(
+            "A field is invalid, or the Idempotency-Key header is malformed."
+        ),
+        examples=[
+            *STANDARD_ERROR_RESPONSES["validation"][
+                status.HTTP_400_BAD_REQUEST
+            ].examples,
+            INVALID_KEY_EXAMPLE,
+        ],
+    ),
+}
 
 # Two limits answer 429 on ingest, so the shared rate_limited bucket is
 # extended with the daily-cap case rather than replaced by a hand-written one.
@@ -118,8 +142,11 @@ class MieSubmissionIngestView(APIView):
             "included: past it nothing is stored and the endpoint returns "
             "429 with Retry-After set to when the oldest counted submission "
             "leaves the window. External developer accounts are never "
-            "subject to that cap."
+            "subject to that cap. Send an `Idempotency-Key` to make retries "
+            "safe: a retry with the same key and body returns the first "
+            "response and stores no second submission."
         ),
+        parameters=[IDEMPOTENCY_KEY_PARAMETER],
         request=SubmissionIngestSerializer,
         examples=[
             OpenApiExample(
@@ -153,13 +180,22 @@ class MieSubmissionIngestView(APIView):
                     "status field carries the outcome."
                 ),
             ),
-            **STANDARD_ERROR_RESPONSES["validation"],
+            **INGEST_VALIDATION_RESPONSES,
             **STANDARD_ERROR_RESPONSES["auth"],
+            status.HTTP_409_CONFLICT: idempotency_conflict_response(
+                description=(
+                    "The Idempotency-Key belongs to another request, or that "
+                    "request is still running."
+                ),
+            ),
             **INGEST_RATE_LIMITED_RESPONSES,
             **STANDARD_ERROR_RESPONSES["server"],
         },
     )
     def post(self, request):
+        return respond_idempotently(request, lambda: self._ingest(request))
+
+    def _ingest(self, request):
         if not isinstance(request.data, dict):
             return Response(
                 {"title": ["Submission body must be a JSON object."]},

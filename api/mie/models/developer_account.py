@@ -118,6 +118,16 @@ class DeveloperAccount(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
         blank=True,
         help_text=_("When the latest approve/reject/suspend decision was taken."),
     )
+    requires_video_assignment = models.BooleanField(
+        verbose_name=_("Requires Video Assignment"),
+        default=False,
+        help_text=_(
+            "When on, a course this developer pushed waits after its text "
+            "passes until an admin assigns its video to the developer or to "
+            "the production engine. When off, the developer supplies the "
+            "video as soon as the text passes. Read at text approval."
+        ),
+    )
     creator_user = models.OneToOneField(
         settings.AUTH_USER_MODEL,
         verbose_name=_("Linked Creator Account"),

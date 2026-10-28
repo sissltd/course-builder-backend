@@ -19,6 +19,8 @@ anyone; that belongs to the course side once an idea produces a course (the
 idea-to-course bridge is not built yet).
 """
 
+import uuid
+
 from django.contrib.contenttypes.models import ContentType
 from django.db import transaction
 from django.utils import timezone
@@ -27,7 +29,11 @@ from rest_framework import exceptions
 from api.authentication.services.activity_service import log_activity
 from api.mie.enums import MieSourceType, SubmissionStatus, WebhookEventType
 from api.mie.models import CourseSubmission, SubmissionRejectionReason
-from api.mie.services import guardrail_service, webhook_endpoint_service
+from api.mie.services import (
+    guardrail_service,
+    submission_service,
+    webhook_endpoint_service,
+)
 from api.users.enums import (
     UserActivityActionEnums,
     UserActivityCategoryEnums,
@@ -63,6 +69,9 @@ def decide_submission(
     * APPROVED -> REJECTED leaves any linked resulting_course untouched
       (see the module docstring) and keeps the link so re-approval relinks.
     * REJECTED -> APPROVED clears stale rejection metadata.
+
+    The first approval reserves the idea's course id and SUBMISSION_APPROVED
+    carries it; no later decision changes it.
     """
 
     permission_service.require_permission(actor, codenames.MIE_APPROVE_TOPIC_PROPOSALS)
@@ -86,6 +95,7 @@ def decide_submission(
         if approve:
             submission.rejection_reason = None
             submission.rejection_note = ""
+            _reserve_course_id(submission)
         else:
             # Both fall back to what is already stored, so re-rejecting an
             # already-rejected idea without fresh detail preserves rather
@@ -225,6 +235,7 @@ def decide_submissions_bulk(
         if approve:
             submission.rejection_reason = None
             submission.rejection_note = ""
+            _reserve_course_id(submission)
         else:
             submission.rejection_reason = rejection_reason or submission.rejection_reason
             submission.rejection_note = rejection_note or submission.rejection_note
@@ -238,6 +249,7 @@ def decide_submissions_bulk(
                 "decided_by",
                 "rejection_reason",
                 "rejection_note",
+                "reserved_course_id",
                 "updated_datetime",
             ],
             batch_size=BULK_DECISION_LIMIT,
@@ -290,6 +302,14 @@ def decide_submissions_bulk(
                 )
 
     return submissions
+
+
+def _reserve_course_id(submission: CourseSubmission) -> None:
+    """Fix the idea's course id at its first approval; a re-approval keeps
+    it. An idea that already has a course reserves that course's id."""
+
+    if submission.reserved_course_id is None:
+        submission.reserved_course_id = submission.resulting_course_id or uuid.uuid4()
 
 
 def _decision_summary(approve: bool, title: str) -> str:
@@ -350,11 +370,7 @@ def _base_payload(submission: CourseSubmission) -> dict:
     """
 
     return {
-        "submission": {
-            "reference": submission.public_reference,
-            "status": submission.status,
-            "title": submission.title,
-        },
+        "submission": submission_service.event_submission_body(submission),
         "developer_email": submission.developer.email,
     }
 

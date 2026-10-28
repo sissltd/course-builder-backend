@@ -13,6 +13,8 @@ from api.mie.enums import SubmissionStatus
                 "reference": "SCB-0d1c7b2e-A",
                 "title": "Build a Production-Grade Rust Course",
                 "status": "APPROVED",
+                "category_id": "3f2b9c1e-5d4a-4e8f-9b7c-2a1d0e6f4c3b",
+                "course_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
                 "rejection_reason": None,
                 "payout_bypass": False,
                 "queued_at": "2026-08-23T09:00:00Z",
@@ -39,6 +41,19 @@ class DevSubmissionSerializer(serializers.Serializer):
     status = serializers.ChoiceField(
         choices=SubmissionStatus.choices,
         help_text="Current pipeline state. Every state appears here.",
+    )
+    category_id = serializers.UUIDField(
+        allow_null=True,
+        help_text="The platform category the idea was matched to, if any.",
+    )
+    course_id = serializers.UUIDField(
+        source="stable_course_id",
+        allow_null=True,
+        help_text=(
+            "The course's id, fixed when the idea is first approved and kept "
+            "through every later decision; the pushed course carries it. "
+            "Null until the idea is approved."
+        ),
     )
     rejection_reason = serializers.CharField(
         source="rejection_reason.label",

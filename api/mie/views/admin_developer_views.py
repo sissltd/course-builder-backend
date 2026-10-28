@@ -5,9 +5,12 @@ from drf_spectacular.utils import (
     extend_schema,
 )
 from django.db.models import Prefetch
+from django.shortcuts import get_object_or_404
+from drf_spectacular.types import OpenApiTypes
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from api.mie.enums import DeveloperAccountStatus, MiePlanType
 from api.mie.models import DeveloperAccount, WebhookEndpoint
@@ -16,6 +19,7 @@ from api.mie.serializers.developer_admin_serializer import (
     DeveloperActionResponseSerializer,
     DeveloperApprovalResponseSerializer,
     DeveloperRegisterSerializer,
+    VideoAssignmentSettingSerializer,
 )
 from api.mie.services import developer_service
 from api.authorization import codenames
@@ -446,3 +450,97 @@ class MieDeveloperAdminViewSet(viewsets.ReadOnlyModelViewSet):
         account = self.get_object()
         developer_service.suspend_developer(actor=request.user, account=account)
         return Response({"detail": f"{account.email} suspended."})
+
+
+class MieDeveloperVideoAssignmentSettingView(APIView):
+    """Turn video assignment on or off for one developer account."""
+
+    permission_classes = [Perm(codenames.MIE_MANAGE_CONSOLE)]
+
+    @extend_schema(
+        tags=["Admin — MIE Developers"],
+        summary="Set whether a developer's videos need assigning",
+        description=(
+            "Turns video assignment on or off for an external developer. "
+            "With it on, once the text of one of their courses passes the "
+            "first review seat the course waits with no video producer "
+            "until an admin assigns one (POST /api/v1/mie/admin/submissions/"
+            "{submission_id}/course/video-assignment/). With it off - the "
+            "default - the developer sends the video as soon as the text "
+            "passes.\n\n"
+            "Called when onboarding a developer, such as a production "
+            "studio, who should only make a video when the platform asks.\n\n"
+            "**Auth:** The `mie.manage_console` permission — Super Admin by default.\n\n"
+            "**Prerequisites:** The account exists and is not the platform's "
+            "crawler (SYSTEM) account.\n\n"
+            "**Important:** Read when a course's text is approved, so a "
+            "course already past that point keeps the producer it has. "
+            "Setting the value the account already has changes nothing. No "
+            "webhook fires; the developer sees the value on GET /mie/v1/me/."
+        ),
+        parameters=[
+            OpenApiParameter(
+                name="id",
+                type=OpenApiTypes.UUID,
+                location=OpenApiParameter.PATH,
+                description="The developer account id.",
+            )
+        ],
+        request=VideoAssignmentSettingSerializer,
+        examples=[
+            OpenApiExample(
+                name="Require assignment",
+                request_only=True,
+                value={"requires_video_assignment": True},
+            ),
+        ],
+        responses={
+            200: OpenApiResponse(
+                response=DeveloperAccountAdminSerializer,
+                description="The account with the setting applied.",
+                examples=[
+                    OpenApiExample(
+                        name="Assignment required",
+                        value={
+                            "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                            "email": "dev@studio.io",
+                            "webhook_endpoints": [
+                                {
+                                    "id": "5b1f0c9e-2d4a-4f7e-9a3b-8c6d1e2f3a4b",
+                                    "url": "https://hooks.studio.io/mie",
+                                    "events": ["all"],
+                                    "created_datetime": "2026-08-23T08:55:00Z",
+                                    "updated_datetime": "2026-08-23T08:55:00Z",
+                                }
+                            ],
+                            "status": "APPROVED",
+                            "plan_type": "PAID_PER_SUBMISSION",
+                            "requires_video_assignment": True,
+                            "source_type": "EXTERNAL",
+                            "api_key_preview": "scb_live_a1b2c3d...",
+                            "api_key_issued_at": "2026-08-23T09:00:00Z",
+                            "api_key_last_used_at": "2026-08-24T15:30:00Z",
+                            "decided_at": "2026-08-23T09:00:00Z",
+                            "created_datetime": "2026-08-23T08:55:00Z",
+                            "updated_datetime": "2026-10-28T10:00:00Z",
+                        },
+                    ),
+                ],
+            ),
+            **STANDARD_ERROR_RESPONSES["validation"],
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
+            **STANDARD_ERROR_RESPONSES["not_found"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
+    def post(self, request, id):
+        account = get_object_or_404(DeveloperAccount, pk=id)
+        serializer = VideoAssignmentSettingSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        account = developer_service.set_video_assignment_required(
+            actor=request.user,
+            account=account,
+            required=serializer.validated_data["requires_video_assignment"],
+        )
+        return Response(DeveloperAccountAdminSerializer(account).data)

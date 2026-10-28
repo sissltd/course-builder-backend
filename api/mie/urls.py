@@ -2,6 +2,8 @@ from django.urls import path
 from rest_framework.routers import DefaultRouter
 
 from api.mie.views import (
+    MieAdminCourseArchiveView,
+    MieAdminCourseVideoAssignmentView,
     MieCoursePushView,
     MieCourseVideoView,
     MieCourseRequirementsView,
@@ -11,6 +13,7 @@ from api.mie.views import (
     MieDocumentationDownloadView,
     MieDocumentationView,
     MieDeveloperRegistrationView,
+    MieDeveloperVideoAssignmentSettingView,
     MieSubmissionAdminViewSet,
     MieSubmissionIngestView,
     MieSubmissionQueueView,
@@ -34,6 +37,21 @@ router.register(
 )
 
 urlpatterns = router.urls + [
+    path(
+        "mie/admin/submissions/<uuid:submission_id>/course/video-assignment/",
+        MieAdminCourseVideoAssignmentView.as_view(),
+        name="mie-admin-course-video-assignment",
+    ),
+    path(
+        "mie/admin/submissions/<uuid:submission_id>/course/archive/",
+        MieAdminCourseArchiveView.as_view(),
+        name="mie-admin-course-archive",
+    ),
+    path(
+        "mie/admin/developers/<uuid:id>/video-assignment/",
+        MieDeveloperVideoAssignmentSettingView.as_view(),
+        name="mie-admin-developer-video-assignment",
+    ),
     path("mie/v1/register/", MieDeveloperRegistrationView.as_view(), name="mie-developer-register"),
     path("mie/v1/submissions/", MieSubmissionIngestView.as_view(), name="mie-submission-ingest"),
     path("mie/v1/submissions/queue/", MieSubmissionQueueView.as_view(), name="mie-submission-queue"),

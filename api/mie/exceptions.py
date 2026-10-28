@@ -62,3 +62,69 @@ class LastWebhookEndpoint(APIException):
         "This is your only webhook endpoint. Change its URL or events instead "
         "of deleting it."
     )
+
+
+class VideoNotAssigned(APIException):
+    """A developer sent the video for a course whose video an admin has not
+    assigned yet (the account requires video assignment).
+
+    409 rather than 400: the video may be perfectly valid; the course is
+    waiting on an admin decision, announced by COURSE_VIDEO_ASSIGNED.
+    """
+
+    status_code = status.HTTP_409_CONFLICT
+    default_code = "video_not_assigned"
+    default_detail = (
+        "The video for this course has not been assigned yet. Wait for "
+        "COURSE_VIDEO_ASSIGNED before sending it."
+    )
+
+
+class CourseNotArchivable(APIException):
+    """An admin tried to archive a course that is already archived, or that
+    passed QA or went live, which archiving cannot undo."""
+
+    status_code = status.HTTP_409_CONFLICT
+    default_code = "course_not_archivable"
+    default_detail = "This course cannot be archived in its current status."
+
+
+class IdempotencyKeyReused(APIException):
+    """An Idempotency-Key came back with a different body or on another route.
+
+    409 rather than 400: the new request may be valid on its own; it
+    conflicts with the request the key already belongs to.
+    """
+
+    status_code = status.HTTP_409_CONFLICT
+    default_code = "idempotency_key_reused"
+    default_detail = (
+        "This Idempotency-Key was already used for a different request. Use "
+        "a new key for a new request."
+    )
+
+
+class IdempotencyRequestInProgress(APIException):
+    """A retry arrived while the first request with its key is still running."""
+
+    status_code = status.HTTP_409_CONFLICT
+    default_code = "idempotency_request_in_progress"
+    default_detail = (
+        "A request with this Idempotency-Key is still being processed. Retry "
+        "shortly to receive its result."
+    )
+
+
+class CourseArchived(APIException):
+    """A course was pushed for an idea whose course the platform archived.
+
+    Archiving is final: the course will not be reviewed again, so no push
+    can replace it.
+    """
+
+    status_code = status.HTTP_409_CONFLICT
+    default_code = "course_archived"
+    default_detail = (
+        "This idea's course was archived by the platform and cannot be "
+        "pushed again."
+    )

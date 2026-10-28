@@ -394,9 +394,12 @@ class DecisionEventWireShapeTests(APITestCase):
         self.assertEqual(
             body["submission"],
             {
+                "id": str(submission.id),
                 "reference": submission.public_reference,
                 "status": SubmissionStatus.APPROVED,
                 "title": submission.title,
+                "category_id": None,
+                "course_id": str(submission.reserved_course_id),
             },
         )
 

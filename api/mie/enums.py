@@ -109,6 +109,17 @@ class WebhookEventType(models.TextChoices):
         "Course Revision Requested",
     )
     COURSE_PUBLISHED = "COURSE_PUBLISHED", "Course Published"
+    COURSE_VIDEO_ASSIGNED = "COURSE_VIDEO_ASSIGNED", "Course Video Assigned"
+    COURSE_REJECTED = "COURSE_REJECTED", "Course Rejected"
+    COURSE_ARCHIVED = "COURSE_ARCHIVED", "Course Archived"
+
+
+class AssignableVideoProducer(models.TextChoices):
+    """Who an admin can hand a developer course's video to once its text has
+    passed. The values are VideoProvider's, so the choice is stored as is."""
+
+    PRODUCTION_ENGINE = "PRODUCTION_ENGINE", "Production Engine"
+    DEVELOPER = "DEVELOPER", "Developer"
 
 
 WEBHOOK_ALL_EVENTS = "all"

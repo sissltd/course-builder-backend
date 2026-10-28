@@ -104,6 +104,49 @@ def suspend_developer(*, actor, account: DeveloperAccount) -> None:
     account.save(update_fields=["status", "decided_at", "updated_datetime"])
 
 
+def set_video_assignment_required(
+    *, actor, account: DeveloperAccount, required: bool
+) -> DeveloperAccount:
+    """Turn video assignment on or off for an external developer.
+
+    On, a course of theirs waits after its text passes until an admin
+    assigns its video (developer_course_admin_service.assign_video). It is
+    read at text approval, so a course already past that point keeps the
+    producer it has. Setting the value it already has changes nothing and
+    logs nothing. The crawler's SYSTEM account is refused: the production
+    engine always makes its video.
+    """
+
+    permission_service.require_permission(actor, codenames.MIE_MANAGE_CONSOLE)
+    if account.source_type == MieSourceType.SYSTEM:
+        raise exceptions.ValidationError(
+            {
+                "requires_video_assignment": [
+                    "The platform's crawler account always has its video "
+                    "made by the production engine."
+                ]
+            }
+        )
+    if account.requires_video_assignment == required:
+        return account
+
+    with transaction.atomic():
+        account.requires_video_assignment = required
+        account.save(update_fields=["requires_video_assignment", "updated_datetime"])
+        log_activity(
+            user=actor,
+            category=UserActivityCategoryEnums.CONFIGURATION,
+            action=UserActivityActionEnums.DEVELOPER_SETTINGS_UPDATED,
+            summary=(
+                f"You turned video assignment {'on' if required else 'off'} "
+                f"for {account.email}."
+            ),
+            details={"requires_video_assignment": required},
+            target=account,
+        )
+    return account
+
+
 def provision_system_account(
     *, actor, email: str, webhook_url: str
 ) -> tuple[DeveloperAccount, str | None]:

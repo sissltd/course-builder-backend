@@ -637,8 +637,9 @@ def reject_course(
 
 
 def _notify_mie_revision(*, course: Course, review_action: ReviewAction) -> None:
-    """Tell the MIE developer behind a pushed course that it is back in
-    DRAFT, with the feedback. A no-op for every other course.
+    """Tell the MIE developer behind a pushed course that it was rejected
+    and is back for revision, with the feedback: COURSE_REJECTED, then
+    COURSE_REVISION_REQUESTED. A no-op for every other course.
 
     Local import: api.mie imports course_service, which imports this module,
     so a module-level import here would be circular.
@@ -647,11 +648,13 @@ def _notify_mie_revision(*, course: Course, review_action: ReviewAction) -> None
     from api.mie.enums import WebhookEventType
     from api.mie.services import course_push_service
 
-    course_push_service.record_course_event(
-        course=course,
-        event_type=WebhookEventType.COURSE_REVISION_REQUESTED,
-        review_action=review_action,
-    )
+    for event_type in (
+        WebhookEventType.COURSE_REJECTED,
+        WebhookEventType.COURSE_REVISION_REQUESTED,
+    ):
+        course_push_service.record_course_event(
+            course=course, event_type=event_type, review_action=review_action
+        )
 
 
 def _create_review_flags(*, review_action: ReviewAction, flags: list[dict]) -> None:
@@ -718,8 +721,9 @@ def _create_review_flags(*, review_action: ReviewAction, flags: list[dict]) -> N
 def _video_provider_for_approved_text(course: Course) -> str:
     """Who supplies the video of a course whose text just passed the first
     seat. A developer's course follows the developer (or, for the platform's
-    own crawler account, the production engine); a creator's own course is
-    left blank until the creator chooses.
+    own crawler account, the production engine, and for an account that
+    requires video assignment, blank until an admin assigns it); a creator's
+    own course is left blank until the creator chooses.
 
     Local import: api.mie imports course_service, which imports this module.
     """
@@ -735,16 +739,20 @@ def _announce_text_approved(*, course: Course) -> None:
     """Tell whoever must supply the video that the text passed.
 
     A creator is asked whether they will add it; a developer is sent the
-    COURSE_TEXT_APPROVED webhook; the production engine is not told here.
+    COURSE_TEXT_APPROVED webhook - also when an admin has yet to assign the
+    video, with `video_producer` null; the production engine is not told
+    here.
     """
 
     if course.source_type == CourseSourceType.DEVELOPER_API:
-        if course.video_provider == VideoProvider.DEVELOPER:
+        if course.video_provider in (VideoProvider.DEVELOPER, ""):
             from api.mie.enums import WebhookEventType
             from api.mie.services import course_push_service
 
             course_push_service.record_course_event(
-                course=course, event_type=WebhookEventType.COURSE_TEXT_APPROVED
+                course=course,
+                event_type=WebhookEventType.COURSE_TEXT_APPROVED,
+                details={"video_producer": course.video_provider or None},
             )
         return
     if course.creator_id:
