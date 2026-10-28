@@ -288,14 +288,25 @@ def _record_lost_race(developer, payload, fields: dict) -> CourseSubmission:
     return submission
 
 
+def event_submission_body(submission: CourseSubmission) -> dict:
+    """The `submission` object every webhook carries, SUBMISSION_* and
+    COURSE_* alike. `course_id` is null until the idea is first approved."""
+
+    course_id = submission.stable_course_id
+    return {
+        "id": str(submission.id),
+        "reference": submission.public_reference,
+        "status": submission.status,
+        "title": submission.title,
+        "category_id": str(submission.category_id) if submission.category_id else None,
+        "course_id": str(course_id) if course_id else None,
+    }
+
+
 def _event_payload(submission: CourseSubmission) -> dict:
     """The JSON body delivered to the developer's webhook endpoint."""
 
     return {
-        "submission": {
-            "reference": submission.public_reference,
-            "status": submission.status,
-            "title": submission.title,
-        },
+        "submission": event_submission_body(submission),
         "developer_email": submission.developer.email,
     }

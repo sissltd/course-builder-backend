@@ -352,7 +352,9 @@ WEBHOOK_EVENT_DOCS = {
     WebhookEventType.SUBMISSION_APPROVED: {
         "fires_when": (
             "A superadmin approved the idea. Re-fires on every re-approval, "
-            "including after a reversal."
+            "including after a reversal. `course_id` is set from this event "
+            "on and stays the same across re-approvals: it is the id the "
+            "course will have once you push it."
         ),
         "resulting_status": SubmissionStatus.APPROVED,
         "extra_fields": [],
@@ -726,9 +728,11 @@ def _quickstart(account, base_url: str) -> dict:
                 "step": 6,
                 "title": "Push the course once the idea is approved",
                 "detail": (
-                    "When SUBMISSION_APPROVED arrives, write the course and "
-                    "push it to the idea. The course_upload section walks "
-                    "through it end to end."
+                    "When SUBMISSION_APPROVED arrives, store its "
+                    "`submission.course_id`, write the course and push it to "
+                    "the idea (`submission.id`). The course is created under "
+                    "that course_id. The course_upload section walks through "
+                    "it end to end."
                 ),
                 "curl": (
                     f"curl -sS -X POST {base_url}{API_ROOT}/mie/v1/submissions/"
@@ -1586,6 +1590,8 @@ def _endpoints(base_url: str) -> list[dict]:
                             "reference": _sample_reference(SubmissionStatus.APPROVED),
                             "title": SAMPLE_TITLE,
                             "status": SubmissionStatus.APPROVED.value,
+                            "category_id": SAMPLE_CATEGORY_ID,
+                            "course_id": SAMPLE_COURSE_ID,
                             "rejection_reason": None,
                             "payout_bypass": False,
                             "queued_at": "2026-08-23T09:00:00Z",
@@ -2047,10 +2053,14 @@ def _webhooks(account) -> dict:
                 "type": f"One of {WebhookEventType.values}.",
                 "occurred_at": "ISO-8601 timestamp of when the event was recorded.",
                 "submission": (
-                    "Object describing the submission at that moment. On "
-                    "COURSE_* events it also carries `course` - the course's "
-                    "id, status and title, plus `revision_feedback` on "
-                    "COURSE_REVISION_REQUESTED."
+                    "Object describing the submission at that moment: its "
+                    "`id` (the submission_id in the course-push URL), "
+                    "`reference`, `status`, `title`, `category_id` and "
+                    "`course_id`. `course_id` is null until the idea is first "
+                    "approved, then never changes; the course you push is "
+                    "created under it. On COURSE_* events it also carries "
+                    "`course` - the course's id, status and title, plus "
+                    "`revision_feedback` on COURSE_REVISION_REQUESTED."
                 ),
             },
         },
@@ -2207,10 +2217,16 @@ def _webhook_event_catalogue() -> list[dict]:
         status = docs["resulting_status"]
         display_status = status or SubmissionStatus.APPROVED
 
+        has_course_id = event_type.name.startswith("COURSE_") or (
+            status == SubmissionStatus.APPROVED
+        )
         submission = {
+            "id": SAMPLE_SUBMISSION_ID,
             "reference": _sample_reference(display_status),
             "status": display_status.value,
             "title": SAMPLE_TITLE,
+            "category_id": SAMPLE_CATEGORY_ID,
+            "course_id": SAMPLE_COURSE_ID if has_course_id else None,
         }
         if "rejection_reason" in docs["extra_fields"]:
             submission["rejection_reason"] = "Already covered by the live catalogue"
@@ -2726,6 +2742,16 @@ def _faq() -> list[dict]:
                 "No. The push checks the idea first and returns 409 "
                 "idea_not_approved for anything but APPROVED. Wait for "
                 "SUBMISSION_APPROVED."
+            ),
+        },
+        {
+            "question": "When do I get the course id?",
+            "answer": (
+                "At approval. SUBMISSION_APPROVED carries "
+                "`submission.course_id`, and GET /submissions/queue/ shows it "
+                "as `course_id`. Your first push creates the course under that "
+                "id, every COURSE_* event carries it as `course.id`, and a "
+                "rejection followed by a re-approval keeps it."
             ),
         },
         {

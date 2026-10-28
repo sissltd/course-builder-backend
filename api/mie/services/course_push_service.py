@@ -66,7 +66,11 @@ from api.mie.serializers.course_push_serializer import (
     MAX_PUSH_LESSONS_PER_MODULE,
     MAX_PUSH_MODULES,
 )
-from api.mie.services import developer_service, webhook_endpoint_service
+from api.mie.services import (
+    developer_service,
+    submission_service,
+    webhook_endpoint_service,
+)
 from api.platform.services import platform_settings_service
 from api.reviews.enums import ReviewActionType
 from api.reviews.models import ReviewAction
@@ -327,10 +331,13 @@ def _create_course(*, submission, creator, data: dict) -> Course:
     """First push: a new DRAFT course through the creator's own entry point.
 
     The title stored is the idea's title verbatim - the payload's only has
-    to match it - so the course and the idea always read the same.
+    to match it - so the course and the idea always read the same. The
+    course takes the id reserved at approval, the one the developer was
+    already sent.
     """
 
     return course_service.create_draft_course(
+        course_id=submission.reserved_course_id,
         creator=creator,
         category=data["category"],
         title=submission.title,
@@ -696,9 +703,7 @@ def record_course_event(
         return []
 
     body = {
-        "reference": submission.public_reference,
-        "status": submission.status,
-        "title": submission.title,
+        **submission_service.event_submission_body(submission),
         "course": {
             "id": str(course.id),
             "status": course.status,

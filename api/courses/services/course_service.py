@@ -1,3 +1,4 @@
+import uuid
 from datetime import timedelta
 
 from django.db import transaction
@@ -154,8 +155,13 @@ def create_draft_course(
     duration_seconds: int = 0,
     terms_accepted: bool,
     source_type: str = CourseSourceType.CREATOR_UPLOADED,
+    course_id: uuid.UUID | None = None,
 ) -> Course:
     """Create a new Draft course owned by `creator`.
+
+    `course_id` creates the course under an id the caller already handed
+    out (a developer's idea reserves one at approval); otherwise a new one
+    is generated.
 
     Raises ValidationError if terms_accepted is False (BR-005), the category
     is not currently accepting submissions, topic doesn't belong to category,
@@ -198,6 +204,7 @@ def create_draft_course(
 
     with transaction.atomic():
         course = Course.objects.create(
+            **({"id": course_id} if course_id else {}),
             creator=creator,
             category=category,
             topic=topic,

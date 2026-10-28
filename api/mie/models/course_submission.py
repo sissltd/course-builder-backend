@@ -172,6 +172,18 @@ class CourseSubmission(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
             "duplicating."
         ),
     )
+    reserved_course_id = models.UUIDField(
+        verbose_name=_("Reserved Course ID"),
+        null=True,
+        blank=True,
+        unique=True,
+        editable=False,
+        help_text=_(
+            "The course id fixed at the idea's first approval and sent to the "
+            "developer. The first course push creates the course under it, so "
+            "the id never changes. Empty until the idea is approved."
+        ),
+    )
 
     class Meta:
         verbose_name = _("Course Submission")
@@ -219,6 +231,13 @@ class CourseSubmission(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
 
         short_id = str(self.id).replace("-", "")[:8]
         return f"SCB-{short_id}-{REFERENCE_SUFFIXES[self.status]}"
+
+    @property
+    def stable_course_id(self):
+        """The id the developer was given for this idea's course: the linked
+        course's, else the one reserved at approval, else None."""
+
+        return self.resulting_course_id or self.reserved_course_id
 
     def __str__(self):
         return f"{self.title} ({self.status})"
