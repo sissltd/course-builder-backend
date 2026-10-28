@@ -16,6 +16,8 @@ from api.mie.serializers.developer_admin_serializer import (
     DeveloperActionResponseSerializer,
     DeveloperApprovalResponseSerializer,
     DeveloperRegisterSerializer,
+    DeveloperCredentialRotationSerializer,
+    DeveloperCredentialRotationResponseSerializer,
 )
 from api.mie.services import developer_service
 from api.authorization import codenames
@@ -45,6 +47,38 @@ class MieDeveloperAdminViewSet(viewsets.ReadOnlyModelViewSet):
     lookup_field = "id"
     filterset_fields = ["status", "plan_type"]
     search_fields = ["email"]
+
+    @extend_schema(
+        summary="Reissue an approved developer's API key and webhook signing secret",
+        description="Requires mie.manage_console. Invalidates this account's old key and signing secret immediately; coordinate only its webhook receivers. Secrets appear only in this response, never in list/detail responses or audit data.",
+        request=DeveloperCredentialRotationSerializer,
+        responses={200: DeveloperCredentialRotationResponseSerializer},
+    )
+    @action(detail=True, methods=["post"], url_path="rotate-credentials")
+    def rotate_credentials(self, request, id=None):
+        from rest_framework.exceptions import ValidationError
+
+        account = self.get_object()
+        serializer = DeveloperCredentialRotationSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        if serializer.validated_data["confirm_account_id"] != account.id:
+            raise ValidationError(
+                {"confirm_account_id": "Must match the selected developer."}
+            )
+        raw_key = developer_service.rotate_developer_credentials(
+            actor=request.user, account=account
+        )
+        account.refresh_from_db()
+        response = Response(
+            {
+                "account": DeveloperAccountAdminSerializer(account).data,
+                "one_time_api_key": raw_key,
+                "signing_secret": account.signing_secret,
+            }
+        )
+        response["Cache-Control"] = "no-store"
+        response["Pragma"] = "no-cache"
+        return response
 
     @extend_schema(
         summary="List developers",
@@ -154,14 +188,14 @@ class MieDeveloperAdminViewSet(viewsets.ReadOnlyModelViewSet):
                             "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
                             "email": "dev@studio.io",
                             "webhook_endpoints": [
-                                    {
-                                        "id": "5b1f0c9e-2d4a-4f7e-9a3b-8c6d1e2f3a4b",
-                                        "url": "https://hooks.studio.io/mie",
-                                        "events": ["all"],
-                                        "created_datetime": "2026-08-23T08:55:00Z",
-                                        "updated_datetime": "2026-08-23T08:55:00Z",
-                                    }
-                                ],
+                                {
+                                    "id": "5b1f0c9e-2d4a-4f7e-9a3b-8c6d1e2f3a4b",
+                                    "url": "https://hooks.studio.io/mie",
+                                    "events": ["all"],
+                                    "created_datetime": "2026-08-23T08:55:00Z",
+                                    "updated_datetime": "2026-08-23T08:55:00Z",
+                                }
+                            ],
                             "status": "PENDING",
                             "plan_type": "PAID_PER_SUBMISSION",
                             "api_key_preview": None,
@@ -223,14 +257,14 @@ class MieDeveloperAdminViewSet(viewsets.ReadOnlyModelViewSet):
                             "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
                             "email": "dev@studio.io",
                             "webhook_endpoints": [
-                                    {
-                                        "id": "5b1f0c9e-2d4a-4f7e-9a3b-8c6d1e2f3a4b",
-                                        "url": "https://hooks.studio.io/mie",
-                                        "events": ["all"],
-                                        "created_datetime": "2026-08-23T08:55:00Z",
-                                        "updated_datetime": "2026-08-23T08:55:00Z",
-                                    }
-                                ],
+                                {
+                                    "id": "5b1f0c9e-2d4a-4f7e-9a3b-8c6d1e2f3a4b",
+                                    "url": "https://hooks.studio.io/mie",
+                                    "events": ["all"],
+                                    "created_datetime": "2026-08-23T08:55:00Z",
+                                    "updated_datetime": "2026-08-23T08:55:00Z",
+                                }
+                            ],
                             "status": "PENDING",
                             "plan_type": "PAID_PER_SUBMISSION",
                             "api_key_preview": None,
@@ -351,7 +385,9 @@ class MieDeveloperAdminViewSet(viewsets.ReadOnlyModelViewSet):
     @action(detail=True, methods=["post"])
     def approve(self, request, id=None):
         account = self.get_object()
-        raw_key = developer_service.approve_developer(actor=request.user, account=account)
+        raw_key = developer_service.approve_developer(
+            actor=request.user, account=account
+        )
         return Response(
             {
                 "account": DeveloperAccountAdminSerializer(account).data,
@@ -398,9 +434,7 @@ class MieDeveloperAdminViewSet(viewsets.ReadOnlyModelViewSet):
     def reject(self, request, id=None):
         account = self.get_object()
         developer_service.reject_developer(actor=request.user, account=account)
-        return Response(
-            {"detail": f"{account.email} rejected; credentials revoked."}
-        )
+        return Response({"detail": f"{account.email} rejected; credentials revoked."})
 
     @extend_schema(
         summary="Suspend a developer",
@@ -428,9 +462,7 @@ class MieDeveloperAdminViewSet(viewsets.ReadOnlyModelViewSet):
                 examples=[
                     OpenApiExample(
                         name="Success",
-                        value={
-                            "detail": "dev@studio.io suspended."
-                        },
+                        value={"detail": "dev@studio.io suspended."},
                     ),
                 ],
             ),

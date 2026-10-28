@@ -122,3 +122,17 @@ class DeveloperActionResponseSerializer(serializers.Serializer):
     detail = serializers.CharField(
         help_text="Human-readable confirmation of what changed."
     )
+
+
+class DeveloperCredentialRotationSerializer(serializers.Serializer):
+    confirm_account_id = serializers.UUIDField(
+        help_text="Must match the account in the URL."
+    )
+
+
+class DeveloperCredentialRotationResponseSerializer(
+    DeveloperApprovalResponseSerializer
+):
+    signing_secret = serializers.CharField(
+        help_text="New webhook verification secret; update only this account's receivers."
+    )
