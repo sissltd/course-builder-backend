@@ -19,7 +19,9 @@ from api.authorization import codenames
 from api.authorization.services import permission_service
 
 
-def register_developer(*, email: str, webhook_url: str, plan_type: str) -> DeveloperAccount:
+def register_developer(
+    *, email: str, webhook_url: str, plan_type: str
+) -> DeveloperAccount:
     """Create a PENDING account from the minimal registration payload.
 
     `webhook_url` becomes the account's first webhook endpoint, taking every
@@ -34,7 +36,9 @@ def register_developer(*, email: str, webhook_url: str, plan_type: str) -> Devel
             {"email": ["A developer account with this email already exists."]}
         )
     with transaction.atomic():
-        account = DeveloperAccount.objects.create(email=email.lower(), plan_type=plan_type)
+        account = DeveloperAccount.objects.create(
+            email=email.lower(), plan_type=plan_type
+        )
         webhook_endpoint_service.add_first_endpoint(developer=account, url=webhook_url)
     return account
 
@@ -60,11 +64,41 @@ def approve_developer(*, actor, account: DeveloperAccount) -> str | None:
     account.status = DeveloperAccountStatus.APPROVED
     account.approved_by = actor
     account.decided_at = timezone.now()
-    account.save(update_fields=["status", "approved_by", "decided_at", "updated_datetime"])
+    account.save(
+        update_fields=["status", "approved_by", "decided_at", "updated_datetime"]
+    )
 
     if not account.api_key_hash:
         return issue_credentials(account)
     return None
+
+
+@transaction.atomic
+def rotate_developer_credentials(*, actor, account: DeveloperAccount) -> str:
+    """Reissue one approved account's API key and signing secret, atomically.
+
+    This never approves a suspended account or touches another developer.
+    Do not include either secret in activity details or logs.
+    """
+    permission_service.require_permission(actor, codenames.MIE_MANAGE_CONSOLE)
+    account = DeveloperAccount.objects.select_for_update().get(pk=account.pk)
+    if account.status != DeveloperAccountStatus.APPROVED:
+        raise exceptions.ValidationError(
+            {"status": ["Only an approved account can rotate credentials."]}
+        )
+    raw_key = issue_credentials(account)
+    log_activity(
+        user=actor,
+        category=UserActivityCategoryEnums.CONFIGURATION,
+        action=UserActivityActionEnums.PROFILE_UPDATED,
+        summary="Rotated MIE developer API and webhook credentials.",
+        details={
+            "developer_account_id": str(account.id),
+            "operation": "mie.credentials_rotated",
+        },
+        target=account,
+    )
+    return raw_key
 
 
 def reject_developer(*, actor, account: DeveloperAccount) -> None:
