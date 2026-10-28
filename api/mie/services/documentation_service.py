@@ -49,6 +49,7 @@ from api.courses.enums import (
     DifficultyLevel,
     LessonContentType,
     QuestionType,
+    VideoProvider,
 )
 from api.courses.serializers.assessment_serializer import (
     MAXIMUM_CHOICE_OPTIONS,
@@ -63,7 +64,7 @@ from api.mie.serializers.course_push_serializer import (
     MAX_PUSH_LESSONS_PER_MODULE,
     MAX_PUSH_MODULES,
 )
-from api.mie.services import webhook_dispatcher
+from api.mie.services import idempotency_service, webhook_dispatcher
 from api.mie.services.course_push_service import MIE_UPLOAD_PURPOSES
 from api.mie.services.key_service import API_KEY_PREFIX
 from api.mie.services.reference import REFERENCE_SUFFIXES
@@ -81,7 +82,7 @@ from shared.services.storage_service import (
     MIN_MEDIA_WIDTH,
 )
 
-DOCUMENTATION_VERSION = "3.1.0"
+DOCUMENTATION_VERSION = "3.2.0"
 """Bump when the shape of this document changes, not when values change."""
 
 API_ROOT = "/api/v1"
@@ -109,6 +110,11 @@ SAMPLE_REVISION_FEEDBACK = {
         }
     ],
 }
+
+SAMPLE_ARCHIVE_REASON = (
+    "The course repeats our existing Rust track and two revisions did not "
+    "change its scope."
+)
 
 SAMPLE_COURSE_PUSH = {
     "title": SAMPLE_TITLE,
@@ -379,19 +385,24 @@ WEBHOOK_EVENT_DOCS = {
     WebhookEventType.COURSE_TEXT_APPROVED: {
         "fires_when": (
             "The text of your course passed the first review seat. The "
-            "course is now AWAITING_VIDEO: send the video with POST "
-            "/mie/v1/submissions/{id}/course/video/. Only fires when the "
-            "platform reviews text before video."
+            "course is now AWAITING_VIDEO. course.video_producer is "
+            "DEVELOPER: send the video with POST "
+            "/mie/v1/submissions/{id}/course/video/. It is null when your "
+            "account requires video assignment: make no video until "
+            "COURSE_VIDEO_ASSIGNED. Only fires when the platform reviews "
+            "text before video."
         ),
         "resulting_status": None,
         "extra_fields": ["course"],
+        "extra_course_fields": ["video_producer"],
     },
     WebhookEventType.COURSE_REVISION_REQUESTED: {
         "fires_when": (
             "A reviewer - in content review or QA verification - sent your "
             "course back, to DRAFT or, when the platform reviews text before "
             "video, to NEEDS_REVISION. course.revision_feedback says what to "
-            "fix; push the corrected course to the same idea."
+            "fix; push the corrected course to the same idea. Always follows "
+            "a COURSE_REJECTED for the same rejection."
         ),
         "resulting_status": None,
         "extra_fields": ["course"],
@@ -405,6 +416,41 @@ WEBHOOK_EVENT_DOCS = {
         "resulting_status": None,
         "extra_fields": ["course"],
     },
+    WebhookEventType.COURSE_VIDEO_ASSIGNED: {
+        "fires_when": (
+            "An admin assigned the video of your AWAITING_VIDEO course. "
+            "course.video_producer DEVELOPER: send the video with POST "
+            "/mie/v1/submissions/{id}/course/video/. PRODUCTION_ENGINE: the "
+            "platform makes it - send nothing, and stop any work in "
+            "progress. Can fire again if the assignment changes before the "
+            "video is submitted; the newest one counts."
+        ),
+        "resulting_status": None,
+        "extra_fields": ["course"],
+        "extra_course_fields": ["video_producer"],
+    },
+    WebhookEventType.COURSE_REJECTED: {
+        "fires_when": (
+            "A reviewer rejected your course, in content review or QA "
+            "verification. It carries the same course.revision_feedback as "
+            "the COURSE_REVISION_REQUESTED that always follows it: a "
+            "rejection sends the course back for revision. A final no is "
+            "COURSE_ARCHIVED."
+        ),
+        "resulting_status": None,
+        "extra_fields": ["course"],
+        "extra_course_fields": ["revision_feedback"],
+    },
+    WebhookEventType.COURSE_ARCHIVED: {
+        "fires_when": (
+            "The platform archived your course: it will not be reviewed or "
+            "published, and it can no longer be pushed. "
+            "course.archive_reason says why. Final."
+        ),
+        "resulting_status": None,
+        "extra_fields": ["course"],
+        "extra_course_fields": ["archive_reason"],
+    },
 }
 
 COURSE_STATUS_BY_EVENT = {
@@ -412,6 +458,9 @@ COURSE_STATUS_BY_EVENT = {
     WebhookEventType.COURSE_TEXT_APPROVED: CourseStatus.AWAITING_VIDEO,
     WebhookEventType.COURSE_REVISION_REQUESTED: CourseStatus.DRAFT,
     WebhookEventType.COURSE_PUBLISHED: CourseStatus.PUBLISHED,
+    WebhookEventType.COURSE_VIDEO_ASSIGNED: CourseStatus.AWAITING_VIDEO,
+    WebhookEventType.COURSE_REJECTED: CourseStatus.DRAFT,
+    WebhookEventType.COURSE_ARCHIVED: CourseStatus.ARCHIVED,
 }
 """The course status each COURSE_* event announces, for the samples."""
 
@@ -445,10 +494,14 @@ COURSE_STATUS_DOCS = {
     CourseStatus.AWAITING_VIDEO: {
         "meaning": (
             "The text passed the first review seat and the platform is "
-            "waiting for the video."
+            "waiting for the video - from you, or from its production engine "
+            "when an admin assigns it there."
         ),
         "your_move": (
-            "Send the video with POST /mie/v1/submissions/{id}/course/video/."
+            "If the latest video_producer you were sent is DEVELOPER, send "
+            "the video with POST /mie/v1/submissions/{id}/course/video/. If "
+            "it is null, wait for COURSE_VIDEO_ASSIGNED. If it is "
+            "PRODUCTION_ENGINE, nothing."
         ),
     },
     CourseStatus.QA_VERIFICATION: {
@@ -467,8 +520,14 @@ COURSE_STATUS_DOCS = {
         "your_move": "Nothing. COURSE_PUBLISHED has fired.",
     },
     CourseStatus.ARCHIVED: {
-        "meaning": "Taken out of circulation by the platform.",
-        "your_move": f"Contact {SUPPORT_EMAIL} if you did not expect it.",
+        "meaning": (
+            "The platform archived the course: it will not be reviewed or "
+            "published. Final - a push now returns 409 course_archived."
+        ),
+        "your_move": (
+            "Read archive_reason on COURSE_ARCHIVED. Contact "
+            f"{SUPPORT_EMAIL} if you did not expect it."
+        ),
     },
     CourseStatus.REJECTED: {
         "meaning": (
@@ -822,17 +881,26 @@ def _integration_flow() -> list[dict]:
                 "Your course goes through the platform's content review "
                 "seats and then QA verification, like every course. A "
                 "rejection at any seat returns it to DRAFT with the "
-                "reviewer's feedback."
+                "reviewer's feedback. When the platform reviews text before "
+                "video, the course waits for its video after the first "
+                "seat - from you, or from the production engine if an admin "
+                "assigns it there. An admin can also archive the course, "
+                "which ends it."
             ),
             "your_move": (
                 f"On {WebhookEventType.COURSE_REVISION_REQUESTED.value}, fix "
                 "the course and push the complete course again to the same "
-                "idea. Otherwise, wait."
+                f"idea. On {WebhookEventType.COURSE_TEXT_APPROVED.value} or "
+                f"{WebhookEventType.COURSE_VIDEO_ASSIGNED.value} with "
+                "video_producer DEVELOPER, send the video. Otherwise, wait."
             ),
             "you_can_authenticate": True,
             "webhook_fired": (
-                f"{WebhookEventType.COURSE_REVISION_REQUESTED.value} "
-                "(when sent back)"
+                f"{WebhookEventType.COURSE_REJECTED.value} and "
+                f"{WebhookEventType.COURSE_REVISION_REQUESTED.value} (when "
+                f"sent back), {WebhookEventType.COURSE_TEXT_APPROVED.value}, "
+                f"{WebhookEventType.COURSE_VIDEO_ASSIGNED.value}, "
+                f"{WebhookEventType.COURSE_ARCHIVED.value}"
             ),
         },
         {
@@ -1080,12 +1148,14 @@ def _deduplication() -> dict:
             f"{SubmissionStatus.PENDING_REVIEW.value} and enters the "
             "review queue."
         ),
-        "not_idempotent": (
+        "retries": (
             "Resubmitting the same title can produce a different outcome "
             "than last time, because the queue and the catalogue move "
-            "underneath you. Each POST creates a new submission row - "
-            "there is no request-level idempotency key. De-duplicate on "
-            "your side before sending if you retry."
+            "underneath you, and each POST without an Idempotency-Key "
+            "creates a new submission row. Send an Idempotency-Key header "
+            "and a retry with the same key and body returns the first "
+            "response instead of storing a second submission - see "
+            "errors.idempotency."
         ),
     }
 
@@ -1446,12 +1516,13 @@ def _endpoints(base_url: str) -> list[dict]:
             "errors": [
                 {"status": 400, "when": "Missing title, empty title, title over 255 characters, a non-string or over-long confidence_note or description, an unknown difficulty_level, a negative or non-integer searches_per_month, or a non-object body."},
                 {"status": 401, "when": "Missing, invalid, suspended, or inactive credentials."},
+                {"status": 409, "when": "idempotency_key_reused - the Idempotency-Key was used for a different request; idempotency_request_in_progress - the first request with it is still running."},
                 {"status": 429, "when": "Ingest rate limit exceeded, or - for platform-owned accounts only - the rolling 24-hour submission cap. Either way, wait the seconds in Retry-After."},
             ],
             "notes": [
                 "201 means 'received and classified', NOT 'queued'. Always branch on `status`.",
                 "A webhook for the outcome is recorded before the response is returned, and dispatched within a minute.",
-                "Every POST creates a new row. There is no idempotency key - retrying a timed-out request may create a duplicate submission that then dedups against the first.",
+                "Every POST without an Idempotency-Key creates a new row - retrying a timed-out request that way may create a duplicate submission that then dedups against the first. Send an Idempotency-Key and a retry returns the first response instead.",
             ],
         },
         {
@@ -1712,11 +1783,12 @@ def _endpoints(base_url: str) -> list[dict]:
                 {"status": 400, "when": "A field is invalid (reported by field path), the title or category does not match the idea, terms_accepted is not true, or the course fails the structural check (reported under structural_standards). Nothing was stored."},
                 {"status": 401, "when": "Missing, invalid, suspended, or inactive credentials."},
                 {"status": 404, "when": "The idea does not exist or is not yours."},
-                {"status": 409, "when": "idea_not_approved - the idea is not APPROVED; course_in_review - its course is in review or published."},
+                {"status": 409, "when": "idea_not_approved - the idea is not APPROVED; course_in_review - its course is in review or published; course_archived - the platform archived it; idempotency_key_reused / idempotency_request_in_progress - see errors.idempotency."},
                 {"status": 429, "when": "Course push rate limit exceeded. Wait the seconds in Retry-After."},
             ],
             "notes": [
                 "All or nothing: a failed push leaves no trace on our side.",
+                "Send an Idempotency-Key header to make retries safe - a retry with the same key and body returns the first response.",
                 "Every accepted push fires COURSE_SUBMITTED and returns 201 - the first one and every revision.",
                 "A revision replaces the whole course. Always send all of it.",
                 f"The request body may be up to {settings.DATA_UPLOAD_MAX_MEMORY_SIZE // (1024 * 1024)} MB - far more than the largest course the structural limits allow.",
@@ -1795,9 +1867,13 @@ def _endpoints(base_url: str) -> list[dict]:
                 {"status": 400, "when": "A field is invalid, a lesson does not exist, or the course fails the structural check. Nothing is stored."},
                 {"status": 401, "when": "Missing, invalid, suspended, or inactive credentials."},
                 {"status": 404, "when": "The idea is not yours."},
-                {"status": 409, "when": "course_not_awaiting_video: the course is not waiting for its video. video_provider_conflict: the platform supplies this video."},
+                {"status": 409, "when": "course_not_awaiting_video: the course is not waiting for its video. video_not_assigned: an admin has yet to assign the video - wait for COURSE_VIDEO_ASSIGNED. video_provider_conflict: the platform supplies this video. idempotency_key_reused / idempotency_request_in_progress - see errors.idempotency."},
             ],
-            "notes": ["COURSE_SUBMITTED fires on success."],
+            "notes": [
+                "COURSE_SUBMITTED fires on success.",
+                "If your account requires video assignment, send the video only after COURSE_VIDEO_ASSIGNED with video_producer DEVELOPER.",
+                "Send an Idempotency-Key header to make retries safe.",
+            ],
         },
         {
             "name": "Your account",
@@ -1815,6 +1891,7 @@ def _endpoints(base_url: str) -> list[dict]:
                 "email": "dev@studio.io",
                 "status": DeveloperAccountStatus.APPROVED.value,
                 "plan_type": MiePlanType.PAID_PER_SUBMISSION.value,
+                "requires_video_assignment": False,
                 "webhook_endpoints": [SAMPLE_ALL_EVENTS_ENDPOINT],
                 "api_key_preview": f"{API_KEY_PREFIX}a1b2c3d...",
                 "api_key_last_used_at": "2026-08-24T15:30:00Z",
@@ -2148,6 +2225,10 @@ def _webhook_event_catalogue() -> list[dict]:
             }
         if "revision_feedback" in docs.get("extra_course_fields", []):
             submission["course"]["revision_feedback"] = SAMPLE_REVISION_FEEDBACK
+        if "video_producer" in docs.get("extra_course_fields", []):
+            submission["course"]["video_producer"] = VideoProvider.DEVELOPER.value
+        if "archive_reason" in docs.get("extra_course_fields", []):
+            submission["course"]["archive_reason"] = SAMPLE_ARCHIVE_REASON
 
         catalogue.append(
             {
@@ -2268,7 +2349,14 @@ def _errors() -> dict:
                     "push: `idea_not_approved` - the idea is not APPROVED; "
                     "`course_in_review` - its course is in review or "
                     "published and cannot be replaced until a reviewer "
-                    "sends it back."
+                    "sends it back; `course_archived` - the platform "
+                    "archived it. On the video push: "
+                    "`course_not_awaiting_video`, `video_not_assigned` - "
+                    "wait for COURSE_VIDEO_ASSIGNED, and "
+                    "`video_provider_conflict` - the platform makes this "
+                    "video. On any POST with an Idempotency-Key: "
+                    "`idempotency_key_reused` and "
+                    "`idempotency_request_in_progress` (see idempotency)."
                 ),
                 "retry": "Not until the state changes - wait for the matching webhook.",
                 "example": {
@@ -2317,12 +2405,62 @@ def _errors() -> dict:
         ],
         "retry_guidance": (
             "Retry 429 (after Retry-After) and 5xx with exponential "
-            "backoff and jitter. Never blind-retry a 4xx - and remember "
-            "submission POSTs are not idempotent, so a retried timeout can "
-            "create a second submission. A course push is safe to retry "
-            "after a timeout: it either did nothing, or it succeeded and the "
-            "retry gets 409 course_in_review - check GET .../course/."
+            "backoff and jitter. Never blind-retry a 4xx. Send an "
+            "Idempotency-Key on every submission, course push and video "
+            "push, and reuse it on each retry of that request: a retry "
+            "then returns the first response instead of doing the work "
+            "twice. Without one, a retried submission timeout can create a "
+            "second submission."
         ),
+        "idempotency": {
+            "header": "Idempotency-Key",
+            "applies_to": [
+                f"POST {API_ROOT}/mie/v1/submissions/",
+                f"POST {API_ROOT}/mie/v1/submissions/<submission_id>/course/",
+                f"POST {API_ROOT}/mie/v1/submissions/<submission_id>/course/video/",
+            ],
+            "format": (
+                f"1 to {idempotency_service.KEY_MAX_LENGTH} characters: "
+                "letters, digits, '-', '_', '.' or ':'. A UUID works. Use a "
+                "new key for every new request, and the same key for each "
+                "retry of it."
+            ),
+            "optional": "Yes. Without the header, every POST runs as sent.",
+            "replay": (
+                "A retry with the same key and the same body returns the "
+                "first successful response, status included, with the "
+                "header Idempotent-Replayed: true. Nothing runs again and no "
+                "webhook fires again."
+            ),
+            "kept_for": (
+                f"{_humanise_seconds(int(idempotency_service.KEY_TTL.total_seconds()))}"
+                ". After that the key is forgotten and a request with it "
+                "runs as new."
+            ),
+            "failures": (
+                "A request that fails (4xx or 5xx) does not use up its key: "
+                "fix the body and retry with the same key."
+            ),
+            "conflicts": [
+                {
+                    "status": 409,
+                    "code": "idempotency_key_reused",
+                    "when": "The key was already used with a different body, or on another endpoint.",
+                },
+                {
+                    "status": 409,
+                    "code": "idempotency_request_in_progress",
+                    "when": "The first request with this key is still running. Retry shortly.",
+                },
+                {
+                    "status": 400,
+                    "code": "invalid",
+                    "when": "The key is empty, too long, or holds other characters.",
+                },
+            ],
+            "scope": "Keys are yours alone: another developer's key never collides with yours.",
+            "rate_limits": "A replayed retry still counts toward the endpoint's rate limit.",
+        },
     }
 
 
@@ -2617,10 +2755,33 @@ def _faq() -> list[dict]:
         {
             "question": "A reviewer rejected my course. What do I do?",
             "answer": (
-                "Read revision_feedback on the COURSE_REVISION_REQUESTED "
-                "webhook, or on GET /mie/v1/submissions/<id>/course/. Fix "
-                "the course and push the complete course again to the same "
-                "idea. It goes back into review from the first seat."
+                "Read revision_feedback on the COURSE_REJECTED or "
+                "COURSE_REVISION_REQUESTED webhook (both carry it), or on "
+                "GET /mie/v1/submissions/<id>/course/. Fix the course and "
+                "push the complete course again to the same idea. It goes "
+                "back into review from the first seat. A rejection always "
+                "allows a revision; only COURSE_ARCHIVED is final."
+            ),
+        },
+        {
+            "question": "Who makes the video for my course?",
+            "answer": (
+                "You do, unless your account requires video assignment. "
+                "Then, once your text passes, an admin assigns the video to "
+                "you or to the platform's production engine and "
+                "COURSE_VIDEO_ASSIGNED tells you which: start the video only "
+                "when video_producer is DEVELOPER. Your setting is "
+                "requires_video_assignment on GET /mie/v1/me/."
+            ),
+        },
+        {
+            "question": "How do I retry a request safely after a timeout?",
+            "answer": (
+                "Send an Idempotency-Key header (a UUID) on the submission, "
+                "course push and video push, and send the same key on every "
+                "retry of that request. A retry then returns the first "
+                "response instead of doing the work twice. See "
+                "errors.idempotency."
             ),
         },
         {
@@ -2754,7 +2915,8 @@ def _course_upload(account, base_url: str) -> dict:
             "how_it_works": (
                 "When a reviewer - in content review or in QA verification - "
                 "sends your course back, it returns to DRAFT and "
-                f"{WebhookEventType.COURSE_REVISION_REQUESTED.value} fires "
+                f"{WebhookEventType.COURSE_REJECTED.value} then "
+                f"{WebhookEventType.COURSE_REVISION_REQUESTED.value} fire "
                 "with the reviewer's feedback and every issue they flagged, "
                 "named by module and lesson title. Fix the course and push "
                 "the whole thing again to the same idea."
@@ -2767,7 +2929,9 @@ def _course_upload(account, base_url: str) -> dict:
             "while_in_review": (
                 "While the course is SUBMITTED, IN_REVIEW, QA_VERIFICATION, "
                 "APPROVED or PUBLISHED, a push returns 409 course_in_review. "
-                "Wait for the revision webhook."
+                "Wait for the revision webhook. Once the platform archives "
+                "the course (COURSE_ARCHIVED), a push returns 409 "
+                "course_archived for good."
             ),
             "history": (
                 "Reviewer feedback from earlier rounds is kept on our side; "
@@ -3143,7 +3307,8 @@ def _course_lifecycle() -> dict:
             "push -> SUBMITTED -> IN_REVIEW (content review seats) -> "
             "QA_VERIFICATION -> APPROVED -> PUBLISHED. A rejection at any "
             "review seat or in QA returns it to DRAFT, and your next push "
-            "starts the review again from the first seat."
+            "starts the review again from the first seat. Until it passes "
+            "QA, an admin can archive it (ARCHIVED), which is final."
         ),
         "statuses": [
             {"status": status.value, "label": status.label, **COURSE_STATUS_DOCS[status]}

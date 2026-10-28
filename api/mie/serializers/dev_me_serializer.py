@@ -34,6 +34,7 @@ class DeveloperMeSerializer(serializers.ModelSerializer):
             "email",
             "status",
             "plan_type",
+            "requires_video_assignment",
             "webhook_endpoints",
             "api_key_preview",
             "api_key_last_used_at",

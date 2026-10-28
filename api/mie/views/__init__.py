@@ -1,4 +1,11 @@
-from .admin_developer_views import MieDeveloperAdminViewSet
+from .admin_developer_course_views import (
+    MieAdminCourseArchiveView,
+    MieAdminCourseVideoAssignmentView,
+)
+from .admin_developer_views import (
+    MieDeveloperAdminViewSet,
+    MieDeveloperVideoAssignmentSettingView,
+)
 from .admin_submission_views import MieSubmissionAdminViewSet
 from .dev_course_views import (
     MieCoursePushView,
@@ -21,6 +28,9 @@ from .dev_webhook_views import (
 from .rejection_reason_views import RejectionReasonAdminViewSet
 
 __all__ = [
+    "MieAdminCourseArchiveView",
+    "MieAdminCourseVideoAssignmentView",
+    "MieDeveloperVideoAssignmentSettingView",
     "MieCoursePushView",
     "MieCourseVideoView",
     "MieCourseRequirementsView",

@@ -42,6 +42,12 @@ CELERY_BEAT_SCHEDULE = {
         "task": "api.mie.tasks.dispatch_due_webhooks_task",
         "schedule": 60.0,
     },
+    # Keys live 24 hours and an expired key is ignored on use anyway, so an
+    # hourly sweep only keeps the table small.
+    "mie-purge-idempotency-keys": {
+        "task": "api.mie.tasks.purge_expired_idempotency_keys_task",
+        "schedule": 3600.0,
+    },
     # Feeds the System Health screen. Five minutes rather than one: uptime
     # is measured over a 30-day window by default, so a tighter cadence
     # buys accuracy nobody reads while multiplying stored samples.

@@ -159,6 +159,12 @@ class UserActivityActionEnums(models.TextChoices):
     COURSE_PUBLISHED = "COURSE_PUBLISHED", "Course Published"
     COURSE_VIDEO_DECIDED = "COURSE_VIDEO_DECIDED", "Course Video Source Chosen"
     COURSE_VIDEO_SUBMITTED = "COURSE_VIDEO_SUBMITTED", "Course Video Submitted"
+    COURSE_VIDEO_ASSIGNED = "COURSE_VIDEO_ASSIGNED", "Course Video Producer Assigned"
+    COURSE_ARCHIVED = "COURSE_ARCHIVED", "Course Archived"
+    DEVELOPER_SETTINGS_UPDATED = (
+        "DEVELOPER_SETTINGS_UPDATED",
+        "MIE Developer Settings Updated",
+    )
     PRODUCTION_REQUESTED = "PRODUCTION_REQUESTED", "Production Requested"
     PRODUCTION_BLOCKED = "PRODUCTION_BLOCKED", "Production Blocked"
     PRODUCTION_COMPLETED = "PRODUCTION_COMPLETED", "Production Completed"

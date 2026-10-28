@@ -19,6 +19,12 @@ from api.mie.serializers.course_video_push_serializer import CourseVideoPushSeri
 from api.mie.services import course_push_service
 from api.mie.services.documentation_service import SAMPLE_COURSE_PUSH
 from api.mie.throttling import MieDeveloperRateThrottle
+from api.mie.views.idempotency import (
+    IDEMPOTENCY_KEY_PARAMETER,
+    INVALID_KEY_EXAMPLE,
+    idempotency_conflict_response,
+    respond_idempotently,
+)
 from api.platform.services import platform_settings_service
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 from shared.serializers.storage_serializer import (
@@ -99,10 +105,14 @@ class MieCoursePushView(APIView):
             "text before video, in which case send the course with no video "
             "at all and send it afterwards with "
             "`POST /mie/v1/submissions/{id}/course/video/`. "
-            "`COURSE_SUBMITTED` fires on success."
+            "`COURSE_SUBMITTED` fires on success. Send an `Idempotency-Key` "
+            "to make retries safe: a retry with the same key and body "
+            "returns the first response instead of pushing again. Once the "
+            "platform archives the course (`COURSE_ARCHIVED`) it can never "
+            "be pushed again."
         ),
         tags=["Developer — MIE Courses"],
-        parameters=[SUBMISSION_ID_PARAMETER],
+        parameters=[SUBMISSION_ID_PARAMETER, IDEMPOTENCY_KEY_PARAMETER],
         request=CoursePushSerializer,
         examples=[
             OpenApiExample("Course push", value=SAMPLE_COURSE_PUSH, request_only=True),
@@ -150,14 +160,17 @@ class MieCoursePushView(APIView):
                             ]
                         },
                     ),
+                    INVALID_KEY_EXAMPLE,
                 ],
             ),
             **STANDARD_ERROR_RESPONSES["auth"],
             **STANDARD_ERROR_RESPONSES["not_found"],
-            status.HTTP_409_CONFLICT: OpenApiResponse(
+            status.HTTP_409_CONFLICT: idempotency_conflict_response(
                 description=(
-                    "The idea is not APPROVED, or its course is already in "
-                    "review or published."
+                    "The idea is not APPROVED, its course is already in "
+                    "review or published, the platform archived it, or the "
+                    "Idempotency-Key belongs to another request or is still "
+                    "running."
                 ),
                 examples=[
                     OpenApiExample(
@@ -177,6 +190,14 @@ class MieCoursePushView(APIView):
                             "to DRAFT.",
                         ),
                     ),
+                    OpenApiExample(
+                        "Course archived",
+                        value=_error(
+                            "course_archived",
+                            "This idea's course was archived by the platform "
+                            "and cannot be pushed again.",
+                        ),
+                    ),
                 ],
             ),
             **STANDARD_ERROR_RESPONSES["rate_limited"],
@@ -184,6 +205,11 @@ class MieCoursePushView(APIView):
         },
     )
     def post(self, request, submission_id):
+        return respond_idempotently(
+            request, lambda: self._push(request, submission_id)
+        )
+
+    def _push(self, request, submission_id):
         serializer = CoursePushSerializer(
             data=request.data,
             context={
@@ -258,7 +284,9 @@ class MieCourseVideoView(APIView):
             "Called when `COURSE_TEXT_APPROVED` fires - the text of your "
             "course passed the first review seat and the platform is waiting "
             "for the video - and again after a later seat sends the video "
-            "back (`COURSE_REVISION_REQUESTED`).\n\n"
+            "back (`COURSE_REVISION_REQUESTED`). If your account requires "
+            "video assignment, wait instead for `COURSE_VIDEO_ASSIGNED` with "
+            "`video_producer` DEVELOPER.\n\n"
             "**Auth:** Requires a valid MIE developer API key "
             "(`X-MIE-Api-Key`) or a platform Bearer session token.\n\n"
             "**Prerequisites:** The idea is yours and its course is "
@@ -271,10 +299,12 @@ class MieCourseVideoView(APIView):
             "Every VIDEO lesson needs a `video_url` or `embedded_link`, and "
             "the preview video is required; every text rule is checked "
             "again. Nothing is stored if any rule fails. `COURSE_SUBMITTED` "
-            "fires on success."
+            "fires on success. Send an `Idempotency-Key` to make retries "
+            "safe: a retry with the same key and body returns the first "
+            "response instead of sending the video again."
         ),
         tags=["Developer — MIE Courses"],
-        parameters=[SUBMISSION_ID_PARAMETER],
+        parameters=[SUBMISSION_ID_PARAMETER, IDEMPOTENCY_KEY_PARAMETER],
         request=CourseVideoPushSerializer,
         examples=[
             OpenApiExample(
@@ -319,14 +349,17 @@ class MieCourseVideoView(APIView):
                             "structural_standards",
                         ),
                     ),
+                    INVALID_KEY_EXAMPLE,
                 ],
             ),
             **STANDARD_ERROR_RESPONSES["auth"],
             **STANDARD_ERROR_RESPONSES["not_found"],
-            status.HTTP_409_CONFLICT: OpenApiResponse(
+            status.HTTP_409_CONFLICT: idempotency_conflict_response(
                 description=(
-                    "The course is not waiting for its video, or the "
-                    "platform supplies it."
+                    "The course is not waiting for its video, its video has "
+                    "not been assigned yet, the platform supplies it, or the "
+                    "Idempotency-Key belongs to another request or is still "
+                    "running."
                 ),
                 examples=[
                     OpenApiExample(
@@ -334,6 +367,15 @@ class MieCourseVideoView(APIView):
                         value=_error(
                             "course_not_awaiting_video",
                             "This course is not waiting for its video.",
+                        ),
+                    ),
+                    OpenApiExample(
+                        "Video not assigned yet",
+                        value=_error(
+                            "video_not_assigned",
+                            "The video for this course has not been assigned "
+                            "yet. Wait for COURSE_VIDEO_ASSIGNED before "
+                            "sending it.",
                         ),
                     ),
                     OpenApiExample(
@@ -350,6 +392,11 @@ class MieCourseVideoView(APIView):
         },
     )
     def post(self, request, submission_id):
+        return respond_idempotently(
+            request, lambda: self._send_video(request, submission_id)
+        )
+
+    def _send_video(self, request, submission_id):
         serializer = CourseVideoPushSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         course = course_push_service.push_video(
