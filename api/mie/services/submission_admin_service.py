@@ -77,18 +77,23 @@ def decide_submission(
     permission_service.require_permission(actor, codenames.MIE_APPROVE_TOPIC_PROPOSALS)
     new_status = SubmissionStatus.APPROVED if approve else SubmissionStatus.REJECTED
 
-    # An already-rejected row may be re-rejected without a fresh reason;
-    # any other rejection must carry one.
-    if (
-        not approve
-        and rejection_reason is None
-        and submission.status != SubmissionStatus.REJECTED
-    ):
-        raise exceptions.ValidationError(
-            {"rejection_reason": ["A rejection reason is required to reject."]}
-        )
-
     with transaction.atomic():
+        submission = (
+            CourseSubmission.objects.select_for_update(of=("self",))
+            .select_related("developer", "category")
+            .get(pk=submission.pk)
+        )
+        # An already-rejected row may be re-rejected without a fresh reason;
+        # any other rejection must carry one.
+        if (
+            not approve
+            and rejection_reason is None
+            and submission.status != SubmissionStatus.REJECTED
+        ):
+            raise exceptions.ValidationError(
+                {"rejection_reason": ["A rejection reason is required to reject."]}
+            )
+
         submission.status = new_status
         submission.decided_at = timezone.now()
         submission.decided_by = actor
@@ -100,7 +105,9 @@ def decide_submission(
             # Both fall back to what is already stored, so re-rejecting an
             # already-rejected idea without fresh detail preserves rather
             # than wipes it.
-            submission.rejection_reason = rejection_reason or submission.rejection_reason
+            submission.rejection_reason = (
+                rejection_reason or submission.rejection_reason
+            )
             submission.rejection_note = rejection_note or submission.rejection_note
         submission.save()
 
@@ -178,6 +185,7 @@ def set_demand_signals(
     return submission
 
 
+@transaction.atomic
 def decide_submissions_bulk(
     *,
     actor,
@@ -206,9 +214,9 @@ def decide_submissions_bulk(
         )
 
     submissions = list(
-        CourseSubmission.objects.select_related("developer").filter(
-            id__in=submission_ids
-        )
+        CourseSubmission.objects.select_for_update(of=("self",))
+        .select_related("developer", "category")
+        .filter(id__in=submission_ids)
     )
     found = {str(submission.id) for submission in submissions}
     missing = sorted({str(given) for given in submission_ids} - found)
@@ -237,7 +245,9 @@ def decide_submissions_bulk(
             submission.rejection_note = ""
             _reserve_course_id(submission)
         else:
-            submission.rejection_reason = rejection_reason or submission.rejection_reason
+            submission.rejection_reason = (
+                rejection_reason or submission.rejection_reason
+            )
             submission.rejection_note = rejection_note or submission.rejection_note
 
     with transaction.atomic():
@@ -245,11 +255,11 @@ def decide_submissions_bulk(
             submissions,
             fields=[
                 "status",
+                "reserved_course_id",
                 "decided_at",
                 "decided_by",
                 "rejection_reason",
                 "rejection_note",
-                "reserved_course_id",
                 "updated_datetime",
             ],
             batch_size=BULK_DECISION_LIMIT,
@@ -335,7 +345,9 @@ def _decision_details(submission: CourseSubmission) -> dict:
     return details
 
 
-def set_payout_bypass(*, actor, submission: CourseSubmission, bypass: bool) -> CourseSubmission:
+def set_payout_bypass(
+    *, actor, submission: CourseSubmission, bypass: bool
+) -> CourseSubmission:
     """Mark one specific idea as no-payout and tell the developer now.
 
     Fires SUBMISSION_PAYOUT_BYPASS_UPDATED regardless of status change -
@@ -346,7 +358,11 @@ def set_payout_bypass(*, actor, submission: CourseSubmission, bypass: bool) -> C
     permission_service.require_permission(actor, codenames.MIE_MANAGE_CONSOLE)
     if submission.payout_bypass == bypass:
         raise exceptions.ValidationError(
-            {"payout_bypass": [f"Payout bypass is already {'set' if bypass else 'clear'}."]}
+            {
+                "payout_bypass": [
+                    f"Payout bypass is already {'set' if bypass else 'clear'}."
+                ]
+            }
         )
 
     submission.payout_bypass = bypass
@@ -369,10 +385,22 @@ def _base_payload(submission: CourseSubmission) -> dict:
     submission object to the developer.
     """
 
-    return {
+    payload = {
         "submission": submission_service.event_submission_body(submission),
         "developer_email": submission.developer.email,
     }
+    if submission.category_id:
+        payload["submission"]["category"] = {
+            "id": str(submission.category_id),
+            "name": submission.category.name,
+            "status": submission.category.status,
+        }
+    if submission.reserved_course_id:
+        payload["submission"]["course"] = {
+            "id": str(submission.reserved_course_id),
+            "status": "RESERVED" if not submission.resulting_course_id else "ASSIGNED",
+        }
+    return payload
 
 
 def _decision_payload(submission: CourseSubmission) -> dict:

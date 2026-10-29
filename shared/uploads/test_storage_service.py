@@ -89,3 +89,37 @@ class StorageServiceTests(TestCase):
             )
 
         self.assertEqual(key, "uploads/courses/video.mp4")
+
+
+class StudioStoredIntegrityTests(TestCase):
+    def test_verifies_actual_bytes_and_rejects_wrong_hash_size_and_type(self):
+        import hashlib
+        from io import BytesIO
+        from unittest.mock import Mock
+
+        data = b"stored video bytes"
+        descriptor = {"sha256": hashlib.sha256(data).hexdigest(),
+                      "size": len(data), "content_type": "video/mp4"}
+        for change, expected in (({}, True), ({"sha256": "0" * 64}, False),
+                                 ({"size": len(data) - 1}, False),
+                                 ({"content_type": "text/plain"}, False)):
+            body = BytesIO(data)
+            client = Mock()
+            client.get_object.return_value = {
+                "Body": body, "ContentLength": len(data), "ContentType": "video/mp4"}
+            with patch.object(storage_service, "_get_s3_client", return_value=client):
+                self.assertEqual(storage_service.StorageService.verify_file(
+                    "uploads/fixture", **{**descriptor, **change}), expected)
+            self.assertTrue(body.closed)
+
+    def test_detects_truncated_body_despite_matching_declared_length(self):
+        from io import BytesIO
+        from unittest.mock import Mock
+        client = Mock()
+        body = BytesIO(b"short")
+        client.get_object.return_value = {
+            "Body": body, "ContentLength": 10, "ContentType": "video/mp4"}
+        with patch.object(storage_service, "_get_s3_client", return_value=client):
+            self.assertFalse(storage_service.StorageService.verify_file(
+                "uploads/fixture", sha256="0" * 64, size=10, content_type="video/mp4"))
+        self.assertTrue(body.closed)

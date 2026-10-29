@@ -69,6 +69,7 @@ class AdminSubmissionSerializer(serializers.ModelSerializer):
             "decided_at",
             "decided_by_email",
             "resulting_course",
+            "reserved_course_id",
             "created_datetime",
             "updated_datetime",
         )

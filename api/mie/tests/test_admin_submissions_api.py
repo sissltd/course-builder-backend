@@ -398,6 +398,7 @@ class DecisionEventWireShapeTests(APITestCase):
                 "reference": submission.public_reference,
                 "status": SubmissionStatus.APPROVED,
                 "title": submission.title,
+                "course": {"id": str(submission.reserved_course_id), "status": "RESERVED"},
                 "category_id": None,
                 "course_id": str(submission.reserved_course_id),
             },
@@ -441,7 +442,10 @@ class DecisionEventWireShapeTests(APITestCase):
         approved = self._wire_body(submission, WebhookEventType.SUBMISSION_APPROVED)
 
         self.assertEqual(set(queued), set(approved))
-        self.assertEqual(set(queued["submission"]), set(approved["submission"]))
+        for key in ("reference", "title"):
+            self.assertEqual(queued["submission"][key], approved["submission"][key].replace("-A", "-P") if key == "reference" else approved["submission"][key])
+        self.assertNotIn("course", queued["submission"])
+        self.assertIn("course", approved["submission"])
 
 
 class RejectionReasonTaxonomyTests(APITestCase):

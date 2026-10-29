@@ -29,6 +29,7 @@ class DevSubmissionSerializer(serializers.Serializer):
     """One row of the developer's own submission queue."""
 
     id = serializers.UUIDField(help_text="Immutable internal submission id.")
+    reserved_course_id = serializers.UUIDField(read_only=True, allow_null=True)
     reference = serializers.CharField(
         source="public_reference",
         help_text=(
