@@ -1,5 +1,6 @@
 from django.urls import path
 from rest_framework.routers import DefaultRouter
+from api.mie.views.studio_review_views import MieStudioReviewView, MieStudioUploadView
 
 from api.mie.views import (
     MieCoursePushView,
@@ -25,7 +26,9 @@ router.register(
     r"mie/admin/developers", MieDeveloperAdminViewSet, basename="mie-admin-developers"
 )
 router.register(
-    r"mie/admin/submissions", MieSubmissionAdminViewSet, basename="mie-admin-submissions"
+    r"mie/admin/submissions",
+    MieSubmissionAdminViewSet,
+    basename="mie-admin-submissions",
 )
 router.register(
     r"mie/admin/rejection-reasons",
@@ -34,9 +37,31 @@ router.register(
 )
 
 urlpatterns = router.urls + [
-    path("mie/v1/register/", MieDeveloperRegistrationView.as_view(), name="mie-developer-register"),
-    path("mie/v1/submissions/", MieSubmissionIngestView.as_view(), name="mie-submission-ingest"),
-    path("mie/v1/submissions/queue/", MieSubmissionQueueView.as_view(), name="mie-submission-queue"),
+    path(
+        "mie/v1/studio/reviews/",
+        MieStudioReviewView.as_view(),
+        name="mie-studio-review",
+    ),
+    path(
+        "mie/v1/studio/uploads/",
+        MieStudioUploadView.as_view(),
+        name="mie-studio-upload",
+    ),
+    path(
+        "mie/v1/register/",
+        MieDeveloperRegistrationView.as_view(),
+        name="mie-developer-register",
+    ),
+    path(
+        "mie/v1/submissions/",
+        MieSubmissionIngestView.as_view(),
+        name="mie-submission-ingest",
+    ),
+    path(
+        "mie/v1/submissions/queue/",
+        MieSubmissionQueueView.as_view(),
+        name="mie-submission-queue",
+    ),
     path(
         "mie/v1/submissions/<uuid:submission_id>/course/",
         MieCoursePushView.as_view(),
@@ -52,7 +77,11 @@ urlpatterns = router.urls + [
         MieCourseRequirementsView.as_view(),
         name="mie-course-requirements",
     ),
-    path("mie/v1/uploads/presign/", MieUploadPresignView.as_view(), name="mie-upload-presign"),
+    path(
+        "mie/v1/uploads/presign/",
+        MieUploadPresignView.as_view(),
+        name="mie-upload-presign",
+    ),
     path("mie/v1/me/", MieDeveloperMeView.as_view(), name="mie-developer-me"),
     path(
         "mie/v1/webhooks/",
@@ -69,7 +98,11 @@ urlpatterns = router.urls + [
         MieWebhookEndpointDetailView.as_view(),
         name="mie-webhook-endpoint-detail",
     ),
-    path("mie/v1/documentation/", MieDocumentationView.as_view(), name="mie-documentation"),
+    path(
+        "mie/v1/documentation/",
+        MieDocumentationView.as_view(),
+        name="mie-documentation",
+    ),
     path(
         "mie/v1/documentation/download/",
         MieDocumentationDownloadView.as_view(),

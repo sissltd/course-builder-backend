@@ -214,6 +214,7 @@ class LessonSerializer(serializers.ModelSerializer):
             "video_url",
             "embedded_link",
             "video_script_file",
+            "video_transcript",
             "learning_objectives",
             "duration_minutes",
             "lesson_requirement",
@@ -304,14 +305,17 @@ class LessonWriteSerializer(serializers.ModelSerializer):
             "video_url",
             "embedded_link",
             "video_script_file",
+            "video_transcript",
             "learning_objectives",
             "duration_minutes",
             "lesson_requirement",
             "requirements",
         ]
-        read_only_fields = ["id"]
+        read_only_fields = ["id", "video_transcript"]
 
     def to_internal_value(self, data):
+        if not hasattr(data, "get"):
+            return super().to_internal_value(data)
         lesson_type = data.get("lesson_type", serializers.empty)
         legacy_content_type = data.get("content_type", serializers.empty)
         if (

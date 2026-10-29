@@ -1,3 +1,4 @@
+import hashlib
 import logging
 import uuid
 from urllib.parse import urlsplit
@@ -600,6 +601,30 @@ class StorageService:
         except ClientError as e:
             logger.error(f"[<>Storage<>] Delete failed for {file_key}: {e}")
             return False
+
+    @staticmethod
+    def verify_file(file_key, *, sha256, size, content_type):
+        """Hash bounded stored bytes before acknowledging a Studio asset."""
+        try:
+            result = _get_s3_client().get_object(Bucket=BUCKET_NAME, Key=file_key)
+            body = result["Body"]
+            try:
+                if result["ContentLength"] != size or result["ContentType"] != content_type:
+                    return False
+                digest = hashlib.sha256()
+                total = 0
+                while chunk := body.read(min(1024 * 1024, size - total + 1)):
+                    total += len(chunk)
+                    if total > size:
+                        return False
+                    digest.update(chunk)
+                return total == size and digest.hexdigest() == sha256
+            finally:
+                body.close()
+        except ClientError as exc:
+            if str(exc.response.get("Error", {}).get("Code")) in ("404", "NoSuchKey", "NotFound"):
+                return False
+            raise StorageError("Unable to verify platform media.") from exc
 
     @staticmethod
     def file_exists(file_key):

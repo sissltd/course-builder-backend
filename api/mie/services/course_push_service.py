@@ -200,10 +200,15 @@ def _apply_video(*, course: Course, data: dict) -> None:
         lesson = lessons[(item["module_order"], item["lesson_order"])]
         lesson.video_url = item.get("video_url", "")
         lesson.embedded_link = item.get("embedded_link", "")
+        if data.get("promote_text_lessons"):
+            lesson.content_type = LessonContentType.VIDEO
+            lesson.video_transcript = item["transcript"]
+            lesson.video_script_file = item["captions_url"]
         lesson.updated_datetime = now
         changed.append(lesson)
     Lesson.objects.bulk_update(
-        changed, ["video_url", "embedded_link", "updated_datetime"]
+        changed, ["video_url", "embedded_link", "content_type", "video_transcript",
+                  "video_script_file", "updated_datetime"]
     )
 
 
@@ -311,6 +316,7 @@ def _create_course(*, submission, creator, data: dict) -> Course:
     """
 
     return course_service.create_draft_course(
+        course_id=submission.reserved_course_id,
         creator=creator,
         category=data["category"],
         title=submission.title,
@@ -513,7 +519,7 @@ def revision_feedback(review_action: ReviewAction) -> dict:
     """What a developer needs to fix: the reviewer's feedback and each
     flagged issue, named by module and lesson title."""
 
-    return {
+    feedback = {
         "stage": review_action.stage,
         "rejected_at": review_action.created_datetime.isoformat(),
         "feedback": review_action.feedback,
@@ -529,6 +535,47 @@ def revision_feedback(review_action: ReviewAction) -> dict:
             for flag in review_action.flags.select_related("lesson", "module")
         ],
     }
+    # Studio repairs use producer IDs. Builder IDs are recreated on text
+    # resubmission, so resolve through the accepted ordered source map.
+    from api.mie.models import StudioReviewReceipt
+
+    receipt = (
+        StudioReviewReceipt.objects.filter(
+            course_id=review_action.course_id, kind="text"
+        )
+        .order_by("-revision")
+        .first()
+    )
+    if receipt:
+        modules = {m["order"]: m for m in receipt.source_map}
+        targets = []
+        for flag in review_action.flags.select_related("lesson__module", "module"):
+            module = flag.lesson.module if flag.lesson_id else flag.module
+            mapped = modules.get(module.order) if module else None
+            if not mapped:
+                continue
+            if flag.lesson_id:
+                lesson = next(
+                    (
+                        item
+                        for item in mapped["lessons"]
+                        if item["order"] == flag.lesson.order
+                    ),
+                    None,
+                )
+                if lesson:
+                    targets.append({"lesson_id": lesson["id"]})
+            else:
+                targets.append({"module_id": mapped["id"]})
+        feedback.update(
+            {
+                "stage": "text" if review_action.stage == "CONTENT" else "video",
+                "platform_stage": review_action.stage,
+                "reason": (review_action.feedback or {}).get("summary", ""),
+                "targets": targets,
+            }
+        )
+    return feedback
 
 
 # >>>>>>>>>>>>>>>>>>>> Requirements <<<<<<<<<<<<<<<<<<<<<<
@@ -671,6 +718,7 @@ def record_course_event(
         return []
 
     body = {
+        "id": str(submission.id),
         "reference": submission.public_reference,
         "status": submission.status,
         "title": submission.title,
@@ -680,6 +728,18 @@ def record_course_event(
             "title": course.title,
         },
     }
+    if (
+        event_type == WebhookEventType.COURSE_TEXT_APPROVED
+        and course.video_provider == VideoProvider.DEVELOPER
+    ):
+        receipt = (
+            submission.studio_receipts.filter(kind="text").order_by("-revision").first()
+        )
+        if receipt:
+            body["course"]["video_assignment"] = {
+                "producer": "studio",
+                "assignment_id": f"studio-video:{receipt.id}",
+            }
     if review_action is not None:
         body["course"]["revision_feedback"] = revision_feedback(review_action)
     return webhook_endpoint_service.record_event(

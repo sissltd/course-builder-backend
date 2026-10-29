@@ -154,6 +154,7 @@ def create_draft_course(
     duration_seconds: int = 0,
     terms_accepted: bool,
     source_type: str = CourseSourceType.CREATOR_UPLOADED,
+    course_id=None,
 ) -> Course:
     """Create a new Draft course owned by `creator`.
 
@@ -198,6 +199,7 @@ def create_draft_course(
 
     with transaction.atomic():
         course = Course.objects.create(
+            **({"id": course_id} if course_id is not None else {}),
             creator=creator,
             category=category,
             topic=topic,
