@@ -49,3 +49,17 @@ developer authentication and submission ownership boundary, matching existing MI
 push endpoints. Negative upload tests also check missing credentials (401) and a
 different approved developer (404). This does not remove or weaken any endpoint gate.
 The follow-up CI run must pass before promotion; no deployment is authorized here.
+
+
+## PR #103 branch reconciliation
+
+Scope: resolve staging/main conflicts while retaining staging's current application tree.
+P5/P6/P7 source and migration decisions are documented in
+`staging-main-conflict-resolution.md`, including main/staging parent revisions.
+Existing mandatory-MFA and production migration-history gaps remain explicit. No
+production operational verification or release readiness is inferred from a clean merge.
+
+Local resolution evidence: full Ruff and migration consistency passed; 322 tests
+and 45 subtests passed on fresh disposable PostgreSQL. Application/configuration/
+migration content is unchanged from staging parent `8b85178`; main ancestry is
+reconciled by the merge. GitHub CI on the pushed merge remains a separate check.
