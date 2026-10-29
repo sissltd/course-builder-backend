@@ -336,7 +336,7 @@ class StudioReviewTests(CoursePushTestCase):
         course = self._approve()
         Course.objects.filter(pk=course.id).update(video_provider="")
         assign_video(
-            actor=make_user(role=UserRole.SUPER_ADMIN),
+            actor=self.idea.decided_by,
             submission_id=self.idea.id,
             producer="DEVELOPER",
         )

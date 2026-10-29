@@ -22,3 +22,19 @@ on the disposable local PostgreSQL test database. Selection: `test_studio_review
 `manage makemigrations --check --dry-run` reported no changes. Existing Django deprecation
 and missing staticfiles warnings remain. Paired Studio: 30 unit and 13 integration tests
 passed on `scb_receiver_integrity_test`, with `studio_app` NOSUPERUSER NOBYPASSRLS.
+
+
+## Staging reconciliation verification
+
+2026-10-29: receiver merged with staging `88adcdb` in local revision `a96723c`,
+followed by the test fixture correction. Fresh-database run:
+`python -m pytest api/mie/tests shared/uploads -q --disable-warnings --create-db`
+passed **386 tests and 227 subtests**. This covers staging's idempotency,
+video-assignment/archive and reserved-course-ID behavior as well as the receiver.
+The initial reused database contained migration-test fixtures; the clean recreation
+removed that contamination. Full Ruff and migration consistency checks pass.
+MIE migration chain is now staging 0012/0013 → receiver 0014 → integrity 0015;
+courses 0022 adds the transcript. Earlier local 0012 identity migration was removed.
+Paired Studio supports separate explicit assignment and archive cancellation;
+30 unit and 13 PostgreSQL integration tests pass with external boundaries mocked.
+No real storage/playback or deployment evidence is asserted.
