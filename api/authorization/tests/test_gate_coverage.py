@@ -59,6 +59,10 @@ SELF_SERVICE_HANDLERS = {
     "MieCoursePushView.get",
     "MieCoursePushView.post",
     "MieCourseVideoView.post",
+    # MIE developer authentication, approved-account permission, and submission
+    # ownership checks apply; these are not staff-role permission endpoints.
+    "MieStudioReviewView.post",
+    "MieStudioUploadView.post",
     # A developer's own webhook endpoints, scoped to request.auth.
     "MieWebhookEndpointDetailView.delete",
     "MieWebhookEndpointDetailView.get",

@@ -347,3 +347,20 @@ class StudioReviewTests(CoursePushTestCase):
         self.assertEqual(payload["video_producer"], "DEVELOPER")
         self.assertEqual(payload["video_assignment"]["producer"], "studio")
         self.assertTrue(payload["video_assignment"]["assignment_id"])
+
+    def test_upload_requires_developer_authentication_and_submission_ownership(self):
+        body = {
+            "submission_id": str(self.idea.id),
+            "asset_id": str(uuid4()),
+            "filename": "captions.srt",
+            "purpose": "SUBTITLE",
+            "size": 10,
+            "sha256": "d" * 64,
+            "content_type": "application/x-subrip",
+        }
+        self.assertEqual(self.client.post(UPLOAD, body, format="json").status_code, 401)
+        _, other_key = make_approved_developer()
+        response = self.client.post(
+            UPLOAD, body, format="json", HTTP_X_MIE_API_KEY=other_key
+        )
+        self.assertEqual(response.status_code, 404)

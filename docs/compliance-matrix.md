@@ -38,3 +38,14 @@ courses 0022 adds the transcript. Earlier local 0012 identity migration was remo
 Paired Studio supports separate explicit assignment and archive cancellation;
 30 unit and 13 PostgreSQL integration tests pass with external boundaries mocked.
 No real storage/playback or deployment evidence is asserted.
+
+
+## CI permission inventory correction
+
+CI run `40945526414` passed 2,269 tests and 465 subtests but failed the handler
+coverage inventory: the two Studio endpoints were missing from the explicit MIE
+(non-staff authentication) classification. The inventory now documents their MIE
+developer authentication and submission ownership boundary, matching existing MIE
+push endpoints. Negative upload tests also check missing credentials (401) and a
+different approved developer (404). This does not remove or weaken any endpoint gate.
+The follow-up CI run must pass before promotion; no deployment is authorized here.
