@@ -12,7 +12,8 @@ submission's structural check leaves nothing behind.
 
 A push creates the idea's course the first time. After a reviewer sends that
 course back to DRAFT, the next push replaces its content and resubmits it.
-While the course is in review or published it cannot be replaced.
+While the course is in review or published it cannot be replaced, and once
+an admin archives it nothing can (developer_course_admin_service).
 
 A pushed course is paid like a creator's course with its own video
 (course_payout_service): at its with-video price, into the linked creator
@@ -50,17 +51,26 @@ from api.courses.serializers.assessment_serializer import (
     MAXIMUM_CHOICE_OPTIONS,
     MINIMUM_CHOICE_OPTIONS,
 )
-from api.courses.exceptions import CourseNotAwaitingVideo
+from api.courses.exceptions import CourseNotAwaitingVideo, VideoProviderConflict
 from api.courses.services import course_service
 from api.mie.enums import MieSourceType, SubmissionStatus, WebhookEventType
-from api.mie.exceptions import CourseAlreadyInFlight, IdeaNotApproved
+from api.mie.exceptions import (
+    CourseAlreadyInFlight,
+    CourseArchived,
+    IdeaNotApproved,
+    VideoNotAssigned,
+)
 from api.mie.models import CourseSubmission, DeveloperAccount, WebhookEvent
 from api.mie.serializers.course_push_serializer import (
     MAX_PUSH_BLOCKS_PER_LESSON,
     MAX_PUSH_LESSONS_PER_MODULE,
     MAX_PUSH_MODULES,
 )
-from api.mie.services import developer_service, webhook_endpoint_service
+from api.mie.services import (
+    developer_service,
+    submission_service,
+    webhook_endpoint_service,
+)
 from api.platform.services import platform_settings_service
 from api.reviews.enums import ReviewActionType
 from api.reviews.models import ReviewAction
@@ -133,8 +143,9 @@ def push_video(*, developer: DeveloperAccount, submission_id, data: dict) -> Cou
 
     `data` is CourseVideoPushSerializer.validated_data. Raises NotFound for
     an idea that is not the caller's, CourseNotAwaitingVideo (409) for a
-    course that is not waiting for its video, VideoProviderConflict (409) when
-    the platform, not the developer, supplies this course's video, and
+    course that is not waiting for its video, VideoNotAssigned (409) while an
+    admin has yet to assign the video, VideoProviderConflict (409) when the
+    platform, not the developer, supplies this course's video, and
     ValidationError for a lesson the course does not have or a course that
     fails the structural check. On any of those nothing is written.
 
@@ -157,6 +168,14 @@ def push_video(*, developer: DeveloperAccount, submission_id, data: dict) -> Cou
         )
         if course.status != CourseStatus.AWAITING_VIDEO and not resubmitting_video:
             raise CourseNotAwaitingVideo()
+        # Checked here rather than left to submit_video, which the
+        # resubmission path does not go through.
+        if not course.video_provider:
+            raise VideoNotAssigned()
+        if course.video_provider != VideoProvider.DEVELOPER:
+            raise VideoProviderConflict(
+                "The production engine supplies the video for this course."
+            )
 
         _apply_video(course=course, data=data)
         if resubmitting_video:
@@ -207,26 +226,36 @@ def _apply_video(*, course: Course, data: dict) -> None:
         lesson.updated_datetime = now
         changed.append(lesson)
     Lesson.objects.bulk_update(
-        changed, ["video_url", "embedded_link", "content_type", "video_transcript",
-                  "video_script_file", "updated_datetime"]
+        changed,
+        [
+            "video_url",
+            "embedded_link",
+            "content_type",
+            "video_transcript",
+            "video_script_file",
+            "updated_datetime",
+        ],
     )
 
 
 def video_provider_for(*, course: Course) -> str:
     """Who supplies the video of a pushed course once its text passes: the
     developer, or the production engine when the idea came from the
-    platform's own crawler (a SYSTEM account has no video to send)."""
+    platform's own crawler (a SYSTEM account has no video to send). For an
+    account that requires video assignment it is left blank, for an admin to
+    assign (developer_course_admin_service.assign_video)."""
 
     submission = (
         CourseSubmission.objects.select_related("developer")
         .filter(resulting_course=course)
         .first()
     )
-    if (
-        submission is not None
-        and submission.developer.source_type == MieSourceType.SYSTEM
-    ):
+    if submission is None:
+        return VideoProvider.DEVELOPER
+    if submission.developer.source_type == MieSourceType.SYSTEM:
         return VideoProvider.PRODUCTION_ENGINE
+    if submission.developer.requires_video_assignment:
+        return ""
     return VideoProvider.DEVELOPER
 
 
@@ -254,6 +283,8 @@ def _check_gate(*, submission: CourseSubmission, data: dict) -> None:
             f"{submission.status}."
         )
     course = submission.resulting_course
+    if course is not None and course.status == CourseStatus.ARCHIVED:
+        raise CourseArchived()
     if course is not None and not course.is_editable:
         raise CourseAlreadyInFlight(
             "This idea's course is already "
@@ -312,7 +343,9 @@ def _create_course(*, submission, creator, data: dict) -> Course:
     """First push: a new DRAFT course through the creator's own entry point.
 
     The title stored is the idea's title verbatim - the payload's only has
-    to match it - so the course and the idea always read the same.
+    to match it - so the course and the idea always read the same. The
+    course takes the id reserved at approval, the one the developer was
+    already sent.
     """
 
     return course_service.create_draft_course(
@@ -697,14 +730,19 @@ def _upload_rule(purpose: str, rule: dict) -> dict:
 
 
 def record_course_event(
-    *, course: Course, event_type: str, review_action: ReviewAction | None = None
+    *,
+    course: Course,
+    event_type: str,
+    review_action: ReviewAction | None = None,
+    details: dict | None = None,
 ) -> list[WebhookEvent]:
     """Record a COURSE_* webhook for a pushed course; a no-op for any other.
 
     The course and review services call this at every move a developer
     must hear about, so it has to cost a creator's course nothing: it
     returns before touching the database unless the course came in
-    through the push.
+    through the push. `details` adds event-specific keys to the `course`
+    object (e.g. `video_producer`, `archive_reason`).
     """
 
     if course.source_type != CourseSourceType.DEVELOPER_API:
@@ -718,10 +756,7 @@ def record_course_event(
         return []
 
     body = {
-        "id": str(submission.id),
-        "reference": submission.public_reference,
-        "status": submission.status,
-        "title": submission.title,
+        **submission_service.event_submission_body(submission),
         "course": {
             "id": str(course.id),
             "status": course.status,
@@ -729,7 +764,11 @@ def record_course_event(
         },
     }
     if (
-        event_type == WebhookEventType.COURSE_TEXT_APPROVED
+        event_type
+        in (
+            WebhookEventType.COURSE_TEXT_APPROVED,
+            WebhookEventType.COURSE_VIDEO_ASSIGNED,
+        )
         and course.video_provider == VideoProvider.DEVELOPER
     ):
         receipt = (
@@ -742,6 +781,8 @@ def record_course_event(
             }
     if review_action is not None:
         body["course"]["revision_feedback"] = revision_feedback(review_action)
+    if details:
+        body["course"].update(details)
     return webhook_endpoint_service.record_event(
         submission=submission,
         event_type=event_type,

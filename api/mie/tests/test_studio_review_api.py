@@ -329,3 +329,21 @@ class StudioReviewTests(CoursePushTestCase):
         self.assertEqual(response.status_code, 500)
         self.assertNotIn("private storage detail", str(response.data))
         self.assertFalse(StudioReviewReceipt.objects.exists())
+
+    def test_separate_video_assignment_carries_explicit_studio_identity(self):
+        from api.mie.services.developer_course_admin_service import assign_video
+
+        course = self._approve()
+        Course.objects.filter(pk=course.id).update(video_provider="")
+        assign_video(
+            actor=make_user(role=UserRole.SUPER_ADMIN),
+            submission_id=self.idea.id,
+            producer="DEVELOPER",
+        )
+        event = WebhookEvent.objects.filter(
+            event_type=WebhookEventType.COURSE_VIDEO_ASSIGNED
+        ).latest("created_datetime")
+        payload = event.payload["submission"]["course"]
+        self.assertEqual(payload["video_producer"], "DEVELOPER")
+        self.assertEqual(payload["video_assignment"]["producer"], "studio")
+        self.assertTrue(payload["video_assignment"]["assignment_id"])

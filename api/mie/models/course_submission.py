@@ -158,15 +158,6 @@ class CourseSubmission(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
             "the creator will not be paid for this idea."
         ),
     )
-    reserved_course_id = models.UUIDField(
-        null=True,
-        blank=True,
-        unique=True,
-        editable=False,
-        help_text=_(
-            "Stable course identity issued on topic approval; no course content or terms are created by this reservation."
-        ),
-    )
     resulting_course = models.OneToOneField(
         "courses.Course",
         verbose_name=_("Resulting Course"),
@@ -179,6 +170,18 @@ class CourseSubmission(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
             "course untouched - publication is one-way on the course side - "
             "and keeps this link, so re-approval relinks instead of "
             "duplicating."
+        ),
+    )
+    reserved_course_id = models.UUIDField(
+        verbose_name=_("Reserved Course ID"),
+        null=True,
+        blank=True,
+        unique=True,
+        editable=False,
+        help_text=_(
+            "The course id fixed at the idea's first approval and sent to the "
+            "developer. The first course push creates the course under it, so "
+            "the id never changes. Empty until the idea is approved."
         ),
     )
 
@@ -199,15 +202,12 @@ class CourseSubmission(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
             ),
         ]
         indexes = [
-            models.Index(
-                fields=["status", "-created_datetime"], name="mie_sub_status_idx"
-            ),
+            models.Index(fields=["status", "-created_datetime"], name="mie_sub_status_idx"),
             models.Index(fields=["developer", "status"], name="mie_sub_dev_status_idx"),
             # Serves the system-account daily cap (one developer's rows over
             # a rolling window) and the developer queue's newest-first list.
             models.Index(
-                fields=["developer", "-created_datetime"],
-                name="mie_sub_dev_created_idx",
+                fields=["developer", "-created_datetime"], name="mie_sub_dev_created_idx"
             ),
             # The Recommendations screen: pending rows ranked by score, then
             # narrowed by category or difficulty. One index per query shape it
@@ -215,7 +215,9 @@ class CourseSubmission(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
             models.Index(
                 fields=["status", "-demand_score"], name="mie_sub_status_score_idx"
             ),
-            models.Index(fields=["status", "category"], name="mie_sub_status_cat_idx"),
+            models.Index(
+                fields=["status", "category"], name="mie_sub_status_cat_idx"
+            ),
             models.Index(
                 fields=["status", "difficulty_level"], name="mie_sub_status_diff_idx"
             ),
@@ -229,6 +231,13 @@ class CourseSubmission(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
 
         short_id = str(self.id).replace("-", "")[:8]
         return f"SCB-{short_id}-{REFERENCE_SUFFIXES[self.status]}"
+
+    @property
+    def stable_course_id(self):
+        """The id the developer was given for this idea's course: the linked
+        course's, else the one reserved at approval, else None."""
+
+        return self.resulting_course_id or self.reserved_course_id
 
     def __str__(self):
         return f"{self.title} ({self.status})"

@@ -399,6 +399,8 @@ class DecisionEventWireShapeTests(APITestCase):
                 "status": SubmissionStatus.APPROVED,
                 "title": submission.title,
                 "course": {"id": str(submission.reserved_course_id), "status": "RESERVED"},
+                "category_id": None,
+                "course_id": str(submission.reserved_course_id),
             },
         )
 

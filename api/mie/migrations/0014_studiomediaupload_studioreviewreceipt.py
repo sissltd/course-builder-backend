@@ -7,7 +7,7 @@ from django.db import migrations, models
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("mie", "0012_coursesubmission_reserved_course_id"),
+        ("mie", "0013_coursesubmission_reserved_course_id"),
     ]
 
     operations = [

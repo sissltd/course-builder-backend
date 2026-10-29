@@ -7,7 +7,9 @@ These are implemented locally; public availability and a real end-to-end handoff
 ## Dependency and rollout order
 
 Include the existing uncommitted topic-identity, receipt, upload, webhook and course-push changes together.
-MIE migrations 0012–0014 and courses migration 0022 are required, including their existing predecessors.
+Staging already contains MIE migrations 0012 (video assignment/idempotency) and 0013 (reserved course identity).
+This change adds MIE 0014 (receipts/uploads), MIE 0015 (upload integrity descriptors),
+and courses 0022 (video transcripts). Do not ship the earlier local duplicate identity migration.
 The platform staged review flow must be enabled for delivery. Topic approval reserves the course UUID;
 text approval assigns Studio video production. Do not substitute reviewer approval routes for delivery.
 
@@ -31,3 +33,13 @@ are not verified by those tests. Storage verification streams each referenced ob
 for large courses; measure this before production rollout. Existing presigned PUT grants remain usable
 until expiry, so immutable/versioned storage is still needed for guarantees against post-check overwrites.
 No deployment, paid generation, credential rotation or publication is included in this change.
+
+## Current staging compatibility
+
+Receiver changes are reconciled with staging `88adcdb` (PR #100), retaining the platform's
+assignment, archive and idempotency APIs. Approval webhooks preserve flat `course_id` and
+`category_id` fields while adding the nested course/category information Studio consumes.
+A later `COURSE_VIDEO_ASSIGNED` event includes an explicit Studio assignment when the
+assigned developer has delivered a Studio text receipt. The paired Studio update accepts
+that separate event only with a valid explicit Studio marker; it does not interpret a generic
+developer assignment as permission to start generation.
