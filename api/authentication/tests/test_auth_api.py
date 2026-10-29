@@ -14,8 +14,11 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from api.authentication.enums import TokenPurpose
 from api.authentication.models import EmailVerificationToken
 from api.authentication.tests.factories import make_user, make_verification_token
+from api.catalog.enums import CategoryStatus
+from api.catalog.models import Category
 from api.notification.models import Notification
-from api.users.enums import AccountStatus, UserRole
+from api.onboarding.models import CreatorProfile
+from api.users.enums import AccountStatus, UserActivityActionEnums, UserRole
 from api.users.models import UserActivityLog
 
 
@@ -36,7 +39,6 @@ class SignupApiTests(APITestCase):
                 {
                     "email": "creator@example.com",
                     "password": "StrongPass123!",
-                    "password_confirm": "StrongPass123!",
                     "first_name": "Ada",
                     "last_name": "Lovelace",
                     "country": "NG",
@@ -47,7 +49,9 @@ class SignupApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertFalse(response.data["is_active"])
         self.assertEqual(len(mail.outbox), 1)
-        self.assertIn(f"{settings.FRONTEND_URL}/verify-email", mail.outbox[0].body)
+        self.assertIn(
+            f"{settings.FRONTEND_URL}/auth/verify-email", mail.outbox[0].body
+        )
         self.assertTrue(
             UserActivityLog.objects.filter(
                 user__email="creator@example.com", action="ACCOUNT_CREATED"
@@ -61,43 +65,6 @@ class SignupApiTests(APITestCase):
             {
                 "email": "dupe@example.com",
                 "password": "StrongPass123!",
-                "password_confirm": "StrongPass123!",
-                "first_name": "A",
-                "last_name": "B",
-                "country": "NG",
-            },
-            format="json",
-        )
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        # Generic message - doesn't confirm the email is already registered.
-        self.assertIn(
-            "Unable to create account",
-            " ".join(error["message"] for error in response.data["errors"]),
-        )
-
-    def test_creates_course_creator_role_by_default(self):
-        response = self.client.post(
-            "/api/v1/auth/signup/",
-            {
-                "email": "defaultrole@example.com",
-                "password": "StrongPass123!",
-                "password_confirm": "StrongPass123!",
-                "first_name": "A",
-                "last_name": "B",
-                "country": "NG",
-            },
-            format="json",
-        )
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(response.data["role"], "COURSE_CREATOR")
-
-    def test_mismatched_password_confirm_rejected(self):
-        response = self.client.post(
-            "/api/v1/auth/signup/",
-            {
-                "email": "mismatch@example.com",
-                "password": "StrongPass123!",
-                "password_confirm": "DifferentPass456!",
                 "first_name": "A",
                 "last_name": "B",
                 "country": "NG",
@@ -107,10 +74,26 @@ class SignupApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertTrue(
             any(
-                error["field_name"] == "password_confirm"
+                error["field_name"] == "email"
+                and error["message"] == "A user with this email already exists."
                 for error in response.data["errors"]
             )
         )
+
+    def test_creates_course_creator_role_by_default(self):
+        response = self.client.post(
+            "/api/v1/auth/signup/",
+            {
+                "email": "defaultrole@example.com",
+                "password": "StrongPass123!",
+                "first_name": "A",
+                "last_name": "B",
+                "country": "NG",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["role"], "COURSE_CREATOR")
 
     def test_missing_country_rejected(self):
         response = self.client.post(
@@ -135,7 +118,6 @@ class SignupApiTests(APITestCase):
                 {
                     "email": "noterms@example.com",
                     "password": "StrongPass123!",
-                    "password_confirm": "StrongPass123!",
                     "first_name": "A",
                     "last_name": "B",
                     "country": "NG",
@@ -157,7 +139,6 @@ class ReviewerSignupApiTests(APITestCase):
                 {
                     "email": "reviewer@example.com",
                     "password": "StrongPass123!",
-                    "password_confirm": "StrongPass123!",
                     "first_name": "Rita",
                     "last_name": "Reviewer",
                     "country": "NG",
@@ -458,10 +439,7 @@ class AccountLockoutApiTests(APITestCase):
             ).exists()
         )
         self.assertTrue(
-            any(
-                m.subject == "Your account was temporarily locked"
-                for m in mail.outbox
-            )
+            any(m.subject == "Your account was temporarily locked" for m in mail.outbox)
         )
 
     def test_first_lockout_does_not_alert_admins(self):
@@ -533,7 +511,6 @@ class ThrottleApiTests(APITestCase):
                 {
                     "email": f"throttle-signup-{i}@example.com",
                     "password": "StrongPass123!",
-                    "password_confirm": "StrongPass123!",
                     "first_name": "A",
                     "last_name": "B",
                     "country": "NG",
@@ -547,7 +524,6 @@ class ThrottleApiTests(APITestCase):
             {
                 "email": "throttle-signup-extra@example.com",
                 "password": "StrongPass123!",
-                "password_confirm": "StrongPass123!",
                 "first_name": "A",
                 "last_name": "B",
                 "country": "NG",
@@ -694,9 +670,7 @@ class LogoutAllApiTests(APITestCase):
             refresh_response = self.client.post(
                 "/api/v1/auth/token/refresh/", {"refresh": str(refresh)}, format="json"
             )
-            self.assertEqual(
-                refresh_response.status_code, status.HTTP_401_UNAUTHORIZED
-            )
+            self.assertEqual(refresh_response.status_code, status.HTTP_401_UNAUTHORIZED)
 
     def test_logs_sessions_revoked_activity(self):
         user = make_user()
@@ -851,7 +825,9 @@ class ForgotPasswordApiTests(APITestCase):
         self.assertEqual(
             len(mail.outbox), 1
         )  # only the existing user actually gets an email
-        self.assertIn(f"{settings.FRONTEND_URL}/reset-password", mail.outbox[0].body)
+        self.assertIn(
+            f"{settings.FRONTEND_URL}/auth/reset-password", mail.outbox[0].body
+        )
 
 
 class ResetPasswordApiTests(APITestCase):
@@ -995,6 +971,20 @@ class ChangePasswordApiTests(APITestCase):
             ).exists()
         )
 
+    def test_sends_password_changed_confirmation_email(self):
+        user = make_user(password="OldPass123!")
+        self.client.force_authenticate(user)
+
+        response = self.client.post(
+            "/api/v1/auth/change-password/",
+            {"current_password": "OldPass123!", "new_password": "BrandNewPass456!"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(mail.outbox[-1].subject, "Your password was changed")
+        self.assertIn(user.email, mail.outbox[-1].to)
+
 
 class ChangeEmailApiTests(APITestCase):
     def setUp(self):
@@ -1115,10 +1105,50 @@ class MeApiTests(APITestCase):
         response = self.client.get("/api/v1/users/me/")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["email"], user.email)
+        self.assertEqual(response.data["full_name"], user.get_full_name())
+        self.assertEqual(
+            response.data["member_since"],
+            user.created_datetime.isoformat().replace("+00:00", "Z"),
+        )
+        self.assertFalse(response.data["is_verified"])
+        self.assertEqual(response.data["badges"], [])
 
     def test_unauthenticated(self):
         response = self.client.get("/api/v1/users/me/")
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_every_role_can_read_its_own_profile(self):
+        """/users/me/ is self-scoped, so it is not gated on role.
+
+        It was previously creator-only, which 403'd reviewers and made the
+        reviewer Account settings screen impossible to build. The scoping
+        that matters is `get_object() -> request.user`, asserted below.
+        """
+
+        roles = [
+            UserRole.STAFF_WRITER,
+            UserRole.CREATOR_REVIEWER,
+            UserRole.ADMIN,
+        ]
+        for index, role in enumerate(roles):
+            with self.subTest(role=role):
+                user = make_user(email=f"noncreator{index}@example.com", role=role)
+                self.client.force_authenticate(user)
+
+                response = self.client.get("/api/v1/users/me/")
+
+                self.assertEqual(response.status_code, status.HTTP_200_OK)
+                # Each role sees itself and nothing else.
+                self.assertEqual(response.data["email"], user.email)
+                self.assertEqual(response.data["role"], role)
+
+    def test_superuser_retains_permission_bypass(self):
+        user = make_user(role=UserRole.ADMIN, is_superuser=True, is_staff=True)
+        self.client.force_authenticate(user)
+
+        response = self.client.get("/api/v1/users/me/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
 
     def test_patch_updates_profile_fields(self):
         user = make_user()
@@ -1135,6 +1165,30 @@ class MeApiTests(APITestCase):
         user.refresh_from_db()
         self.assertEqual(user.first_name, "Updated")
 
+    def test_patch_accepts_avatar_url_up_to_500_characters(self):
+        """avatar_url holds the presign flow's file_key or CDN URL, which the
+        backend itself generates and which can exceed the old 200-char
+        URLField default."""
+
+        user = make_user()
+        self.client.force_authenticate(user)
+        avatar_url = "https://cdn.example.com/avatars/{}".format("a" * 400)
+
+        response = self.client.patch(
+            "/api/v1/users/me/",
+            {"avatar_url": avatar_url},
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+            msg=f"Unexpected errors: {response.data}",
+        )
+        self.assertEqual(response.data["avatar_url"], avatar_url)
+        user.refresh_from_db()
+        self.assertEqual(user.avatar_url, avatar_url)
+
     def test_patch_cannot_change_email(self):
         user = make_user(email="original@example.com")
         self.client.force_authenticate(user)
@@ -1144,9 +1198,89 @@ class MeApiTests(APITestCase):
             {"email": "changed@example.com"},
             format="json",
         )
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["errors"][0]["field_name"], "email")
         user.refresh_from_db()
         self.assertEqual(user.email, "original@example.com")
+
+    def test_patch_assigns_category_and_creates_creator_profile(self):
+        user = make_user()
+        category = Category.objects.create(
+            name="Web Applications", creator_price_without_video="100", creator_price_with_video="100", creator_price_ai_built="100"
+        )
+        self.client.force_authenticate(user)
+
+        response = self.client.patch(
+            "/api/v1/users/me/", {"category": str(category.id)}, format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["category"]["id"], str(category.id))
+        self.assertEqual(response.data["category"]["name"], category.name)
+        self.assertEqual(
+            CreatorProfile.objects.get(user=user).primary_expertise_category,
+            category,
+        )
+
+    def test_patch_null_category_clears_existing_category(self):
+        user = make_user()
+        category = Category.objects.create(
+            name="Data Science", creator_price_without_video="100", creator_price_with_video="100", creator_price_ai_built="100"
+        )
+        CreatorProfile.objects.create(user=user, primary_expertise_category=category)
+        self.client.force_authenticate(user)
+
+        response = self.client.patch(
+            "/api/v1/users/me/", {"category": None}, format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsNone(response.data["category"])
+        self.assertIsNone(
+            CreatorProfile.objects.get(user=user).primary_expertise_category
+        )
+
+    def test_omitted_category_remains_unchanged(self):
+        user = make_user()
+        category = Category.objects.create(
+            name="Product Design", creator_price_without_video="100", creator_price_with_video="100", creator_price_ai_built="100"
+        )
+        CreatorProfile.objects.create(user=user, primary_expertise_category=category)
+        self.client.force_authenticate(user)
+
+        response = self.client.patch(
+            "/api/v1/users/me/", {"first_name": "Updated"}, format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["category"]["id"], str(category.id))
+
+    def test_inactive_category_is_rejected_without_partial_update(self):
+        user = make_user(first_name="Original")
+        category = Category.objects.create(
+            name="Inactive Category",
+            creator_price_without_video="100",
+            creator_price_with_video="100",
+            creator_price_ai_built="100",
+            status=CategoryStatus.INACTIVE,
+        )
+        self.client.force_authenticate(user)
+
+        response = self.client.patch(
+            "/api/v1/users/me/",
+            {"first_name": "Changed", "category": str(category.id)},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        user.refresh_from_db()
+        self.assertEqual(user.first_name, "Original")
+        self.assertFalse(CreatorProfile.objects.filter(user=user).exists())
+        self.assertFalse(
+            UserActivityLog.objects.filter(
+                user=user, action=UserActivityActionEnums.PROFILE_UPDATED
+            ).exists()
+        )
 
     def test_patch_logs_configuration_activity(self):
         user = make_user()

@@ -1,6 +1,5 @@
-"""This module provides utility functions for calculating time windows, specifically for determining the start of the current and previous week, as well as parsing job window days from request parameters. It is frequently used in statistical dashboard generations and other time-sensitive data retrieval operations across the application.
+"""This module provides utility functions for calculating time windows, specifically for determining the start of the current and previous week, as well as parsing job window days from request parameters. It is frequently used in statistical dashboard generations and other time-sensitive data retrieval operations across the application."""
 
-"""
 import calendar
 import enum
 from datetime import date, datetime, time, timedelta
@@ -37,13 +36,13 @@ def get_stats_window_days(stats_window_days):
 
 
 def sum_amount(queryset, field_name="amount"):
-        return queryset.aggregate(
-            total=Coalesce(
-                Sum(field_name),
-                Value(Decimal("0.00")),
-                output_field=DecimalField(max_digits=10, decimal_places=2),
-            )
-        )["total"]
+    return queryset.aggregate(
+        total=Coalesce(
+            Sum(field_name),
+            Value(Decimal("0.00")),
+            output_field=DecimalField(max_digits=10, decimal_places=2),
+        )
+    )["total"]
 
 
 def _serialize_value(value):
@@ -59,7 +58,9 @@ def build_metric_payload(total, current_week_value, previous_week_value):
     if previous_value == 0:
         percentage_change = 100.0 if current_value > 0 else 0.0
     else:
-        percentage_change = round(float(((current_value - previous_value) / previous_value) * 100), 2)
+        percentage_change = round(
+            float(((current_value - previous_value) / previous_value) * 100), 2
+        )
 
     return {
         "total": _serialize_value(total or 0),
@@ -82,10 +83,14 @@ def get_time_series_period_windows(period_label):
     elif period_label == TimeSeriesPeriodEnum.THIS_MONTH.value:
         start_date = current_date.replace(day=1)
         previous_month = current_date.month - 1 or 12
-        previous_year = current_date.year - 1 if current_date.month == 1 else current_date.year
+        previous_year = (
+            current_date.year - 1 if current_date.month == 1 else current_date.year
+        )
         previous_start_date = date(previous_year, previous_month, 1)
         days_in_month = calendar.monthrange(current_date.year, current_date.month)[1]
-        component_dates = [start_date + timedelta(days=offset) for offset in range(days_in_month)]
+        component_dates = [
+            start_date + timedelta(days=offset) for offset in range(days_in_month)
+        ]
     else:
         start_date = date(current_date.year, 1, 1)
         previous_start_date = date(current_date.year - 1, 1, 1)
@@ -93,7 +98,9 @@ def get_time_series_period_windows(period_label):
 
     start_datetime = timezone.make_aware(datetime.combine(start_date, time.min), tz)
     end_datetime = local_now
-    previous_start_datetime = timezone.make_aware(datetime.combine(previous_start_date, time.min), tz)
+    previous_start_datetime = timezone.make_aware(
+        datetime.combine(previous_start_date, time.min), tz
+    )
     return start_datetime, end_datetime, previous_start_datetime, component_dates
 
 
@@ -105,7 +112,9 @@ def dashboard_period_display_label(period_label):
     }.get(period_label, "This week")
 
 
-def dashboard_period_components(period_label, component_dates, sales_by_bucket, qty_label):
+def dashboard_period_components(
+    period_label, component_dates, sales_by_bucket, qty_label
+):
     local_now = timezone.localtime()
     current_date = local_now.date()
     components = []

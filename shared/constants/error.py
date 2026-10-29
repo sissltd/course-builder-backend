@@ -1,5 +1,3 @@
-
-
 # The `print(response.data)` statement is used to output the `data` attribute of the `response`
 # object to the console. This is helpful for debugging and understanding the structure of the data
 # being returned in the response object at that point in the code execution. It allows you to see

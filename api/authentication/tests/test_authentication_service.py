@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 from django.conf import settings
 from django.core import mail
 from django.test import TestCase
@@ -54,8 +56,34 @@ class SignupTests(TestCase):
             )
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn("new2@example.com", mail.outbox[0].to)
-        self.assertIn(f"{settings.FRONTEND_URL}/verify-email", mail.outbox[0].body)
+        self.assertIn(
+            f"{settings.FRONTEND_URL}/auth/verify-email", mail.outbox[0].body
+        )
         self.assertIn("token=", mail.outbox[0].body)
+
+    @patch("api.notification.services.email_service.send_templated_email")
+    def test_successful_send_is_logged(self, mock_send):
+        mock_send.return_value = 1
+        with self.assertLogs(
+            "api.authentication.services.authentication_service", level="INFO"
+        ) as logs:
+            with self.captureOnCommitCallbacks(execute=True):
+                service.signup(
+                    email="logged@example.com",
+                    password="StrongPass123!",
+                    first_name="Log",
+                    last_name="Test",
+                    country="NG",
+                )
+
+        mock_send.assert_called_once()
+        self.assertTrue(
+            any(
+                "auth_email_sent email_type=SIGNUP_VERIFICATION" in message
+                and "logged@example.com" in message
+                for message in logs.output
+            )
+        )
 
     def test_raises_on_duplicate_email(self):
         make_user(email="dupe@example.com")
@@ -205,9 +233,20 @@ class ForgotPasswordTests(TestCase):
         service.forgot_password(email=user.email)
 
         self.assertEqual(len(mail.outbox), 1)
-        self.assertIn(f"{settings.FRONTEND_URL}/reset-password", mail.outbox[0].body)
+        self.assertIn(
+            f"{settings.FRONTEND_URL}/auth/reset-password", mail.outbox[0].body
+        )
         self.assertIn(f"email={user.email}", mail.outbox[0].body.replace("%40", "@"))
 
     def test_silent_and_no_email_for_nonexistent_user(self):
         service.forgot_password(email="ghost@example.com")
         self.assertEqual(len(mail.outbox), 0)
+
+    def test_existing_user_sends_password_reset_email(self):
+        user = make_user()
+
+        service.forgot_password(email=user.email)
+
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn("Reset your password", mail.outbox[0].subject)
+        self.assertIn("reset-password", mail.outbox[0].body)

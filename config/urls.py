@@ -19,11 +19,13 @@ Including another URLconf
 from django.contrib import admin
 from django.http import JsonResponse
 from django.urls import include, path
-from drf_spectacular.views import (
-    SpectacularAPIView,
-    SpectacularRedocView,
-    SpectacularSwaggerView,
+from config.reviewer_settings_schema_urls import REVIEWER_SETTINGS_SCHEMA_SETTINGS
+from config.schema_views import (
+    DocumentationRedocView,
+    DocumentationSchemaView,
+    DocumentationSwaggerView,
 )
+from shared.constants.environ import DJANGO_ENV
 
 
 def health_check(request):
@@ -34,26 +36,54 @@ urlpatterns = [
     path("health/", health_check, name="health-check"),
     path("admin/", admin.site.urls),
     # OpenAPI schema and interactive docs
-    path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
+    path("api/schema/", DocumentationSchemaView.as_view(), name="schema"),
+    path(
+        "api/schema/reviewer-settings/",
+        DocumentationSchemaView.as_view(
+            urlconf="config.reviewer_settings_schema_urls",
+            custom_settings=REVIEWER_SETTINGS_SCHEMA_SETTINGS,
+        ),
+        name="reviewer-settings-schema",
+    ),
     path(
         "api/v1/docs/",
-        SpectacularSwaggerView.as_view(url_name="schema"),
+        DocumentationSwaggerView.as_view(url_name="schema"),
         name="swagger-ui",
     ),
     path(
+        "api/v1/docs/reviewer-settings/",
+        DocumentationSwaggerView.as_view(url_name="reviewer-settings-schema"),
+        name="reviewer-settings-swagger-ui",
+    ),
+    path(
         "api/v1/redoc/",
-        SpectacularRedocView.as_view(url_name="schema"),
+        DocumentationRedocView.as_view(url_name="schema"),
         name="redoc",
     ),
     path("api/v1/", include("api.authentication.urls")),
     path("api/v1/", include("api.users.urls")),
-    path("api/v1/", include("api.categories.urls")),
+    path("api/v1/", include("api.catalog.urls")),
     path("api/v1/", include("api.courses.urls")),
+    path("api/v1/", include("api.reviews.urls")),
+    path("api/v1/", include("api.quizzes.urls")),
+    path("api/v1/", include("api.mie.urls")),
     path("api/v1/", include("api.collaborators.urls")),
     path("api/v1/", include("api.onboarding.urls")),
     path("api/v1/", include("api.wallet.urls")),
     path("api/v1/", include("api.notification.urls")),
     path("api/v1/", include("api.platform.urls")),
+    path("api/v1/", include("api.operations.urls")),
+    path("api/v1/", include("api.production.urls")),
+    path("api/v1/", include("api.achievements.urls")),
+    path("api/v1/", include("api.support.urls")),
+    path("api/v1/", include("api.authorization.urls")),
+    path("api/v1/", include("api.search.urls")),
+    path("api/v1/", include("api.payments.urls")),
+    path("api/v1/", include("api.webhooks.urls")),
     path("api/v1/", include("shared.uploads.urls")),
     path("api/v1/", include("shared.audit.urls")),
 ]
+
+# Internal developer documentation is deliberately unavailable in production.
+if DJANGO_ENV.lower() in {"development", "staging"}:
+    urlpatterns += [path("docs/", include("devdocs.urls"))]

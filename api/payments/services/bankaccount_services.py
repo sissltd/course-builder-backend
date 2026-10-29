@@ -1,0 +1,275 @@
+import logging
+
+from django.utils import timezone
+
+from api.authentication.services.activity_service import log_activity
+from api.authorization import codenames
+from api.authorization.services import permission_service
+from api.payments.models.bankaccount_models import BankAccount
+from api.users.enums import UserActivityActionEnums, UserActivityCategoryEnums
+from shared.constants.environ import DJANGO_ENV
+from shared.services.payment_services.provider import get_payment_provider
+from shared.utils.bank_account_check import check_account_name_matches_profile
+from shared.utils.encryption import encrypt_field
+
+logger = logging.getLogger(__name__)
+
+
+class AccountDetailsError(Exception):
+    """Custom exception for account details errors."""
+
+class AccountResolutionError(Exception):
+    """Custom exception for account resolution errors."""
+
+
+def get_bank_account_list(user):
+    """
+    Get the list of bank accounts for a user.
+    """
+    qs = BankAccount.objects.filter(is_deleted=False)
+
+    if not permission_service.user_has_permission(user, codenames.CREATORS_VIEW_WALLET):
+        qs = qs.filter(user=user)
+
+    return qs
+
+
+def verify_account_details(account_number, bank_code):
+    """
+    Verify the account details with the payment provider.
+    """
+    provider = get_payment_provider()
+    response_data = provider.resolve_bank(account_number=account_number, bank_code=bank_code)
+
+    if response_data.get("status") == "failed":
+        logger.warning(
+            f"Failed to resolve account {account_number} with bank code {bank_code}: {response_data.get('message')}"
+        )
+        raise AccountResolutionError(f"Failed to resolve account on Flutterwave: {response_data.get('message')}")
+
+    resolved_name = response_data.get("data", {}).get("account_name")
+    if not resolved_name:
+        logger.warning(
+            f"Provider did not return an account name for account {account_number} with bank code {bank_code}."
+        )
+    response_data = response_data.get("data", {})
+
+
+def create_bank_account(user, validated_data, ip, ua):
+    """
+    Create a new bank account for a user.
+    """
+    account_number = validated_data.get("account_number", "")
+    bank_code = validated_data.get("bank_code", "")
+
+    # A workaround for Flutterwave's inability to resolve account names in non-production environments
+    if DJANGO_ENV.lower() in {"development", "staging"}:
+        validated_data["account_name"] = f"{user.first_name} {user.last_name}"
+
+    if not check_account_name_matches_profile(
+        {user.first_name, user.last_name}, validated_data.get("account_name", "")
+    ):
+        raise AccountDetailsError("Account name does not match user profile.")
+
+    existing_accounts = BankAccount.objects.filter(user=user)
+
+    # The same 10-digit account can occur in multiple banks; that does not
+    # necessarily mean it is the same account. We need to filter by bank code or bank name as well.
+    if bank_code:
+        existing_accounts = existing_accounts.filter(bank_code=bank_code)
+    else:
+        existing_accounts = existing_accounts.filter(bank_name=validated_data.get("bank_name", ""))
+    existing_account = existing_accounts.filter(
+        account_number=encrypt_field(account_number)
+    ).first()
+
+    if existing_account:
+        if existing_account.is_suspended:
+            raise AccountDetailsError("This bank account is suspended.")
+        else:
+            existing_account.is_default = validated_data.get(
+                "is_default", existing_account.is_default
+            )
+            existing_account.is_deleted = False
+            existing_account.deleted_datetime = None
+            existing_account.save()
+        existing_account.refresh_from_db()
+        return existing_account
+
+    provider = get_payment_provider()
+    validated_data["account_number"] = encrypt_field(account_number)
+    validated_data["bank_name"] = provider.get_bank_name(bank_code)
+
+    account = BankAccount.objects.create(
+        user=user,
+        **validated_data,
+    )
+    try:
+        log_activity(
+            user=user,
+            category=UserActivityCategoryEnums.PAYMENTS,
+            action=UserActivityActionEnums.BANK_ACCOUNT_ADDED,
+            summary=f"Bank account {account.account_number} added for {user.email}.",
+            actor_user=user,
+            details={
+                "account_id": str(account.id),
+                "account_name": account.account_name,
+                "bank_name": account.bank_name,
+                "bank_code": account.bank_code,
+                "is_default": account.is_default,
+            },
+            user_agent=ua,
+            ip_address=ip,
+        )
+    except Exception as e:
+        # Log the error but do not raise it, as the account creation has already succeeded
+        logger.warning(f"Error while logging user activity: {e!s}")
+
+    return account
+
+
+def delete_bank_account(user, account_id, ip, ua):
+    """
+    Delete a bank account for a user.
+    """
+    try:
+        account = BankAccount.objects.get(id=account_id, user=user, is_deleted=False)
+    except BankAccount.DoesNotExist:
+        raise AccountDetailsError("Bank account not found.")
+
+    account.is_deleted = True
+    account.is_default = False  # Reset default status if the account is deleted
+    account.deleted_datetime = timezone.now()
+    account.save()
+
+    try:
+        log_activity(
+            user=user,
+            category=UserActivityCategoryEnums.PAYMENTS,
+            action=UserActivityActionEnums.BANK_ACCOUNT_DELETED,
+            summary=f"Bank account {account.account_number} deleted for {user.email}.",
+            actor_user=user,
+            details={
+                "account_id": str(account.id),
+                "account_name": account.account_name,
+                "bank_name": account.bank_name,
+                "bank_code": account.bank_code,
+                "is_default": account.is_default,
+            },
+            user_agent=ua,
+            ip_address=ip,
+        )
+    except Exception as e:
+        # Log the error but do not raise it, as the account deletion has already succeeded
+        logger.warning(f"Error while logging audit event: {e!s}")
+
+
+def set_default_bank_account(user, account_id, ip, ua):
+    """
+    Set a bank account as the default for a user.
+    """
+    account = BankAccount.objects.get(id=account_id, user=user, is_deleted=False)
+    if account.is_suspended:
+        raise AccountDetailsError("Cannot set a suspended bank account as default.")
+
+    # Set the selected account as default
+    account.is_default = True
+    account.save()
+    try:
+        log_activity(
+            user=user,
+            category=UserActivityCategoryEnums.PAYMENTS,
+            action=UserActivityActionEnums.BANK_ACCOUNT_UPDATED,
+            summary=f"Bank account {account.account_number} set as default for {user.email}.",
+            actor_user=user,
+            details={
+                "account_id": str(account.id),
+                "account_name": account.account_name,
+                "bank_name": account.bank_name,
+                "bank_code": account.bank_code,
+                "is_default": account.is_default,
+            },
+            user_agent=ua,
+            ip_address=ip,
+        )
+    except Exception as e:
+        # Log the error but do not raise it, as the account update has already succeeded
+        logger.warning(f"Error while logging audit event: {e!s}")
+
+
+def suspend_bank_account(user, account_id, ip, ua):
+    """
+    Suspend any user's bank account; `user` is the acting admin.
+
+    An admin moderation action, so the lookup is deliberately not scoped to
+    the caller. The role is re-checked here as well as on the view, so no
+    other caller can reach it. The entry lands on the account owner's
+    activity log, with the admin recorded as the actor - the owner is the
+    one whose payouts just stopped.
+    """
+    permission_service.require_permission(user, codenames.CREATORS_SUSPEND)
+    account = BankAccount.objects.select_related("user").get(
+        id=account_id, is_deleted=False
+    )
+
+    # Suspend the selected account
+    account.is_suspended = True
+    account.save()
+    try:
+        log_activity(
+            user=account.user,
+            category=UserActivityCategoryEnums.PAYMENTS,
+            action=UserActivityActionEnums.BANK_ACCOUNT_UPDATED,
+            summary=f"Bank account {account.account_number} suspended by {user.email}.",
+            actor_user=user,
+            details={
+                "account_id": str(account.id),
+                "account_name": account.account_name,
+                "bank_name": account.bank_name,
+                "bank_code": account.bank_code,
+                "is_suspended": account.is_suspended,
+            },
+            user_agent=ua,
+            ip_address=ip,
+        )
+    except Exception as e:
+        # Log the error but do not raise it, as the account suspension has already succeeded
+        logger.warning(f"Error while logging account suspension audit event: {e!s}")
+
+
+def remove_bank_account_suspension(user, account_id, ip, ua):
+    """
+    Remove the suspension of any user's bank account; `user` is the acting admin.
+
+    An admin moderation action, so the lookup is deliberately not scoped to
+    the caller. The role is re-checked here as well as on the view, so no
+    other caller can reach it. The entry lands on the account owner's
+    activity log, with the admin recorded as the actor - the owner is the
+    one whose payouts just resumed.
+    """
+    permission_service.require_permission(user, codenames.CREATORS_SUSPEND)
+    account = BankAccount.objects.select_related("user").get(id=account_id, is_deleted=False)
+
+    # Remove the suspension of the selected account
+    account.is_suspended = False
+    account.save()
+    try:
+        log_activity(
+            user=account.user,
+            category=UserActivityCategoryEnums.PAYMENTS,
+            action=UserActivityActionEnums.BANK_ACCOUNT_UPDATED,
+            summary=f"The suspension on your bank account {account.account_number} is removed by {user.email}.",
+            actor_user=user,
+            details={
+                "account_id": str(account.id),
+                "account_name": account.account_name,
+                "bank_name": account.bank_name,
+                "bank_code": account.bank_code,
+                "is_suspended": account.is_suspended,
+            },
+            user_agent=ua,
+            ip_address=ip,
+        )
+    except Exception as e:
+        # Log the error but do not raise it, as the account suspension removal has already succeeded
+        logger.warning(f"Error while logging account suspension removal audit event: {e!s}")

@@ -1,4 +1,4 @@
-import secrets
+import logging
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -11,7 +11,6 @@ from api.authentication.enums import TokenPurpose
 from api.authentication.models import EmailVerificationToken
 from api.authentication.services import activity_service, token_service
 from api.authentication.utils.links import build_verification_link
-from api.notification.models import Notification
 from api.users.enums import (
     AccountStatus,
     STAFF_ROLES,
@@ -20,6 +19,7 @@ from api.users.enums import (
 )
 
 User = get_user_model()
+logger = logging.getLogger(__name__)
 
 STAFF_INVITATION_SUBJECT = "You've been invited to join the team"
 
@@ -48,10 +48,8 @@ class StaffService:
 
     Two entry paths exist, and they are deliberately asymmetric:
 
-    * `bootstrap_superadmin` runs exactly once per deployment, gated by a shared
-      secret held in the server environment rather than by an authenticated
-      caller - there is nobody to authenticate as before the first account
-      exists.
+    * `bootstrap_superadmin` runs exactly once in enabled environments - there
+      is nobody to authenticate as before the first account exists.
     * `invite_staff` / `accept_staff_invitation` is the ongoing flow, gated the
       normal way: only an authenticated Super Admin can invite, and the invitee
       proves control of their inbox before the account activates.
@@ -60,7 +58,6 @@ class StaffService:
     def bootstrap_superadmin(
         self,
         *,
-        bootstrap_token: str,
         email: str,
         password: str,
         first_name: str,
@@ -71,10 +68,7 @@ class StaffService:
 
         Gated by two independent conditions, both of which must hold:
 
-        1. `bootstrap_token` matches settings.SUPERADMIN_BOOTSTRAP_TOKEN. An
-           unset (empty) setting disables the endpoint entirely rather than
-           accepting an empty token - otherwise deploying with the variable
-           missing would leave the seat open to whoever found the URL first.
+        1. The deployment environment enables bootstrap.
         2. No Super Admin exists yet.
 
         The second check is backed by a partial unique constraint on the users
@@ -83,16 +77,10 @@ class StaffService:
         exactly like the sequential case.
         """
 
-        configured_token = settings.SUPERADMIN_BOOTSTRAP_TOKEN
-        if not configured_token:
+        if not settings.SUPERADMIN_BOOTSTRAP_ENABLED:
             raise exceptions.PermissionDenied(
                 "Super admin bootstrap is disabled on this deployment."
             )
-
-        # Constant-time comparison: a plain != leaks the shared secret one
-        # character at a time to an attacker who can measure response timing.
-        if not secrets.compare_digest(str(bootstrap_token), str(configured_token)):
-            raise exceptions.PermissionDenied("Invalid bootstrap token.")
 
         if User.objects.filter(role=UserRole.SUPER_ADMIN).exists():
             raise exceptions.ValidationError(
@@ -142,14 +130,15 @@ class StaffService:
         email: str,
         first_name: str,
         last_name: str,
-        role: str,
+        access_role,
         request=None,
     ) -> User:
-        """Create a pending staff account and email an invitation link.
+        """Create a pending account in `access_role` and email an invitation link.
 
-        `role` is validated against INVITABLE_STAFF_ROLES by the serializer, so
-        by the time it reaches here it can only be one of the three positions
-        the invite dialog offers - never SUPER_ADMIN, and never a public role.
+        `access_role` is a staff role (built-in or custom) for the staff invite,
+        or the built-in Creator Reviewer role for the Teams invite. The caller
+        (the view) has already checked the inviter may assign it; the account's
+        workflow role is the access role's base role.
 
         The invitee is created inactive with an unusable password, so the row
         exists (reserving the email) but cannot authenticate until they accept.
@@ -162,6 +151,7 @@ class StaffService:
         mis-selected role before acceptance.
         """
 
+        role = access_role.base_role
         existing = User.objects.filter(email__iexact=email).first()
         user = None
         if existing is not None:
@@ -186,6 +176,7 @@ class StaffService:
                     first_name=first_name,
                     last_name=last_name,
                     role=role,
+                    access_role=access_role,
                     is_active=False,
                     created_by=invited_by,
                 )
@@ -198,7 +189,10 @@ class StaffService:
                 user.first_name = first_name
                 user.last_name = last_name
                 user.role = role
-                user.save(update_fields=["first_name", "last_name", "role"])
+                user.access_role = access_role
+                user.save(
+                    update_fields=["first_name", "last_name", "role", "access_role"]
+                )
 
             _token, raw_token = token_service.issue_token(
                 user=user, purpose=TokenPurpose.STAFF_INVITATION
@@ -213,9 +207,13 @@ class StaffService:
         activity_service.log_auth_activity(
             user=invited_by,
             action=UserActivityActionEnums.STAFF_INVITED,
-            summary=f"Invited {email} as {UserRole(role).label}.",
+            summary=f"Invited {email} as {access_role.name}.",
             request=request,
-            details={"invitee_email": email, "role": role},
+            details={
+                "invitee_email": email,
+                "role": role,
+                "access_role_id": str(access_role.id),
+            },
         )
         return user
 
@@ -256,6 +254,8 @@ class StaffService:
     def list_staff(self):
         """Every staff account, newest first, for the Teams page.
 
+        Staff and team are one roster, so this includes Creator Reviewers -
+        invited or self-registered - alongside every other staff role.
         Includes pending invitees (inactive, never accepted) alongside active
         staff - the Teams page shows both, and callers tell them apart via the
         serializer's `invitation_status`.
@@ -270,6 +270,16 @@ class StaffService:
             .select_related("created_by")
             .annotate(has_open_invitation=Exists(_open_invitation_subquery()))
             .order_by("-created_datetime")
+        )
+
+    def get_staff(self, *, staff_id):
+        """Return one staff profile, including pending and revoked members."""
+
+        return (
+            User.objects.filter(role__in=STAFF_ROLES)
+            .select_related("created_by")
+            .annotate(has_open_invitation=Exists(_open_invitation_subquery()))
+            .get(pk=staff_id)
         )
 
     def revoke_staff(self, *, actor: User, staff: User, request=None) -> User:
@@ -320,6 +330,11 @@ class StaffService:
 
         self._assert_manageable(actor=actor, staff=staff, verb="reactivate")
 
+        if staff.erased_at is not None:
+            raise exceptions.ValidationError(
+                "This account was deleted and cannot be restored."
+            )
+
         if staff.is_active:
             raise exceptions.ValidationError("This staff member is already active.")
 
@@ -345,7 +360,7 @@ class StaffService:
 
     @staticmethod
     def is_pending_invite(user: User) -> bool:
-        """True if `user` is staff who were invited but never accepted."""
+        """True if `user` was invited to a staff (team) role but never accepted."""
 
         return (
             user.role in STAFF_ROLES
@@ -391,15 +406,32 @@ class StaffService:
         link = build_verification_link(
             path="/accept-invitation", email=user.email, token=raw_token
         )
-        Notification.emit_email_notification(
-            receivers=[user],
-            subject=STAFF_INVITATION_SUBJECT,
-            template_name="emails/staff_invitation",
-            context={
-                "first_name": user.first_name,
-                "invited_by_name": invited_by.get_full_name() or invited_by.email,
-                "role_label": UserRole(user.role).label,
-                "invitation_link": link,
-                "expiry_minutes": settings.EMAIL_TOKEN_EXPIRY_MINUTES,
-            },
-        )
+        from api.notification.services.email_service import send_templated_email
+
+        try:
+            sent_count = send_templated_email(
+                receivers=[user.email],
+                subject=STAFF_INVITATION_SUBJECT,
+                template_name="emails/staff_invitation",
+                context={
+                    "first_name": user.first_name,
+                    "invited_by_name": invited_by.get_full_name() or invited_by.email,
+                    "role_label": user.access_role.name,
+                    "invitation_link": link,
+                    "expiry_minutes": settings.EMAIL_TOKEN_EXPIRY_MINUTES,
+                },
+            )
+            logger.info(
+                "auth_email_sent email_type=STAFF_INVITATION recipients=%s "
+                "subject=%s sent_count=%s",
+                [user.email],
+                STAFF_INVITATION_SUBJECT,
+                sent_count,
+            )
+        except Exception:
+            logger.exception(
+                "auth_email_failed email_type=STAFF_INVITATION recipients=%s "
+                "subject=%s",
+                [user.email],
+                STAFF_INVITATION_SUBJECT,
+            )

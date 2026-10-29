@@ -1,9 +1,11 @@
-
 import logging
 
 import requests
 
-from shared.constants.google_maps import GOOGLE_MAPS_API_KEY, GOOGLE_MAPS_DEFAULT_COUNTRY
+from shared.constants.google_maps import (
+    GOOGLE_MAPS_API_KEY,
+    GOOGLE_MAPS_DEFAULT_COUNTRY,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -11,22 +13,21 @@ logger = logging.getLogger(__name__)
 class GoogleMapsService:
     """
     Wraps the Google Maps Geocoding API.
-    
+
     Follows the same pattern as paystack_service.py — a plain class with
     @staticmethod methods so it can be called without instantiation.
     """
 
     GEOCODING_URL = "https://maps.googleapis.com/maps/api/geocode/json"
     AUTOCOMPLETE_URL = "https://maps.googleapis.com/maps/api/place/autocomplete/json"
-    
-    
+
     # >>>>>>>>>>>> Geocode Address  <<<<<<<<<<<<<<<<<<<
 
     @staticmethod
     def geocode_address(address: str) -> dict | None:
         """
         Convert a human-readable address into latitude and longitude.
-        
+
         Returns None if geocoding fails or the address is not found.
 
         Usage:
@@ -48,7 +49,7 @@ class GoogleMapsService:
             response = requests.get(
                 GoogleMapsService.GEOCODING_URL,
                 params=params,
-                timeout=5, 
+                timeout=5,
             )
             response.raise_for_status()
             data = response.json()
@@ -67,18 +68,17 @@ class GoogleMapsService:
             "longitude": location["lng"],
             "formatted_address": result.get("formatted_address", address),
         }
-        
-    
+
     # >>>>>>>>>>>> Places Autocomplete  <<<<<<<<<<<<<<<<<<<
-    
+
     @staticmethod
-    def places_autocomplete(input: str, session_token: str|None = None) -> list[dict]:
+    def places_autocomplete(input: str, session_token: str | None = None) -> list[dict]:
         """
         Returns address suggestions for the given partial input string.
-        
+
         Returns an empty list on failure or no results.
         """
-        
+
         # Hard-restrict predictions to the configured market country (NG by default). Without this Google returns globally-popular hits biased by the server's egress IP — that's why a Nigerian-targeted app was seeing India results in autocomplete. Configurable via the GOOGLE_MAPS_DEFAULT_COUNTRY env var; pipe-separate to allow more than one (e.g. "ng|gh").
         country = GOOGLE_MAPS_DEFAULT_COUNTRY.lower()
         components = "|".join(f"country:{c}" for c in country.split("|"))
@@ -89,7 +89,7 @@ class GoogleMapsService:
             "language": "en",
             "components": components,
         }
-        
+
         if session_token:
             params["sessiontoken"] = session_token
 
@@ -98,25 +98,24 @@ class GoogleMapsService:
                 GoogleMapsService.AUTOCOMPLETE_URL,
                 params=params,
                 timeout=5,
-            )        
+            )
             response.raise_for_status()
             data = response.json()
             logger.debug("Google places autocomplete response: %s", data)
 
         except requests.RequestException:
             return []
-        
+
         if data.get("status") not in ("OK", "ZERO_RESULTS"):
             return []
-        
+
         return [
             {"description": p["description"], "place_id": p["place_id"]}
             for p in data.get("predictions", [])
         ]
-        
-    
+
     # >>>>>>>>>>>> Logistics distance calculator <<<<<<<<<<<<<<<<<<<
-    
+
     DISTANCE_MATRIX_URL = "https://maps.googleapis.com/maps/api/distancematrix/json"
 
     @staticmethod
@@ -154,8 +153,13 @@ class GoogleMapsService:
             response.raise_for_status()
             data = response.json()
         except requests.RequestException:
-            logger.warning("Distance Matrix request failed for %s,%s -> %s,%s",
-                           origin_lat, origin_lng, dest_lat, dest_lng)
+            logger.warning(
+                "Distance Matrix request failed for %s,%s -> %s,%s",
+                origin_lat,
+                origin_lng,
+                dest_lat,
+                dest_lng,
+            )
             return None
 
         if data.get("status") != "OK":
@@ -177,7 +181,7 @@ class GoogleMapsService:
             return None
 
         return round(meters / 1000.0, 2)
-    
+
     @staticmethod
     def distance_and_duration(
         origin_lat: float,
@@ -199,13 +203,20 @@ class GoogleMapsService:
         }
         try:
             response = requests.get(
-                GoogleMapsService.DISTANCE_MATRIX_URL, params=params, timeout=5,
+                GoogleMapsService.DISTANCE_MATRIX_URL,
+                params=params,
+                timeout=5,
             )
             response.raise_for_status()
             data = response.json()
         except requests.RequestException:
-            logger.warning("Distance+duration request failed for %s,%s -> %s,%s",
-                           origin_lat, origin_lng, dest_lat, dest_lng)
+            logger.warning(
+                "Distance+duration request failed for %s,%s -> %s,%s",
+                origin_lat,
+                origin_lng,
+                dest_lat,
+                dest_lng,
+            )
             return None
 
         if data.get("status") != "OK":

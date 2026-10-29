@@ -1,0 +1,23 @@
+{% comment %}
+  Recursive documentation tree. Folder sections open only when they contain
+  the active document; the view prepares open_prefixes so the template stays
+  presentation-only.
+{% endcomment %}
+<ul class="nav-tree">
+  {% for node in nodes %}
+    {% if node.slug %}
+      <li>
+        <a href="{% url 'devdocs-page' node.slug %}"{% if node.slug == active_slug %} class="active" aria-current="page"{% endif %}>
+          {{ node.title }}
+        </a>
+      </li>
+    {% else %}
+      <li>
+        <details class="nav-section"{% if node.prefix in open_prefixes %} open{% endif %}>
+          <summary>{{ node.title }}</summary>
+          {% include "devdocs/_tree.html" with nodes=node.children active_slug=active_slug open_prefixes=open_prefixes %}
+        </details>
+      </li>
+    {% endif %}
+  {% endfor %}
+</ul>

@@ -25,10 +25,86 @@ class ModuleLessonAssessmentApiTests(APITestCase):
 
         response = self.client.post(
             f"/api/v1/courses/{self.course.id}/modules/",
-            {"title": "Module 1", "order": 1},
+            {
+                "title": "Module 1",
+                "order": 1,
+                "description": "An introduction to the course tools.",
+                "learning_objectives": [
+                    "Install the required tools",
+                    "Create a first project",
+                ],
+            },
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(
+            response.data["description"], "An introduction to the course tools."
+        )
+        self.assertEqual(
+            response.data["learning_objectives"],
+            ["Install the required tools", "Create a first project"],
+        )
+
+        module = Module.objects.get(id=response.data["id"])
+        self.assertEqual(module.description, "An introduction to the course tools.")
+        self.assertEqual(
+            module.learning_objectives,
+            ["Install the required tools", "Create a first project"],
+        )
+
+    def test_manual_module_learning_objective_fragments_are_rejoined(self):
+        self.client.force_authenticate(self.creator)
+
+        response = self.client.post(
+            f"/api/v1/courses/{self.course.id}/modules/",
+            {
+                "title": "Module 1",
+                "order": 1,
+                "description": "An introduction to the course tools.",
+                "learning_objectives": [
+                    "Work with parameters",
+                    "arguments",
+                    "return values",
+                    "and default parameters.",
+                    "Understand variable scope",
+                    "lexical scope",
+                    "and closures.",
+                ],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(
+            response.data["learning_objectives"],
+            [
+                "Work with parameters, arguments, return values and default parameters.",
+                "Understand variable scope, lexical scope and closures.",
+            ],
+        )
+        module = Module.objects.get(id=response.data["id"])
+        self.assertEqual(
+            module.learning_objectives, response.data["learning_objectives"]
+        )
+
+    def test_duplicate_module_order_is_validation_error(self):
+        Module.objects.create(course=self.course, title="Existing", order=1)
+        self.client.force_authenticate(self.creator)
+
+        response = self.client.post(
+            f"/api/v1/courses/{self.course.id}/modules/",
+            {
+                "title": "Duplicate",
+                "order": 1,
+                "description": "This should not create a second order one module.",
+                "learning_objectives": ["Create a module with a duplicate order."],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["errors"][0]["field_name"], "order")
+        self.assertEqual(Module.objects.filter(course=self.course, order=1).count(), 1)
 
     def test_non_owner_gets_404_creating_module(self):
         self.client.force_authenticate(self.other_creator)
@@ -62,7 +138,9 @@ class ModuleLessonAssessmentApiTests(APITestCase):
         # ADMIN collaborator (SCCS PRD Section 14).
         collaborator_user = make_user()
         make_collaborator(
-            course=self.course, user=collaborator_user, role=CollaboratorRole.COLLABORATOR
+            course=self.course,
+            user=collaborator_user,
+            role=CollaboratorRole.COLLABORATOR,
         )
         self.client.force_authenticate(collaborator_user)
 
@@ -153,6 +231,26 @@ class ModuleLessonAssessmentApiTests(APITestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
+    def test_duplicate_lesson_order_returns_validation_error(self):
+        module = Module.objects.create(course=self.course, title="M1", order=1)
+        Lesson.objects.create(module=module, title="Existing", order=1)
+        self.client.force_authenticate(self.creator)
+
+        response = self.client.post(
+            f"/api/v1/courses/{self.course.id}/modules/{module.id}/lessons/",
+            {
+                "title": "Duplicate order",
+                "order": 1,
+                "content_type": "TEXT",
+                "learning_objectives": ["Understand the topic"],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["errors"][0]["field_name"], "order")
+        self.assertEqual(module.lessons.count(), 1)
+
     def test_cannot_create_lesson_when_course_not_draft(self):
         module = Module.objects.create(course=self.course, title="M1", order=1)
         self.course.status = CourseStatus.SUBMITTED
@@ -182,10 +280,7 @@ class ModuleLessonAssessmentApiTests(APITestCase):
                     "type": "MULTIPLE_CHOICE",
                     "question": "Q1?",
                     "points": 10,
-                    "options": [
-                        {"text": "A", "explanation": "A is wrong because..."},
-                        {"text": "B", "explanation": "B is correct because..."},
-                    ],
+                    "options": ["A", "B"],
                     "correct_index": 1,
                 }
             ],
@@ -214,7 +309,7 @@ class ModuleLessonAssessmentApiTests(APITestCase):
                 {
                     "type": "MULTIPLE_CHOICE",
                     "question": "Q1?",
-                    "options": [{"text": "only one", "explanation": "n/a"}],
+                    "options": ["only one"],
                     "correct_index": 0,
                 }
             ],
@@ -252,17 +347,16 @@ class ModuleLessonAssessmentApiTests(APITestCase):
                     "type": "MULTIPLE_CHOICE",
                     "question": "Which is a valid variable name?",
                     "points": 10,
-                    "options": [
-                        {"text": "2var", "explanation": "Can't start with a digit."},
-                        {"text": "var_2", "explanation": "Correct."},
-                    ],
+                    "options": ["2var", "var_2"],
                     "correct_index": 1,
+                    "explanation": "Underscores are valid in Python variable names.",
                 },
                 {
                     "type": "ESSAY",
                     "question": "Explain lists vs tuples.",
                     "points": 15,
-                    "explanation": "Model answer: lists are mutable, tuples are not.",
+                    "expected_answer": "Lists are mutable, tuples are not.",
+                    "explanation": "Award credit for identifying the mutability difference.",
                 },
             ],
         }
@@ -274,9 +368,18 @@ class ModuleLessonAssessmentApiTests(APITestCase):
         questions = response.data["questions"]
         self.assertEqual(questions[0]["type"], "MULTIPLE_CHOICE")
         self.assertEqual(questions[0]["points"], 10)
+        self.assertEqual(
+            questions[0]["explanation"],
+            "Underscores are valid in Python variable names.",
+        )
         self.assertEqual(questions[1]["type"], "ESSAY")
         self.assertEqual(
-            questions[1]["explanation"], "Model answer: lists are mutable, tuples are not."
+            questions[1]["explanation"],
+            "Award credit for identifying the mutability difference.",
+        )
+        self.assertEqual(
+            questions[1]["expected_answer"],
+            "Lists are mutable, tuples are not.",
         )
 
         summary = response.data["summary"]
@@ -285,7 +388,7 @@ class ModuleLessonAssessmentApiTests(APITestCase):
         self.assertEqual(summary["multiple_choice_count"], 1)
         self.assertEqual(summary["essay_count"], 1)
 
-    def test_multiple_choice_option_missing_explanation_rejected(self):
+    def test_choice_question_rejects_object_options(self):
         self.client.force_authenticate(self.creator)
         url = self._assessment_url()
 
@@ -303,7 +406,25 @@ class ModuleLessonAssessmentApiTests(APITestCase):
         response = self.client.put(url, payload, format="json")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    def test_essay_question_missing_explanation_rejected(self):
+    def test_choice_question_rejects_blank_options(self):
+        self.client.force_authenticate(self.creator)
+        url = self._assessment_url()
+        payload = {
+            "title": "Quiz",
+            "questions": [
+                {
+                    "type": "SINGLE_CHOICE",
+                    "question": "Q1?",
+                    "options": ["A", ""],
+                    "correct_index": 0,
+                }
+            ],
+        }
+
+        response = self.client.put(url, payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_essay_question_requires_expected_answer_and_explanation(self):
         self.client.force_authenticate(self.creator)
         url = self._assessment_url()
 
@@ -311,6 +432,10 @@ class ModuleLessonAssessmentApiTests(APITestCase):
             "title": "Quiz",
             "questions": [{"type": "ESSAY", "question": "Explain X."}],
         }
+        response = self.client.put(url, payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+        payload["questions"][0]["expected_answer"] = "A reference answer."
         response = self.client.put(url, payload, format="json")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
@@ -324,13 +449,197 @@ class ModuleLessonAssessmentApiTests(APITestCase):
                 {
                     "type": "ESSAY",
                     "question": "Explain X.",
+                    "expected_answer": "A model answer.",
                     "explanation": "Model answer.",
-                    "options": [
-                        {"text": "A", "explanation": "n/a"},
-                        {"text": "B", "explanation": "n/a"},
-                    ],
+                    "options": ["A", "B"],
                 }
             ],
         }
+        response = self.client.put(url, payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_course_builder_quizzes_round_trip_at_every_level(self):
+        """Exercise the Quiz Builder's save and preview contract end-to-end.
+
+        The Figma flow lets a creator add a four-option single-choice
+        question, select its correct answer, add an essay question, and review
+        the computed summary.  The same question format is supported for
+        lesson, module, and final-course quizzes.
+        """
+        self.client.force_authenticate(self.creator)
+
+        module_response = self.client.post(
+            f"/api/v1/courses/{self.course.id}/modules/",
+            {"title": "Python basics", "order": 1},
+            format="json",
+        )
+        self.assertEqual(module_response.status_code, status.HTTP_201_CREATED)
+        module_id = module_response.data["id"]
+
+        lesson_response = self.client.post(
+            f"/api/v1/courses/{self.course.id}/modules/{module_id}/lessons/",
+            {"title": "Variables", "order": 1, "learning_objectives": []},
+            format="json",
+        )
+        self.assertEqual(lesson_response.status_code, status.HTTP_201_CREATED)
+        lesson_id = lesson_response.data["id"]
+
+        quiz_questions = [
+            {
+                "type": "SINGLE_CHOICE",
+                "question": "Which variable name is valid?",
+                "points": 10,
+                "options": ["2value", "user-name", "user_name", "class"],
+                "correct_index": 2,
+            },
+            {
+                "type": "ESSAY",
+                "question": "Explain why descriptive variable names matter.",
+                "points": 15,
+                "expected_answer": "They make code easier to read and maintain.",
+                "explanation": "Award credit for linking names to readability and maintenance.",
+            },
+        ]
+        payload = {"title": "Variables quiz", "questions": quiz_questions}
+        lesson_url = (
+            f"/api/v1/courses/{self.course.id}/modules/{module_id}/"
+            f"lessons/{lesson_id}/assessment/"
+        )
+        module_url = f"/api/v1/courses/{self.course.id}/modules/{module_id}/assessment/"
+        final_url = f"/api/v1/courses/{self.course.id}/final-assessment/"
+
+        for url in (lesson_url, module_url):
+            response = self.client.put(url, payload, format="json")
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertEqual(response.data["questions"][0]["correct_index"], 2)
+            self.assertEqual(len(response.data["questions"][0]["options"]), 4)
+            self.assertEqual(response.data["questions"][0]["options"][2], "user_name")
+            self.assertEqual(
+                response.data["summary"],
+                {
+                    "total_questions": 2,
+                    "total_points": 25,
+                    "single_choice_count": 1,
+                    "multiple_choice_count": 0,
+                    "essay_count": 1,
+                },
+            )
+
+        # The final-assessment editor permits incremental saves; its 15-question
+        # publication requirement is checked separately when the course submits.
+        final_payload = {
+            "title": "Python final quiz",
+            "questions": [quiz_questions[0] for _ in range(14)] + [quiz_questions[1]],
+        }
+        response = self.client.put(final_url, final_payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["level"], "COURSE")
+        self.assertEqual(response.data["summary"]["total_questions"], 15)
+        self.assertEqual(response.data["summary"]["total_points"], 155)
+
+        response = self.client.get(final_url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["questions"][0]["correct_index"], 2)
+        self.assertEqual(
+            response.data["questions"][-1]["expected_answer"],
+            "They make code easier to read and maintain.",
+        )
+
+    def test_multiple_choice_and_legacy_question_shapes_round_trip(self):
+        self.client.force_authenticate(self.creator)
+        url = self._assessment_url()
+        payload = {
+            "title": "Choice questions",
+            "questions": [
+                {
+                    "type": "MULTIPLE_CHOICE",
+                    "question": "Which are Python collection types?",
+                    "points": 8,
+                    "options": ["list", "tuple", "function"],
+                    "correct_indices": [0, 1],
+                },
+                {
+                    # Existing assessments used MULTIPLE_CHOICE with one index.
+                    "type": "MULTIPLE_CHOICE",
+                    "question": "Which keyword defines a function?",
+                    "points": 2,
+                    "options": ["function", "def"],
+                    "correct_index": 1,
+                },
+            ],
+        }
+
+        response = self.client.put(url, payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["questions"][0]["correct_indices"], [0, 1])
+        self.assertEqual(response.data["questions"][1]["correct_index"], 1)
+        self.assertEqual(
+            response.data["summary"],
+            {
+                "total_questions": 2,
+                "total_points": 10,
+                "single_choice_count": 0,
+                "multiple_choice_count": 2,
+                "essay_count": 0,
+            },
+        )
+
+    def test_multiple_choice_rejects_duplicate_or_invalid_correct_indices(self):
+        self.client.force_authenticate(self.creator)
+        url = self._assessment_url()
+        payload = {
+            "title": "Choice questions",
+            "questions": [
+                {
+                    "type": "MULTIPLE_CHOICE",
+                    "question": "Which are valid?",
+                    "options": ["A", "B"],
+                    "correct_indices": [0, 0],
+                }
+            ],
+        }
+
+        response = self.client.put(url, payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+        payload["questions"][0]["correct_indices"] = [2]
+        response = self.client.put(url, payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_choice_question_rejects_more_than_six_figma_options(self):
+        self.client.force_authenticate(self.creator)
+        url = self._assessment_url()
+        payload = {
+            "title": "Too many options",
+            "questions": [
+                {
+                    "type": "SINGLE_CHOICE",
+                    "question": "Select one.",
+                    "options": [f"Option {index}" for index in range(7)],
+                    "correct_index": 0,
+                }
+            ],
+        }
+
+        response = self.client.put(url, payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_essay_rejects_all_choice_fields(self):
+        self.client.force_authenticate(self.creator)
+        url = self._assessment_url()
+        payload = {
+            "title": "Essay quiz",
+            "questions": [
+                {
+                    "type": "ESSAY",
+                    "question": "Explain abstraction.",
+                    "points": 12,
+                    "expected_answer": "A model answer.",
+                    "explanation": "Grading guidance.",
+                    "correct_indices": [0],
+                }
+            ],
+        }
+
         response = self.client.put(url, payload, format="json")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)

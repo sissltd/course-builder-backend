@@ -8,14 +8,54 @@ class CourseStatus(models.TextChoices):
     ReviewAction history) but is never persisted directly on Course.status:
     a rejection immediately reverts the course to DRAFT so the creator can
     revise and resubmit, per PRD wording "Returns to Draft. Creator revises."
+
+    With PlatformSettings.staged_review_flow_enabled on, a rejection instead
+    parks the course at NEEDS_REVISION (Course.revision_seat records the
+    rejecting seat), and approving the text at the first seat parks it at
+    AWAITING_VIDEO until its video is attached. Neither status is reachable
+    with the switch off.
     """
 
     DRAFT = "DRAFT", "Draft"
     SUBMITTED = "SUBMITTED", "Submitted"
     IN_REVIEW = "IN_REVIEW", "In Review"
+    NEEDS_REVISION = "NEEDS_REVISION", "Needs Revision"
+    AWAITING_VIDEO = "AWAITING_VIDEO", "Awaiting Video"
+    QA_VERIFICATION = "QA_VERIFICATION", "QA Verification"
     APPROVED = "APPROVED", "Approved"
     PUBLISHED = "PUBLISHED", "Published"
+    ARCHIVED = "ARCHIVED", "Archived"
     REJECTED = "REJECTED", "Rejected"
+
+
+# Statuses in which the creator may change a course's content. NEEDS_REVISION
+# is only reachable with the staged review flow on.
+EDITABLE_COURSE_STATUSES = frozenset(
+    {CourseStatus.DRAFT, CourseStatus.NEEDS_REVISION}
+)
+
+
+# Statuses between submission and publication. The staged review flow can
+# only be switched while no course sits in one of them.
+IN_FLIGHT_COURSE_STATUSES = frozenset(
+    {
+        CourseStatus.SUBMITTED,
+        CourseStatus.IN_REVIEW,
+        CourseStatus.NEEDS_REVISION,
+        CourseStatus.AWAITING_VIDEO,
+        CourseStatus.QA_VERIFICATION,
+        CourseStatus.APPROVED,
+    }
+)
+
+
+class VideoProvider(models.TextChoices):
+    """Who supplies a course's video once its text has passed the first
+    review seat (staged review flow only)."""
+
+    CREATOR = "CREATOR", "Course Creator"
+    PRODUCTION_ENGINE = "PRODUCTION_ENGINE", "Production Engine"
+    DEVELOPER = "DEVELOPER", "Developer"
 
 
 class AssessmentLevel(models.TextChoices):
@@ -29,23 +69,9 @@ class AssessmentLevel(models.TextChoices):
 class QuestionType(models.TextChoices):
     """A quiz question's answer format."""
 
-    MULTIPLE_CHOICE = "MULTIPLE_CHOICE", "Question Choice"
+    SINGLE_CHOICE = "SINGLE_CHOICE", "Single Choice"
+    MULTIPLE_CHOICE = "MULTIPLE_CHOICE", "Multiple Choice"
     ESSAY = "ESSAY", "Essay Question"
-
-
-class ReviewActionType(models.TextChoices):
-    """The decision recorded by a reviewer on a ReviewAction."""
-
-    APPROVE = "APPROVE", "Approve"
-    REJECT = "REJECT", "Reject"
-
-
-class CategoryRequestStatus(models.TextChoices):
-    """Lifecycle status of a creator's request for a new Category."""
-
-    PENDING = "PENDING", "Pending"
-    APPROVED = "APPROVED", "Approved"
-    REJECTED = "REJECTED", "Rejected"
 
 
 class DifficultyLevel(models.TextChoices):
@@ -56,12 +82,104 @@ class DifficultyLevel(models.TextChoices):
     ADVANCED = "ADVANCED", "Advanced"
 
 
-class ReservationStatus(models.TextChoices):
-    """Lifecycle status of a creator's request to reserve a Topic (PRD BR-007)."""
+class CourseSourceType(models.TextChoices):
+    """Where a course's content originated - the "Type" badge shown on
+    course details. DEVELOPER_API is the future MIE ingestion path
+    (external developers submitting courses via the Studio API); it's
+    reserved now so later MIE rows can FK onto existing courses."""
 
+    CREATOR_UPLOADED = "CREATOR_UPLOADED", "Creator Uploaded"
+    AI_GENERATED = "AI_GENERATED", "AI Generated"
+    DOCUMENT_IMPORTED = "DOCUMENT_IMPORTED", "Document Imported"
+    DEVELOPER_API = "DEVELOPER_API", "Developer API"
+
+
+class CourseImportStatus(models.TextChoices):
+    """Lifecycle status for document-import jobs."""
+
+    QUEUED = "QUEUED", "Queued"
+    PARSING = "PARSING", "Parsing"
+    MAPPING = "MAPPING", "Mapping"
+    READY_FOR_REVIEW = "READY_FOR_REVIEW", "Ready for Review"
+    CONFIRMING = "CONFIRMING", "Confirming"
+    COMPLETED = "COMPLETED", "Completed"
+    FAILED = "FAILED", "Failed"
+    CANCELLED = "CANCELLED", "Cancelled"
+
+
+class DistributionChannel(models.TextChoices):
+    """Destinations shown in the Admin Review and Publish design."""
+
+    SOLUDESK = "SOLUDESK", "SoluDesk"
+    UDEMY = "UDEMY", "Udemy"
+    COURSERA = "COURSERA", "Coursera"
+
+
+class PricingModel(models.TextChoices):
+    """Commercial model selected independently for each distribution channel."""
+
+    ONE_TIME = "ONE_TIME", "One-time"
+    SUBSCRIPTION = "SUBSCRIPTION", "Subscription"
+    PROMOTIONAL = "PROMOTIONAL", "Promotional"
+    B2B_ONLY = "B2B_ONLY", "B2B only"
+
+
+class DistributionStatus(models.TextChoices):
+    """Local state of a course's publication to one destination."""
+
+    DRAFT = "DRAFT", "Draft"
+    QUEUED = "QUEUED", "Queued"
+    PUBLISHED = "PUBLISHED", "Published"
+    FAILED = "FAILED", "Failed"
+
+
+class LessonContentType(models.TextChoices):
+    """A lesson's primary media format - matches the three "Add lesson"
+    buttons (Video, Quiz, Text) in the builder."""
+
+    VIDEO = "VIDEO", "Video"
+    QUIZ = "QUIZ", "Quiz"
+    TEXT = "TEXT", "Text"
+
+
+class MediaSource(models.TextChoices):
+    """Where a piece of media (thumbnail, lesson image) came from - the
+    options offered by the "Add Media" modal."""
+
+    UPLOAD = "UPLOAD", "Upload"
+    GOOGLE_DRIVE = "GOOGLE_DRIVE", "Google Drive"
+    YOUTUBE = "YOUTUBE", "YouTube"
+    DROPBOX = "DROPBOX", "Dropbox"
+    LINK = "LINK", "Link"
+    AI_GENERATED = "AI_GENERATED", "AI Generated"
+
+
+class AIGenerationKind(models.TextChoices):
+    FULL_COURSE = "FULL_COURSE", "Full course"
+    ASSIST = "ASSIST", "AI assist"
+    THUMBNAIL = "THUMBNAIL", "Thumbnail"
+
+
+class AIGenerationStatus(models.TextChoices):
+    QUEUED = "QUEUED", "Queued"
+    RUNNING = "RUNNING", "Running"
+    STRUCTURE_READY = "STRUCTURE_READY", "Structure ready"
+    COMPLETED = "COMPLETED", "Completed"
+    FAILED = "FAILED", "Failed"
+    CANCELLED = "CANCELLED", "Cancelled"
+
+
+class AIGenerationPhase(models.TextChoices):
+    CREATING_CONTENT = "CREATING_CONTENT", "Creating content"
+    PREPARING_DETAILS = "PREPARING_DETAILS", "Preparing course details"
+
+
+class AIGenerationItemStatus(models.TextChoices):
     PENDING = "PENDING", "Pending"
-    APPROVED = "APPROVED", "Approved"
-    REJECTED = "REJECTED", "Rejected"
+    RUNNING = "RUNNING", "Running"
+    COMPLETED = "COMPLETED", "Completed"
+    FAILED = "FAILED", "Failed"
+    CANCELLED = "CANCELLED", "Cancelled"
 
 
 class AppealStatus(models.TextChoices):

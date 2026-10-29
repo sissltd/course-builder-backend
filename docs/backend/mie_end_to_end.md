@@ -1,0 +1,1326 @@
+# MIE (Market Intelligence Engine) — End-to-End Technical Reference
+
+> **Scope**: This document is a deep-dive technical reference for developers
+> and architects working on the MIE subsystem. It covers every component
+> from data model to webhook delivery, grounded in the actual source code
+> under `api/mie/`.
+
+---
+
+## Table of Contents
+
+1. [Overview](#1-overview)
+2. [Architecture](#2-architecture)
+3. [Data Model](#3-data-model)
+4. [Authentication](#4-authentication)
+5. [Developer Lifecycle](#5-developer-lifecycle)
+6. [Ingest + Dedup Engine (Endpoint 1)](#6-ingest--dedup-engine-endpoint-1)
+7. [Webhook Dispatcher](#7-webhook-dispatcher)
+8. [Developer Surfaces](#8-developer-surfaces)
+9. [Admin Console](#9-admin-console)
+10. [Reference Scheme](#10-reference-scheme)
+11. [Event Types](#11-event-types)
+12. [Error Handling](#12-error-handling)
+13. [File Map](#13-file-map)
+
+---
+
+## 1. Overview
+
+MIE is the external-developer course pipeline for Course Builder.
+External developers register, get approved by a superadmin, submit course
+ideas, and receive webhook notifications about every state change to their
+submissions. Admins review submissions, approve or reject them, and the
+system handles deduplication, payout tracking, and webhook delivery. For
+each approved idea the developer then writes the course and pushes it over
+the API; from there it runs the normal Course Creator review flow (see
+[1.1](#11-where-the-mie-meets-the-course-pipeline) and
+[8.5](#85-push-the-course-for-an-approved-idea)).
+
+**Who it serves:**
+
+- **External developers** — register via a public endpoint, receive an API
+  key on approval, submit course ideas, and monitor status through a
+  developer-facing queue API plus signed webhook events.
+- **Platform superadmins** — manage the developer lifecycle (approve,
+  reject, suspend), review and decide on submissions, set recommendation
+  signals, and manage a rejection-reason taxonomy.
+
+**High-level flow:**
+
+```
+Developer registers (PENDING)
+        │
+        ▼
+Superadmin approves ──► API key issued (shown once)
+        │
+        ▼
+Developer submits idea (POST /api/v1/mie/v1/submissions/)
+        │
+        ├── Dedup check 1: Previously rejected title?  → PREVIOUSLY_REJECTED
+        ├── Dedup check 2: Existing course title?       → DUPLICATE_EXISTING
+        ├── Dedup check 3: Title already in queue?      → DUPLICATE_IN_QUEUE
+        └── No match                                   → PENDING_REVIEW
+        │
+        ▼
+Webhook event recorded immediately for every outcome
+        │
+        ▼
+Dispatcher sweeps every 60s → signed POST to each of the developer's webhook endpoints that takes the event
+        │
+        ▼
+Superadmin decides (approve / reject) — reversible at any time
+        │
+        ▼
+New webhook event fired on every decision flip
+        │
+        ▼  (APPROVED only)
+Developer pushes the course (POST /api/v1/mie/v1/submissions/{id}/course/)
+        │   built + submitted in one transaction, or nothing stored
+        ▼
+Normal creator review flow ──► COURSE_REVISION_REQUESTED (back to DRAFT,
+        │                        developer pushes again)
+        ▼
+PUBLISHED ──► COURSE_PUBLISHED
+```
+
+With `PlatformSettings.staged_review_flow_enabled` on, the push carries the
+**text only** and the video follows once the text passes the first review
+seat - see [8.5a](#85a-send-the-video-staged-review-flow) and the flow in
+`course_platform_flow.md`.
+
+### 1.1 Where the MIE meets the course pipeline
+
+The MIE decides **ideas**. For an approved idea, the developer writes the
+course and **pushes** it; the MIE hands it to the courses app through the
+creator's own service functions and then gets out of the way - it never
+reviews, publishes or pays for a course. Its contact with the courses app:
+
+| Touchpoint | What it does | Where |
+|---|---|---|
+| Dedup | A new idea whose title matches any `Course` (any status, drafts included) is `DUPLICATE_EXISTING`. | `dedup_service.evaluate_title` |
+| Course push | Builds the course for an APPROVED idea and submits it, all or nothing. Creates it through `course_service.create_draft_course` (source `DEVELOPER_API`), replaces it through `update_draft_course` after a rejection, submits through `course_service.submit_course(skip_draft_hold=True)`. | `course_push_service.push_course` |
+| Linked creator account | The no-login `COURSE_CREATOR` user that owns a developer's courses, so the unchanged creator flow works. Provisioned on the first push; never matched by email. | `developer_service.get_or_create_creator_user`, `DeveloperAccount.creator_user` |
+| `resulting_course` link | Set by the first accepted push; reused by every revision push. | `CourseSubmission.resulting_course` |
+| Course events | `COURSE_TEXT_APPROVED` from `review_service.approve_content` (staged flow), `COURSE_REVISION_REQUESTED` from `review_service.reject_course` / `reject_qa`, `COURSE_PUBLISHED` from `course_service.publish_course`. A no-op for any course that is not `DEVELOPER_API`. | `course_push_service.record_course_event` |
+| Reversal | Rejecting an idea leaves any linked course exactly as it is and keeps the link; the decision's audit row carries `resulting_course_id`. A reversed idea refuses further pushes (409). | `submission_admin_service`, `course_push_service` |
+
+A pushed course lives entirely by the course lifecycle, the same as any
+other course (only the draft hold is skipped - the push submits at once):
+
+```
+DRAFT ──(draft hold, platform setting draft_minimum_hold_hours, default 48h)──►
+submit (structural standards + course version required) ──► SUBMITTED
+  ──► First Review ──► Second Review ──► Verification   (3 different people)
+  ──► QA_VERIFICATION (media assets required) ──► APPROVED
+  ──► admin publish (pricing per channel) ──► PUBLISHED   (one-way)
+```
+
+A content-seat rejection returns the course to `DRAFT`. Publication is
+one-way - the courses app has no unpublish path - which is why the MIE does
+not unpublish or park a published course when its idea is reversed; an
+admin acts on that course through the course tools instead. Earlier
+versions of this service set such a course to `NEEDS_REVISION`, a status
+the course lifecycle has no way out of.
+
+**Developer payment is per course that passes QA, never per approval.** A
+developer is paid for each course produced from one of their approved ideas,
+when QA approves it (their courses carry their own video), at its locked
+with-video price, straight into the linked creator account's wallet
+(`course_payout_service`). Approving an idea pays nothing. `plan_type` and
+`payout_bypass` decide whether the course is paid at all: BYPASS_ACCOUNT
+never pays (the crawler is on it), and BYPASS_PER_SUBMISSION skips a
+submission marked `payout_bypass`. How a no-login developer withdraws is its
+own design (plan types, KYC). See [CREATOR_PAYOUT.md](CREATOR_PAYOUT.md).
+
+**What a push cannot carry**: `topic` (topic reservation is a creator
+dashboard flow; a pushed course is placed by its idea's category) and
+`QUIZ` content blocks (they point at an existing quiz row; a lesson quiz is
+the lesson's `assessment`).
+
+---
+
+## 2. Architecture
+
+### 2.1 App structure
+
+MIE lives in `api/mie/` — a self-contained Django app with 30+ source
+files (excluding `__pycache__` and migrations):
+
+```
+api/mie/
+├── models/                  # 4 Django ORM models
+│   ├── developer_account.py
+│   ├── course_submission.py
+│   ├── rejection_reason.py
+│   └── webhook_event.py
+├── services/                # Business logic layer (9 modules)
+│   ├── key_service.py
+│   ├── dev_token_service.py
+│   ├── developer_service.py
+│   ├── submission_service.py
+│   ├── submission_admin_service.py
+│   ├── dedup_service.py
+│   ├── webhook_dispatcher.py
+│   ├── documentation_service.py
+│   └── reference.py
+├── views/                   # DRF views (6 modules)
+│   ├── dev_registration_views.py
+│   ├── dev_submission_views.py
+│   ├── dev_account_views.py
+│   ├── admin_developer_views.py
+│   ├── admin_submission_views.py
+│   └── rejection_reason_views.py
+├── serializers/             # DRF serializers (6 modules)
+│   ├── submission_serializer.py
+│   ├── dev_submission_serializer.py
+│   ├── admin_submission_serializer.py
+│   ├── developer_admin_serializer.py
+│   ├── dev_me_serializer.py
+│   └── rejection_reason_serializer.py
+├── management/commands/
+│   └── dispatch_mie_webhooks.py
+├── migrations/
+│   ├── 0001_initial.py
+│   └── 0002_alter_webhookevent_event_type.py
+├── authentication.py        # Dual-path DRF authentication class
+├── permissions.py           # IsMieDeveloper permission
+├── filters.py               # AdminSubmissionFilterSet (django-filters)
+├── enums.py                 # All TextChoices enums
+├── urls.py                  # Route registration (router + path)
+├── admin.py                 # Django admin registrations
+├── apps.py                  # AppConfig
+└── tasks.py                 # Celery shared_task for beat scheduling
+```
+
+### 2.2 Service layer
+
+All business logic lives in `services/`. Views are thin controllers that
+delegate to service functions. No model instance methods contain business
+rules — models are data-only.
+
+| Service | Responsibility |
+|---|---|
+| `key_service` | Generate, hash, revoke, and authenticate API keys |
+| `dev_token_service` | Issue and resolve PyJWT platform session tokens |
+| `developer_service` | Registration, approval, rejection, suspension |
+| `submission_service` | Ingest, validate payload, run dedup, record events |
+| `submission_admin_service` | Approve/reject submissions, set signals, payout bypass |
+| `dedup_service` | Three-stage title dedup engine |
+| `webhook_dispatcher` | Record-then-sweep delivery with backoff |
+| `documentation_service` | Build machine-readable docs from live constants |
+| `reference` | Public reference suffix mapping |
+
+### 2.3 Scheduling — no Celery broker dependency
+
+MIE does not require a running Celery broker for core operation. The
+webhook dispatcher is invoked via one of two mechanisms:
+
+1. **Celery beat** — `dispatch_due_webhooks_task` in `tasks.py`, scheduled
+   every 60 seconds via `CELERY_BEAT_SCHEDULE`.
+2. **Management command** — `python manage.py dispatch_mie_webhooks`, callable
+   from cron or any process scheduler.
+
+Both call the same function: `webhook_dispatcher.dispatch_due_events()`.
+
+---
+
+## 3. Data Model
+
+### 3.1 DeveloperAccount
+
+**File**: `api/mie/models/developer_account.py`
+
+Represents a developer registered into the MIE pipeline: a third-party
+developer (`source_type=EXTERNAL`), or a platform-owned integration such
+as the MIE crawler (`source_type=SYSTEM`, see
+[Section 5.5](#55-system-accounts-the-mie-crawler)).
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | UUID (PK) | Auto-generated via `UUIDPrimaryKeyModelMixin` |
+| `email` | EmailField | **Unique.** Registration identity and login handle. |
+| `status` | CharField(10) | `PENDING` / `APPROVED` / `REJECTED` / `SUSPENDED` |
+| `plan_type` | CharField(25) | `PAID_PER_SUBMISSION` / `BYPASS_PER_SUBMISSION` / `BYPASS_ACCOUNT` |
+| `source_type` | CharField(10) | `EXTERNAL` (default) / `SYSTEM`. `editable=False`: only the `provision_mie_system_account` command sets `SYSTEM`, so no registration path can opt into or out of the system-account guardrails. |
+| `api_key_prefix` | CharField(16) | First 16 chars of the raw key (`scb_live_...`). Non-secret. |
+| `api_key_hash` | CharField(64) | SHA-256 hex digest of the full key. Raw key never stored. |
+| `api_key_issued_at` | DateTimeField | When the current key was generated. |
+| `api_key_last_used_at` | DateTimeField | Updated on every successful key auth. |
+| `signing_secret` | CharField(64) | HMAC secret for outbound webhook signing. Retrievable via `/me`. |
+| `approved_by` | FK → User | Superadmin who last approved. |
+| `decided_at` | DateTimeField | When the latest approve/reject/suspend decision was taken. |
+| `created_datetime` | DateTimeField | Auto-set on creation. |
+| `updated_datetime` | DateTimeField | Auto-updated on every save. |
+
+**DB constraints** (enforced at the database level):
+
+```sql
+-- api_key_hash must be empty unless status is APPROVED or SUSPENDED
+CHECK (api_key_hash = '' OR status IN ('APPROVED', 'SUSPENDED'))
+  name: mie_dev_key_requires_active_status
+
+-- signing_secret must be empty unless status is APPROVED or SUSPENDED
+CHECK (signing_secret = '' OR status IN ('APPROVED', 'SUSPENDED'))
+  name: mie_dev_secret_requires_active_status
+```
+
+These constraints guarantee that rejected and pending accounts never have
+credential material on the row, regardless of application-level bugs.
+
+### 3.2 CourseSubmission
+
+**File**: `api/mie/models/course_submission.py`
+
+A course idea submitted by an external developer.
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | UUID (PK) | Auto-generated. |
+| `developer` | FK → DeveloperAccount | Cascading delete. `related_name="submissions"`. |
+| `payload` | JSONField | The submission body **verbatim** — never rewritten. |
+| `title` | CharField(255) | Extracted from payload. Key for all three dedup checks. |
+| `confidence_note` | TextField (blank) | Optional demand evidence, extracted from the payload like the title so reviewers see it as its own field. The payload keeps its copy. Capped at `CONFIDENCE_NOTE_MAX_LENGTH` (2000) at ingestion. |
+| `status` | CharField(25) | See `SubmissionStatus` enum below. |
+| `rejection_reason` | FK → SubmissionRejectionReason | Nullable. SET_NULL on delete. |
+| `rejection_note` | TextField | Free-text detail accompanying rejection. |
+| `demand_score` | PositiveSmallIntegerField | Admin-entered 0–100 market-demand signal. |
+| `estimated_monthly_earnings` | DecimalField(12,2) | Admin-entered earnings estimate. |
+| `queued_at` | DateTimeField | When the idea most recently entered the review queue. |
+| `decided_at` | DateTimeField | When the latest approve/reject decision was taken. |
+| `decided_by` | FK → User | Superadmin responsible for the latest decision. |
+| `payout_bypass` | BooleanField | Per-submission no-payout marker. |
+| `resulting_course` | OneToOne → Course | Nullable. SET_NULL on delete. `related_name="mie_submission"`. Never assigned today; a decision never changes the linked course (§1.1). |
+
+**DB constraints:**
+
+```sql
+-- Only one PENDING_REVIEW row per title (case-insensitive)
+UNIQUE (LOWER(title)) WHERE status = 'PENDING_REVIEW'
+  name: unique_pending_title_in_queue
+
+-- APPROVED or REJECTED rows must have decided_at set
+CHECK (NOT (status IN ('APPROVED','REJECTED')) OR decided_at IS NOT NULL)
+  name: mie_decided_submission_has_decision
+```
+
+**DB indexes:**
+
+| Index name | Fields | Purpose |
+|---|---|---|
+| `mie_sub_status_idx` | `status`, `-created_datetime` | Admin queue ordering + filter |
+| `mie_sub_dev_status_idx` | `developer`, `status` | Developer queue scoping |
+| `mie_sub_dev_created_idx` | `developer`, `-created_datetime` | System-account daily cap count + developer queue ordering |
+
+### 3.3 SubmissionRejectionReason
+
+**File**: `api/mie/models/rejection_reason.py`
+
+Admin-managed taxonomy backing dedup check #1. Labels are unique and
+soft-deactivated (`is_active=False`) rather than deleted, so historical
+submissions keep pointing at them.
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | UUID (PK) | Auto-generated. |
+| `label` | CharField(255) | **Unique.** Matched against past rejections. |
+| `description` | TextField | Longer explanation of when this reason applies. |
+| `is_active` | BooleanField | Inactive reasons stop matching new ideas. |
+| `created_datetime` | DateTimeField | Auto-set on creation. |
+
+### 3.4 WebhookEndpoint
+
+**File**: `api/mie/models/webhook_endpoint.py`
+
+One URL a developer receives webhooks on. An account keeps between one and
+`MAX_WEBHOOK_ENDPOINTS` (10) live endpoints; registration creates the first
+from the `webhook_url` it was given, taking every event. Managed by the
+developer at `/mie/v1/webhooks/` (section 8.4a). Soft-deleted
+(`SoftDeleteModelMixin`).
+
+| Field | Type | Notes |
+|---|---|---|
+| `developer` | FK → DeveloperAccount | `related_name="webhook_endpoints"`. |
+| `url` | URLField | Unique per developer among live endpoints (`mie_hook_endpoint_live_url_uniq`). |
+| `all_events` | BooleanField | True: every event type, including ones added later. |
+| `event_types` | JSONField | The `WebhookEventType` values taken when `all_events` is false. |
+| `is_deleted`, `deleted_datetime` | soft delete | A deleted endpoint's pending events are failed. |
+
+Migration `mie/0010` backfilled one all-events endpoint per existing account
+from its `webhook_url`; `mie/0011` dropped `DeveloperAccount.webhook_url`.
+
+### 3.5 WebhookEvent
+
+**File**: `api/mie/models/webhook_event.py`
+
+One outbound webhook delivery to one endpoint. Recorded immediately on
+every transition — including automated dedup short-circuits — by
+`webhook_endpoint_service.record_events`, once per live endpoint that takes
+the event type (one endpoint read and one bulk insert, however many).
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | UUID (PK) | Developer-facing dedup key (`event_id`); each endpoint gets its own for an occurrence. |
+| `submission` | FK → CourseSubmission | Cascading delete. `related_name="webhook_events"`. |
+| `endpoint` | FK → WebhookEndpoint | The URL this delivery goes to. |
+| `event_type` | CharField(40) | See `WebhookEventType` enum. |
+| `payload` | JSONField | Exact JSON body delivered (or to be delivered). |
+| `signature` | CharField(128) | HMAC-SHA256 hex digest (computed at send time, not at record time). |
+| `delivery_status` | CharField(10) | `PENDING` / `DELIVERED` / `FAILED` |
+| `attempts` | PositiveSmallIntegerField | Delivery attempts so far. |
+| `last_response_code` | PositiveSmallIntegerField | HTTP status from the developer's endpoint. |
+| `last_error` | CharField(500) | Transport or timeout error from the latest attempt. |
+| `next_retry_at` | DateTimeField | Earliest moment the dispatcher may try again. |
+| `delivered_at` | DateTimeField | When the event was successfully delivered. |
+
+**DB indexes:**
+
+| Index name | Fields | Purpose |
+|---|---|---|
+| `mie_hook_retry_idx` | `delivery_status`, `next_retry_at` | Dispatcher sweep query |
+| `mie_hook_sub_idx` | `submission`, `-created_datetime` | Per-submission event history |
+
+---
+
+## 4. Authentication
+
+MIE uses a **dual-path authentication** system. Every developer-facing
+route accepts either credential kind — the resolved `DeveloperAccount` is
+always stored as `request.auth`.
+
+**File**: `api/mie/authentication.py`
+
+### 4.1 API Key path
+
+```
+Header: X-MIE-Api-Key: scb_live_...
+```
+
+1. Key must start with `scb_live_` prefix.
+2. First 16 characters (`api_key_prefix`) are used for an indexed DB
+   lookup — at most one row is ever examined.
+3. Full key is SHA-256 hashed and compared against `api_key_hash` using
+   `hmac.compare_digest` (constant-time).
+4. Account status is checked: `APPROVED` passes, `SUSPENDED` returns a
+   distinct error code, everything else fails.
+5. `api_key_last_used_at` is updated on every successful auth.
+
+**Key material lifecycle:**
+
+- Generated by `key_service.issue_credentials()` — returns the raw key
+  exactly once (at approval or rotation).
+- Only `api_key_prefix` (non-secret) and `api_key_hash` (SHA-256 hex)
+  are stored. The raw key is never persisted.
+- Revoked by `key_service.revoke_key()` — clears prefix, hash, and
+  signing secret. DB constraints enforce the clear.
+
+### 4.2 Platform JWT path
+
+```
+Header: Authorization: Bearer <token>
+```
+
+1. Token is a PyJWT signed with `settings.SIMPLE_JWT["SIGNING_KEY"]`.
+2. Must contain claims: `mie_developer_id`, `typ` (= `"mie_dev"`), `iat`,
+   `exp`.
+3. `mie_developer_id` is resolved to a `DeveloperAccount` via exact UUID
+   lookup.
+4. Status is re-checked on every request — suspension kills live sessions
+   immediately.
+5. Lifetime mirrors `SIMPLE_JWT["ACCESS_TOKEN_LIFETIME"]`.
+
+External developers have **no rows in the platform user table**. The JWT
+carries `mie_developer_id` and is worthless outside MIE endpoints.
+
+### 4.3 Permission gate
+
+**File**: `api/mie/permissions.py`
+
+`IsMieDeveloper` is the second half of the auth pair. It checks:
+
+```python
+isinstance(request.auth, DeveloperAccount)
+and request.auth.status == DeveloperAccountStatus.APPROVED
+```
+
+Fails closed: if any future auth path forgets the status check, this
+permission still blocks non-active accounts.
+
+### 4.4 OpenAPI security scheme
+
+`MieDeveloperAuthentication` is registered with drf-spectacular as
+`mieDeveloperAuth` — a lazily-initialized `OpenApiAuthenticationExtension`
+that describes the dual-key scheme in the generated OpenAPI spec.
+
+---
+
+## 5. Developer Lifecycle
+
+### 5.1 Self-registration
+
+**Endpoint**: `POST /api/v1/mie/v1/register/` (public, rate-limited)
+**View**: `MieDeveloperRegistrationView`
+**Service**: `developer_service.register_developer()`
+
+The registration endpoint is public (`AllowAny`) with a scoped throttle
+(`mie_register`, 5/hour). It creates a `DeveloperAccount` in `PENDING`
+status with only email and webhook_url populated. No API key exists; the
+account can authenticate nothing.
+
+Duplicate email check is case-insensitive (`email__iexact`).
+
+### 5.2 Admin approval
+
+**Endpoint**: `POST /api/v1/mie/admin/developers/{id}/approve/`
+**Service**: `developer_service.approve_developer()`
+
+Approval is the moment credentials are issued:
+
+1. Status flips to `APPROVED` **before** credential issuance (DB constraint
+   requires active status to hold key material).
+2. If no key exists (first approval, or re-approval after rejection
+   wiped credentials), `key_service.issue_credentials()` generates a
+   fresh key pair.
+3. The raw API key is returned in the response as `one_time_api_key` —
+   shown exactly once, never retrievable again.
+4. If the account already has valid credentials, `one_time_api_key` is
+   `None` and the existing key is retained.
+
+Approval is reversible — REJECTED and SUSPENDED accounts can be approved
+again. Already-approved accounts return 400.
+
+### 5.3 Rejection
+
+**Endpoint**: `POST /api/v1/mie/admin/developers/{id}/reject/`
+**Service**: `developer_service.reject_developer()`
+
+Rejects from any state and:
+
+1. Revokes all credential material (API key prefix, hash, signing secret).
+2. Sets status to `REJECTED`.
+3. Calls `webhook_dispatcher.drop_events_for_rejected_account()` to
+   terminal-fail all pending webhook events for this developer.
+
+Rejection is reversible — re-approval issues fresh credentials.
+
+### 5.4 Suspension
+
+**Endpoint**: `POST /api/v1/mie/admin/developers/{id}/suspend/`
+**Service**: `developer_service.suspend_developer()`
+
+Freezes an APPROVED account:
+
+1. Status flips to `SUSPENDED`.
+2. API key and signing secret remain on the row (DB constraint allows it)
+   but the auth layer rejects them.
+3. Queue history, webhook configuration, and all data are retained.
+4. Pending webhook events stay `PENDING` — they will be delivered if the
+   account returns to APPROVED.
+5. Only APPROVED accounts can be suspended; attempting to suspend a
+   PENDING, REJECTED, or SUSPENDED account returns 400.
+
+### 5.5 System accounts (the MIE crawler)
+
+**Command**: `manage.py provision_mie_system_account --email --webhook-url --actor-email`
+**Service**: `developer_service.provision_system_account()`
+
+The MIE crawler lives in its own repository and submits through the same
+public API as any developer. What separates it here is one column:
+`source_type=SYSTEM`. It is `editable=False` and no registration path
+touches it, so an account can only become a system account through the
+command above — and a third-party developer can neither opt into the
+guardrails below nor out of them.
+
+Provisioning creates the account PENDING and hands it straight to
+`approve_developer()`, so the same key/status DB constraints apply as for
+any developer. `plan_type` is `BYPASS_ACCOUNT`: the platform does not pay
+itself for ideas. The raw API key is printed once, to the operator's
+terminal — a command rather than an endpoint precisely so the key never
+travels through an HTTP response or anything that logs request bodies.
+Re-running it against an existing system account changes nothing and
+issues no second key; against an email already held by an EXTERNAL
+developer it refuses, rather than silently converting a third party onto
+a no-payout plan. Provisioning is audited via `log_activity` under
+`CONFIGURATION`.
+
+**Guardrails.** Both apply to SYSTEM accounts only; an EXTERNAL developer
+never meets either. Their thresholds live in `config/settings/mie.py`
+(env-backed, so an incident can tighten them without a release).
+
+| Guardrail | Where | Behaviour |
+|---|---|---|
+| Rolling daily cap | `submission_service._enforce_daily_cap()` | `MIE_SYSTEM_DAILY_SUBMISSION_CAP` (default 20) submissions per rolling 24 hours, counted in the database over every outcome. Over it, nothing is stored — see [6.6](#66-throttling). |
+| Rejection circuit breaker | `guardrail_service.evaluate_rejection_breaker()` | Once the account has at least `MIE_BREAKER_MIN_DECISIONS` (10) admin decisions inside `MIE_BREAKER_WINDOW_DAYS` (7), a rejected share at or above `MIE_BREAKER_REJECTION_RATE` (0.8) suspends it. |
+
+The breaker runs from `decide_submission()` on SYSTEM **rejections** only
+— never on approvals, never on an EXTERNAL account — and inside that same
+transaction, so a decision that rolls back takes its suspension with it.
+The window never reaches back past the account's own `decided_at`, so an
+account a superadmin has just re-approved starts clean instead of
+immediately re-tripping on the rejections that suspended it.
+
+Tripping calls the ordinary `suspend_developer()` (see [5.4](#54-suspension)),
+so the key and queue history survive and pending webhooks are held rather
+than dropped; the crawler starts getting 401 `account_suspended`.
+Recovery is the existing approve action — no special path. The trip is
+audited via `log_activity` under `ALERT`, and every superadmin gets an
+in-app notification and an email
+(`templates/emails/mie_circuit_breaker_tripped.{html,txt}`), both fired
+`on_commit` and both swallowing their own failures: an alerting problem
+must not surface as an error on the admin's rejection.
+
+---
+
+## 6. Ingest + Dedup Engine (Endpoint 1)
+
+**Endpoint**: `POST /api/v1/mie/v1/submissions/`
+**View**: `MieSubmissionIngestView`
+**Service**: `submission_service.submit_idea()`
+
+### 6.1 Request format
+
+```json
+{
+  "title": "Build a Production-Grade Rust Course",
+  "description": "optional extra context",
+  "audience": "mid-level backend developers",
+  "confidence_note": "620 backend job postings asked for Rust this month, up 28% on last month."
+}
+```
+
+Only `title` is required. The body is stored **verbatim** in the
+`payload` JSONField — no fields are extracted or rewritten beyond the
+title and the optional `confidence_note`. Both are copied out into their
+own columns so reviewers can read them without digging through the
+payload; the payload keeps its own copy either way, so the admin review
+surfaces still see exactly what the developer submitted.
+
+`confidence_note`, when present, must be a string of at most
+`CONFIDENCE_NOTE_MAX_LENGTH` (2000) characters after trimming — checked
+in `submission_service._extract_confidence_note()` for the same reason
+the title is checked there rather than only in the serializer: the
+serializer would coerce a number to a string, leaving the stored payload
+and the extracted column disagreeing about what was sent.
+
+### 6.2 Title validation
+
+`submission_service.validate_idea_payload()`:
+
+- Body must be a JSON object.
+- `title` must be a non-empty string, ≤ 255 characters after trimming.
+- Trimmed form is stored and used for all dedup comparisons.
+
+### 6.3 Dedup engine
+
+**File**: `api/mie/services/dedup_service.py`
+
+Three sequential checks, first match wins:
+
+| # | Check | Status set | Webhook event | Notes |
+|---|---|---|---|---|
+| 1 | Title matches a previously REJECTED submission | `PREVIOUSLY_REJECTED` | `SUBMISSION_PREVIOUSLY_REJECTED` | Inherits the rejection reason from the prior rejection. |
+| 2 | Title matches an existing platform Course | `DUPLICATE_EXISTING` | `SUBMISSION_DUPLICATE_EXISTING` | Checks `Course.objects.filter(title__iexact=...)` - any status, drafts included. |
+| 3 | Title already PENDING_REVIEW in queue | `DUPLICATE_IN_QUEUE` | `SUBMISSION_DUPLICATE_IN_QUEUE` | Enforced by partial unique index. |
+| 4 | No match | `PENDING_REVIEW` | `SUBMISSION_QUEUED` | Normal path — idea enters the review queue. |
+
+Titles are compared case-insensitively after trimming.
+
+### 6.4 Race condition handling
+
+The partial unique index on `(LOWER(title)) WHERE status = PENDING_REVIEW`
+can fire an `IntegrityError` if two developers submit the same title
+simultaneously. When this happens:
+
+1. The transaction catches `IntegrityError`.
+2. `_record_lost_race()` creates the submission as `DUPLICATE_IN_QUEUE`
+   without re-running dedup (re-running could loop under repeated
+   contention).
+3. A `SUBMISSION_DUPLICATE_IN_QUEUE` webhook event is recorded.
+
+This guarantees that lost races resolve deterministically as duplicates.
+
+### 6.5 Webhook event recording
+
+Every outcome — including dedup short-circuits — immediately records a
+`WebhookEvent` row via `submission_service.record_event()`. The row exists
+from the moment the transition happens; nothing can be lost between
+ingestion and delivery.
+
+### 6.6 Throttling
+
+Scoped throttle `mie_ingest`: 30 requests per minute per API key.
+
+**System accounts only** — a second, slower limit sits behind it: the
+rolling 24-hour cap of [5.5](#55-system-accounts-the-mie-crawler). It is
+counted from the database rather than the cache, so unlike the throttle
+it survives a Redis flush, and it counts every row whatever its outcome:
+a crawler stuck resubmitting duplicates is exactly what the cap exists to
+stop. Over the cap nothing is stored — the count and the insert share one
+transaction behind `SELECT … FOR UPDATE` on the account row, so two
+concurrent requests cannot both read "19 of 20" and both get in.
+`DailySubmissionCapReached` carries the seconds until the oldest counted
+submission leaves the window, and the view maps it to the same
+`Throttled` 429 + `Retry-After` the per-minute throttle already returns,
+so a client that honours one honours both. EXTERNAL accounts never reach
+this check.
+
+### 6.7 Response
+
+```json
+{
+  "id": "0d1c7b2e-6f5a-4a3f-9a2b-1f4e8c9d0a11",
+  "reference": "SCB-0d1c7b2e-P",
+  "status": "PENDING_REVIEW",
+  "created_datetime": "2026-08-23T09:00:00Z"
+}
+```
+
+HTTP 201 regardless of dedup outcome — the submission was accepted and
+processed; the `status` field indicates which outcome applied.
+
+---
+
+## 7. Webhook Dispatcher
+
+**File**: `api/mie/services/webhook_dispatcher.py`
+
+### 7.1 Design contract: Record-then-sweep
+
+Transition code (in `submission_service` and `submission_admin_service`)
+only writes `WebhookEvent` rows. The dispatcher is the **sole sender**.
+This separation means:
+
+- No network calls inside transaction blocks.
+- Events survive process crashes.
+- Overlapping sweep passes are safe.
+
+### 7.2 Dispatch pass
+
+`dispatch_due_events()` runs one delivery pass:
+
+1. **Query due events** — one indexed query using `mie_hook_retry_idx`
+   (`delivery_status=PENDING` AND (`next_retry_at IS NULL` OR
+   `next_retry_at <= now`)), with `select_related("endpoint", "submission",
+   "submission__developer")` — no N+1.
+
+2. **Partition by account state** — deliverable (APPROVED), inactive
+   (REJECTED → terminal-fail immediately), endpoint deleted (terminal-fail,
+   `last_error="webhook endpoint deleted"`), suspended (frozen — left
+   PENDING for later). Each deliverable event is POSTed to its own
+   `endpoint.url`.
+
+3. **Prepare requests** — for each deliverable event, compute the
+   signing headers and body. No DB access inside threads.
+
+4. **Concurrent POSTs** — bounded thread pool (8 workers, HTTP only).
+   Uses `httpx.post()` with connect timeout 5s, read timeout 10s.
+
+5. **Apply outcomes** — single pass of `bulk_update` (batch size 200)
+   for all events in one write.
+
+### 7.3 Retry backoff
+
+| Attempt | Delay before next |
+|---|---|
+| 1 → 2 | 60 seconds |
+| 2 → 3 | 5 minutes |
+| 3 → 4 | 15 minutes |
+| 4 → 5 | 1 hour |
+| 5+ | Terminal `FAILED` |
+
+Constants: `MAX_ATTEMPTS = 5`, `RETRY_DELAYS_SECONDS = (60, 300, 900, 3600)`.
+
+### 7.4 Signing scheme
+
+```
+X-MIE-Timestamp: <unix seconds at send time>
+X-MIE-Signature: hex(HMAC-SHA256("{timestamp}.{raw_body}", signing_secret))
+```
+
+The raw body is canonical JSON (sorted keys, compact separators):
+
+```json
+{
+  "event_id": "<uuid>",
+  "type": "SUBMISSION_QUEUED",
+  "occurred_at": "2026-08-23T09:00:00+00:00",
+  "submission": {
+    "reference": "SCB-0d1c7b2e-P",
+    "status": "PENDING_REVIEW",
+    "title": "Build a Production-Grade Rust Course"
+  }
+}
+```
+
+The `signing_secret` is the developer's per-account HMAC key, retrievable
+via `GET /api/v1/mie/v1/me/`. Receivers should recompute the signature
+and reject events with timestamps older than `REPLAY_WINDOW_SECONDS = 300`.
+
+### 7.5 Account state effects
+
+| Account status | Dispatcher behavior |
+|---|---|
+| `APPROVED` | Events delivered normally. |
+| `SUSPENDED` | Events left PENDING — frozen, not failed. Delivered on revival. |
+| `REJECTED` | Events terminal-failed immediately. `drop_events_for_rejected_account()` is also called at rejection time. |
+
+### 7.6 Empty queue cost
+
+One `SELECT` query (~40ms), returns immediately.
+
+### 7.7 Scheduling
+
+Two equivalent entry points:
+
+1. **Celery beat** — `tasks.dispatch_due_webhooks_task()`, scheduled every
+   60 seconds.
+2. **Management command** — `python manage.py dispatch_mie_webhooks`.
+
+---
+
+## 8. Developer Surfaces
+
+All developer-facing routes use `MieDeveloperAuthentication` +
+`IsMieDeveloper`. Results are hard-scoped server-side to the authenticated
+developer — no query parameter can expose another developer's data.
+
+### 8.1 Submit a course idea
+
+```
+POST /api/v1/mie/v1/submissions/
+```
+
+Endpoint 1 — the primary ingestion surface. See [Section 6](#6-ingest--dedup-engine-endpoint-1).
+
+### 8.2 Submission queue
+
+```
+GET /api/v1/mie/v1/submissions/queue/
+```
+
+Returns the authenticated developer's complete submission queue — every
+idea in every pipeline state, ordered newest first.
+
+**Filters:**
+
+| Parameter | Type | Description |
+|---|---|---|
+| `?status=` | string | Restrict to one pipeline state. |
+| `?search=` | string | Case-insensitive substring match on title. |
+
+Queryset: `CourseSubmission.objects.filter(developer=self.request.auth)`.
+
+### 8.3 Account snapshot
+
+```
+GET /api/v1/mie/v1/me/
+```
+
+Returns the developer's account details:
+
+```json
+{
+  "email": "dev@studio.io",
+  "status": "APPROVED",
+  "plan_type": "PAID_PER_SUBMISSION",
+  "webhook_endpoints": [
+    {"id": "5b1f0c9e-...", "url": "https://hooks.studio.io/mie", "events": ["all"],
+     "created_datetime": "2026-06-28T14:22:00Z", "updated_datetime": "2026-06-28T14:22:00Z"}
+  ],
+  "api_key_preview": "scb_live_a1b2c3d4...",
+  "api_key_last_used_at": "2026-07-15T08:32:11Z",
+  "signing_secret": "a1b2c3d4e5f6...",
+  "created_datetime": "2026-06-28T14:22:00Z",
+  "decided_at": "2026-07-01T10:00:00Z"
+}
+```
+
+- `api_key_preview` is always masked (`{prefix}...`) — the full key is
+  never returned after initial issuance.
+- `signing_secret` IS included — it only verifies our messages, never
+  authenticates theirs.
+
+### 8.4a Webhook endpoints
+
+```
+GET    /api/v1/mie/v1/webhooks/                 list your endpoints
+POST   /api/v1/mie/v1/webhooks/                 add one: {"url", "events"}
+GET    /api/v1/mie/v1/webhooks/{endpoint_id}/   show one
+PATCH  /api/v1/mie/v1/webhooks/{endpoint_id}/   change url and/or events
+DELETE /api/v1/mie/v1/webhooks/{endpoint_id}/   delete one (soft)
+GET    /api/v1/mie/v1/webhooks/event-types/     the event types to choose from
+```
+
+`dev_webhook_views.py` → `webhook_endpoint_service`. Same auth as the rest of
+the developer surface (API key or the platform Bearer session the developer
+profile uses), so the developer manages endpoints from code or the portal.
+`events` is `["all"]` (every type, including future ones) or a list of
+`WebhookEventType` values; `"all"` cannot be mixed with others. Rules:
+
+- At most 10 live endpoints (409 `webhook_endpoint_limit`).
+- A URL once per developer among live endpoints (409 `webhook_endpoint_duplicate`).
+- The last endpoint cannot be deleted (409 `last_webhook_endpoint`).
+- Another developer's endpoint is a 404.
+- Changes apply to events recorded afterwards; deleting fails the
+  endpoint's queued deliveries.
+- Changes are serialised per developer by a row lock on the account, so the
+  limit and the last-endpoint rule hold under concurrent requests.
+
+Endpoint changes are not written to the activity log: a developer has no
+platform user row (the same as idea ingestion). The endpoint's own
+created/updated timestamps record them.
+
+### 8.4 Integration documentation
+
+```
+GET /api/v1/mie/v1/documentation/
+```
+
+Returns a machine-readable documentation payload generated from live code
+constants:
+
+```json
+{
+  "plan": {
+    "plan_type": "PAID_PER_SUBMISSION",
+    "explanation": "You are paid for each course that is produced from one of your approved ideas and published. Approving an idea pays nothing on its own. ..."
+  },
+  "authentication": {
+    "api_key_header": "X-MIE-Api-Key",
+    "example": "scb_live_a1b2c3d4...",
+    "note": "Send your full key in the X-MIE-Api-Key header..."
+  },
+  "reference_scheme": {
+    "description": "Every submission has an immutable id and a public reference...",
+    "suffixes": [
+      {"status": "PENDING_REVIEW", "suffix": "P", "meaning": "queued for admin review"},
+      {"status": "DUPLICATE_IN_QUEUE", "suffix": "D", "meaning": "same title already awaiting review"},
+      {"status": "DUPLICATE_EXISTING", "suffix": "E", "meaning": "a platform course already uses this title"},
+      {"status": "PREVIOUSLY_REJECTED", "suffix": "X", "meaning": "this exact title was rejected before"},
+      {"status": "APPROVED", "suffix": "A", "meaning": "accepted; a course is being produced"},
+      {"status": "REJECTED", "suffix": "R", "meaning": "rejected by an admin"}
+    ]
+  },
+  "endpoints": [...],
+  "webhooks": {
+    "delivery": "A POST is sent to your webhook_url immediately for every event...",
+    "signature_verification": {
+      "headers": ["X-MIE-Signature", "X-MIE-Timestamp"],
+      "scheme": "hex-encoded HMAC-SHA256 over '{timestamp}.{raw request body}'..."
+    },
+    "samples": { ... }
+  }
+}
+```
+
+Every value is derived from live code — enum choices, route table,
+event-payload builder — so documentation can never drift from the API.
+The course-upload half (`course_upload`, `course_schema`, `media`,
+`course_lifecycle`) is database-free like the rest; live PlatformSettings
+limits and category/version ids are served by 8.7 instead.
+
+### 8.5 Push the course for an approved idea
+
+```
+POST /api/v1/mie/v1/submissions/{submission_id}/course/
+```
+
+`MieCoursePushView.post` → `course_push_service.push_course`, throttle scope
+`mie_course_push`. Body: `CoursePushSerializer` - the builder's own write
+serializers nested (`CourseCreateSerializer` minus `topic`, `modules[]` of
+`ModuleWriteSerializer` + `lessons[]` of `LessonWriteSerializer` +
+`content_blocks[]` of `LessonContentBlockSerializer` minus QUIZ, and
+`AssessmentWriteSerializer` for lesson, module and final quizzes). `order`
+defaults to list position; duplicates are a 400.
+
+In one transaction, with the submission row locked:
+
+1. Gate - the idea is the caller's (else 404), `APPROVED` (else 409
+   `idea_not_approved`), its course is absent or `DRAFT` (else 409
+   `course_in_review`), `title` equals the idea's title (trimmed,
+   case-insensitive), `category` is active and is the idea's category when
+   it has one, `terms_accepted` is true (400s).
+2. Linked creator account - `get_or_create_creator_user` (locks the
+   developer row).
+3. First push: `create_draft_course(source_type=DEVELOPER_API)`, stored
+   under the idea's title. Revision push: `update_draft_course` then delete
+   the old modules and final assessment (ReviewAction history stays;
+   ReviewFlag links to deleted lessons/modules are `SET_NULL`).
+4. Content: one `bulk_create` per table (modules, lessons, blocks,
+   requirements, assessments) - query count does not grow with course size.
+5. `submit_course(skip_draft_hold=True)`; a structural failure raises,
+   rolls everything back and returns every failure under
+   `structural_standards`.
+6. Link `resulting_course`; record `COURSE_SUBMITTED`.
+
+Returns 201 with `DevCourseSerializer` on the first push and on every
+accepted revision.
+
+With the staged review flow on, the gate also accepts a course in
+`NEEDS_REVISION` (a seat sent it back), the push is expected to carry **no**
+video (the structural check refuses a preview video, a lesson
+`video_url`/`embedded_link`, a video block or a video asset until the video
+stage), and a `VIDEO`-type lesson may be pushed as a script alone.
+
+### 8.5a Send the video (staged review flow)
+
+```
+POST /api/v1/mie/v1/submissions/{submission_id}/course/video/
+```
+
+`MieCourseVideoView.post` → `course_push_service.push_video`, throttle scope
+`mie_course_push`. Body: `CourseVideoPushSerializer` - `preview_video_url`
+plus `lessons[]` of `{module_order, lesson_order, video_url | embedded_link}`,
+addressed by the `order` values of the text push.
+
+Fired by `COURSE_TEXT_APPROVED`: the first review seat approved the text,
+the course is `AWAITING_VIDEO` and `video_provider` is `DEVELOPER`. In one
+transaction, with the submission row locked:
+
+1. The idea is the caller's (else 404) and has a course whose status is
+   `AWAITING_VIDEO` - or `NEEDS_REVISION` with its video already attached,
+   when a later seat sent the video back (else 409
+   `course_not_awaiting_video`).
+2. The preview video and each lesson's media are written (lessons are
+   looked up once and updated with one `bulk_update`; an address the course
+   does not have is a 400 under `lessons`).
+3. `course_service.submit_video` - 409 `video_provider_conflict` unless the
+   developer supplies the video (the platform's own crawler account does
+   not: its courses are `PRODUCTION_ENGINE`) - re-checks every text rule
+   with the video rules and sends the course to the second review seat.
+   A `NEEDS_REVISION` resend goes through `submit_course` and resumes at the
+   seat that sent it back.
+4. `COURSE_SUBMITTED` is recorded.
+
+Returns 200 with `DevCourseSerializer`. Any failure rolls everything back.
+
+### 8.6 Check the course for an approved idea
+
+```
+GET /api/v1/mie/v1/submissions/{submission_id}/course/
+```
+
+`course_push_service.course_status`. 404 for another developer's idea and
+for one with no course yet. `revision_feedback` (stage, feedback, flags
+named by module/lesson title) is filled only while the course is `DRAFT`
+(or `NEEDS_REVISION`, with the staged review flow) after a rejection.
+
+### 8.7 Course requirements
+
+```
+GET /api/v1/mie/v1/course-requirements/
+```
+
+`course_push_service.course_requirements` - the live PlatformSettings
+structural limits, active categories, active course versions, choice
+values, payload caps and per-purpose upload rules. The developer docs point
+here for every number an admin can tune.
+
+### 8.8 Course media upload
+
+```
+POST /api/v1/mie/v1/uploads/presign/
+```
+
+Throttle scope `mie_upload`. The creator presign
+(`StorageService.request_upload`) restricted to `MIE_UPLOAD_PURPOSES`
+(preview video, lesson video, lesson image, thumbnail, subtitle - not the
+document import); `folder` is derived from the purpose. Adds `media_url =
+StorageService.public_url(file_key)`, the durable value to put in the
+push. Optional - any HTTPS URL is accepted in a push.
+
+---
+
+## 9. Admin Console
+
+All admin endpoints require the `IsSuperAdminRole` permission.
+
+### 9.1 Developer directory
+
+**Viewset**: `MieDeveloperAdminViewSet`
+
+```
+GET    /api/v1/mie/admin/developers/          # List (paginated)
+GET    /api/v1/mie/admin/developers/{id}/      # Retrieve
+POST   /api/v1/mie/admin/developers/           # Register manually (PENDING)
+POST   /api/v1/mie/admin/developers/{id}/approve/   # Approve
+POST   /api/v1/mie/admin/developers/{id}/reject/    # Reject
+POST   /api/v1/mie/admin/developers/{id}/suspend/   # Suspend
+```
+
+**List filters**: `?status=`, `?plan_type=`, `?search=` (email substring).
+
+The approve response includes `one_time_api_key` (the full raw key,
+shown exactly once) or `null` if existing credentials are retained.
+
+### 9.2 Cross-developer submission queue
+
+**Viewset**: `MieSubmissionAdminViewSet`
+
+```
+GET    /api/v1/mie/admin/submissions/          # List (paginated)
+GET    /api/v1/mie/admin/submissions/{id}/      # Retrieve
+POST   /api/v1/mie/admin/submissions/{id}/approve/     # Approve
+POST   /api/v1/mie/admin/submissions/{id}/reject/      # Reject
+POST   /api/v1/mie/admin/submissions/{id}/signals/     # Set demand signals
+POST   /api/v1/mie/admin/submissions/{id}/payout_bypass/  # Toggle bypass
+```
+
+**Filters** (via `AdminSubmissionFilterSet`):
+
+| Parameter | Type | Description |
+|---|---|---|
+| `?developer=` | UUID | Filter to one developer account id. |
+| `?email=` | string | Filter to one developer by exact email. |
+| `?source_type=` | string | `EXTERNAL` / `SYSTEM`, matched on the owning account (`developer__source_type`). Separates the crawler's ideas from partners'. Any other value returns 400. |
+| `?status=` | string | One pipeline state. |
+| `?payout_bypass=` | bool | Filter to bypassed or paying ideas. |
+| `?created_after=` | ISO-8601 | Lower bound on arrival time. |
+| `?created_before=` | ISO-8601 | Upper bound on arrival time. |
+| `?search=` | string | Case-insensitive substring on title OR developer email. |
+
+### 9.3 Reversible approve/reject
+
+Decisions are **not terminal** — a superadmin can flip `APPROVED` ↔
+`REJECTED` at any time. Every flip:
+
+1. Updates the submission status, `decided_at`, and `decided_by`.
+2. Records a new `WebhookEvent` (`SUBMISSION_APPROVED` or
+   `SUBMISSION_REJECTED`).
+3. Leaves any `resulting_course` untouched and keeps the link, so a
+   re-approval finds the same course. The audit row's `details` gains
+   `resulting_course_id` when a course is linked (§1.1).
+4. If re-approving from REJECTED, clears stale rejection metadata.
+
+### 9.4 Recommendation signals
+
+**Endpoint**: `POST /api/v1/mie/admin/submissions/{id}/signals/`
+
+Sets advisory metadata — no webhook is fired:
+
+- `demand_score`: integer 0–100.
+- `estimated_monthly_earnings`: optional decimal, nullable.
+
+### 9.5 Payout bypass toggle
+
+**Endpoint**: `POST /api/v1/mie/admin/submissions/{id}/payout_bypass/`
+
+Fires a `SUBMISSION_PAYOUT_BYPASS_UPDATED` webhook on every change.
+Rejects silently (returns current submission without change) if the
+bypass is already in the requested state.
+
+### 9.6 Rejection-reason taxonomy CRUD
+
+**Viewset**: `RejectionReasonAdminViewSet`
+
+```
+GET    /api/v1/mie/admin/rejection-reasons/          # List
+POST   /api/v1/mie/admin/rejection-reasons/           # Create
+GET    /api/v1/mie/admin/rejection-reasons/{id}/      # Retrieve
+PATCH  /api/v1/mie/admin/rejection-reasons/{id}/      # Partial update
+```
+
+Labels are unique. Reasons are soft-deactivated (`is_active=false`) —
+never hard-deleted, so historical submissions retain their references.
+No DELETE endpoint is exposed (HTTP methods restricted to GET, POST,
+PATCH, HEAD, OPTIONS).
+
+---
+
+## 10. Reference Scheme
+
+**File**: `api/mie/services/reference.py`
+
+Public references follow the format `SCB-{id}-{suffix}` where:
+
+- `{id}` is the first 8 characters of the UUID (hyphens stripped).
+- `{suffix}` is a single letter reflecting the **live** status.
+
+The suffix is computed dynamically from `submission.status` via the
+`public_reference` property — it always reflects reality:
+
+| Status | Suffix | Meaning |
+|---|---|---|
+| `PENDING_REVIEW` | **P** | Queued for admin review |
+| `DUPLICATE_IN_QUEUE` | **D** | Same title already awaiting review |
+| `DUPLICATE_EXISTING` | **E** | A platform course already uses this title |
+| `PREVIOUSLY_REJECTED` | **X** | This exact title was rejected before |
+| `APPROVED` | **A** | Accepted; a course is being produced |
+| `REJECTED` | **R** | Rejected by an admin |
+
+Example: `SCB-0d1c7b2e-P` (pending), `SCB-0d1c7b2e-A` (approved).
+
+The reference letter changes as the idea moves — developers should use
+the reference as their correlation key in webhook payloads and their own
+systems.
+
+---
+
+## 11. Event Types
+
+**Enum**: `WebhookEventType` in `api/mie/enums.py`
+
+`SUBMISSION_*` events map onto `SubmissionStatus` transitions (plus the
+payout-bypass update); `COURSE_*` events track the course pushed for an
+approved idea and carry `submission.course` (`id`, `status`, `title`).
+Events are fired immediately on every transition, including automated
+dedup short-circuits.
+
+| Event Type | When fired | Webhook payload extras |
+|---|---|---|
+| `SUBMISSION_QUEUED` | New idea passes all dedup checks → `PENDING_REVIEW` | — |
+| `SUBMISSION_DUPLICATE_IN_QUEUE` | Title already in queue → `DUPLICATE_IN_QUEUE` | — |
+| `SUBMISSION_DUPLICATE_EXISTING` | Title matches existing course → `DUPLICATE_EXISTING` | — |
+| `SUBMISSION_PREVIOUSLY_REJECTED` | Title was rejected before → `PREVIOUSLY_REJECTED` | — |
+| `SUBMISSION_APPROVED` | Admin approves (or re-approves) | — |
+| `SUBMISSION_REJECTED` | Admin rejects (or re-rejects) | `rejection_reason`, `rejection_note` |
+| `SUBMISSION_PAYOUT_BYPASS_UPDATED` | Admin toggles per-submission bypass | `payout_bypass` |
+| `COURSE_SUBMITTED` | An accepted course push (first or revision) | `course` |
+| `COURSE_TEXT_APPROVED` | The first review seat approved the pushed course's text (staged review flow only; not sent for the platform's own crawler) - send the video | `course` |
+| `COURSE_REVISION_REQUESTED` | A content-review or QA rejection sends the pushed course back to `DRAFT` (`NEEDS_REVISION` with the staged review flow) | `course`, `course.revision_feedback` |
+| `COURSE_PUBLISHED` | The pushed course is published | `course` |
+
+The mapping from status to event type is defined in
+`submission_service.EVENT_TYPE_BY_STATUS` for ingestion events, and
+explicitly in `submission_admin_service.decide_submission()` and
+`set_payout_bypass()` for admin decisions. Course events are recorded by
+`course_push_service.record_course_event`, called from `push_course`,
+`review_service.reject_course` / `reject_qa` and
+`course_service.publish_course`.
+
+---
+
+## 12. Error Handling
+
+### 12.1 Dedup short-circuits
+
+Dedup outcomes return immediately with the appropriate status — there is
+no error to handle. The developer sees a 201 with the dedup status in the
+response body. The webhook event is recorded for every outcome.
+
+### 12.2 Race conditions
+
+Lost races against the partial unique index resolve deterministically as
+`DUPLICATE_IN_QUEUE` (see [Section 6.4](#64-race-condition-handling)).
+No retry logic is needed on the client side.
+
+### 12.3 Rate limiting
+
+| Endpoint | Throttle scope | Limit |
+|---|---|---|
+| `POST /api/v1/mie/v1/submissions/` | `mie_ingest` | 30/min/key |
+| `POST /api/v1/mie/v1/submissions/` | — (database-counted) | `MIE_SYSTEM_DAILY_SUBMISSION_CAP` per rolling 24h, **SYSTEM accounts only** — see [5.5](#55-system-accounts-the-mie-crawler) |
+| `POST /api/v1/mie/v1/register/` | `mie_register` | 5/hour/IP |
+| `POST /api/v1/mie/v1/submissions/{id}/course/` | `mie_course_push` | 20/hour/account |
+| `POST /api/v1/mie/v1/submissions/{id}/course/video/` | `mie_course_push` | 20/hour/account |
+| `POST /api/v1/mie/v1/uploads/presign/` | `mie_upload` | 120/hour/account |
+
+### 12.4 Webhook delivery retries
+
+Failed deliveries are retried with exponential backoff (60s → 5m → 15m →
+1h) up to 5 attempts, then terminal `FAILED`. The `next_retry_at` field
+controls when the next attempt may occur.
+
+### 12.5 DB constraints as safety net
+
+The database enforces invariants that the application layer also
+maintains:
+
+- Credential material (`api_key_hash`, `signing_secret`) can only exist
+  on `APPROVED` or `SUSPENDED` rows.
+- Only one `PENDING_REVIEW` submission per title (case-insensitive).
+- `APPROVED` or `REJECTED` submissions must have `decided_at` set.
+
+These constraints prevent credential leakage and data corruption even if
+application code has bugs.
+
+### 12.6 Validation errors
+
+Standard DRF 400 responses for:
+
+- Missing or invalid `title` in submission payload.
+- Duplicate email at registration.
+- Rejecting without a `rejection_reason`.
+- Approving an already-approved account.
+- Suspending a non-APPROVED account.
+- Setting `demand_score` outside 0–100 range.
+- Toggling payout bypass to the same state it's already in.
+
+---
+
+## 13. File Map
+
+### Models (`api/mie/models/`)
+
+| File | Contents |
+|---|---|
+| `__init__.py` | Re-exports all 4 models |
+| `developer_account.py` | `DeveloperAccount` — external developer identity + credentials |
+| `course_submission.py` | `CourseSubmission` — submitted course idea with dedup status |
+| `rejection_reason.py` | `SubmissionRejectionReason` — admin-managed rejection taxonomy |
+| `webhook_event.py` | `WebhookEvent` — outbound delivery record with retry state |
+
+### Services (`api/mie/services/`)
+
+| File | Contents |
+|---|---|
+| `__init__.py` | Empty |
+| `key_service.py` | API key generation, hashing, revocation, and authentication |
+| `dev_token_service.py` | PyJWT session token issuance and resolution |
+| `developer_service.py` | Registration, approval, rejection, suspension logic |
+| `submission_service.py` | Ingestion, payload validation, event recording, race handling |
+| `submission_admin_service.py` | Approve/reject, demand signals, payout bypass |
+| `course_push_service.py` | Course push (gate, build, submit), status, live requirements, COURSE_* webhook events |
+| `dedup_service.py` | Three-stage title dedup engine |
+| `guardrail_service.py` | Rejection circuit breaker for SYSTEM accounts + its superadmin alerts |
+| `webhook_dispatcher.py` | Record-then-sweep delivery, signing, retry, partitioning |
+| `documentation_service.py` | Machine-readable docs from live constants |
+| `reference.py` | `REFERENCE_SUFFIXES` mapping status → suffix letter |
+
+### Views (`api/mie/views/`)
+
+| File | Contents |
+|---|---|
+| `__init__.py` | Re-exports all view classes |
+| `dev_registration_views.py` | `MieDeveloperRegistrationView` — public self-registration |
+| `dev_submission_views.py` | `MieSubmissionIngestView` (POST), `MieSubmissionQueueView` (GET) |
+| `dev_account_views.py` | `MieDeveloperMeView`, `MieDocumentationView` |
+| `dev_course_views.py` | `MieCoursePushView` (POST push, GET status), `MieCourseRequirementsView`, `MieUploadPresignView` |
+| `admin_developer_views.py` | `MieDeveloperAdminViewSet` — list, retrieve, create, approve, reject, suspend |
+| `admin_submission_views.py` | `MieSubmissionAdminViewSet` — list, retrieve, approve, reject, signals, payout_bypass |
+| `rejection_reason_views.py` | `RejectionReasonAdminViewSet` — CRUD for rejection taxonomy |
+
+### Serializers (`api/mie/serializers/`)
+
+| File | Contents |
+|---|---|
+| `submission_serializer.py` | `SubmissionIngestSerializer`, `SubmissionIngestResponseSerializer` |
+| `dev_submission_serializer.py` | `DevSubmissionSerializer` — developer queue row |
+| `admin_submission_serializer.py` | `AdminSubmissionSerializer`, `SubmissionDecisionSerializer`, `DemandSignalsSerializer`, `PayoutBypassSerializer` |
+| `developer_admin_serializer.py` | `DeveloperRegisterSerializer`, `DeveloperAccountAdminSerializer`, `DeveloperApprovalResponseSerializer`, `DeveloperActionResponseSerializer` |
+| `dev_me_serializer.py` | `DeveloperMeSerializer` — account snapshot with masked key |
+| `rejection_reason_serializer.py` | `RejectionReasonSerializer` |
+| `course_push_serializer.py` | `CoursePushSerializer` and its nested `PushModule/PushLesson/PushContentBlockSerializer` (the builder's write serializers, nested), `DevCourseSerializer` |
+
+### Other files
+
+| File | Contents |
+|---|---|
+| `authentication.py` | `MieDeveloperAuthentication` — dual-path DRF auth class + drf-spectacular extension |
+| `permissions.py` | `IsMieDeveloper` — APPROVED status gate |
+| `filters.py` | `AdminSubmissionFilterSet` — django-filters for admin queue |
+| `enums.py` | `DeveloperAccountStatus`, `MiePlanType`, `MieSourceType`, `SubmissionStatus`, `WebhookEventType`, `WebhookDeliveryStatus` |
+| `urls.py` | Route registration: DefaultRouter for admin viewsets + explicit paths for developer endpoints |
+| `admin.py` | Django admin registrations for all 4 models |
+| `apps.py` | `MieConfig` AppConfig |
+| `tasks.py` | `dispatch_due_webhooks_task` — Celery shared_task wrapper |
+| `management/commands/dispatch_mie_webhooks.py` | `python manage.py dispatch_mie_webhooks` |
+| `management/commands/provision_mie_system_account.py` | `python manage.py provision_mie_system_account` — the only path that creates a SYSTEM account |
+| `migrations/0001_initial.py` | All 4 tables + constraints + indexes |
+| `migrations/0002_alter_webhookevent_event_type.py` | Adds `SUBMISSION_PAYOUT_BYPASS_UPDATED` to event_type choices |
+| `migrations/0003_alter_developeraccount_api_key_hash_and_more.py` | Indexes `api_key_hash` — the column authentication looks up |
+| `migrations/0004_system_account_guardrails.py` | `source_type`, `confidence_note`, `mie_sub_dev_created_idx` |
+
+Outside `api/mie/`: `config/settings/mie.py` holds the guardrail
+thresholds, and `templates/emails/mie_circuit_breaker_tripped.{html,txt}`
+is the breaker's superadmin alert.

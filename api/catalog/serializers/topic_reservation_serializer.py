@@ -1,0 +1,106 @@
+from rest_framework import serializers
+
+from api.catalog.models import Topic, TopicReservationRequest
+from api.catalog.serializers.category_serializer import CategoryMiniSerializer
+from api.catalog.serializers.topic_serializer import TopicSerializer
+from api.catalog.services import topic_reservation_service
+
+
+class TopicReservationRequestSerializer(serializers.ModelSerializer):
+    """Read-only representation of a TopicReservationRequest.
+
+    `topic` stays null until the request is approved - the whole point of
+    this flow is requesting a topic that doesn't exist yet.
+    """
+
+    category = CategoryMiniSerializer(read_only=True)
+    topic = TopicSerializer(read_only=True)
+
+    class Meta:
+        model = TopicReservationRequest
+        fields = [
+            "id",
+            "name",
+            "category",
+            "topic",
+            "status",
+            "rejection_reason",
+            "reviewed_at",
+            "created_datetime",
+        ]
+        read_only_fields = fields
+
+
+class TopicReservationRequestCreateSerializer(serializers.ModelSerializer):
+    """Write serializer for a creator requesting a brand-new Topic."""
+
+    class Meta:
+        model = TopicReservationRequest
+        fields = ["name", "category"]
+
+    def create(self, validated_data):
+        request = self.context["request"]
+        return topic_reservation_service.submit_request(
+            user=request.user,
+            name=validated_data["name"],
+            category=validated_data["category"],
+        )
+
+    def to_representation(self, instance):
+        return TopicReservationRequestSerializer(instance, context=self.context).data
+
+
+class TopicReservationRejectSerializer(serializers.Serializer):
+    """Request body for the reject action - an optional free-text reason,
+    e.g. the proposed name already matches an existing topic."""
+
+    reason = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        default="",
+        help_text="Optional explanation retained with the rejected topic request.",
+    )
+
+
+class ReservationUserSerializer(serializers.Serializer):
+    id = serializers.UUIDField(read_only=True)
+    first_name = serializers.CharField(read_only=True)
+    last_name = serializers.CharField(read_only=True)
+    email = serializers.EmailField(read_only=True)
+
+
+class AdminTopicReservationRequestSerializer(TopicReservationRequestSerializer):
+    requested_by = ReservationUserSerializer(read_only=True)
+    reviewed_by = ReservationUserSerializer(read_only=True)
+
+    class Meta(TopicReservationRequestSerializer.Meta):
+        fields = [
+            *TopicReservationRequestSerializer.Meta.fields,
+            "requested_by",
+            "reviewed_by",
+        ]
+        read_only_fields = fields
+
+
+class ActiveTopicReservationSerializer(serializers.ModelSerializer):
+    category = CategoryMiniSerializer(read_only=True)
+    reserved_by = ReservationUserSerializer(read_only=True)
+    is_currently_reserved = serializers.BooleanField(read_only=True)
+
+    class Meta:
+        model = Topic
+        fields = [
+            "id",
+            "name",
+            "category",
+            "status",
+            "creator_price_without_video",
+            "creator_price_with_video",
+            "creator_price_ai_built",
+            "reserved_by",
+            "reserved_until",
+            "is_currently_reserved",
+            "created_datetime",
+            "updated_datetime",
+        ]
+        read_only_fields = fields

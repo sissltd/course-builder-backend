@@ -1,0 +1,2576 @@
+{
+  "DELETE api/v1/^categories/(?P<pk>[^/.]+)/$ [CategoryViewSet.destroy]": [
+    "STAFF_WRITER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "DELETE api/v1/^category-requests/(?P<pk>[^/.]+)/$ [CategoryRequestViewSet.destroy]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "DELETE api/v1/^course-appeals/(?P<pk>[^/.]+)/$ [CourseAppealViewSet.destroy]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "DELETE api/v1/^course-invites/(?P<pk>[^/.]+)/$ [CollaboratorInviteViewSet.destroy]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "DELETE api/v1/^courses/(?P<pk>[^/.]+)/$ [CourseViewSet.destroy]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "STAFF_APPROVER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "DELETE api/v1/^mie/admin/rejection-reasons/(?P<id>[^/.]+)/$ [RejectionReasonAdminViewSet.destroy]": [
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "DELETE api/v1/^quality-check-criteria/(?P<pk>[^/.]+)/$ [QualityCheckCriterionViewSet.destroy]": [
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "DELETE api/v1/^questions/(?P<pk>[^/.]+)/$ [QuestionViewSet.destroy]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "STAFF_APPROVER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "DELETE api/v1/^quizzes/(?P<pk>[^/.]+)/$ [QuizViewSet.destroy]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "STAFF_APPROVER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "DELETE api/v1/^topic-reservations/(?P<pk>[^/.]+)/$ [TopicReservationRequestViewSet.destroy]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "DELETE api/v1/^topics/(?P<pk>[^/.]+)/$ [TopicViewSet.destroy]": [
+    "CREATOR_REVIEWER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "DELETE api/v1/^workspace-collaborators/(?P<pk>[^/.]+)/$ [WorkspaceCollaboratorViewSet.destroy]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "DELETE api/v1/admin/achievements/badges/<uuid:badge_id>/ [BadgeDetailView.delete]": [
+    "STAFF_WRITER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "DELETE api/v1/admin/achievements/badges/<uuid:badge_id>/holders/<uuid:creator_id>/ [BadgeHolderDetailView.delete]": [
+    "STAFF_WRITER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "DELETE api/v1/auth/sessions/<uuid:pk>/ [UserSessionRevokeView.delete]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "DELETE api/v1/collaborators/<uuid:pk>/ [CourseCollaboratorViewSet.destroy]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "DELETE api/v1/course-ai-generations/<uuid:pk>/ [AIGenerationDetailView.delete]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "DELETE api/v1/course-imports/<uuid:pk>/ [CourseImportDetailView.delete]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "DELETE api/v1/courses/<uuid:course_pk>/modules/<uuid:module_pk>/lessons/<uuid:lesson_pk>/content-blocks/<uuid:pk>/ [LessonContentBlockViewSet.destroy]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "DELETE api/v1/courses/<uuid:course_pk>/modules/<uuid:module_pk>/lessons/<uuid:lesson_pk>/images/<uuid:pk>/ [LessonImageViewSet.destroy]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "DELETE api/v1/courses/<uuid:course_pk>/modules/<uuid:module_pk>/lessons/<uuid:lesson_pk>/requirements/<uuid:pk>/ [LessonRequirementViewSet.destroy]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "DELETE api/v1/courses/<uuid:course_pk>/modules/<uuid:module_pk>/lessons/<uuid:pk>/ [LessonViewSet.destroy]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "DELETE api/v1/courses/<uuid:course_pk>/modules/<uuid:pk>/ [ModuleViewSet.destroy]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "DELETE api/v1/payout-accounts/<uuid:pk>/ [BankAccountDetailView.delete]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/ [APIRootView.get]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/<drf_format_suffix:format> [APIRootView.get]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/^admin/category-requests/$ [AdminCategoryRequestViewSet.list]": [
+    "STAFF_WRITER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/^admin/category-requests/(?P<pk>[^/.]+)/$ [AdminCategoryRequestViewSet.retrieve]": [
+    "STAFF_WRITER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/^admin/courses/$ [AdminCourseViewSet.list]": [
+    "CREATOR_REVIEWER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/^admin/courses/(?P<pk>[^/.]+)/$ [AdminCourseViewSet.retrieve]": [
+    "CREATOR_REVIEWER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/^admin/courses/(?P<pk>[^/.]+)/comments/$ [AdminCourseViewSet.comments]": [
+    "CREATOR_REVIEWER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/^admin/courses/(?P<pk>[^/.]+)/review-prices/$ [AdminCourseViewSet.review_prices]": [
+    "CREATOR_REVIEWER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/^admin/courses/approved/$ [AdminCourseViewSet.approved]": [
+    "CREATOR_REVIEWER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/^admin/courses/in-review/$ [AdminCourseViewSet.in_review]": [
+    "CREATOR_REVIEWER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/^admin/courses/pending/$ [AdminCourseViewSet.pending]": [
+    "CREATOR_REVIEWER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/^admin/courses/published/$ [AdminCourseViewSet.published]": [
+    "CREATOR_REVIEWER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/^admin/reservations/active/$ [ActiveTopicReservationViewSet.list]": [
+    "STAFF_APPROVER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/^admin/reservations/active/(?P<pk>[^/.]+)/$ [ActiveTopicReservationViewSet.retrieve]": [
+    "STAFF_APPROVER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/^admin/reservations/requests/$ [AdminTopicReservationRequestViewSet.list]": [
+    "STAFF_APPROVER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/^admin/reservations/requests/(?P<pk>[^/.]+)/$ [AdminTopicReservationRequestViewSet.retrieve]": [
+    "STAFF_APPROVER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/^admin/topic-requests/$ [AdminWriterTopicRequestViewSet.list]": [
+    "STAFF_WRITER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/^admin/topic-requests/(?P<pk>[^/.]+)/$ [AdminWriterTopicRequestViewSet.retrieve]": [
+    "STAFF_WRITER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/^categories/$ [CategoryViewSet.list]": [
+    "STAFF_WRITER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/^categories/(?P<pk>[^/.]+)/$ [CategoryViewSet.retrieve]": [
+    "STAFF_WRITER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/^categories/(?P<pk>[^/.]+)/deletion-impact/$ [CategoryViewSet.deletion_impact]": [
+    "STAFF_WRITER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/^categories/picker/$ [CategoryViewSet.picker]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/^categories/stats/$ [CategoryViewSet.stats]": [
+    "STAFF_WRITER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/^category-requests/$ [CategoryRequestViewSet.list]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/^category-requests/(?P<pk>[^/.]+)/$ [CategoryRequestViewSet.retrieve]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/^course-appeals/$ [CourseAppealViewSet.list]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/^course-appeals/(?P<pk>[^/.]+)/$ [CourseAppealViewSet.retrieve]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/^course-invites/$ [CollaboratorInviteViewSet.list]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "GET api/v1/^course-invites/(?P<pk>[^/.]+)/$ [CollaboratorInviteViewSet.retrieve]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "GET api/v1/^course-invites/incoming/$ [CollaboratorInviteViewSet.incoming]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "GET api/v1/^course-versions/$ [CourseVersionViewSet.list]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "GET api/v1/^course-versions/(?P<pk>[^/.]+)/$ [CourseVersionViewSet.retrieve]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "GET api/v1/^courses/$ [CourseViewSet.list]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "STAFF_APPROVER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/^courses/(?P<pk>[^/.]+)/$ [CourseViewSet.retrieve]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "STAFF_APPROVER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/^courses/(?P<pk>[^/.]+)/media-assets/$ [CourseViewSet.media_assets]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "STAFF_APPROVER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/^courses/(?P<pk>[^/.]+)/preview/$ [CourseViewSet.preview]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "STAFF_APPROVER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/^courses/(?P<pk>[^/.]+)/review-prices/$ [CourseViewSet.review_prices]": [
+    "STAFF_APPROVER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/^mie/admin/developers/$ [MieDeveloperAdminViewSet.list]": [
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/^mie/admin/developers/(?P<id>[^/.]+)/$ [MieDeveloperAdminViewSet.retrieve]": [
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/^mie/admin/rejection-reasons/$ [RejectionReasonAdminViewSet.list]": [
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/^mie/admin/rejection-reasons/(?P<id>[^/.]+)/$ [RejectionReasonAdminViewSet.retrieve]": [
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/^mie/admin/submissions/$ [MieSubmissionAdminViewSet.list]": [
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/^mie/admin/submissions/(?P<id>[^/.]+)/$ [MieSubmissionAdminViewSet.retrieve]": [
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/^quality-check-criteria/$ [QualityCheckCriterionViewSet.list]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/^quality-check-criteria/(?P<pk>[^/.]+)/$ [QualityCheckCriterionViewSet.retrieve]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/^questions/$ [QuestionViewSet.list]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "STAFF_APPROVER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/^questions/(?P<pk>[^/.]+)/$ [QuestionViewSet.retrieve]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "STAFF_APPROVER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/^quizzes/$ [QuizViewSet.list]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "STAFF_APPROVER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/^quizzes/(?P<pk>[^/.]+)/$ [QuizViewSet.retrieve]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "STAFF_APPROVER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/^review-queue/$ [CourseReviewViewSet.list]": [
+    "CREATOR_REVIEWER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/^review-queue/(?P<pk>[^/.]+)/$ [CourseReviewViewSet.retrieve]": [
+    "CREATOR_REVIEWER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/^review-queue/(?P<pk>[^/.]+)/comments/$ [CourseReviewViewSet.comments]": [
+    "CREATOR_REVIEWER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/^review-queue/(?P<pk>[^/.]+)/review-prices/$ [CourseReviewViewSet.review_prices]": [
+    "CREATOR_REVIEWER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/^review-queue/approved/$ [CourseReviewViewSet.approved]": [
+    "CREATOR_REVIEWER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/^review-queue/in-review/$ [CourseReviewViewSet.in_review]": [
+    "CREATOR_REVIEWER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/^review-queue/pending/$ [CourseReviewViewSet.pending]": [
+    "CREATOR_REVIEWER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/^review-queue/published/$ [CourseReviewViewSet.published]": [
+    "CREATOR_REVIEWER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/^topic-reservations/$ [TopicReservationRequestViewSet.list]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/^topic-reservations/(?P<pk>[^/.]+)/$ [TopicReservationRequestViewSet.retrieve]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/^topics/$ [TopicViewSet.list]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/^topics/(?P<pk>[^/.]+)/$ [TopicViewSet.retrieve]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/^workspace-collaborators/$ [WorkspaceCollaboratorViewSet.list]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "GET api/v1/^workspace-collaborators/(?P<pk>[^/.]+)/$ [WorkspaceCollaboratorViewSet.retrieve]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "GET api/v1/admin/achievements/badges/ [BadgeListCreateView.get]": [
+    "STAFF_WRITER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/admin/achievements/badges/<uuid:badge_id>/ [BadgeDetailView.get]": [
+    "STAFF_WRITER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/admin/achievements/badges/<uuid:badge_id>/deletion-impact/ [BadgeDeletionImpactView.get]": [
+    "STAFF_WRITER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/admin/achievements/badges/<uuid:badge_id>/holders/ [BadgeHolderListCreateView.get]": [
+    "STAFF_WRITER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/admin/analytics/ [AdminAnalyticsView.get]": [
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/admin/mie-recommendations/ [MieRecommendationsView.get]": [
+    "STAFF_WRITER",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/admin/overview/ [AdminOverviewView.get]": [
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/admin/pipeline/ [PipelineOverviewView.get]": [
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/admin/roles/ [RoleCatalogueView.get]": [
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/admin/system-health/ [SystemHealthView.get]": [
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/admin/transactions/ [AdminTransactionListView.get]": [
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/admin/wallets/ [AdminWalletListView.get]": [
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/admin/withdrawals/ [AdminWithdrawalRequestListView.get]": [
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/auth/sessions/ [UserSessionListView.get]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/auth/staff/ [StaffListView.get]": [
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/auth/staff/<uuid:pk>/ [StaffDetailView.get]": [
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/banks/ [BankListView.get]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER",
+    "ANONYMOUS"
+  ],
+  "GET api/v1/collaborators/ [CourseCollaboratorViewSet.list]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "GET api/v1/collaborators/<uuid:pk>/ [CourseCollaboratorViewSet.retrieve]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "GET api/v1/course-ai-generations/ [AICourseGenerationListCreateView.get]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "GET api/v1/course-ai-generations/<uuid:pk>/ [AIGenerationDetailView.get]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "GET api/v1/course-imports/<uuid:pk>/ [CourseImportDetailView.get]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "GET api/v1/course-versions/ [CourseVersionListView.get]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/courses/<uuid:course_pk>/final-assessment/ [CourseAssessmentView.get]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "GET api/v1/courses/<uuid:course_pk>/modules/ [ModuleViewSet.list]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "GET api/v1/courses/<uuid:course_pk>/modules/<uuid:module_pk>/assessment/ [ModuleAssessmentView.get]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "GET api/v1/courses/<uuid:course_pk>/modules/<uuid:module_pk>/lessons/ [LessonViewSet.list]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "GET api/v1/courses/<uuid:course_pk>/modules/<uuid:module_pk>/lessons/<uuid:lesson_pk>/assessment/ [LessonAssessmentView.get]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "GET api/v1/courses/<uuid:course_pk>/modules/<uuid:module_pk>/lessons/<uuid:lesson_pk>/content-blocks/ [LessonContentBlockViewSet.list]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "GET api/v1/courses/<uuid:course_pk>/modules/<uuid:module_pk>/lessons/<uuid:lesson_pk>/content-blocks/<uuid:pk>/ [LessonContentBlockViewSet.retrieve]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "GET api/v1/courses/<uuid:course_pk>/modules/<uuid:module_pk>/lessons/<uuid:lesson_pk>/images/ [LessonImageViewSet.list]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "GET api/v1/courses/<uuid:course_pk>/modules/<uuid:module_pk>/lessons/<uuid:lesson_pk>/images/<uuid:pk>/ [LessonImageViewSet.retrieve]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "GET api/v1/courses/<uuid:course_pk>/modules/<uuid:module_pk>/lessons/<uuid:lesson_pk>/requirements/ [LessonRequirementViewSet.list]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "GET api/v1/courses/<uuid:course_pk>/modules/<uuid:module_pk>/lessons/<uuid:lesson_pk>/requirements/<uuid:pk>/ [LessonRequirementViewSet.retrieve]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "GET api/v1/courses/<uuid:course_pk>/modules/<uuid:module_pk>/lessons/<uuid:pk>/ [LessonViewSet.retrieve]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "GET api/v1/courses/<uuid:course_pk>/modules/<uuid:pk>/ [ModuleViewSet.retrieve]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "GET api/v1/courses/<uuid:course_pk>/quality-checks/ [CourseQualityCheckView.get]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/courses/<uuid:course_pk>/thumbnail/ [CourseThumbnailView.get]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "GET api/v1/creator/achievements/ [CreatorAchievementListView.get]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "GET api/v1/creator/overview/ [CreatorOverviewView.get]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/docs/ [SpectacularSwaggerView.get]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER",
+    "ANONYMOUS"
+  ],
+  "GET api/v1/docs/reviewer-settings/ [SpectacularSwaggerView.get]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER",
+    "ANONYMOUS"
+  ],
+  "GET api/v1/global-search/ [GlobalSearchView.get]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/logs [AuditLogListView.get]": [
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/mie/v1/documentation/ [MieDocumentationView.get]": [
+    "ANONYMOUS:ERROR:AuthenticationFailed"
+  ],
+  "GET api/v1/mie/v1/documentation/download/ [MieDocumentationDownloadView.get]": [
+    "ANONYMOUS:ERROR:AuthenticationFailed"
+  ],
+  "GET api/v1/mie/v1/me/ [MieDeveloperMeView.get]": [
+    "ANONYMOUS:ERROR:AuthenticationFailed"
+  ],
+  "GET api/v1/mie/v1/submissions/queue/ [MieSubmissionQueueView.get]": [
+    "ANONYMOUS:ERROR:AuthenticationFailed"
+  ],
+  "GET api/v1/payout-accounts/ [BankAccountListCreateView.get]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/payout-accounts/<uuid:pk>/ [BankAccountDetailView.get]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/platform-settings/ [PlatformSettingsView.get]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/redoc/ [SpectacularRedocView.get]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER",
+    "ANONYMOUS"
+  ],
+  "GET api/v1/reviewer/activity-overview/ [ReviewerActivityOverviewView.get]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/reviewer/overview/ [ReviewerOverviewView.get]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/transactions/ [TransactionListView.get]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "GET api/v1/users/activity-log/ [AdminUserActivityLogListView.get]": [
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/users/admin/ [UserAdminViewSet.list]": [
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/users/admin/<uuid:pk>/ [UserAdminViewSet.retrieve]": [
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/users/kyc-review/ [KYCReviewViewSet.list]": [
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/users/kyc-review/<uuid:pk>/ [KYCReviewViewSet.retrieve]": [
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/users/me/ [MeView.get]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/users/me/activity-log/ [UserActivityLogListView.get]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/users/me/activity-log/export/ [UserActivityLogExportView.get]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/users/me/audit-log/export/ [MyAuditLogExportView.get]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/users/me/availability/ [ReviewerAvailabilityView.get]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/users/me/kyc/ [KYCVerificationView.get]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/users/me/notification-preferences/ [NotificationPreferenceView.get]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/users/me/notifications/ [NotificationListView.get]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/users/me/notifications/streamed-notifications/ [NotificationStreamView.get]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/users/me/onboarding/ [OnboardingView.get]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/users/me/queue-preferences/ [QueueBehaviourPreferenceView.get]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "GET api/v1/wallet/ [WalletDetailView.get]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "PATCH api/v1/^categories/(?P<pk>[^/.]+)/$ [CategoryViewSet.partial_update]": [
+    "STAFF_WRITER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "PATCH api/v1/^category-requests/(?P<pk>[^/.]+)/$ [CategoryRequestViewSet.partial_update]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "PATCH api/v1/^course-appeals/(?P<pk>[^/.]+)/$ [CourseAppealViewSet.partial_update]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "PATCH api/v1/^course-invites/(?P<pk>[^/.]+)/$ [CollaboratorInviteViewSet.partial_update]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "PATCH api/v1/^courses/(?P<pk>[^/.]+)/$ [CourseViewSet.partial_update]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "STAFF_APPROVER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "PATCH api/v1/^mie/admin/rejection-reasons/(?P<id>[^/.]+)/$ [RejectionReasonAdminViewSet.partial_update]": [
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "PATCH api/v1/^quality-check-criteria/(?P<pk>[^/.]+)/$ [QualityCheckCriterionViewSet.partial_update]": [
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "PATCH api/v1/^questions/(?P<pk>[^/.]+)/$ [QuestionViewSet.partial_update]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "STAFF_APPROVER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "PATCH api/v1/^quizzes/(?P<pk>[^/.]+)/$ [QuizViewSet.partial_update]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "STAFF_APPROVER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "PATCH api/v1/^topic-reservations/(?P<pk>[^/.]+)/$ [TopicReservationRequestViewSet.partial_update]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "PATCH api/v1/^topics/(?P<pk>[^/.]+)/$ [TopicViewSet.partial_update]": [
+    "CREATOR_REVIEWER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "PATCH api/v1/^workspace-collaborators/(?P<pk>[^/.]+)/$ [WorkspaceCollaboratorViewSet.partial_update]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "PATCH api/v1/admin/achievements/badges/<uuid:badge_id>/ [BadgeDetailView.patch]": [
+    "STAFF_WRITER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "PATCH api/v1/collaborators/<uuid:pk>/ [CourseCollaboratorViewSet.partial_update]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "PATCH api/v1/courses/<uuid:course_pk>/modules/<uuid:module_pk>/lessons/<uuid:lesson_pk>/content-blocks/<uuid:pk>/ [LessonContentBlockViewSet.partial_update]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "PATCH api/v1/courses/<uuid:course_pk>/modules/<uuid:module_pk>/lessons/<uuid:lesson_pk>/images/<uuid:pk>/ [LessonImageViewSet.partial_update]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "PATCH api/v1/courses/<uuid:course_pk>/modules/<uuid:module_pk>/lessons/<uuid:lesson_pk>/requirements/<uuid:pk>/ [LessonRequirementViewSet.partial_update]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "PATCH api/v1/courses/<uuid:course_pk>/modules/<uuid:module_pk>/lessons/<uuid:pk>/ [LessonViewSet.partial_update]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "PATCH api/v1/courses/<uuid:course_pk>/modules/<uuid:module_pk>/lessons/reorder/ [LessonViewSet.reorder]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "PATCH api/v1/courses/<uuid:course_pk>/modules/<uuid:pk>/ [ModuleViewSet.partial_update]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "PATCH api/v1/courses/<uuid:course_pk>/modules/reorder/ [ModuleViewSet.reorder]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "PATCH api/v1/platform-settings/ [PlatformSettingsView.patch]": [
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "PATCH api/v1/users/me/ [MeView.patch]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "PATCH api/v1/users/me/availability/ [ReviewerAvailabilityView.patch]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "PATCH api/v1/users/me/notification-preferences/ [NotificationPreferenceView.patch]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "PATCH api/v1/users/me/onboarding/ [OnboardingView.patch]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "PATCH api/v1/users/me/queue-preferences/ [QueueBehaviourPreferenceView.patch]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/^admin/category-requests/(?P<pk>[^/.]+)/approve/$ [AdminCategoryRequestViewSet.approve]": [
+    "STAFF_WRITER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/^admin/category-requests/(?P<pk>[^/.]+)/reject/$ [AdminCategoryRequestViewSet.reject]": [
+    "STAFF_WRITER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/^admin/courses/(?P<pk>[^/.]+)/approve/$ [AdminCourseViewSet.approve]": [
+    "CREATOR_REVIEWER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/^admin/courses/(?P<pk>[^/.]+)/claim/$ [AdminCourseViewSet.claim]": [
+    "CREATOR_REVIEWER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/^admin/courses/(?P<pk>[^/.]+)/comments/$ [AdminCourseViewSet.comments]": [
+    "CREATOR_REVIEWER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/^admin/courses/(?P<pk>[^/.]+)/content-approve/$ [AdminCourseViewSet.content_approve]": [
+    "CREATOR_REVIEWER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/^admin/courses/(?P<pk>[^/.]+)/content-reject/$ [AdminCourseViewSet.content_reject]": [
+    "CREATOR_REVIEWER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/^admin/courses/(?P<pk>[^/.]+)/publish/$ [AdminCourseViewSet.publish]": [
+    "CREATOR_REVIEWER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/^admin/courses/(?P<pk>[^/.]+)/qa-approve/$ [AdminCourseViewSet.qa_approve]": [
+    "STAFF_APPROVER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/^admin/courses/(?P<pk>[^/.]+)/qa-claim/$ [AdminCourseViewSet.qa_claim]": [
+    "STAFF_APPROVER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/^admin/courses/(?P<pk>[^/.]+)/qa-reject/$ [AdminCourseViewSet.qa_reject]": [
+    "STAFF_APPROVER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/^admin/courses/(?P<pk>[^/.]+)/reject/$ [AdminCourseViewSet.reject]": [
+    "CREATOR_REVIEWER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/^admin/reservations/active/(?P<pk>[^/.]+)/release/$ [ActiveTopicReservationViewSet.release]": [
+    "STAFF_APPROVER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/^admin/reservations/requests/(?P<pk>[^/.]+)/approve/$ [AdminTopicReservationRequestViewSet.approve]": [
+    "STAFF_APPROVER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/^admin/reservations/requests/(?P<pk>[^/.]+)/reject/$ [AdminTopicReservationRequestViewSet.reject]": [
+    "STAFF_APPROVER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/^admin/topic-requests/(?P<pk>[^/.]+)/approve/$ [AdminWriterTopicRequestViewSet.approve]": [
+    "STAFF_WRITER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/^admin/topic-requests/(?P<pk>[^/.]+)/reject/$ [AdminWriterTopicRequestViewSet.reject]": [
+    "STAFF_WRITER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/^categories/$ [CategoryViewSet.create]": [
+    "STAFF_WRITER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/^categories/(?P<pk>[^/.]+)/archive/$ [CategoryViewSet.archive]": [
+    "STAFF_WRITER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/^categories/(?P<pk>[^/.]+)/unarchive/$ [CategoryViewSet.unarchive]": [
+    "STAFF_WRITER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/^category-requests/$ [CategoryRequestViewSet.create]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/^category-requests/(?P<pk>[^/.]+)/approve/$ [CategoryRequestViewSet.approve]": [
+    "STAFF_WRITER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/^category-requests/(?P<pk>[^/.]+)/reject/$ [CategoryRequestViewSet.reject]": [
+    "STAFF_WRITER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/^course-appeals/$ [CourseAppealViewSet.create]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/^course-appeals/(?P<pk>[^/.]+)/approve/$ [CourseAppealViewSet.approve]": [
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/^course-appeals/(?P<pk>[^/.]+)/reject/$ [CourseAppealViewSet.reject]": [
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/^course-invites/$ [CollaboratorInviteViewSet.create]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "POST api/v1/^course-invites/(?P<pk>[^/.]+)/accept/$ [CollaboratorInviteViewSet.accept]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "POST api/v1/^course-invites/(?P<pk>[^/.]+)/decline/$ [CollaboratorInviteViewSet.decline]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "POST api/v1/^courses/$ [CourseViewSet.create]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "POST api/v1/^courses/(?P<pk>[^/.]+)/media-assets/$ [CourseViewSet.media_assets]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "STAFF_APPROVER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/^courses/(?P<pk>[^/.]+)/publish/$ [CourseViewSet.publish]": [
+    "STAFF_APPROVER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/^courses/(?P<pk>[^/.]+)/submit/$ [CourseViewSet.submit]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "STAFF_APPROVER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/^mie/admin/developers/$ [MieDeveloperAdminViewSet.create]": [
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/^mie/admin/developers/(?P<id>[^/.]+)/approve/$ [MieDeveloperAdminViewSet.approve]": [
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/^mie/admin/developers/(?P<id>[^/.]+)/reject/$ [MieDeveloperAdminViewSet.reject]": [
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/^mie/admin/developers/(?P<id>[^/.]+)/suspend/$ [MieDeveloperAdminViewSet.suspend]": [
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/^mie/admin/rejection-reasons/$ [RejectionReasonAdminViewSet.create]": [
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/^mie/admin/submissions/(?P<id>[^/.]+)/approve/$ [MieSubmissionAdminViewSet.approve]": [
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/^mie/admin/submissions/(?P<id>[^/.]+)/payout_bypass/$ [MieSubmissionAdminViewSet.payout_bypass]": [
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/^mie/admin/submissions/(?P<id>[^/.]+)/reject/$ [MieSubmissionAdminViewSet.reject]": [
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/^mie/admin/submissions/(?P<id>[^/.]+)/signals/$ [MieSubmissionAdminViewSet.signals]": [
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/^quality-check-criteria/$ [QualityCheckCriterionViewSet.create]": [
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/^questions/$ [QuestionViewSet.create]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "STAFF_APPROVER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/^quizzes/$ [QuizViewSet.create]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "STAFF_APPROVER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/^review-queue/(?P<pk>[^/.]+)/approve/$ [CourseReviewViewSet.approve]": [
+    "CREATOR_REVIEWER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/^review-queue/(?P<pk>[^/.]+)/claim/$ [CourseReviewViewSet.claim]": [
+    "CREATOR_REVIEWER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/^review-queue/(?P<pk>[^/.]+)/comments/$ [CourseReviewViewSet.comments]": [
+    "CREATOR_REVIEWER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/^review-queue/(?P<pk>[^/.]+)/content-approve/$ [CourseReviewViewSet.content_approve]": [
+    "CREATOR_REVIEWER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/^review-queue/(?P<pk>[^/.]+)/content-reject/$ [CourseReviewViewSet.content_reject]": [
+    "CREATOR_REVIEWER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/^review-queue/(?P<pk>[^/.]+)/publish/$ [CourseReviewViewSet.publish]": [
+    "CREATOR_REVIEWER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/^review-queue/(?P<pk>[^/.]+)/qa-approve/$ [CourseReviewViewSet.qa_approve]": [
+    "STAFF_APPROVER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/^review-queue/(?P<pk>[^/.]+)/qa-claim/$ [CourseReviewViewSet.qa_claim]": [
+    "STAFF_APPROVER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/^review-queue/(?P<pk>[^/.]+)/qa-reject/$ [CourseReviewViewSet.qa_reject]": [
+    "STAFF_APPROVER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/^review-queue/(?P<pk>[^/.]+)/reject/$ [CourseReviewViewSet.reject]": [
+    "CREATOR_REVIEWER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/^topic-reservations/$ [TopicReservationRequestViewSet.create]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/^topic-reservations/(?P<pk>[^/.]+)/approve/$ [TopicReservationRequestViewSet.approve]": [
+    "CREATOR_REVIEWER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/^topic-reservations/(?P<pk>[^/.]+)/reject/$ [TopicReservationRequestViewSet.reject]": [
+    "CREATOR_REVIEWER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/^topics/$ [TopicViewSet.create]": [
+    "CREATOR_REVIEWER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/^topics/(?P<pk>[^/.]+)/release-reservation/$ [TopicViewSet.release_reservation]": [
+    "CREATOR_REVIEWER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/^workspace-collaborators/$ [WorkspaceCollaboratorViewSet.create]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "POST api/v1/admin/achievements/badges/ [BadgeListCreateView.post]": [
+    "STAFF_WRITER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/admin/achievements/badges/<uuid:badge_id>/holders/ [BadgeHolderListCreateView.post]": [
+    "STAFF_WRITER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/admin/mie-recommendations/<uuid:id>/approve/ [MieRecommendationApproveView.post]": [
+    "STAFF_WRITER",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/admin/mie-recommendations/<uuid:id>/reject/ [MieRecommendationRejectView.post]": [
+    "STAFF_WRITER",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/admin/mie-recommendations/decisions/ [MieRecommendationBulkDecisionView.post]": [
+    "STAFF_WRITER",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/auth/change-email/ [ChangeEmailRequestView.post]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/auth/change-email/confirm/ [ChangeEmailConfirmView.post]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER",
+    "ANONYMOUS"
+  ],
+  "POST api/v1/auth/change-password/ [ChangePasswordView.post]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/auth/forgot-password/ [ForgotPasswordView.post]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER",
+    "ANONYMOUS"
+  ],
+  "POST api/v1/auth/login/ [LoginView.post]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER",
+    "ANONYMOUS"
+  ],
+  "POST api/v1/auth/login/google/ [GoogleLoginView.post]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER",
+    "ANONYMOUS"
+  ],
+  "POST api/v1/auth/logout-all/ [LogoutAllView.post]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/auth/logout/ [LogoutView.post]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/auth/mfa/admin-reset/<uuid:user_id>/ [MFAAdminResetView.post]": [
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/auth/mfa/disable/ [MFADisableView.post]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/auth/mfa/enroll/ [MFAEnrollView.post]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/auth/mfa/enroll/confirm/ [MFAEnrollConfirmView.post]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/auth/mfa/recovery-codes/regenerate/ [MFARecoveryCodesRegenerateView.post]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/auth/mfa/verify/ [MFAVerifyView.post]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER",
+    "ANONYMOUS"
+  ],
+  "POST api/v1/auth/resend-verification/ [ResendVerificationView.post]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER",
+    "ANONYMOUS"
+  ],
+  "POST api/v1/auth/reset-password/ [ResetPasswordView.post]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER",
+    "ANONYMOUS"
+  ],
+  "POST api/v1/auth/reviewer/login/ [LoginView.post]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER",
+    "ANONYMOUS"
+  ],
+  "POST api/v1/auth/reviewer/login/google/ [GoogleLoginView.post]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER",
+    "ANONYMOUS"
+  ],
+  "POST api/v1/auth/reviewer/signup/ [ReviewerSignupView.post]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER",
+    "ANONYMOUS"
+  ],
+  "POST api/v1/auth/reviewer/signup/google/ [GoogleReviewerSignupView.post]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER",
+    "ANONYMOUS"
+  ],
+  "POST api/v1/auth/signup/ [SignupView.post]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER",
+    "ANONYMOUS"
+  ],
+  "POST api/v1/auth/signup/google/ [GoogleSignupView.post]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER",
+    "ANONYMOUS"
+  ],
+  "POST api/v1/auth/staff/<uuid:pk>/reactivate/ [ReactivateStaffView.post]": [
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/auth/staff/<uuid:pk>/revoke/ [RevokeStaffView.post]": [
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/auth/staff/invitations/ [InviteStaffView.post]": [
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/auth/staff/invitations/accept/ [AcceptStaffInvitationView.post]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER",
+    "ANONYMOUS"
+  ],
+  "POST api/v1/auth/superadmin/bootstrap/ [SuperAdminBootstrapView.post]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER",
+    "ANONYMOUS"
+  ],
+  "POST api/v1/auth/token/refresh/ [TokenRefreshView.post]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER",
+    "ANONYMOUS"
+  ],
+  "POST api/v1/auth/verify-email/ [VerifyEmailView.post]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER",
+    "ANONYMOUS"
+  ],
+  "POST api/v1/course-ai-generations/ [AICourseGenerationListCreateView.post]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "POST api/v1/course-ai-generations/<uuid:pk>/retry/ [AIGenerationRetryView.post]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "POST api/v1/course-imports/ [CourseImportListCreateView.post]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "POST api/v1/course-imports/<uuid:pk>/confirm/ [CourseImportConfirmView.post]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "POST api/v1/courses/<uuid:course_pk>/ai-assists/ [AIAssistListCreateView.post]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "POST api/v1/courses/<uuid:course_pk>/ai-assists/<uuid:pk>/apply/ [AIAssistApplyView.post]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "POST api/v1/courses/<uuid:course_pk>/ai-thumbnail/ [AIThumbnailCreateView.post]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "POST api/v1/courses/<uuid:course_pk>/ai-thumbnail/<uuid:pk>/apply/ [AIThumbnailApplyView.post]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "POST api/v1/courses/<uuid:course_pk>/modules/ [ModuleViewSet.create]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "POST api/v1/courses/<uuid:course_pk>/modules/<uuid:module_pk>/lessons/ [LessonViewSet.create]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "POST api/v1/courses/<uuid:course_pk>/modules/<uuid:module_pk>/lessons/<uuid:lesson_pk>/content-blocks/ [LessonContentBlockViewSet.create]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "POST api/v1/courses/<uuid:course_pk>/modules/<uuid:module_pk>/lessons/<uuid:lesson_pk>/images/ [LessonImageViewSet.create]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "POST api/v1/courses/<uuid:course_pk>/modules/<uuid:module_pk>/lessons/<uuid:lesson_pk>/requirements/ [LessonRequirementViewSet.create]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "POST api/v1/courses/<uuid:course_pk>/modules/<uuid:pk>/heartbeat/ [ModuleViewSet.heartbeat]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "POST api/v1/courses/<uuid:course_pk>/modules/<uuid:pk>/lock/ [ModuleViewSet.lock]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "POST api/v1/courses/<uuid:course_pk>/modules/<uuid:pk>/unlock/ [ModuleViewSet.unlock]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "POST api/v1/courses/<uuid:course_pk>/quality-checks/ [CourseQualityCheckView.post]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/courses/<uuid:course_pk>/thumbnail/ [CourseThumbnailView.post]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "POST api/v1/mie/v1/register/ [MieDeveloperRegistrationView.post]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER",
+    "ANONYMOUS"
+  ],
+  "POST api/v1/mie/v1/submissions/ [MieSubmissionIngestView.post]": [
+    "ANONYMOUS:ERROR:AuthenticationFailed"
+  ],
+  "POST api/v1/payout-accounts/ [BankAccountListCreateView.post]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/payout-accounts/<uuid:pk>/default/ [BankAccountSetDefaultView.post]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/payout-accounts/<uuid:pk>/suspend/ [BankAccountSuspendView.post]": [
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/payout-accounts/verify/ [VerifyBankAccountView.post]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER",
+    "ANONYMOUS"
+  ],
+  "POST api/v1/test-email/ [TestEmailView.post]": [
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/uploads/access/ [UploadAccessView.post]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/uploads/presign/ [UploadPresignView.post]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/users/admin/<uuid:pk>/assign-track/ [UserAdminViewSet.assign_track]": [
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/users/admin/<uuid:pk>/deactivate/ [UserAdminViewSet.deactivate]": [
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/users/admin/<uuid:pk>/reinstate/ [UserAdminViewSet.reinstate]": [
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/users/admin/<uuid:pk>/suspend/ [UserAdminViewSet.suspend]": [
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/users/kyc-review/<uuid:pk>/approve/ [KYCReviewViewSet.approve]": [
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/users/kyc-review/<uuid:pk>/flag/ [KYCReviewViewSet.flag]": [
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/users/kyc-review/<uuid:pk>/reject/ [KYCReviewViewSet.reject]": [
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/users/kyc/set-avatar/<uuid:user_id>/ [LivenessAvatarSettingView.post]": [
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/users/me/kyc/ [KYCVerificationView.post]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/users/me/kyc/liveness/ [LivenessVerificationView.post]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/users/me/notifications/toggle-read/ [NotificationReadToggleView.post]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "POST api/v1/webhooks/flutterwave/ [FlutterwaveWebhookView.post]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER",
+    "ANONYMOUS"
+  ],
+  "POST api/v1/webhooks/paystack/ [PaystackWebhookView.post]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER",
+    "ANONYMOUS"
+  ],
+  "POST api/v1/webhooks/youverify/ [YouverifyWebhookView.post]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER",
+    "ANONYMOUS"
+  ],
+  "POST api/v1/withdrawals/ [WithdrawalRequestCreateView.post]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "POST api/v1/withdrawals/<uuid:withdrawal_request_id>/confirm/ [WithdrawalConfirmView.post]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "PUT api/v1/^admin/courses/(?P<pk>[^/.]+)/review-prices/$ [AdminCourseViewSet.review_prices]": [
+    "CREATOR_REVIEWER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "PUT api/v1/^categories/(?P<pk>[^/.]+)/$ [CategoryViewSet.update]": [
+    "STAFF_WRITER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "PUT api/v1/^category-requests/(?P<pk>[^/.]+)/$ [CategoryRequestViewSet.update]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "PUT api/v1/^course-appeals/(?P<pk>[^/.]+)/$ [CourseAppealViewSet.update]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "PUT api/v1/^course-invites/(?P<pk>[^/.]+)/$ [CollaboratorInviteViewSet.update]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "PUT api/v1/^courses/(?P<pk>[^/.]+)/$ [CourseViewSet.update]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "STAFF_APPROVER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "PUT api/v1/^courses/(?P<pk>[^/.]+)/review-prices/$ [CourseViewSet.review_prices]": [
+    "STAFF_APPROVER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "PUT api/v1/^mie/admin/rejection-reasons/(?P<id>[^/.]+)/$ [RejectionReasonAdminViewSet.update]": [
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "PUT api/v1/^quality-check-criteria/(?P<pk>[^/.]+)/$ [QualityCheckCriterionViewSet.update]": [
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "PUT api/v1/^questions/(?P<pk>[^/.]+)/$ [QuestionViewSet.update]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "STAFF_APPROVER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "PUT api/v1/^quizzes/(?P<pk>[^/.]+)/$ [QuizViewSet.update]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "STAFF_APPROVER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "PUT api/v1/^review-queue/(?P<pk>[^/.]+)/review-prices/$ [CourseReviewViewSet.review_prices]": [
+    "CREATOR_REVIEWER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "PUT api/v1/^topic-reservations/(?P<pk>[^/.]+)/$ [TopicReservationRequestViewSet.update]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "PUT api/v1/^topics/(?P<pk>[^/.]+)/$ [TopicViewSet.update]": [
+    "CREATOR_REVIEWER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ],
+  "PUT api/v1/^workspace-collaborators/(?P<pk>[^/.]+)/$ [WorkspaceCollaboratorViewSet.update]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "PUT api/v1/courses/<uuid:course_pk>/final-assessment/ [CourseAssessmentView.put]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "PUT api/v1/courses/<uuid:course_pk>/modules/<uuid:module_pk>/assessment/ [ModuleAssessmentView.put]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "PUT api/v1/courses/<uuid:course_pk>/modules/<uuid:module_pk>/lessons/<uuid:lesson_pk>/assessment/ [LessonAssessmentView.put]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "PUT api/v1/courses/<uuid:course_pk>/modules/<uuid:module_pk>/lessons/<uuid:lesson_pk>/content-blocks/<uuid:pk>/ [LessonContentBlockViewSet.update]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "PUT api/v1/courses/<uuid:course_pk>/modules/<uuid:module_pk>/lessons/<uuid:lesson_pk>/content-blocks/bulk/ [LessonContentBlockViewSet.bulk]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "PUT api/v1/courses/<uuid:course_pk>/modules/<uuid:module_pk>/lessons/<uuid:lesson_pk>/images/<uuid:pk>/ [LessonImageViewSet.update]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "PUT api/v1/courses/<uuid:course_pk>/modules/<uuid:module_pk>/lessons/<uuid:lesson_pk>/requirements/<uuid:pk>/ [LessonRequirementViewSet.update]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "PUT api/v1/courses/<uuid:course_pk>/modules/<uuid:module_pk>/lessons/<uuid:pk>/ [LessonViewSet.update]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "PUT api/v1/courses/<uuid:course_pk>/modules/<uuid:pk>/ [ModuleViewSet.update]": [
+    "COURSE_CREATOR",
+    "STAFF_WRITER",
+    "SUPERUSER"
+  ],
+  "PUT api/v1/users/me/ [MeView.put]": [
+    "COURSE_CREATOR",
+    "CREATOR_REVIEWER",
+    "STAFF_WRITER",
+    "STAFF_VERIFIER",
+    "STAFF_APPROVER",
+    "AI_REVIEWER",
+    "QA_REVIEWER",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "SUPERUSER"
+  ]
+}

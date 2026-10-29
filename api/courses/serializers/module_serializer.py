@@ -4,6 +4,7 @@ from rest_framework import serializers
 from api.courses.models import Module
 from api.courses.serializers.assessment_serializer import AssessmentSerializer
 from api.courses.serializers.lesson_serializer import LessonSerializer
+from api.courses.services.ai_generation_service import normalize_ai_learning_objectives
 
 
 class ModuleMiniSerializer(serializers.ModelSerializer):
@@ -30,11 +31,16 @@ class ModuleSerializer(serializers.ModelSerializer):
             "id",
             "title",
             "order",
+            "description",
+            "learning_objectives",
             "lessons",
             "assessment",
             "locked_by",
             "lock_expires_at",
             "is_locked",
+            "collaboration_locked_by",
+            "collaboration_locked_at",
+            "collaboration_locked",
         ]
         read_only_fields = fields
 
@@ -53,5 +59,14 @@ class ModuleWriteSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Module
-        fields = ["id", "title", "order"]
+        fields = ["id", "title", "order", "description", "learning_objectives"]
         read_only_fields = ["id"]
+
+    def validate_learning_objectives(self, value):
+        if not isinstance(value, list) or not all(
+            isinstance(item, str) and item.strip() for item in value
+        ):
+            raise serializers.ValidationError(
+                "learning_objectives must be a list of non-empty strings."
+            )
+        return normalize_ai_learning_objectives(value)

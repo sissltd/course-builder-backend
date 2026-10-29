@@ -18,7 +18,8 @@ from api.authentication.serializers import (
 )
 from api.authentication.services import authentication_service, mfa_service
 from api.users.models import User
-from api.users.permissions import IsSuperAdminRole
+from api.authorization import codenames
+from api.authorization.permissions import Perm
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 
 _ENROLL_EXAMPLE = {
@@ -110,7 +111,9 @@ class MFAEnrollConfirmView(APIView):
             200: OpenApiResponse(
                 response=MFARecoveryCodesResponseSerializer,
                 description="Device enabled; fresh recovery codes issued.",
-                examples=[OpenApiExample(name="Success", value=_RECOVERY_CODES_EXAMPLE)],
+                examples=[
+                    OpenApiExample(name="Success", value=_RECOVERY_CODES_EXAMPLE)
+                ],
             ),
             **STANDARD_ERROR_RESPONSES["validation"],
             **STANDARD_ERROR_RESPONSES["auth"],
@@ -125,13 +128,19 @@ class MFAEnrollConfirmView(APIView):
             code=serializer.validated_data["code"],
             request=request,
         )
-        return Response(MFARecoveryCodesResponseSerializer({"recovery_codes": codes}).data)
+        return Response(
+            MFARecoveryCodesResponseSerializer({"recovery_codes": codes}).data
+        )
 
 
+# Public endpoint: no security requirement, so Swagger's padlock does
+# not attach a bearer token to it.
+@extend_schema(auth=[{}])
 class MFAVerifyView(APIView):
     """Second half of login: exchange a challenge_token + live code for the
     normal login token payload."""
 
+    authentication_classes = []  # public: a stale token must not 401 this
     permission_classes = [AllowAny]
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = "login"
@@ -197,7 +206,7 @@ class MFAVerifyView(APIView):
             request=request,
         )
         data = authentication_service.finish_login(
-            user=user, request=request, mfa_verified=True
+            user=user, request=request, mfa_verified=True, mfa_challenged=True
         )
         return Response(data)
 
@@ -231,7 +240,9 @@ class MFARecoveryCodesRegenerateView(APIView):
             200: OpenApiResponse(
                 response=MFARecoveryCodesResponseSerializer,
                 description="A fresh batch of recovery codes.",
-                examples=[OpenApiExample(name="Success", value=_RECOVERY_CODES_EXAMPLE)],
+                examples=[
+                    OpenApiExample(name="Success", value=_RECOVERY_CODES_EXAMPLE)
+                ],
             ),
             **STANDARD_ERROR_RESPONSES["validation"],
             **STANDARD_ERROR_RESPONSES["auth"],
@@ -246,12 +257,13 @@ class MFARecoveryCodesRegenerateView(APIView):
             code=serializer.validated_data["code"],
             request=request,
         )
-        return Response(MFARecoveryCodesResponseSerializer({"recovery_codes": codes}).data)
+        return Response(
+            MFARecoveryCodesResponseSerializer({"recovery_codes": codes}).data
+        )
 
 
 class MFADisableView(APIView):
-    """Self-service disable - 403 for ADMIN/SUPER_ADMIN, since MFA is
-    mandatory for those roles (see mfa_service.disable)."""
+    """Self-service disable, open to every role: MFA is opt-in."""
 
     permission_classes = [IsAuthenticated]
     serializer_class = MFACodeSerializer
@@ -261,8 +273,8 @@ class MFADisableView(APIView):
         description=(
             "Disables MFA for the current user after confirming a live "
             "TOTP code, deleting the device and its recovery codes.\n\n"
-            "**Auth:** Any authenticated user, except Admin/Super Admin - "
-            "MFA is mandatory for those roles.\n\n"
+            "**Auth:** Any authenticated user. MFA is opt-in for every role, "
+            "admins included, so anyone may turn their own off.\n\n"
             "**Prerequisites:** The user must have an enabled MFA "
             "device.\n\n"
             "**Important:** Disabling means the account no longer prompts "
@@ -303,9 +315,10 @@ class MFADisableView(APIView):
 
 class MFAAdminResetView(APIView):
     """Super-Admin-only: reset another user's MFA device (lost-device
-    recovery). Forces re-enrollment; does not grant a fresh grace period."""
+    recovery). Deletes the device and recovery codes; the user logs in with
+    just a password until they choose to enroll again."""
 
-    permission_classes = [IsSuperAdminRole]
+    permission_classes = [Perm(codenames.STAFF_FULL_ACCESS)]
 
     @extend_schema(
         summary="Reset a user's MFA (admin)",
@@ -313,14 +326,14 @@ class MFAAdminResetView(APIView):
             "Super-Admin-only lost-device recovery: deletes the target "
             "user's MFA device and recovery codes, forcing them to "
             "re-enroll from scratch on next login.\n\n"
-            "**Auth:** Super Admin only.\n\n"
+            "**Auth:** The `staff.full_access` permission — Super Admin by "
+            "default.\n\n"
             "**Prerequisites:** `user_id` must belong to an existing "
             "user.\n\n"
-            "**Important:** Does not grant a fresh MFA grace period - if "
-            "the target's role requires MFA, they must re-enroll before "
-            "resuming normal access."
+            "**Important:** MFA is opt-in, so the target simply logs in "
+            "with a password until they choose to enroll again."
         ),
-        tags=["Auth — MFA"],
+        tags=["Admin — MFA"],
         request=None,
         parameters=[
             OpenApiParameter(

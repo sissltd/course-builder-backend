@@ -1,6 +1,13 @@
 from django.urls import path
 
-from api.platform.views import AdminOverviewView, PlatformSettingsView
+from api.platform.views import (
+    AdminOverviewView,
+    CreatorOverviewView,
+    PlatformSettingsView,
+    ReviewerActivityOverviewView,
+    ReviewerOverviewView,
+    TestEmailView,
+)
 
 urlpatterns = [
     path(
@@ -12,5 +19,25 @@ urlpatterns = [
         "admin/overview/",
         AdminOverviewView.as_view(),
         name="admin-overview",
+    ),
+    path(
+        "creator/overview/",
+        CreatorOverviewView.as_view(),
+        name="creator-overview",
+    ),
+    path(
+        "reviewer/overview/",
+        ReviewerOverviewView.as_view(),
+        name="reviewer-overview",
+    ),
+    path(
+        "reviewer/activity-overview/",
+        ReviewerActivityOverviewView.as_view(),
+        name="reviewer-activity-overview",
+    ),
+    path(
+        "test-email/",
+        TestEmailView.as_view(),
+        name="test-email",
     ),
 ]

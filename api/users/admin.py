@@ -58,19 +58,16 @@ class KYCVerificationAdmin(admin.ModelAdmin):
     list_display = ("id", "user", "document_type", "status", "created_datetime")
     list_filter = ("status", "document_type")
     search_fields = ("user__email", "id_number")
-    readonly_fields = (
-        "id",
-        "user",
-        "country_of_issue",
-        "document_type",
-        "id_number",
-        "status",
-        "rejection_reason",
-        "reviewed_by",
-        "reviewed_at",
-        "created_datetime",
-        "updated_datetime",
-    )
+
+    # def get_readonly_fields(self, request, obj=None):
+    #     return [field.name for field in self.model._meta.fields]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
 
 
 @admin.register(UserActivityLog)

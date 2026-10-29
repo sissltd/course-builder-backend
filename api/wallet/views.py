@@ -1,37 +1,45 @@
+import logging
+
 from django_filters.rest_framework import DjangoFilterBackend
-from drf_spectacular.utils import OpenApiExample, OpenApiResponse, extend_schema
+from drf_spectacular.utils import (
+    OpenApiExample,
+    OpenApiResponse,
+    extend_schema,
+    extend_schema_view,
+)
 from rest_framework import filters as drf_filters
 from rest_framework import status
 from rest_framework.generics import (
     CreateAPIView,
-    DestroyAPIView,
     ListAPIView,
-    ListCreateAPIView,
     RetrieveAPIView,
 )
-from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from api.users.permissions import IsAdminOrSuperAdminRole, IsCourseCreatorRole
+from api.authorization import codenames
+from api.authorization.permissions import Perm
+from api.payments.models.transaction_model import Transaction
 from api.wallet.filters import (
     AdminTransactionFilter,
     AdminWithdrawalRequestFilter,
-    TransactionFilter,
 )
-from api.wallet.models import PayoutAccount, Transaction, Wallet, WithdrawalRequest
+from api.wallet.models import Wallet, WithdrawalRequest
 from api.wallet.serializers import (
     AdminTransactionSerializer,
     AdminWalletSerializer,
     AdminWithdrawalRequestSerializer,
-    PayoutAccountCreateSerializer,
-    PayoutAccountSerializer,
     TransactionSerializer,
     WalletSerializer,
     WithdrawalConfirmSerializer,
     WithdrawalRequestCreateSerializer,
+    WithdrawalRequestSerializer,
 )
 from api.wallet.services import wallet_service
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
+from shared.response.error import custom_error_response
+from shared.response.success import custom_success_response
+
+logger = logging.getLogger(__name__)
 
 _WALLET_OWNER_EXAMPLE = {
     "id": "5a1f83c6-92b4-4e70-8d3f-1c7e6b409af2",
@@ -41,64 +49,85 @@ _WALLET_OWNER_EXAMPLE = {
 }
 
 _ADMIN_AUTH_LINE = (
-    "**Auth:** Admin or Super Admin. The creator-facing wallet endpoints are "
-    "gated on the Course Creator role and 403 for admins, which is why this "
+    "**Auth:** The `creators.view_wallet` permission (View Wallet) — Admin "
+    "and Super Admin by default. The creator-facing wallet endpoints need "
+    "`earnings.manage_own`, which admins don't hold, which is why this "
     "parallel read exists."
 )
 
 
+@extend_schema_view(
+    get=extend_schema(
+        summary="Retrieve my wallet balance",
+        tags=["Creator — Wallet"],
+    ),
+)
 class WalletDetailView(RetrieveAPIView):
     """The current user's wallet balance, auto-provisioned on first access."""
 
-    permission_classes = [IsCourseCreatorRole]
+    permission_classes = [Perm(codenames.EARNINGS_MANAGE_OWN)]
     serializer_class = WalletSerializer
 
     def get_object(self):
         return wallet_service.get_or_create_wallet(user=self.request.user)
 
 
-class TransactionListView(ListAPIView):
-    """The current user's wallet transaction history."""
-
-    permission_classes = [IsCourseCreatorRole]
-    serializer_class = TransactionSerializer
-    filterset_class = TransactionFilter
-    filter_backends = [DjangoFilterBackend, drf_filters.OrderingFilter]
-    ordering_fields = ["created_datetime", "amount"]
-
-    def get_queryset(self):
-        if getattr(self, "swagger_fake_view", False):
-            return Transaction.objects.none()
-        return wallet_service.list_transactions(user=self.request.user)
-
-
-class PayoutAccountListCreateView(ListCreateAPIView):
-    """List the current user's payout accounts, or add a new one
-    (Settings -> Payment -> Add account)."""
-
-    permission_classes = [IsCourseCreatorRole]
-
-    def get_queryset(self):
-        if getattr(self, "swagger_fake_view", False):
-            return PayoutAccount.objects.none()
-        return wallet_service.list_payout_accounts(user=self.request.user)
-
-    def get_serializer_class(self):
-        if self.request.method == "POST":
-            return PayoutAccountCreateSerializer
-        return PayoutAccountSerializer
-
-
-class PayoutAccountDestroyView(DestroyAPIView):
-    """Remove one of the current user's payout accounts."""
-
-    permission_classes = [IsCourseCreatorRole]
-    serializer_class = PayoutAccountSerializer
-
-    def get_queryset(self):
-        return wallet_service.list_payout_accounts(user=self.request.user)
-
-
+@extend_schema(
+    summary="Request a withdrawal",
+    description=(
+        "Creates a pending withdrawal request for one of the creator's payout "
+        "accounts and emails an OTP for confirmation. No funds move until the "
+        "OTP is verified through the withdrawal confirmation endpoint.\n\n"
+        "**Auth:** The `earnings.manage_own` permission (Manage Own Earnings) "
+        "— Course Creator and Writer by default.\n\n"
+        "**Prerequisites:** The creator must have completed the required KYC "
+        "verification, have enough available wallet balance, and provide a "
+        "payout account that belongs to them. The amount must meet the "
+        "configured minimum withdrawal threshold.\n\n"
+        "**Important:** This endpoint only creates the request and sends the "
+        "OTP; it does not debit the wallet. Submit the code to `POST "
+        "/api/v1/withdrawals/{withdrawal_request_id}/confirm/` before the "
+        "request can produce a withdrawal transaction.\n\n"
+        "**Note:** Flutterwave does not allow testing with live bank account "
+        "details. In the test environment, use the provided test bank account details.\n"
+        "bank_code: 044; account number 0690000031, 0690000032, 0690000033, or 0690000034"
+    ),
+    tags=["Creator — Wallet"],
+    request=WithdrawalRequestCreateSerializer,
+    examples=[
+        OpenApiExample(
+            name="Request",
+            request_only=True,
+            value={
+                "amount": "60.00",
+                "payout_account": "6c31f8a0-92db-4e57-b14a-83f7c0d25e69",
+            },
+        )
+    ],
+    responses={
+        201: OpenApiResponse(
+            response=WithdrawalRequestSerializer,
+            description="The pending withdrawal request awaiting OTP confirmation.",
+            examples=[
+                OpenApiExample(
+                    name="Created",
+                    value={
+                        "id": "b8e0a25d-4713-49cf-8a6b-05d29e13c7f4",
+                        "amount": "60.00",
+                        "payout_account": "6c31f8a0-92db-4e57-b14a-83f7c0d25e69",
+                        "status": "PENDING_CONFIRMATION",
+                        "created_datetime": "2026-09-30T09:12:50.404Z",
+                    },
+                )
+            ],
+        ),
+        **STANDARD_ERROR_RESPONSES["validation"],
+        **STANDARD_ERROR_RESPONSES["auth"],
+        **STANDARD_ERROR_RESPONSES["permission"],
+        **STANDARD_ERROR_RESPONSES["not_found"],
+        **STANDARD_ERROR_RESPONSES["server"],
+    },
+)
 class WithdrawalRequestCreateView(CreateAPIView):
     """Step 1 of withdrawal: request an amount against a payout account.
 
@@ -106,7 +135,7 @@ class WithdrawalRequestCreateView(CreateAPIView):
     move until that's confirmed.
     """
 
-    permission_classes = [IsCourseCreatorRole]
+    permission_classes = [Perm(codenames.EARNINGS_MANAGE_OWN)]
     serializer_class = WithdrawalRequestCreateSerializer
 
 
@@ -114,9 +143,13 @@ class WithdrawalConfirmView(APIView):
     """Step 2 of withdrawal: confirm the OTP sent for a pending
     WithdrawalRequest, creating the resulting Transaction."""
 
-    permission_classes = [IsCourseCreatorRole]
+    permission_classes = [Perm(codenames.EARNINGS_MANAGE_OWN)]
     serializer_class = WithdrawalConfirmSerializer  # for schema generation only
 
+    @extend_schema(
+        summary="Confirm a withdrawal with OTP",
+        tags=["Creator — Wallet"],
+    )
     def post(self, request, withdrawal_request_id):
         serializer = WithdrawalConfirmSerializer(
             data=request.data,
@@ -126,11 +159,21 @@ class WithdrawalConfirmView(APIView):
             },
         )
         serializer.is_valid(raise_exception=True)
-        txn = serializer.save()
-        return Response(
-            TransactionSerializer(txn, context={"request": request}).data,
-            status=status.HTTP_200_OK,
-        )
+
+        try:
+            txn = serializer.save()
+            return custom_success_response(
+                data=TransactionSerializer(txn, context={"request": request}).data,
+                message="Withdrawal request is being processed.",
+                status=status.HTTP_202_ACCEPTED,
+            )
+        except Exception:
+            logger.exception("Withdrawal confirmation failed for user %s", request.user)
+            return custom_error_response(
+                data=None,
+                message="Unable to process the withdrawal. Please try again.",
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
 
 @extend_schema(
@@ -145,7 +188,7 @@ class WithdrawalConfirmView(APIView):
         "role.\n\n"
         "**Important:** Read-only; there is no admin endpoint that adjusts a "
         "balance, deliberately — balances move only through "
-        "`credit_wallet` (course approval) and a confirmed withdrawal. Wallets "
+        "the course payout at approval and a confirmed withdrawal. Wallets "
         "are provisioned lazily, so a creator who has never earned or opened "
         "their wallet has no row here at all. Unlike the creator's own wallet "
         "view this omits `total_earned`/`pending_balance`, which cost an "
@@ -179,7 +222,7 @@ class WithdrawalConfirmView(APIView):
 class AdminWalletListView(ListAPIView):
     """Every creator wallet, for the admin finance view."""
 
-    permission_classes = [IsAdminOrSuperAdminRole]
+    permission_classes = [Perm(codenames.CREATORS_VIEW_WALLET)]
     serializer_class = AdminWalletSerializer
     filter_backends = [drf_filters.OrderingFilter]
     ordering_fields = ["balance", "updated_datetime"]
@@ -250,7 +293,7 @@ class AdminWalletListView(ListAPIView):
 class AdminTransactionListView(ListAPIView):
     """The platform-wide transaction ledger, for admins."""
 
-    permission_classes = [IsAdminOrSuperAdminRole]
+    permission_classes = [Perm(codenames.CREATORS_VIEW_WALLET)]
     serializer_class = AdminTransactionSerializer
     filterset_class = AdminTransactionFilter
     filter_backends = [DjangoFilterBackend, drf_filters.OrderingFilter]
@@ -321,7 +364,7 @@ class AdminTransactionListView(ListAPIView):
 class AdminWithdrawalRequestListView(ListAPIView):
     """Every withdrawal request across all creators, for admins."""
 
-    permission_classes = [IsAdminOrSuperAdminRole]
+    permission_classes = [Perm(codenames.CREATORS_VIEW_WALLET)]
     serializer_class = AdminWithdrawalRequestSerializer
     filterset_class = AdminWithdrawalRequestFilter
     filter_backends = [DjangoFilterBackend, drf_filters.OrderingFilter]

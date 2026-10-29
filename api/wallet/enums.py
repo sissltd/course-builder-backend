@@ -21,11 +21,11 @@ class TransactionStatus(models.TextChoices):
     FAILED = "FAILED", "Failed"
 
 
-class PayoutAccountType(models.TextChoices):
-    """How a creator's payout account receives funds."""
+class AdjustmentDirection(models.TextChoices):
+    """Which way an admin wallet adjustment moves money."""
 
-    LOCAL = "LOCAL", "Local Account"
-    MOBILE_MONEY = "MOBILE_MONEY", "Mobile Money"
+    CREDIT = "CREDIT", "Credit"
+    DEBIT = "DEBIT", "Debit"
 
 
 class WithdrawalRequestStatus(models.TextChoices):

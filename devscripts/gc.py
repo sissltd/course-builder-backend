@@ -18,6 +18,12 @@ Usage:
                            pushes with -u, then opens a pull request against
                            staging with `pullrequest.md` as the description.
 
+                           Shorthand (same as feexeet): flags and positionals
+                           may be mixed in any order —
+                             gc.py -b feat/x "message" --auto
+                             gc.py -b --no-wait feat/x "message"
+                           With two positionals the prompts are skipped.
+
                            By default it then WAITS HERE for GitHub's checks,
                            notifies you when they settle, and asks whether to
                            merge. On yes it merges, switches to staging and
@@ -148,6 +154,22 @@ def run_capture(cmd: list[str]) -> tuple[int, str, str]:
     return proc.returncode, proc.stdout, proc.stderr
 
 
+def project_python() -> str:
+    """The interpreter every gate runs under.
+
+    Each gate imports Django, so it has to run inside the project's
+    virtualenv. Using sys.executable tied the gates to whichever Python
+    launched this script: `python3 devscripts/gc.py` from a plain shell ran
+    them under an interpreter with no Django, and every Django gate failed.
+    Prefer the repo's own .venv; fall back to sys.executable when there is
+    none (an activated environment, or CI).
+    """
+    for candidate in (Path(".venv/bin/python"), Path(".venv/Scripts/python.exe")):
+        if candidate.is_file():
+            return str(candidate)
+    return sys.executable
+
+
 def repo_root() -> Path:
     """The repository root, so this works from any working directory.
 
@@ -247,25 +269,29 @@ def run_ci(with_tests: bool = False) -> None:
     """
     header("🔍  CI checks")
 
+    python = project_python()
+    info("python:", python)
+    print()
+
     schema_out = Path(tempfile.gettempdir()) / "openapi-schema.yaml"
 
     checks: list[tuple[str, list[str], bool]] = [
-        ("Linter (ruff)", [sys.executable, "-m", "ruff", "check", "."], True),
+        ("Linter (ruff)", [python, "-m", "ruff", "check", "."], True),
         (
             "Formatter (ruff)",
-            [sys.executable, "-m", "ruff", "format", "--check", "."],
+            [python, "-m", "ruff", "format", "--check", "."],
             False,
         ),
-        ("Django system check", [sys.executable, "manage.py", "check"], True),
+        ("Django system check", [python, "manage.py", "check"], True),
         (
             "Migration consistency",
-            [sys.executable, "manage.py", "makemigrations", "--check", "--dry-run"],
+            [python, "manage.py", "makemigrations", "--check", "--dry-run"],
             True,
         ),
         (
             "OpenAPI schema",
             [
-                sys.executable,
+                python,
                 "manage.py",
                 "spectacular",
                 "--file",
@@ -277,7 +303,7 @@ def run_ci(with_tests: bool = False) -> None:
     ]
 
     if with_tests:
-        checks.append(("Test suite", [sys.executable, "manage.py", "test"], True))
+        checks.append(("Test suite", [python, "manage.py", "test"], True))
 
     failures: list[tuple[str, str]] = []
     for name, cmd, blocking in checks:
@@ -287,7 +313,10 @@ def run_ci(with_tests: bool = False) -> None:
             # silent terminal that long is indistinguishable from a hang.
             code, out = run(cmd)
         else:
-            code, out = run_quiet(cmd)
+            # stderr too: Django's check, makemigrations and spectacular all
+            # report their failures there, so stdout alone came back empty.
+            code, stdout, stderr = run_capture(cmd)
+            out = stdout + stderr
         if code != 0:
             if blocking:
                 failures.append((name, out))
@@ -460,6 +489,48 @@ CHECKS_POLL_INTERVAL_S = 5
 # real failure, and only distinguishable by the message — see watch_checks.
 NO_CHECKS_MARKER = "no checks reported"
 
+# gh's own API client can die mid-watch on transient network errors (seen in
+# the wild: "Post https://api.github.com/graphql: net/http: TLS handshake
+# timeout") while the checks themselves are healthy. When that happens the
+# watcher is re-queried, snapshot-style, until the checks actually settle.
+TRANSPORT_ERROR_MARKERS = (
+    "tls handshake",
+    "connection refused",
+    "connection reset",
+    "connection timed out",
+    "client.timeout",
+    "context deadline exceeded",
+    "unexpected eof",
+    "i/o timeout",
+)
+SETTLE_RETRIES = 6
+SETTLE_DELAY_S = 20
+
+
+def _looks_like_transport_error(output: str) -> bool:
+    """True when gh died talking to GitHub rather than reporting check state."""
+
+    lowered = output.lower()
+    return any(marker in lowered for marker in TRANSPORT_ERROR_MARKERS)
+
+
+def _settled_status(pr: str) -> str | None:
+    """One snapshot of the check table: "passed"/"failed"/"none", or None
+    when GitHub could not be reached or checks are still pending — the
+    caller keeps polling in those cases."""
+
+    code, out, err = run_capture(["gh", "pr", "checks", pr])
+    blob = f"{out}\n{err}".lower()
+    if _looks_like_transport_error(blob):
+        return None
+    if NO_CHECKS_MARKER in blob:
+        return "none"
+    if code == 0:
+        return "passed"
+    if code == 8:
+        return None
+    return "failed"
+
 
 def wait_for_checks_to_appear(pr: str) -> bool:
     """Poll until at least one check registers, or the timeout expires."""
@@ -492,6 +563,12 @@ def watch_checks(pr: str) -> str:
     "none" is deliberately not folded into either. Reporting it as a failure is
     alarming and wrong (nothing broke); reporting it as a pass would merge a PR
     whose CI never ran.
+
+    On top of that, the watcher process itself can die mid-stream on a
+    transient network error (TLS handshake timeouts against
+    api.github.com happen) while the actual checks are fine and still
+    running. That is gh's problem, not CI's — so before believing any
+    failure, re-query the settled state directly a few times.
     """
     header("👀  watching GitHub CI")
 
@@ -504,10 +581,23 @@ def watch_checks(pr: str) -> str:
         return "passed"
     if NO_CHECKS_MARKER in out.lower():
         return "none"
-    if code == 8:
-        return "none"
 
-    failure("GitHub CI did not pass.")
+    if _looks_like_transport_error(out) or code == 8:
+        for attempt in range(1, SETTLE_RETRIES + 1):
+            print(
+                f"  {C.DIM}watcher dropped mid-stream (network blip?); "
+                f"re-querying settled state ({attempt}/{SETTLE_RETRIES})…{C.RESET}"
+            )
+            time.sleep(SETTLE_DELAY_S)
+            settled = _settled_status(pr)
+            if settled is not None:
+                if settled == "passed":
+                    success("all checks passed.")
+                return settled
+        failure("GitHub kept dropping the connection; could not confirm final state.")
+    else:
+        failure("GitHub CI did not pass.")
+
     _, detail, _ = run_capture(["gh", "pr", "checks", pr])
     if detail.strip():
         for line in detail.strip().splitlines():
@@ -587,16 +677,20 @@ def flow_new_branch(
     auto: bool = False,
     open_pr: bool = True,
     with_tests: bool = False,
+    branch: str | None = None,
+    message: str | None = None,
 ) -> None:
     header("🌿  course-builder · new branch workflow")
 
-    branch = prompt("Branch name (e.g. feat/admin-operations):")
-    if not branch:
-        fatal("branch name is required.")
+    if branch is None:
+        branch = prompt("Branch name (e.g. feat/admin-operations):")
+        if not branch:
+            fatal("branch name is required.")
 
-    message = prompt("Commit message:")
-    if not message:
-        fatal("commit message is required.")
+    if message is None:
+        message = prompt("Commit message:")
+        if not message:
+            fatal("commit message is required.")
 
     prefix = branch.split("/", 1)[0] if "/" in branch else ""
     final_msg = f"{prefix}: {message}" if prefix else message
@@ -783,16 +877,30 @@ def main() -> None:
     flag, *rest = args
     try:
         if flag == "-b":
-            known = {"--no-wait", "--skip-ci", "--auto", "--no-pr", "--with-tests"}
-            unknown = [a for a in rest if a not in known]
-            if unknown:
-                fatal(f"unknown args after -b: {unknown}. {USAGE}")
+            # Support both interactive and shorthand:
+            #   gc.py -b --auto feat/branch "message"
+            #   gc.py -b feat/branch "message" --auto
+            # Separate flags from positional args.
+            known_flags = {"--no-wait", "--skip-ci", "--auto", "--no-pr", "--with-tests"}
+            flags = [a for a in rest if a in known_flags]
+            positionals = [a for a in rest if a not in known_flags]
 
-            auto = "--auto" in rest
-            open_pr = "--no-pr" not in rest
-            wait_for_merge = "--no-wait" not in rest
-            skip_ci = "--skip-ci" in rest
-            with_tests = "--with-tests" in rest
+            if positionals:
+                # Shorthand mode: first two positionals are branch and message
+                if len(positionals) < 2:
+                    fatal(f"shorthand requires branch and message: {USAGE}")
+                branch = positionals[0]
+                message = positionals[1]
+            else:
+                # Interactive mode (original behavior)
+                branch = None
+                message = None
+
+            auto = "--auto" in flags
+            open_pr = "--no-pr" not in flags
+            wait_for_merge = "--no-wait" not in flags
+            skip_ci = "--skip-ci" in flags
+            with_tests = "--with-tests" in flags
 
             # Contradictory combinations, rejected up front rather than silently
             # letting one flag win — you would only find out at the end.
@@ -812,6 +920,8 @@ def main() -> None:
                 auto=auto,
                 open_pr=open_pr,
                 with_tests=with_tests,
+                branch=branch,
+                message=message,
             )
         elif flag == "-staging":
             known = {"--skip-ci", "--with-tests"}

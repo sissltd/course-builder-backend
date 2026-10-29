@@ -1,26 +1,37 @@
 from django.urls import path
 from rest_framework.routers import DefaultRouter
 
+from api.courses.views.course_version_admin_views import (
+    AdminCourseVersionDetailView,
+    AdminCourseVersionListView,
+    CourseVersionMigrationView,
+)
+
 from api.courses.views import (
     assessment_views,
+    ai_generation_views,
     course_appeal_views,
+    course_import_views,
+    course_thumbnail_views,
+    course_version_views,
+    course_video_views,
     course_views,
+    lesson_sub_resource_views,
     lesson_views,
     module_views,
-    topic_reservation_views,
-    topic_views,
+    public_catalogue_views,
 )
 
 router = DefaultRouter()
-router.register("topics", topic_views.TopicViewSet, basename="topic")
-router.register(
-    "topic-reservations",
-    topic_reservation_views.TopicReservationRequestViewSet,
-    basename="topic-reservation",
-)
 router.register("courses", course_views.CourseViewSet, basename="course")
 router.register(
+    "course-versions", course_views.CourseVersionViewSet, basename="course-version"
+)
+router.register(
     "review-queue", course_views.CourseReviewViewSet, basename="course-review"
+)
+router.register(
+    "admin/courses", course_views.AdminCourseViewSet, basename="admin-course"
 )
 router.register(
     "course-appeals",
@@ -30,9 +41,99 @@ router.register(
 
 urlpatterns = router.urls + [
     path(
+        "catalogue/courses/",
+        public_catalogue_views.PublicCourseListView.as_view(),
+        name="catalogue-course-list",
+    ),
+    path(
+        "catalogue/courses/<slug:slug>/",
+        public_catalogue_views.PublicCourseDetailView.as_view(),
+        name="catalogue-course-detail",
+    ),
+    path(
+        "courses/<uuid:course_pk>/video-decision/",
+        course_video_views.CourseVideoDecisionView.as_view(),
+        name="course-video-decision",
+    ),
+    path(
+        "courses/<uuid:course_pk>/submit-video/",
+        course_video_views.CourseSubmitVideoView.as_view(),
+        name="course-submit-video",
+    ),
+    path(
+        "course-ai-generations/",
+        ai_generation_views.AICourseGenerationListCreateView.as_view(),
+        name="course-ai-generation-list",
+    ),
+    path(
+        "course-imports/",
+        course_import_views.CourseImportListCreateView.as_view(),
+        name="course-import-list",
+    ),
+    path(
+        "course-imports/template/",
+        course_import_views.CourseImportTemplateView.as_view(),
+        name="course-import-template",
+    ),
+    path(
+        "course-imports/<uuid:pk>/",
+        course_import_views.CourseImportDetailView.as_view(),
+        name="course-import-detail",
+    ),
+    path(
+        "course-imports/<uuid:pk>/confirm/",
+        course_import_views.CourseImportConfirmView.as_view(),
+        name="course-import-confirm",
+    ),
+    path(
+        "course-ai-generations/<uuid:pk>/",
+        ai_generation_views.AIGenerationDetailView.as_view(),
+        name="course-ai-generation-detail",
+    ),
+    path(
+        "course-ai-generations/<uuid:pk>/retry/",
+        ai_generation_views.AIGenerationRetryView.as_view(),
+        name="course-ai-generation-retry",
+    ),
+    path(
+        "course-ai-generations/<uuid:pk>/stream/",
+        ai_generation_views.AIGenerationStreamView.as_view(),
+        name="course-ai-generation-stream",
+    ),
+    path(
+        "courses/<uuid:course_pk>/ai-assists/",
+        ai_generation_views.AIAssistListCreateView.as_view(),
+        name="course-ai-assist-list",
+    ),
+    path(
+        "courses/<uuid:course_pk>/ai-assists/<uuid:pk>/apply/",
+        ai_generation_views.AIAssistApplyView.as_view(),
+        name="course-ai-assist-apply",
+    ),
+    path(
+        "courses/<uuid:course_pk>/ai-thumbnail/",
+        ai_generation_views.AIThumbnailCreateView.as_view(),
+        name="course-ai-thumbnail-create",
+    ),
+    path(
+        "courses/<uuid:course_pk>/ai-thumbnail/<uuid:pk>/apply/",
+        ai_generation_views.AIThumbnailApplyView.as_view(),
+        name="course-ai-thumbnail-apply",
+    ),
+    path(
+        "course-versions/",
+        course_version_views.CourseVersionListView.as_view(),
+        name="course-version-list",
+    ),
+    path(
         "courses/<uuid:course_pk>/modules/",
         module_views.ModuleViewSet.as_view({"get": "list", "post": "create"}),
         name="course-module-list",
+    ),
+    path(
+        "courses/<uuid:course_pk>/modules/reorder/",
+        module_views.ModuleViewSet.as_view({"patch": "reorder"}),
+        name="course-module-reorder",
     ),
     path(
         "courses/<uuid:course_pk>/modules/<uuid:pk>/",
@@ -46,10 +147,42 @@ urlpatterns = router.urls + [
         ),
         name="course-module-detail",
     ),
+    # ModuleViewSet is mounted by explicit method maps rather than a router,
+    # so its @action routes need declaring by hand or they are unreachable.
+    path(
+        "courses/<uuid:course_pk>/modules/<uuid:pk>/lock/",
+        module_views.ModuleViewSet.as_view({"post": "lock"}),
+        name="course-module-lock",
+    ),
+    path(
+        "courses/<uuid:course_pk>/modules/<uuid:pk>/unlock/",
+        module_views.ModuleViewSet.as_view({"post": "unlock"}),
+        name="course-module-unlock",
+    ),
+    path(
+        "courses/<uuid:course_pk>/modules/<uuid:pk>/heartbeat/",
+        module_views.ModuleViewSet.as_view({"post": "heartbeat"}),
+        name="course-module-heartbeat",
+    ),
+    path(
+        "courses/<uuid:course_pk>/modules/<uuid:pk>/collaboration-lock/",
+        module_views.ModuleViewSet.as_view({"post": "collaboration_lock"}),
+        name="course-module-collaboration-lock",
+    ),
+    path(
+        "courses/<uuid:course_pk>/modules/<uuid:pk>/collaboration-unlock/",
+        module_views.ModuleViewSet.as_view({"post": "collaboration_unlock"}),
+        name="course-module-collaboration-unlock",
+    ),
     path(
         "courses/<uuid:course_pk>/modules/<uuid:module_pk>/lessons/",
         lesson_views.LessonViewSet.as_view({"get": "list", "post": "create"}),
         name="module-lesson-list",
+    ),
+    path(
+        "courses/<uuid:course_pk>/modules/<uuid:module_pk>/lessons/reorder/",
+        lesson_views.LessonViewSet.as_view({"patch": "reorder"}),
+        name="module-lesson-reorder",
     ),
     path(
         "courses/<uuid:course_pk>/modules/<uuid:module_pk>/lessons/<uuid:pk>/",
@@ -77,5 +210,87 @@ urlpatterns = router.urls + [
         "courses/<uuid:course_pk>/final-assessment/",
         assessment_views.CourseAssessmentView.as_view(),
         name="course-final-assessment",
+    ),
+    path(
+        "courses/<uuid:course_pk>/modules/<uuid:module_pk>/lessons/<uuid:lesson_pk>/content-blocks/",
+        lesson_sub_resource_views.LessonContentBlockViewSet.as_view(
+            {"get": "list", "post": "create"}
+        ),
+        name="lesson-content-block-list",
+    ),
+    path(
+        "courses/<uuid:course_pk>/modules/<uuid:module_pk>/lessons/<uuid:lesson_pk>/content-blocks/bulk/",
+        lesson_sub_resource_views.LessonContentBlockViewSet.as_view({"put": "bulk"}),
+        name="lesson-content-block-bulk",
+    ),
+    path(
+        "courses/<uuid:course_pk>/modules/<uuid:module_pk>/lessons/<uuid:lesson_pk>/content-blocks/<uuid:pk>/",
+        lesson_sub_resource_views.LessonContentBlockViewSet.as_view(
+            {
+                "get": "retrieve",
+                "put": "update",
+                "patch": "partial_update",
+                "delete": "destroy",
+            }
+        ),
+        name="lesson-content-block-detail",
+    ),
+    path(
+        "courses/<uuid:course_pk>/modules/<uuid:module_pk>/lessons/<uuid:lesson_pk>/images/",
+        lesson_sub_resource_views.LessonImageViewSet.as_view(
+            {"get": "list", "post": "create"}
+        ),
+        name="lesson-image-list",
+    ),
+    path(
+        "courses/<uuid:course_pk>/modules/<uuid:module_pk>/lessons/<uuid:lesson_pk>/images/<uuid:pk>/",
+        lesson_sub_resource_views.LessonImageViewSet.as_view(
+            {
+                "get": "retrieve",
+                "put": "update",
+                "patch": "partial_update",
+                "delete": "destroy",
+            }
+        ),
+        name="lesson-image-detail",
+    ),
+    path(
+        "courses/<uuid:course_pk>/modules/<uuid:module_pk>/lessons/<uuid:lesson_pk>/requirements/",
+        lesson_sub_resource_views.LessonRequirementViewSet.as_view(
+            {"get": "list", "post": "create"}
+        ),
+        name="lesson-requirement-list",
+    ),
+    path(
+        "courses/<uuid:course_pk>/modules/<uuid:module_pk>/lessons/<uuid:lesson_pk>/requirements/<uuid:pk>/",
+        lesson_sub_resource_views.LessonRequirementViewSet.as_view(
+            {
+                "get": "retrieve",
+                "put": "update",
+                "patch": "partial_update",
+                "delete": "destroy",
+            }
+        ),
+        name="lesson-requirement-detail",
+    ),
+    path(
+        "courses/<uuid:course_pk>/thumbnail/",
+        course_thumbnail_views.CourseThumbnailView.as_view(),
+        name="course-thumbnail",
+    ),
+    path(
+        "admin/course-versions/",
+        AdminCourseVersionListView.as_view(),
+        name="admin-course-version-list",
+    ),
+    path(
+        "admin/course-versions/<uuid:pk>/",
+        AdminCourseVersionDetailView.as_view(),
+        name="admin-course-version-detail",
+    ),
+    path(
+        "admin/course-versions/migrations/",
+        CourseVersionMigrationView.as_view(),
+        name="admin-course-version-migration",
     ),
 ]

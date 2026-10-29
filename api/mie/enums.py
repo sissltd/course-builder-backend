@@ -1,0 +1,135 @@
+from django.db import models
+
+
+class DeveloperAccountStatus(models.TextChoices):
+    """Lifecycle of an external developer account.
+
+    PENDING  -> registered with email + a first webhook URL, awaiting superadmin
+                approval. No API key exists yet; every authenticated
+                endpoint rejects the account.
+    APPROVED -> API key issued (shown once at approval). Full access.
+    REJECTED -> terminal. The registration was denied; a new registration
+                with a different email is required.
+    SUSPENDED-> temporary. Data and queue are retained but keys are frozen;
+                a superadmin can return the account to APPROVED at any time.
+    """
+
+    PENDING = "PENDING", "Pending"
+    APPROVED = "APPROVED", "Approved"
+    REJECTED = "REJECTED", "Rejected"
+    SUSPENDED = "SUSPENDED", "Suspended"
+
+
+class MiePlanType(models.TextChoices):
+    """How payouts work for a developer's accepted submissions.
+
+    PAID_PER_SUBMISSION   - the developer is paid for each course produced
+                            from one of their ideas, when it passes QA (it
+                            carries its own video); approving the idea
+                            alone pays nothing.
+    BYPASS_PER_SUBMISSION - payout is skipped only for submissions the
+                            superadmin individually marks as bypassed.
+    BYPASS_ACCOUNT        - nothing from this developer ever pays out;
+                            the superadmin applies this when the creator
+                            will not be paid by agreement.
+    """
+
+    PAID_PER_SUBMISSION = "PAID_PER_SUBMISSION", "Paid Per Submission"
+    BYPASS_PER_SUBMISSION = "BYPASS_PER_SUBMISSION", "Bypass Per Submission"
+    BYPASS_ACCOUNT = "BYPASS_ACCOUNT", "Account Bypass"
+
+
+class MieSourceType(models.TextChoices):
+    """Who stands behind a developer account.
+
+    EXTERNAL - a third-party developer, self-registered or onboarded by a
+               superadmin. Every account that predates this field is one.
+    SYSTEM   - a platform-owned integration (the MIE crawler). Only the
+               provision_mie_system_account command creates one. It uses
+               the same public API as any developer, but it is a bot, so
+               the daily cap and the rejection circuit breaker bind it -
+               and never an EXTERNAL account.
+    """
+
+    EXTERNAL = "EXTERNAL", "External"
+    SYSTEM = "SYSTEM", "System"
+
+
+class SubmissionStatus(models.TextChoices):
+    """Every state a course idea submission can sit in.
+
+    All states appear in the queue surfaces; dedup short-circuits
+    (DUPLICATE_IN_QUEUE, DUPLICATE_EXISTING, PREVIOUSLY_REJECTED) are set
+    immediately at ingestion, before any human review. Decisions are not
+    terminal: a superadmin can flip APPROVED <-> REJECTED at any time,
+    which re-fires the matching webhook event.
+    """
+
+    PENDING_REVIEW = "PENDING_REVIEW", "Pending Review"
+    DUPLICATE_IN_QUEUE = "DUPLICATE_IN_QUEUE", "Duplicate In Queue"
+    DUPLICATE_EXISTING = "DUPLICATE_EXISTING", "Duplicate Existing"
+    PREVIOUSLY_REJECTED = "PREVIOUSLY_REJECTED", "Previously Rejected"
+    APPROVED = "APPROVED", "Approved"
+    REJECTED = "REJECTED", "Rejected"
+
+
+class WebhookEventType(models.TextChoices):
+    """Events pushed to a developer's webhook endpoints.
+
+    Fired immediately on every transition including automated dedup
+    short-circuits - devs never poll; the webhook is the only channel.
+    The SUBMISSION_* events track the idea; the COURSE_* events track the
+    course the developer pushed for an approved idea, through review and
+    publication.
+    """
+
+    SUBMISSION_QUEUED = "SUBMISSION_QUEUED", "Submission Queued"
+    SUBMISSION_DUPLICATE_IN_QUEUE = (
+        "SUBMISSION_DUPLICATE_IN_QUEUE",
+        "Submission Duplicate In Queue",
+    )
+    SUBMISSION_DUPLICATE_EXISTING = (
+        "SUBMISSION_DUPLICATE_EXISTING",
+        "Submission Duplicate Existing",
+    )
+    SUBMISSION_PREVIOUSLY_REJECTED = (
+        "SUBMISSION_PREVIOUSLY_REJECTED",
+        "Submission Previously Rejected",
+    )
+    SUBMISSION_APPROVED = "SUBMISSION_APPROVED", "Submission Approved"
+    SUBMISSION_REJECTED = "SUBMISSION_REJECTED", "Submission Rejected"
+    SUBMISSION_PAYOUT_BYPASS_UPDATED = (
+        "SUBMISSION_PAYOUT_BYPASS_UPDATED",
+        "Submission Payout Bypass Updated",
+    )
+    COURSE_SUBMITTED = "COURSE_SUBMITTED", "Course Submitted"
+    COURSE_TEXT_APPROVED = "COURSE_TEXT_APPROVED", "Course Text Approved"
+    COURSE_REVISION_REQUESTED = (
+        "COURSE_REVISION_REQUESTED",
+        "Course Revision Requested",
+    )
+    COURSE_PUBLISHED = "COURSE_PUBLISHED", "Course Published"
+    COURSE_VIDEO_ASSIGNED = "COURSE_VIDEO_ASSIGNED", "Course Video Assigned"
+    COURSE_REJECTED = "COURSE_REJECTED", "Course Rejected"
+    COURSE_ARCHIVED = "COURSE_ARCHIVED", "Course Archived"
+
+
+class AssignableVideoProducer(models.TextChoices):
+    """Who an admin can hand a developer course's video to once its text has
+    passed. The values are VideoProvider's, so the choice is stored as is."""
+
+    PRODUCTION_ENGINE = "PRODUCTION_ENGINE", "Production Engine"
+    DEVELOPER = "DEVELOPER", "Developer"
+
+
+WEBHOOK_ALL_EVENTS = "all"
+"""The token a developer sends in an endpoint's `events` to receive every
+event type, including ones added later."""
+
+
+class WebhookDeliveryStatus(models.TextChoices):
+    """Delivery bookkeeping for one outbound webhook attempt series."""
+
+    PENDING = "PENDING", "Pending"
+    DELIVERED = "DELIVERED", "Delivered"
+    FAILED = "FAILED", "Failed"

@@ -1,5 +1,8 @@
+from decimal import Decimal
+
 from rest_framework import serializers
 
+from api.platform.enums import KYCProvider, PaymentProcessors
 from api.platform.models import PlatformSettings
 
 
@@ -17,20 +20,32 @@ class PlatformSettingsSerializer(serializers.ModelSerializer):
             "course_lessons_per_module_max",
             "course_learning_objectives_min",
             "course_learning_objectives_max",
+            "lesson_learning_objectives_min",
+            "lesson_learning_objectives_max",
             "course_description_word_min",
             "course_description_word_max",
             "lesson_script_word_min",
             "lesson_script_word_max",
-            "lesson_quiz_questions_min",
-            "lesson_quiz_questions_max",
             "course_duration_min_minutes",
             "course_duration_max_minutes",
             "course_final_assessment_min_questions",
             "topic_reservation_expiry_days",
+            "draft_minimum_hold_hours",
+            "auto_flag_after_hours",
             "sla_amber_threshold_hours",
             "sla_red_threshold_hours",
-            "mfa_enrollment_grace_period_days",
             "updated_datetime",
+            "payment_processor",
+            "kyc_provider",
+            "liveness_threshold",
+            "withdrawal_require_verification",
+            "staged_review_flow_enabled",
+            "production_enabled",
+            "production_course_budget",
+            "production_min_caption_accuracy",
+            "production_max_av_drift_ms",
+            "production_visual_check_enabled",
+            "production_broll_per_lesson",
         ]
         read_only_fields = fields
 
@@ -78,6 +93,16 @@ class PlatformSettingsUpdateSerializer(serializers.Serializer):
         min_value=1,
         help_text="Most learning objectives a course may declare.",
     )
+    lesson_learning_objectives_min = serializers.IntegerField(
+        required=False,
+        min_value=1,
+        help_text="Fewest learning objectives each lesson must declare.",
+    )
+    lesson_learning_objectives_max = serializers.IntegerField(
+        required=False,
+        min_value=1,
+        help_text="Most learning objectives each lesson may declare.",
+    )
     course_description_word_min = serializers.IntegerField(
         required=False,
         min_value=1,
@@ -97,16 +122,6 @@ class PlatformSettingsUpdateSerializer(serializers.Serializer):
         required=False,
         min_value=1,
         help_text="Most words allowed in a lesson script.",
-    )
-    lesson_quiz_questions_min = serializers.IntegerField(
-        required=False,
-        min_value=1,
-        help_text="Fewest questions a lesson quiz must contain.",
-    )
-    lesson_quiz_questions_max = serializers.IntegerField(
-        required=False,
-        min_value=1,
-        help_text="Most questions a lesson quiz may contain.",
     )
     course_duration_min_minutes = serializers.IntegerField(
         required=False,
@@ -131,10 +146,97 @@ class PlatformSettingsUpdateSerializer(serializers.Serializer):
             "the topic returns to the pool."
         ),
     )
+    draft_minimum_hold_hours = serializers.IntegerField(
+        required=False,
+        min_value=0,
+        help_text=(
+            "Hours a course must sit as a draft before it can be submitted. "
+            "Counted from creation and never reset, so revisions resubmit "
+            "immediately. 0 disables the rule."
+        ),
+    )
+    auto_flag_after_hours = serializers.IntegerField(
+        required=False,
+        min_value=0,
+        help_text=(
+            "Hours a course may await a review decision before it is flagged "
+            "for admin attention. 0 disables flagging."
+        ),
+    )
     sla_amber_threshold_hours = serializers.IntegerField(required=False, min_value=1)
     sla_red_threshold_hours = serializers.IntegerField(required=False, min_value=1)
-    mfa_enrollment_grace_period_days = serializers.IntegerField(
-        required=False, min_value=0
+    payment_processor = serializers.ChoiceField(
+        required=False,
+        choices=PaymentProcessors.choices,
+        help_text="Which payment processor to use for creator payouts.",
+    )
+    kyc_provider = serializers.ChoiceField(
+        required=False,
+        choices=KYCProvider.choices,
+        help_text="Which KYC service provider to use for identity verification.",
+    )
+    liveness_threshold = serializers.IntegerField(
+        required=False,
+        min_value=0,
+        max_value=100,
+        help_text="Score (0 - 100) at or above which a 'real' liveness result passes.",
+    )
+    withdrawal_require_verification = serializers.BooleanField(
+        required=False,
+        help_text="Whether creators must complete identity verification before making withdrawals.",
+    )
+    staged_review_flow_enabled = serializers.BooleanField(
+        required=False,
+        help_text=(
+            "Switch course review to the staged flow (text first, video "
+            "second, resume at the rejecting seat). Refused with 409 while "
+            "any course is in review, awaiting video or revision, or "
+            "approved but unpublished."
+        ),
+    )
+
+    production_enabled = serializers.BooleanField(
+        required=False,
+        help_text=(
+            "Production Engine kill switch. Off: runs are created and quoted "
+            "but none starts, and a running one stops before its next step."
+        ),
+    )
+    production_course_budget = serializers.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        min_value=Decimal("0.00"),
+        required=False,
+        help_text=(
+            "Most the Production Engine may spend on one course, in USD. "
+            "Runs quoted above it are blocked before any spend."
+        ),
+    )
+    production_min_caption_accuracy = serializers.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        min_value=Decimal("0"),
+        max_value=Decimal("100"),
+        required=False,
+        help_text=(
+            "Lowest caption accuracy, in percent, a produced lesson may have "
+            "before it goes to review."
+        ),
+    )
+    production_max_av_drift_ms = serializers.IntegerField(
+        min_value=0,
+        required=False,
+        help_text="Largest audio/video length gap a produced lesson may have, in milliseconds.",
+    )
+    production_visual_check_enabled = serializers.BooleanField(
+        required=False,
+        help_text="Have a vision model check a frame of every scene before review.",
+    )
+    production_broll_per_lesson = serializers.IntegerField(
+        min_value=0,
+        max_value=5,
+        required=False,
+        help_text="Most faceless AI motion clips per lesson (0 = off). About $1.20 each, included in the quote.",
     )
 
     def validate(self, attrs):
@@ -168,6 +270,42 @@ class AdminOverviewWalletTotalsSerializer(serializers.Serializer):
     )
 
 
+class AdminTodayTilesSerializer(serializers.Serializer):
+    """The four headline tiles on the admin dashboard.
+
+    Change percentages are null when there is no prior period to compare
+    against - distinct from 0, which would claim flat performance.
+    """
+
+    courses_created_today = serializers.IntegerField()
+    courses_created_change_percent = serializers.DecimalField(
+        max_digits=8, decimal_places=2, allow_null=True,
+        help_text="Movement vs yesterday. Null when yesterday had none.",
+    )
+    published_last_24h = serializers.IntegerField()
+    published_total = serializers.IntegerField()
+    daily_cost = serializers.CharField(
+        allow_null=True, help_text="Today's spend as a decimal string; null if none."
+    )
+    daily_cost_change_percent = serializers.DecimalField(
+        max_digits=8, decimal_places=2, allow_null=True
+    )
+    avg_cost_per_course = serializers.CharField(
+        allow_null=True,
+        help_text="Lifetime spend over published courses; null without both.",
+    )
+
+
+class AdminProductionTrendPointSerializer(serializers.Serializer):
+    date = serializers.DateField()
+    count = serializers.IntegerField()
+
+
+class AdminCostTrendPointSerializer(serializers.Serializer):
+    date = serializers.DateField()
+    amount = serializers.CharField(help_text="Decimal as a string.")
+
+
 class AdminOverviewSerializer(serializers.Serializer):
     """Counts and totals backing the admin home screen.
 
@@ -188,10 +326,193 @@ class AdminOverviewSerializer(serializers.Serializer):
         child=serializers.IntegerField(),
         help_text="KYC submission counts keyed by KYCStatus.",
     )
+    financials_included = serializers.BooleanField(
+        help_text=(
+            "False for Limited Access callers: every money figure below is "
+            "null and should be hidden, not shown as zero."
+        )
+    )
     withdrawals = serializers.DictField(
         child=serializers.IntegerField(),
-        help_text="Withdrawal request counts keyed by WithdrawalRequestStatus.",
+        allow_null=True,
+        help_text="Withdrawal request counts keyed by WithdrawalRequestStatus. Null for Limited Access.",
     )
     wallet_totals = AdminOverviewWalletTotalsSerializer(
-        help_text="Platform-wide wallet money figures."
+        allow_null=True, help_text="Platform-wide wallet money figures. Null for Limited Access."
+    )
+    period = serializers.CharField(
+        help_text="Window the trend series cover, echoing the request."
+    )
+    today = AdminTodayTilesSerializer(
+        help_text="The dashboard's headline tiles with their period-on-period deltas."
+    )
+    production_trend = AdminProductionTrendPointSerializer(
+        many=True, help_text="Courses created per day, zero-filled, oldest first."
+    )
+    cost_trend = AdminCostTrendPointSerializer(
+        many=True,
+        allow_null=True,
+        help_text="Production spend per day, zero-filled, oldest first. Null for Limited Access.",
+    )
+
+
+class CreatorOverviewWalletSerializer(serializers.Serializer):
+    """The signed-in creator's own wallet figures on their overview."""
+
+    balance = serializers.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        help_text="Current wallet balance.",
+    )
+    currency = serializers.CharField(
+        help_text="ISO 4217 currency code of the wallet.",
+    )
+    total_earned = serializers.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        help_text="Lifetime total credited to this wallet via approved courses.",
+    )
+    pending_balance = serializers.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        help_text=(
+            "Sum of pending withdrawal debits - already deducted from the "
+            "balance, not yet settled."
+        ),
+    )
+
+
+class CreatorOverviewSerializer(serializers.Serializer):
+    """Counts and totals backing a creator's home screen.
+
+    Mirrors AdminOverviewSerializer's conventions: counts only (each figure
+    has its own endpoint behind it), every CourseStatus key always present
+    including zeroes, computed live per request.
+    """
+
+    courses = serializers.DictField(
+        child=serializers.IntegerField(),
+        help_text="Counts of the creator's own courses keyed by CourseStatus.",
+    )
+    wallet = CreatorOverviewWalletSerializer(
+        help_text="The creator's wallet balance and lifetime/pending money figures."
+    )
+    pending_invites = serializers.IntegerField(
+        help_text=(
+            "Collaboration invites addressed to this account's email that "
+            "are still pending and unexpired."
+        )
+    )
+
+
+class ReviewerMyDecisionsSerializer(serializers.Serializer):
+    """A reviewer's own decision counts."""
+
+    approved = serializers.IntegerField(
+        help_text="Lifetime count of courses this reviewer has approved.",
+    )
+    today = serializers.IntegerField(
+        help_text="Decisions this reviewer has recorded since local midnight.",
+    )
+
+
+class ReviewerOverviewSerializer(serializers.Serializer):
+    """Counts backing a reviewer's home screen.
+
+    `queue` is keyed by the two reviewable CourseStatus values and always
+    contains both, so tiles are stable. `my_decisions` summarizes the
+    reviewer's own ReviewAction history.
+    """
+
+    queue = serializers.DictField(
+        child=serializers.IntegerField(),
+        help_text="Courses awaiting review keyed by CourseStatus (SUBMITTED, IN_REVIEW).",
+    )
+    my_decisions = ReviewerMyDecisionsSerializer(
+        help_text="The reviewer's own approve/reject history summary."
+    )
+    courses_reviewed = serializers.IntegerField(
+        help_text="Lifetime decisions this reviewer has recorded (approve + reject)."
+    )
+    courses_in_queue = serializers.IntegerField(
+        help_text="Courses awaiting review across every reviewable state."
+    )
+    escalations_resolved = serializers.IntegerField(
+        help_text=(
+            "Appeals this reviewer has decided. An appeal is the platform's "
+            "escalation path for a disputed rejection."
+        )
+    )
+
+
+class ReviewerActivityPointSerializer(serializers.Serializer):
+    """One day on the Activity Overview chart."""
+
+    date = serializers.DateField(help_text="The local calendar day, ISO-8601.")
+    escalated = serializers.IntegerField(
+        help_text="Appeals this reviewer decided on this day."
+    )
+    approved = serializers.IntegerField(
+        help_text="Courses this reviewer approved on this day."
+    )
+    rejected = serializers.IntegerField(
+        help_text="Courses this reviewer rejected on this day."
+    )
+
+
+class ReviewerActivityTotalsSerializer(serializers.Serializer):
+    """Series totals across the whole selected period."""
+
+    escalated = serializers.IntegerField()
+    approved = serializers.IntegerField()
+    rejected = serializers.IntegerField()
+
+
+class ReviewerActivityOverviewSerializer(serializers.Serializer):
+    """The reviewer dashboard's Activity Overview chart.
+
+    `series` carries one entry per day in range including zeroes, so the
+    chart has a stable x-axis and the client never fills gaps itself.
+    """
+
+    period = serializers.CharField(help_text="The range this series covers.")
+    start_date = serializers.DateField(help_text="First day in the series, inclusive.")
+    end_date = serializers.DateField(help_text="Last day in the series, inclusive.")
+    totals = ReviewerActivityTotalsSerializer(
+        help_text="Sum of each series across the period."
+    )
+    series = ReviewerActivityPointSerializer(
+        many=True, help_text="One entry per day, oldest first, zeroes included."
+    )
+
+
+class TestEmailSerializer(serializers.Serializer):
+    """Optional overrides for the `POST /api/v1/test-email/` smoke test.
+
+    All fields are optional so the endpoint still works with an empty body,
+    and the recipient defaults to the authenticated user's own address.
+    """
+
+    email = serializers.EmailField(
+        required=False,
+        allow_blank=True,
+        help_text=(
+            "Recipient address for the test message. Defaults to the "
+            "authenticated user's email when omitted."
+        ),
+    )
+    subject = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=150,
+        help_text="Subject line for the test message. Defaults to a standard probe subject.",
+    )
+    message = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=2000,
+        help_text=(
+            "Plain-text body of the test message. Defaults to a standard "
+            "probe message when omitted."
+        ),
     )

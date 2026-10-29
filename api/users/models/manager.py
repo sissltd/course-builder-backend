@@ -31,8 +31,7 @@ class CustomUserManager(BaseUserManager):
         Also assigns `role=SUPER_ADMIN` and `status=ACTIVE`, which the scaffold
         version did not. Without them `createsuperuser` produced an account
         that was `is_superuser=True` - and therefore passed every check in
-        api.users.permissions, since HasRole and require_role both bypass on
-        that flag - while carrying the default COURSE_CREATOR role. The result
+        permission_service, which grants superusers every permission - while carrying the default COURSE_CREATOR role. The result
         was a full-authority account that reported itself as a public creator,
         was routed to the creator dashboard at login, and was not covered by
         the partial unique index (which only constrains rows whose role is

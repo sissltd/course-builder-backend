@@ -11,19 +11,31 @@ from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 
 from api.collaborators.services import collaborator_service
-from api.courses.enums import CourseStatus
 from api.courses.models import Course, Module
 from api.courses.serializers import ModuleSerializer, ModuleWriteSerializer
-from api.courses.services import module_lock_service
-from api.users.permissions import IsCourseCreatorRole
+from api.courses.serializers.ordering_serializer import ReorderSerializer
+from api.courses.services import module_lock_service, ordering_service
+from api.authorization import codenames
+from api.authorization.permissions import Perm
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 
 _MODULE_EXAMPLE = {
     "id": "b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e",
     "title": "Getting Started",
     "order": 1,
+    "description": "Set up the tools needed to begin the course.",
+    "learning_objectives": [
+        "Install the required development tools",
+        "Run a first program",
+    ],
     "lessons": [],
     "assessment": None,
+    "locked_by": None,
+    "lock_expires_at": None,
+    "is_locked": False,
+    "collaboration_locked_by": None,
+    "collaboration_locked_at": None,
+    "collaboration_locked": False,
 }
 
 _COURSE_PK_PARAMETER = OpenApiParameter(
@@ -43,7 +55,29 @@ _DRAFT_ONLY_400 = OpenApiResponse(
                     {
                         "type": "validation_error",
                         "code": "invalid",
-                        "message": "Modules can only be edited while the course is Draft.",
+                        "message": "Modules can only be edited while the course is Draft or Needs Revision.",
+                        "field_name": None,
+                    }
+                ]
+            },
+        ),
+    ],
+)
+
+_MODULE_LOCKED_423 = OpenApiResponse(
+    description=(
+        "The module is currently locked for editing by another user "
+        "(see `POST .../modules/{id}/lock/`)."
+    ),
+    examples=[
+        OpenApiExample(
+            name="Module locked",
+            value={
+                "errors": [
+                    {
+                        "type": "client_error",
+                        "code": "locked",
+                        "message": "This module is currently being edited by another user.",
                         "field_name": None,
                     }
                 ]
@@ -61,7 +95,7 @@ _DRAFT_ONLY_400 = OpenApiResponse(
             "module-level assessment nested inline. Backs the course "
             "builder's module list.\n\n"
             "Called when the course builder loads a course.\n\n"
-            "**Auth:** Course Creator/Writer with access to the course "
+            "**Auth:** The `courses.create` permission (Course Creator and Writer by default), with access to the course "
             "(creator or collaborator).\n\n"
             "**Prerequisites:** None beyond having access to the course.\n\n"
             "**Important:** Matches ModuleViewSet's convention across the "
@@ -69,7 +103,7 @@ _DRAFT_ONLY_400 = OpenApiResponse(
             "- it returns an empty result set instead, since `list` doesn't "
             "call `get_object()`."
         ),
-        tags=["Courses — Modules"],
+        tags=["Creator — Modules"],
         parameters=[_COURSE_PK_PARAMETER],
         responses={
             200: OpenApiResponse(
@@ -87,12 +121,12 @@ _DRAFT_ONLY_400 = OpenApiResponse(
         description=(
             "Returns a single module with its lessons and assessment.\n\n"
             "Called when expanding a module in the course builder.\n\n"
-            "**Auth:** Course Creator/Writer with access to the course.\n\n"
+            "**Auth:** The `courses.create` permission (Course Creator and Writer by default), with access to the course.\n\n"
             "**Prerequisites:** The module must exist under the given "
             "course.\n\n"
             "**Important:** None."
         ),
-        tags=["Courses — Modules"],
+        tags=["Creator — Modules"],
         parameters=[_COURSE_PK_PARAMETER],
         responses={
             200: OpenApiResponse(
@@ -113,20 +147,28 @@ _DRAFT_ONLY_400 = OpenApiResponse(
             "response so the client can immediately create lessons "
             "underneath it without a second round-trip.\n\n"
             "Called from the 'Add module' action in the course builder.\n\n"
-            "**Auth:** Course Creator/Writer with access to the course.\n\n"
+            "**Auth:** The `courses.create` permission (Course Creator and Writer by default), with access to the course.\n\n"
             "**Prerequisites:** The course must be `DRAFT`.\n\n"
             "**Important:** Adding a module to a non-Draft course returns "
             "400 - the whole structural tree is frozen once a course leaves "
             "Draft."
         ),
-        tags=["Courses — Modules"],
+        tags=["Creator — Modules"],
         parameters=[_COURSE_PK_PARAMETER],
         request=ModuleWriteSerializer,
         examples=[
             OpenApiExample(
                 name="Sample Request",
                 request_only=True,
-                value={"title": "Getting Started", "order": 1},
+                value={
+                    "title": "Getting Started",
+                    "order": 1,
+                    "description": "Set up the tools needed to begin the course.",
+                    "learning_objectives": [
+                        "Install the required development tools",
+                        "Run a first program",
+                    ],
+                },
             ),
         ],
         responses={
@@ -145,13 +187,16 @@ _DRAFT_ONLY_400 = OpenApiResponse(
     update=extend_schema(
         summary="Replace a module",
         description=(
-            "Overwrites a module's title/order. Send the full object.\n\n"
+            "Overwrites a module's title, order, description, and learning "
+            "objectives. Send the full object.\n\n"
             "Called from the module edit form.\n\n"
-            "**Auth:** Course Creator/Writer with access to the course.\n\n"
+            "**Auth:** The `courses.create` permission (Course Creator and Writer by default), with access to the course.\n\n"
             "**Prerequisites:** The parent course must be `DRAFT`.\n\n"
-            "**Important:** None."
+            "**Important:** Returns 423 if the module is currently locked "
+            "by another user - acquire the lock first via "
+            "`POST .../lock/`."
         ),
-        tags=["Courses — Modules"],
+        tags=["Creator — Modules"],
         parameters=[_COURSE_PK_PARAMETER],
         request=ModuleWriteSerializer,
         responses={
@@ -161,6 +206,7 @@ _DRAFT_ONLY_400 = OpenApiResponse(
                 examples=[OpenApiExample(name="Success", value=_MODULE_EXAMPLE)],
             ),
             400: _DRAFT_ONLY_400,
+            423: _MODULE_LOCKED_423,
             **STANDARD_ERROR_RESPONSES["auth"],
             **STANDARD_ERROR_RESPONSES["permission"],
             **STANDARD_ERROR_RESPONSES["not_found"],
@@ -174,11 +220,13 @@ _DRAFT_ONLY_400 = OpenApiResponse(
             "PATCHing `order`.\n\n"
             "Called from the module edit form and drag-to-reorder in the "
             "course builder.\n\n"
-            "**Auth:** Course Creator/Writer with access to the course.\n\n"
+            "**Auth:** The `courses.create` permission (Course Creator and Writer by default), with access to the course.\n\n"
             "**Prerequisites:** The parent course must be `DRAFT`.\n\n"
-            "**Important:** None."
+            "**Important:** Returns 423 if the module is currently locked "
+            "by another user - acquire the lock first via "
+            "`POST .../lock/`."
         ),
-        tags=["Courses — Modules"],
+        tags=["Creator — Modules"],
         parameters=[_COURSE_PK_PARAMETER],
         request=ModuleWriteSerializer,
         examples=[
@@ -195,6 +243,7 @@ _DRAFT_ONLY_400 = OpenApiResponse(
                 examples=[OpenApiExample(name="Success", value=_MODULE_EXAMPLE)],
             ),
             400: _DRAFT_ONLY_400,
+            423: _MODULE_LOCKED_423,
             **STANDARD_ERROR_RESPONSES["auth"],
             **STANDARD_ERROR_RESPONSES["permission"],
             **STANDARD_ERROR_RESPONSES["not_found"],
@@ -208,11 +257,11 @@ _DRAFT_ONLY_400 = OpenApiResponse(
             "assessments. There is no undo.\n\n"
             "Called from the delete action on a module in the course "
             "builder.\n\n"
-            "**Auth:** Course Creator/Writer with access to the course.\n\n"
+            "**Auth:** The `courses.create` permission (Course Creator and Writer by default), with access to the course.\n\n"
             "**Prerequisites:** The parent course must be `DRAFT`.\n\n"
             "**Important:** None."
         ),
-        tags=["Courses — Modules"],
+        tags=["Creator — Modules"],
         parameters=[_COURSE_PK_PARAMETER],
         responses={
             204: OpenApiResponse(description="Module deleted."),
@@ -258,7 +307,7 @@ class ModuleViewSet(ModelViewSet):
     modules from the course.
     """
 
-    permission_classes = [IsCourseCreatorRole]
+    permission_classes = [Perm(codenames.COURSES_CREATE)]
 
     def get_queryset(self):
         if getattr(self, "swagger_fake_view", False):
@@ -289,33 +338,121 @@ class ModuleViewSet(ModelViewSet):
                 "remove modules."
             )
 
+    def _validate_unique_order(self, *, course: Course, order: int, exclude_pk=None):
+        siblings = Module.objects.filter(course=course, order=order)
+        if exclude_pk is not None:
+            siblings = siblings.exclude(pk=exclude_pk)
+        if siblings.exists():
+            raise exceptions.ValidationError(
+                {
+                    "order": (
+                        "A module with this order already exists for this course. "
+                        "Use a different order or reorder the existing modules."
+                    )
+                }
+            )
+
     def perform_create(self, serializer):
         course = self._get_course()
         self._require_manage_access(course)
-        if course.status != CourseStatus.DRAFT:
+        if not course.is_editable:
             raise exceptions.ValidationError(
-                "Modules can only be added while the course is Draft."
+                "Modules can only be added while the course is Draft or Needs Revision."
             )
+        self._validate_unique_order(
+            course=course, order=serializer.validated_data["order"]
+        )
         serializer.save(
             course=course, created_by=self.request.user, updated_by=self.request.user
         )
 
     def perform_update(self, serializer):
         module = serializer.instance
-        if module.course.status != CourseStatus.DRAFT:
+        if not module.course.is_editable:
             raise exceptions.ValidationError(
-                "Modules can only be edited while the course is Draft."
+                "Modules can only be edited while the course is Draft or Needs Revision."
             )
         module_lock_service.check_not_locked(module=module, user=self.request.user)
+        if "order" in serializer.validated_data:
+            self._validate_unique_order(
+                course=module.course,
+                order=serializer.validated_data["order"],
+                exclude_pk=module.pk,
+            )
         serializer.save(updated_by=self.request.user)
 
     def perform_destroy(self, instance):
         self._require_manage_access(instance.course)
-        if instance.course.status != CourseStatus.DRAFT:
+        if not instance.course.is_editable:
             raise exceptions.ValidationError(
-                "Modules can only be deleted while the course is Draft."
+                "Modules can only be deleted while the course is Draft or Needs Revision."
             )
+        module_lock_service.check_not_locked(module=instance, user=self.request.user)
         instance.delete()
+
+    @extend_schema(
+        summary="Reorder a course's modules",
+        description=(
+            "Applies a new order to every module in the course in one "
+            "request, for the builder's drag-and-drop outline.\n\n"
+            "Call this once when a drag gesture settles, instead of "
+            "PATCHing each module individually.\n\n"
+            "**Auth:** The `courses.create` permission (Course Creator and Writer by default), as the course creator or an Admin collaborator.\n\n"
+            "**Prerequisites:** The course must be Draft.\n\n"
+            "**Important:** The payload must list **every** module in the "
+            "course, not just the ones that moved \u2014 a partial list "
+            "returns 400 naming the missing ids. Order values must be "
+            "distinct. The whole reorder is one transaction: it either "
+            "applies completely or not at all."
+        ),
+        tags=["Creator — Modules"],
+        parameters=[_COURSE_PK_PARAMETER],
+        request=ReorderSerializer,
+        responses={
+            200: OpenApiResponse(
+                response=ModuleSerializer(many=True),
+                description="The course's modules in their new order.",
+            ),
+            400: OpenApiResponse(
+                description=(
+                    "Incomplete list, unknown or duplicate ids, duplicate "
+                    "order values, or the course is not Draft."
+                )
+            ),
+            423: OpenApiResponse(
+                description="A module in this course is locked by another user."
+            ),
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
+            **STANDARD_ERROR_RESPONSES["not_found"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
+    @action(detail=False, methods=["patch"])
+    def reorder(self, request, *args, **kwargs):
+        course = self._get_course()
+        self._require_manage_access(course)
+        if not course.is_editable:
+            raise exceptions.ValidationError(
+                "Modules can only be reordered while the course is Draft or Needs Revision."
+            )
+
+        serializer = ReorderSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        queryset = Module.objects.filter(course=course)
+        # perform_update refuses to touch a module someone else holds, so
+        # the bulk path must too - otherwise reorder is a way around the
+        # lock.
+        for module in queryset.select_related("locked_by"):
+            module_lock_service.check_not_locked(module=module, user=request.user)
+
+        modules = ordering_service.reorder(
+            queryset=queryset,
+            items=serializer.validated_data["order"],
+            actor=request.user,
+        )
+        return Response(ModuleSerializer(modules, many=True).data)
 
     @extend_schema(
         summary="Acquire the edit lock on a module",
@@ -324,11 +461,11 @@ class ModuleViewSet(ModelViewSet):
             "short-TTL edit lock on the module, so two collaborators don't "
             "clobber each other's changes (SCCS PRD Section 14). This is a "
             "simple REST lock with a heartbeat, not real-time presence.\n\n"
-            "**Auth:** Anyone with access to the module.\n\n"
+            "**Auth:** The `courses.create` permission (Course Creator and Writer by default), with access to the module.\n\n"
             "**Important:** Returns 423 Locked if someone else currently "
             "holds an unexpired lock."
         ),
-        tags=["Courses — Modules"],
+        tags=["Creator — Modules"],
         parameters=[_COURSE_PK_PARAMETER],
         request=None,
         responses={
@@ -351,10 +488,10 @@ class ModuleViewSet(ModelViewSet):
         description=(
             "Releases the caller's edit lock on the module, letting someone "
             "else acquire it immediately.\n\n"
-            "**Auth:** Anyone with access to the module.\n\n"
+            "**Auth:** The `courses.create` permission (Course Creator and Writer by default), with access to the module.\n\n"
             "**Important:** No-op if the module isn't currently locked."
         ),
-        tags=["Courses — Modules"],
+        tags=["Creator — Modules"],
         parameters=[_COURSE_PK_PARAMETER],
         request=None,
         responses={
@@ -377,11 +514,11 @@ class ModuleViewSet(ModelViewSet):
         description=(
             "Extends the caller's existing edit lock, called periodically "
             "while actively editing so the lock doesn't expire mid-edit.\n\n"
-            "**Auth:** Anyone with access to the module.\n\n"
+            "**Auth:** The `courses.create` permission (Course Creator and Writer by default), with access to the module.\n\n"
             "**Important:** Returns 423 Locked if the caller doesn't "
             "currently hold an active lock (expired, or never acquired)."
         ),
-        tags=["Courses — Modules"],
+        tags=["Creator — Modules"],
         parameters=[_COURSE_PK_PARAMETER],
         request=None,
         responses={
@@ -396,5 +533,72 @@ class ModuleViewSet(ModelViewSet):
     def heartbeat(self, request, *args, **kwargs):
         module = module_lock_service.heartbeat_lock(
             module=self.get_object(), user=request.user
+        )
+        return Response(ModuleSerializer(module).data)
+
+    @extend_schema(
+        summary="Lock a module for collaborators",
+        description=(
+            "Persistently prevents collaborators from editing this module "
+            "while leaving it readable. The course creator can continue to "
+            "edit the module and can unlock it later. This is separate from "
+            "the short-TTL editor lock used for concurrent editing.\n\n"
+            "**Auth:** The course creator only.\n\n"
+            "**Prerequisites:** The parent course must be Draft.\n\n"
+            "**Important:** The operation is idempotent and the persistent "
+            "lock does not expire or require a heartbeat."
+        ),
+        tags=["Creator — Modules"],
+        parameters=[_COURSE_PK_PARAMETER],
+        request=None,
+        responses={
+            200: OpenApiResponse(response=ModuleSerializer),
+            400: _DRAFT_ONLY_400,
+            403: OpenApiResponse(description="Only the course creator may manage this lock."),
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["not_found"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
+    @action(detail=True, methods=["post"], url_path="collaboration-lock")
+    def collaboration_lock(self, request, *args, **kwargs):
+        module = self.get_object()
+        if not module.course.is_editable:
+            raise exceptions.ValidationError(
+                "Modules can only be locked while the course is Draft or Needs Revision."
+            )
+        module = module_lock_service.acquire_collaboration_lock(
+            module=module, user=request.user
+        )
+        return Response(ModuleSerializer(module).data)
+
+    @extend_schema(
+        summary="Unlock a module for collaborators",
+        description=(
+            "Removes the persistent collaborator editing freeze from a module.\n\n"
+            "**Auth:** The course creator only.\n\n"
+            "**Prerequisites:** The parent course must be Draft."
+        ),
+        tags=["Creator — Modules"],
+        parameters=[_COURSE_PK_PARAMETER],
+        request=None,
+        responses={
+            200: OpenApiResponse(response=ModuleSerializer),
+            400: _DRAFT_ONLY_400,
+            403: OpenApiResponse(description="Only the course creator may manage this lock."),
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["not_found"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
+    @action(detail=True, methods=["post"], url_path="collaboration-unlock")
+    def collaboration_unlock(self, request, *args, **kwargs):
+        module = self.get_object()
+        if not module.course.is_editable:
+            raise exceptions.ValidationError(
+                "Modules can only be unlocked while the course is Draft or Needs Revision."
+            )
+        module = module_lock_service.release_collaboration_lock(
+            module=module, user=request.user
         )
         return Response(ModuleSerializer(module).data)

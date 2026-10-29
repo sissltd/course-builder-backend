@@ -36,8 +36,12 @@ class KYCVerification(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
     )
     id_number = models.CharField(
         verbose_name=_("ID Number"),
-        max_length=64,
-        help_text=_("The identity document's number, as entered by the user."),
+        max_length=255,
+        help_text=_("The identity document's number, as entered by the user.--will be stored encrypted."),
+    )
+    date_of_birth = models.DateField(
+        verbose_name=_("Date of Birth"),
+        help_text=_("The user's date of birth as provided in the KYC submission."),
     )
     status = models.CharField(
         verbose_name=_("Status"),
@@ -64,6 +68,35 @@ class KYCVerification(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
     )
     reviewed_at = models.DateTimeField(
         verbose_name=_("Reviewed At"), null=True, blank=True
+    )
+    kyc_request_status = models.CharField(
+        verbose_name=_("KYC Request Status"),
+        max_length=20,
+        blank=True,
+        default="",
+        help_text=_("Status returned by the KYC request for this submission."),
+    )
+    kyc_provider = models.CharField(
+        verbose_name=_("KYC Provider"),
+        max_length=100,
+        blank=True,
+        default="",
+        help_text=_("The KYC provider used for this submission."),
+    )
+    kyc_entity_id = models.CharField(
+        verbose_name=_("KYC Entity ID"),
+        max_length=100,
+        blank=True,
+        default="",
+        help_text=_(
+            "The entity ID returned by the KYC provider for this submission. May be needed for future reference."
+        ),
+    )
+    kyc_failure_message = models.TextField(
+        verbose_name=_("KYC Failure Message"),
+        blank=True,
+        default="",
+        help_text=_("Failure message returned by the KYC provider for this submission, if any."),
     )
 
     class Meta:

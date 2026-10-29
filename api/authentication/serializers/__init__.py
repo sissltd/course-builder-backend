@@ -4,6 +4,7 @@ from .change_email_serializer import (
 )
 from .change_password_serializer import ChangePasswordSerializer
 from .forgot_password_serializer import ForgotPasswordSerializer
+from .google_auth_serializer import GoogleLoginSerializer, GoogleSignupSerializer
 from .login_serializer import LoginSerializer
 from .logout_serializer import LogoutSerializer
 from .mfa_serializers import (
@@ -20,6 +21,7 @@ from .staff_invitation_serializer import (
     AcceptStaffInvitationSerializer,
     StaffInvitationSerializer,
     StaffMemberSerializer,
+    StaffDetailSerializer,
 )
 from .superadmin_bootstrap_serializer import SuperAdminBootstrapSerializer
 from .token_refresh_serializer import TokenRefreshSerializer
@@ -31,6 +33,8 @@ __all__ = [
     "ChangeEmailRequestSerializer",
     "ChangePasswordSerializer",
     "ForgotPasswordSerializer",
+    "GoogleLoginSerializer",
+    "GoogleSignupSerializer",
     "LoginSerializer",
     "LogoutSerializer",
     "MFACodeSerializer",
@@ -42,6 +46,7 @@ __all__ = [
     "SignupSerializer",
     "StaffInvitationSerializer",
     "StaffMemberSerializer",
+    "StaffDetailSerializer",
     "SuperAdminBootstrapSerializer",
     "TokenRefreshSerializer",
     "UserSessionSerializer",

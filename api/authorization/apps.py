@@ -5,3 +5,17 @@ from django.apps import AppConfig
 class AuthorizationConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
     name = "api.authorization"
+
+    def ready(self):
+        from django.core.signals import request_finished, request_started
+
+        from api.authorization.services import permission_service
+
+        # Permissions are memoised for exactly one request; see permission_service.
+        request_started.connect(
+            permission_service.open_request_memo, dispatch_uid="rbac_open_request_memo"
+        )
+        request_finished.connect(
+            permission_service.close_request_memo,
+            dispatch_uid="rbac_close_request_memo",
+        )

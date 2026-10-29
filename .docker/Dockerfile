@@ -20,7 +20,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     DJANGO_SETTINGS_MODULE=config.settings
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends gosu \
+    && apt-get install -y --no-install-recommends gosu ffmpeg fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd -r appuser && useradd -r -g appuser -d /app -s /sbin/nologin appuser
 
@@ -40,4 +40,4 @@ EXPOSE 8000
 
 ENTRYPOINT ["/bin/sh", "/app/.docker/entrypoint.sh"]
 
-CMD ["gosu", "appuser", "gunicorn", "config.wsgi:application", "--config", "gunicorn.conf.py"]
+CMD ["gosu", "appuser", "daphne", "-b", "0.0.0.0", "-p", "8000", "config.asgi:application"]

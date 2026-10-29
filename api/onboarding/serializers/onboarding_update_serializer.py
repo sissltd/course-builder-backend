@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
-from api.categories.enums import CategoryStatus
-from api.categories.models import Category
+from api.catalog.enums import CategoryStatus
+from api.catalog.models import Category
 from api.onboarding.enums import ExpertiseArea, MonthlyCourseCapacity, VideoComfortLevel
 
 

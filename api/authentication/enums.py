@@ -1,6 +1,12 @@
 from django.db import models
 
 
+class ExternalIdentityProvider(models.TextChoices):
+    """Supported external identity providers."""
+
+    GOOGLE = "GOOGLE", "Google"
+
+
 class TokenPurpose(models.TextChoices):
     """What an email verification token is authorizing.
 

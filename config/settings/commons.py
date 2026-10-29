@@ -11,7 +11,9 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
+import sys
 from pathlib import Path
+
 from decouple import Csv, config
 
 
@@ -35,7 +37,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 SECRET_KEY = config("SECRET_KEY")
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = config("DEBUG", cast=env_bool, default=True)
+DEBUG = config("DEBUG", cast=env_bool, default=False)
 
 ALLOWED_HOSTS = config(
     "ALLOWED_HOSTS",
@@ -63,6 +65,7 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = "config.wsgi.application"
+ASGI_APPLICATION = "config.asgi.application"
 
 
 # Database
@@ -119,15 +122,100 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 AUTH_USER_MODEL = "users.User"
 
+# Course generation is provider-selected so domain services never depend on a
+# vendor-specific model identifier. Provider storage is disabled by the adapter.
+COURSE_AI_PROVIDER = config("COURSE_AI_PROVIDER", default="openai")
+OPENAI_API_KEY = config("OPENAI_API_KEY", default="")
+OPENAI_TEXT_MODEL = config("OPENAI_TEXT_MODEL", default="")
+OPENAI_IMAGE_MODEL = config("OPENAI_IMAGE_MODEL", default="")
+# Self-imposed ceiling on outgoing AI-provider calls per rolling minute. Calls
+# beyond the budget are refused locally (and retried by the worker) instead of
+# burning provider quota into hard 429s. Set to 0 to disable the limiter.
+COURSE_AI_CALLS_PER_MINUTE = config("COURSE_AI_CALLS_PER_MINUTE", default=20, cast=int)
+
+# Production Engine text pricing, USD per million tokens, for the configured
+# OPENAI_TEXT_MODEL. Used to record what each storyboard call cost; set them
+# to the model's list price when the model changes.
+PRODUCTION_TEXT_INPUT_USD_PER_MTOK = config(
+    "PRODUCTION_TEXT_INPUT_USD_PER_MTOK", default="5.00"
+)
+PRODUCTION_TEXT_OUTPUT_USD_PER_MTOK = config(
+    "PRODUCTION_TEXT_OUTPUT_USD_PER_MTOK", default="30.00"
+)
+
+# Production Engine narration: English stock voices only. ElevenLabs is the
+# primary (its timestamps time the captions exactly), Google Chirp 3 HD the
+# fallback. A voice with no API key is skipped; with neither, runs fail with
+# a clear reason. Prices are list prices, used to record each call's cost.
+ELEVENLABS_API_KEY = config("ELEVENLABS_API_KEY", default="")
+ELEVENLABS_VOICE_ID = config("ELEVENLABS_VOICE_ID", default="JBFqnCBsd6RMkjVDRZzb")
+ELEVENLABS_MODEL_ID = config("ELEVENLABS_MODEL_ID", default="eleven_multilingual_v2")
+GOOGLE_TTS_API_KEY = config("GOOGLE_TTS_API_KEY", default="")
+GOOGLE_TTS_VOICE = config("GOOGLE_TTS_VOICE", default="en-US-Chirp3-HD-Charon")
+PRODUCTION_VOICE_USD_PER_1K_CHARS = config("PRODUCTION_VOICE_USD_PER_1K_CHARS", default="0.10")
+PRODUCTION_FALLBACK_VOICE_USD_PER_1M_CHARS = config(
+    "PRODUCTION_FALLBACK_VOICE_USD_PER_1M_CHARS", default="30.00"
+)
+# Scene illustrations (OPENAI_IMAGE_MODEL) and the caption-accuracy check's
+# transcription, per call.
+PRODUCTION_IMAGE_USD_PER_IMAGE = config("PRODUCTION_IMAGE_USD_PER_IMAGE", default="0.06")
+PRODUCTION_TRANSCRIBE_MODEL = config("PRODUCTION_TRANSCRIBE_MODEL", default="gpt-4o-mini-transcribe")
+PRODUCTION_TRANSCRIBE_USD_PER_MINUTE = config("PRODUCTION_TRANSCRIBE_USD_PER_MINUTE", default="0.003")
+# AI b-roll: faceless motion clips from Veo (Gemini API). Used only when
+# PlatformSettings.production_broll_per_lesson is above 0 and a key is set;
+# without one, b-roll scenes are drawn as stills.
+GEMINI_API_KEY = config("GEMINI_API_KEY", default="")
+VEO_MODEL = config("VEO_MODEL", default="veo-3.1-fast-generate-preview")
+PRODUCTION_BROLL_USD_PER_SECOND = config("PRODUCTION_BROLL_USD_PER_SECOND", default="0.15")
+# Evaluation tracing (Langfuse): every model and vendor call of a run, and
+# the quality scores of what it made. Off unless both keys are set. Course
+# text is sent, so use a self-hosted LANGFUSE_HOST to keep it in-house.
+LANGFUSE_HOST = config("LANGFUSE_HOST", default="https://cloud.langfuse.com")
+LANGFUSE_PUBLIC_KEY = config("LANGFUSE_PUBLIC_KEY", default="")
+LANGFUSE_SECRET_KEY = config("LANGFUSE_SECRET_KEY", default="")
+# Where the engine pushes a published course for SoluDesk (the SoluDesk
+# channel mapping shapes the payload). Unset, SoluDesk delivery fails with
+# that reason and the course can be pushed again once it is set.
+SOLUDESK_API_URL = config("SOLUDESK_API_URL", default="")
+SOLUDESK_API_KEY = config("SOLUDESK_API_KEY", default="")
+
 # Cache
 # Backs DRF's ScopedRateThrottle (see config/settings/drf.py) - a shared
 # cache is required so rate-limit counts stay consistent across gunicorn
 # worker processes/containers, unlike the per-process default LocMemCache.
 # Reuses the same Redis instance as Celery, on a different DB index so the
 # two never collide.
-CACHES = {
-    "default": {
-        "BACKEND": "django.core.cache.backends.redis.RedisCache",
-        "LOCATION": config("REDIS_URL", default="redis://redis:6379/1"),
+#
+# During tests we deliberately use LocMemCache instead of Redis.  With
+# --parallel (manage.py test) or -n auto (pytest-xdist) several
+# subprocesses each run a subset of tests; if they all share a single Redis
+# database, one process calling cache.clear() in setUp nukes the throttle
+# counters of every other process, causing spurious failures in
+# ThrottleApiTests and related classes.  LocMemCache is per-process by
+# default, so each subprocess gets an isolated cache and cache.clear()
+# cannot leak across them.
+#
+# Detected two ways: "test" in sys.argv covers `manage.py test`, which
+# puts that literal string in argv. Pytest never does - it puts "pytest"
+# (or "py.test") in argv[0] instead, or nothing test-shaped at all when
+# invoked as `python -m pytest`. "pytest" in sys.modules is true from the
+# moment the pytest process starts, well before Django settings are
+# imported, regardless of how it was invoked (bare `pytest`,
+# `python -m pytest`, or an IDE test runner) - so it's the reliable check
+# for "are we running under pytest" here.
+if "test" in sys.argv or "pytest" in sys.modules:
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        }
     }
-}
+    # Run Celery tasks synchronously in tests so mail.outbox assertions
+    # and on_commit callbacks behave identically to the old sync path.
+    CELERY_TASK_ALWAYS_EAGER = True
+else:
+    CACHES = {
+        "default": {
+            "BACKEND": "django_redis.cache.RedisCache",
+            "LOCATION": config("REDIS_URL", default="redis://redis:6379/1"),
+        }
+    }

@@ -17,6 +17,7 @@ from .reviewer_availability_serializer import (
 from .user_admin_serializer import (
     UserAdminSerializer,
     UserReinstateSerializer,
+    UserAssignTrackSerializer,
     UserSuspendSerializer,
 )
 from .user_serializer import MeSerializer, MeUpdateSerializer
@@ -35,5 +36,6 @@ __all__ = [
     "ReviewerAvailabilityUpdateSerializer",
     "UserAdminSerializer",
     "UserReinstateSerializer",
+    "UserAssignTrackSerializer",
     "UserSuspendSerializer",
 ]

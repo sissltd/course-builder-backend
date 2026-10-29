@@ -10,14 +10,6 @@ class SuperAdminBootstrapSerializer(serializers.Serializer):
     forces COURSE_CREATOR.
     """
 
-    bootstrap_token = serializers.CharField(
-        write_only=True,
-        help_text=(
-            "Shared secret matching the SUPERADMIN_BOOTSTRAP_TOKEN environment "
-            "variable on the server. Obtained from whoever administers the "
-            "deployment - it is never returned by any endpoint."
-        ),
-    )
     email = serializers.EmailField(
         help_text=(
             "Login email for the Super Admin account. Becomes the permanent "

@@ -1,6 +1,7 @@
 from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import OpenApiExample, OpenApiResponse, extend_schema
 from rest_framework.permissions import AllowAny
+from rest_framework.exceptions import NotFound
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
@@ -8,6 +9,7 @@ from rest_framework.views import APIView
 from api.authentication.serializers import (
     AcceptStaffInvitationSerializer,
     StaffInvitationSerializer,
+    StaffDetailSerializer,
     StaffMemberSerializer,
     SuperAdminBootstrapSerializer,
 )
@@ -19,7 +21,11 @@ from api.authentication.serializers.response_serializers import (
 from api.authentication.services.authentication_service import AuthenticationService
 from api.authentication.services.staff_service import StaffService
 from api.users.models import User
-from api.users.permissions import IsSuperAdminRole
+from api.authorization import codenames
+from api.authorization.permissions import Perm
+from api.authorization.models import Role
+from api.authorization.services import role_admin_service
+from api.authorization.services.role_registry import system_role_id
 from api.users.serializers import MeSerializer
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 
@@ -63,9 +69,13 @@ _ACTIVE_STAFF_EXAMPLE = {
 }
 
 
+# Public endpoint: no security requirement, so Swagger's padlock does
+# not attach a bearer token to it.
+@extend_schema(auth=[{}])
 class SuperAdminBootstrapView(APIView):
-    """Claim the platform's single Super Admin seat, once, using an env secret."""
+    """Claim the platform's single Super Admin seat in enabled environments."""
 
+    authentication_classes = []  # public: a stale token must not 401 this
     permission_classes = [AllowAny]
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = "superadmin_bootstrap"
@@ -79,33 +89,25 @@ class SuperAdminBootstrapView(APIView):
             "only role that can invite staff, and staff roles cannot be "
             "self-registered through any public route. Because no privileged "
             "account exists yet when this is called, the request is authorized "
-            "by a shared secret held in the server environment rather than by a "
-            "logged-in user.\n\n"
+            "by the deployment environment rather than by a logged-in user.\n\n"
             "This is the very first call made against a fresh deployment, "
             "before any other staff flow is usable: **bootstrap** → invite "
             "staff → staff accepts. The account returned is active immediately "
             "and can log in at `/api/v1/auth/login/` with the email and "
             "password supplied here.\n\n"
-            "**Auth:** Public — no bearer token. Authorized instead by the "
-            "`bootstrap_token` field, which must match the "
-            "`SUPERADMIN_BOOTSTRAP_TOKEN` environment variable on the server.\n\n"
-            "**Prerequisites:** `SUPERADMIN_BOOTSTRAP_TOKEN` must be set to a "
-            "non-empty value in the server environment. If it is unset the "
-            "endpoint is disabled and returns 403 — an unset secret never "
-            "means 'anyone may claim the seat'. No Super Admin may exist yet.\n\n"
+            "**Auth:** Public — no bearer token. This route is enabled only "
+            "for local, development, and staging-like environments. Production "
+            "must set `DJANGO_ENV=production`, which disables it. No Super Admin "
+            "may exist yet.\n\n"
             "**Important:** This works exactly once per deployment and is "
             "irreversible through the API. A second call returns 400, and the "
             "one-super-admin rule is enforced by a database constraint, so "
             "concurrent calls cannot both succeed. The account is created with "
             "Django's `is_staff` and `is_superuser` flags set, granting access "
             "to `/admin/` as well as the API. Rate limited to **5 requests "
-            "per hour per IP**, since the bootstrap token is a shared secret "
-            "rather than a credential and an unthrottled endpoint would let it "
-            "be guessed at network speed; a legitimate operator only ever "
-            "calls this once. Success returns the profile but **no tokens** — "
-            "log in at `/api/v1/auth/login/` afterwards to get a JWT pair. "
-            "Unset `SUPERADMIN_BOOTSTRAP_TOKEN` after bootstrapping so the "
-            "secret stops being a live credential in your environment."
+            "per hour per IP** because this is a public account-creation route. "
+            "Success returns the profile but **no tokens** — log in at "
+            "`/api/v1/auth/login/` afterwards to get a JWT pair."
         ),
         tags=["Auth — Super Admin Bootstrap"],
         request=SuperAdminBootstrapSerializer,
@@ -114,7 +116,6 @@ class SuperAdminBootstrapView(APIView):
                 name="Sample Request",
                 request_only=True,
                 value={
-                    "bootstrap_token": "9f2c1e7a4b8d6035ae19cf47b2d80a63",
                     "email": "ops@soludesks.com",
                     "password": "Kt7#pQz2Lm9v",
                     "first_name": "Amara",
@@ -167,24 +168,8 @@ class SuperAdminBootstrapView(APIView):
                 ],
             ),
             403: OpenApiResponse(
-                description=(
-                    "The bootstrap token was wrong, or bootstrapping is "
-                    "disabled because the server has no token configured."
-                ),
+                description="Bootstrapping is disabled in this environment.",
                 examples=[
-                    OpenApiExample(
-                        name="Invalid bootstrap token",
-                        value={
-                            "errors": [
-                                {
-                                    "type": "client_error",
-                                    "code": "permission_denied",
-                                    "message": "Invalid bootstrap token.",
-                                    "field_name": None,
-                                }
-                            ]
-                        },
-                    ),
                     OpenApiExample(
                         name="Bootstrap disabled",
                         value={
@@ -219,7 +204,7 @@ class SuperAdminBootstrapView(APIView):
 class StaffListView(APIView):
     """List every staff member and pending invitation for the Teams page."""
 
-    permission_classes = [IsSuperAdminRole]
+    permission_classes = [Perm(codenames.STAFF_VIEW)]
     serializer_class = StaffMemberSerializer  # schema generation only
 
     @extend_schema(
@@ -233,9 +218,9 @@ class StaffListView(APIView):
             "status pill.\n\n"
             "Called when the Teams page loads, and again after any invite, "
             "revoke, or reactivate action to refresh the list.\n\n"
-            "**Auth:** Super Admin.\n\n"
-            "**Prerequisites:** None beyond being signed in as the Super "
-            "Admin.\n\n"
+            "**Auth:** The `staff.view` permission (Staff: View Only) — Super "
+            "Admin by default.\n\n"
+            "**Prerequisites:** None.\n\n"
             "**Important:** Read `invitation_status`, not `is_active`, to "
             "decide what a row can do — `PENDING` and `REVOKED` are both "
             "inactive but offer different actions (resend vs reactivate). "
@@ -243,7 +228,7 @@ class StaffListView(APIView):
             "The response is an unpaginated array; the roster is expected to "
             "stay small."
         ),
-        tags=["Admin — Staff"],
+        tags=["Admin — Teams"],
         responses={
             200: OpenApiResponse(
                 response=StaffMemberSerializer(many=True),
@@ -265,33 +250,87 @@ class StaffListView(APIView):
         return Response(StaffMemberSerializer(staff, many=True).data, status=200)
 
 
-class InviteStaffView(APIView):
-    """Invite a new staff member in a chosen role. Super Admin only."""
+class StaffDetailView(APIView):
+    """Retrieve one staff member for the Team profile panel."""
 
-    permission_classes = [IsSuperAdminRole]
+    permission_classes = [Perm(codenames.STAFF_VIEW_DETAIL)]
+    serializer_class = StaffDetailSerializer
+
+    @extend_schema(
+        operation_id="auth_staff_detail_retrieve",
+        summary="Retrieve staff details",
+        description=(
+            "Returns the full non-sensitive Team profile for an active, pending, "
+            "or revoked staff member. Public course creators are not addressable "
+            "through this endpoint.\n\n**Auth:** The `staff.view_detail` permission — "
+            "Super Admin by default."
+        ),
+        tags=["Admin — Teams"],
+        responses={
+            200: StaffDetailSerializer,
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
+            **STANDARD_ERROR_RESPONSES["not_found"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
+    def get(self, request, pk):
+        try:
+            staff = staff_service.get_staff(staff_id=pk)
+        except User.DoesNotExist as exc:
+            raise NotFound("Staff member not found.") from exc
+        return Response(StaffDetailSerializer(staff).data)
+
+
+def _resolve_invite_role(*, actor, role, role_id) -> Role:
+    """The Role an invitation grants, checked against what `actor` may assign."""
+
+    if role_id is None:
+        role_id = system_role_id(role)
+    access_role = (
+        Role.objects.filter(id=role_id, is_deleted=False)
+        .prefetch_related("grants")
+        .first()
+    )
+    if access_role is None:
+        from rest_framework.exceptions import ValidationError
+
+        raise ValidationError({"role_id": "Choose a live staff role."})
+    role_admin_service.assert_can_invite_to(actor=actor, role=access_role)
+    return access_role
+
+
+class InviteStaffView(APIView):
+    """Invite a new staff member in a chosen role. Needs `staff.add`."""
+
+    permission_classes = [Perm(codenames.STAFF_ADD)]
     serializer_class = StaffInvitationSerializer  # schema generation only
 
     @extend_schema(
         summary="Invite a staff member",
         description=(
-            "Invites someone to join the team in one of three positions and "
-            "emails them a single-use invitation link. This is the only way a "
-            "staff account can come into existence — no public signup yields a "
-            "staff role. The invitee's account is created immediately in a "
+            "Invites someone to join the team in a staff position and emails "
+            "them a single-use invitation link. Staff and team are the same "
+            "roster, so a Creator Reviewer can be invited here too. Apart from "
+            "Creator Reviewers, who can also self-register through the reviewer "
+            "signup routes, this is the only way a staff account comes into "
+            "existence. The invitee's account is created immediately in a "
             "pending state (inactive, no usable password) so the email address "
             "is reserved, but it cannot authenticate until they accept.\n\n"
             "Step 2 of the staff flow: bootstrap super admin → **invite "
             "staff** → staff accepts. Backs the 'Invite a staff' dialog; the "
             "invitee continues at "
             "`/api/v1/auth/staff/invitations/accept/`.\n\n"
-            "**Auth:** Super Admin. Approvers and Admins cannot invite — this "
-            "is deliberately the capability that sets the Super Admin apart.\n\n"
+            "**Auth:** The `staff.add` permission (Add Staff) — Super Admin by "
+            "default; Admins and Approvers cannot invite unless their role is "
+            "granted it.\n\n"
             "**Prerequisites:** A Super Admin account must exist (see "
             "`/api/v1/auth/superadmin/bootstrap/`) and the caller must be "
             "signed in as it. The email must not already belong to an existing "
             "user of any role.\n\n"
             "**Important:** `role` accepts only `STAFF_WRITER`, "
-            "`STAFF_VERIFIER`, or `STAFF_APPROVER`; anything else — including "
+            "`STAFF_VERIFIER`, `STAFF_APPROVER`, `AI_REVIEWER`, `QA_REVIEWER`, "
+            "`ADMIN` or `CREATOR_REVIEWER`; anything else — including "
             "`SUPER_ADMIN` — is rejected with 400, so this endpoint cannot "
             "mint a second Super Admin. Re-inviting someone whose invitation "
             "is still pending reissues the link, invalidates the previous one, "
@@ -301,7 +340,7 @@ class InviteStaffView(APIView):
             "returns 400. The invitation link expires; after that the invitee "
             "needs a fresh one."
         ),
-        tags=["Admin — Staff"],
+        tags=["Admin — Teams"],
         request=StaffInvitationSerializer,
         examples=[
             OpenApiExample(
@@ -401,8 +440,17 @@ class InviteStaffView(APIView):
     def post(self, request):
         serializer = StaffInvitationSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        access_role = _resolve_invite_role(
+            actor=request.user, role=data.get("role"), role_id=data.get("role_id")
+        )
         staff = staff_service.invite_staff(
-            invited_by=request.user, **serializer.validated_data, request=request
+            invited_by=request.user,
+            email=data["email"],
+            first_name=data["first_name"],
+            last_name=data["last_name"],
+            access_role=access_role,
+            request=request,
         )
         return Response(
             {
@@ -416,7 +464,7 @@ class InviteStaffView(APIView):
 class RevokeStaffView(APIView):
     """Withdraw a pending invitation or deactivate an active staff member."""
 
-    permission_classes = [IsSuperAdminRole]
+    permission_classes = [Perm(codenames.STAFF_FULL_ACCESS)]
 
     @extend_schema(
         summary="Revoke a staff member's access",
@@ -427,7 +475,8 @@ class RevokeStaffView(APIView):
             "no longer sign in. One action covers both because the Teams page "
             "presents them as one thing — 'remove this person'.\n\n"
             "Called from the row actions on the Teams page.\n\n"
-            "**Auth:** Super Admin.\n\n"
+            "**Auth:** The `staff.full_access` permission (Full Access) — Super "
+            "Admin by default.\n\n"
             "**Prerequisites:** The target must be an existing staff member "
             "who is currently active or pending.\n\n"
             "**Important:** This is reversible, not destructive — the account "
@@ -440,7 +489,7 @@ class RevokeStaffView(APIView):
             "replaced through the API. Revoking does not free the email "
             "address for reuse."
         ),
-        tags=["Admin — Staff"],
+        tags=["Admin — Teams"],
         request=None,
         responses={
             200: OpenApiResponse(
@@ -518,7 +567,7 @@ class RevokeStaffView(APIView):
 class ReactivateStaffView(APIView):
     """Restore a previously revoked staff member's access."""
 
-    permission_classes = [IsSuperAdminRole]
+    permission_classes = [Perm(codenames.STAFF_FULL_ACCESS)]
 
     @extend_schema(
         summary="Reactivate a revoked staff member",
@@ -528,7 +577,8 @@ class ReactivateStaffView(APIView):
             "sign in again immediately without a new invitation.\n\n"
             "Called from the row actions on the Teams page for rows showing "
             "the `REVOKED` status.\n\n"
-            "**Auth:** Super Admin.\n\n"
+            "**Auth:** The `staff.full_access` permission (Full Access) — Super "
+            "Admin by default.\n\n"
             "**Prerequisites:** The target must be an existing staff member "
             "who is currently inactive and who had accepted their invitation "
             "before being revoked.\n\n"
@@ -541,7 +591,7 @@ class ReactivateStaffView(APIView):
             "someone's role, revoke and re-invite; this endpoint does not "
             "alter roles."
         ),
-        tags=["Admin — Staff"],
+        tags=["Admin — Teams"],
         request=None,
         responses={
             200: OpenApiResponse(
@@ -617,9 +667,13 @@ class ReactivateStaffView(APIView):
         )
 
 
+# Public endpoint: no security requirement, so Swagger's padlock does
+# not attach a bearer token to it.
+@extend_schema(auth=[{}])
 class AcceptStaffInvitationView(APIView):
     """Consume a staff invitation token, set a password, and activate."""
 
+    authentication_classes = []  # public: a stale token must not 401 this
     permission_classes = [AllowAny]
     serializer_class = AcceptStaffInvitationSerializer  # schema generation only
 

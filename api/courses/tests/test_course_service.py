@@ -5,9 +5,9 @@ from django.test import TestCase
 from django.utils import timezone
 from rest_framework.exceptions import PermissionDenied, ValidationError
 
-from api.categories.enums import CategoryStatus
+from api.catalog.enums import CategoryStatus
 from api.courses.enums import CourseStatus
-from api.courses.models import CourseVersion, Lesson, Module
+from api.courses.models import CourseVersion, Lesson, Module, PublishedCourseSnapshot
 from api.courses.services import course_service
 from api.courses.tests.factories import (
     build_compliant_course,
@@ -18,6 +18,7 @@ from api.courses.tests.factories import (
 )
 from api.notification.models import Notification
 from api.notification.services import notification_preference_service
+from api.platform.services import platform_settings_service
 from api.users.enums import UserRole
 
 
@@ -227,8 +228,59 @@ class SubmitCourseTests(TestCase):
 
         self.assertIn("structural_standards", ctx.exception.detail)
 
+    def test_a_draft_held_less_than_the_minimum_cannot_be_submitted(self):
+        platform_settings_service.update_settings(draft_minimum_hold_hours=48)
+        course = build_compliant_course()
+        course.draft_started_at = timezone.now() - timedelta(hours=1)
+        course.save(update_fields=["draft_started_at"])
+
+        with self.assertRaises(ValidationError) as ctx:
+            course_service.submit_course(course=course, actor=course.creator)
+
+        self.assertIn("must stay in draft", str(ctx.exception.detail))
+
+    def test_a_draft_past_the_minimum_submits(self):
+        platform_settings_service.update_settings(draft_minimum_hold_hours=48)
+        course = build_compliant_course()
+        course.draft_started_at = timezone.now() - timedelta(hours=49)
+        course.save(update_fields=["draft_started_at"])
+
+        course_service.submit_course(course=course, actor=course.creator)
+
+        self.assertEqual(course.status, CourseStatus.SUBMITTED)
+
+    def test_zero_disables_the_hold(self):
+        platform_settings_service.update_settings(draft_minimum_hold_hours=0)
+        course = build_compliant_course()
+        course.draft_started_at = timezone.now()
+        course.save(update_fields=["draft_started_at"])
+
+        course_service.submit_course(course=course, actor=course.creator)
+
+        self.assertEqual(course.status, CourseStatus.SUBMITTED)
+
+    def test_a_rejected_course_resubmits_without_waiting_again(self):
+        """The hold is a cooling-off on new drafts, not on every revision.
+
+        draft_started_at is set once at creation and never reset, so a course
+        sent back for changes goes round again immediately.
+        """
+
+        platform_settings_service.update_settings(draft_minimum_hold_hours=48)
+        course = build_compliant_course()
+        course.draft_started_at = timezone.now() - timedelta(hours=49)
+        course.save(update_fields=["draft_started_at"])
+        course_service.submit_course(course=course, actor=course.creator)
+        course.status = CourseStatus.DRAFT
+        course.rejected_at = timezone.now()
+        course.save(update_fields=["status", "rejected_at"])
+
+        course_service.submit_course(course=course, actor=course.creator)
+
+        self.assertEqual(course.status, CourseStatus.SUBMITTED)
+
     def test_happy_path_snapshots_price_transitions_status_and_notifies(self):
-        category = make_category(creator_price=Decimal("150.00"))
+        category = make_category(creator_price_with_video=Decimal("150.00"))
         course = build_compliant_course(category=category)
 
         result = course_service.submit_course(course=course, actor=course.creator)
@@ -246,18 +298,18 @@ class SubmitCourseTests(TestCase):
     def test_price_snapshot_reflects_category_price_at_submit_time_not_creation_time(
         self,
     ):
-        category = make_category(creator_price=Decimal("100.00"))
+        category = make_category(creator_price_with_video=Decimal("100.00"))
         course = build_compliant_course(category=category)
 
-        category.creator_price = Decimal("200.00")
+        category.creator_price_with_video = Decimal("200.00")
         category.save()
 
         result = course_service.submit_course(course=course, actor=course.creator)
         self.assertEqual(result.creator_price_snapshot, Decimal("200.00"))
 
     def test_price_snapshot_uses_topic_price_over_category_price_when_topic_set(self):
-        category = make_category(creator_price=Decimal("100.00"))
-        topic = make_topic(category=category, creator_price=Decimal("25.00"))
+        category = make_category(creator_price_with_video=Decimal("100.00"))
+        topic = make_topic(category=category, creator_price_with_video=Decimal("25.00"))
         course = build_compliant_course(category=category)
         course.topic = topic
         course.save(update_fields=["topic"])
@@ -301,6 +353,9 @@ class ClaimForReviewTests(TestCase):
 
 
 class PublishCourseTests(TestCase):
+    def setUp(self):
+        self.version = CourseVersion.objects.get_or_create(label="1.0")[0]
+
     def test_raises_when_not_approved(self):
         course = build_compliant_course()
         admin = make_user(role=UserRole.ADMIN)
@@ -326,7 +381,7 @@ class PublishCourseTests(TestCase):
         with self.assertRaises(PermissionDenied):
             course_service.publish_course(course=course, actor=course.creator)
 
-    def test_creates_a_single_v1_0_course_version_snapshot(self):
+    def test_creates_a_single_v1_0_published_snapshot(self):
         course = build_compliant_course()
         course.status = CourseStatus.APPROVED
         course.save()
@@ -334,12 +389,14 @@ class PublishCourseTests(TestCase):
 
         course_service.publish_course(course=course, actor=admin)
 
-        versions = CourseVersion.objects.filter(course=course)
-        self.assertEqual(versions.count(), 1)
-        version = versions.first()
-        self.assertEqual(version.version_number, "1.0")
-        self.assertEqual(version.snapshot["title"], course.title)
-        self.assertEqual(len(version.snapshot["modules"]), course.modules.count())
+        snapshots = PublishedCourseSnapshot.objects.filter(course=course)
+        self.assertEqual(snapshots.count(), 1)
+        snapshot = snapshots.first()
+        self.assertEqual(snapshot.version.label, "1.0")
+        self.assertEqual(snapshot.snapshot["title"], course.title)
+        self.assertEqual(len(snapshot.snapshot["modules"]), course.modules.count())
+        course.refresh_from_db()
+        self.assertEqual(course.version_id, self.version.id)
 
 
 class RecalculateDurationEstimateTests(TestCase):
@@ -381,9 +438,7 @@ class GetReviewQueueSortingTests(TestCase):
         older = self._submitted_course_aged(hours_ago=10)
         newer = self._submitted_course_aged(hours_ago=1)
 
-        results = list(
-            course_service.get_review_queue(sort_order="NEWEST_FIRST")
-        )
+        results = list(course_service.get_review_queue(sort_order="NEWEST_FIRST"))
 
         self.assertEqual(results, [newer, older])
 
@@ -406,7 +461,7 @@ class GetReviewQueueSortingTests(TestCase):
         self.assertEqual(results, [red, amber, normal])
 
     def test_track_filter_restricts_to_matching_category(self):
-        from api.categories.enums import TrackPreference
+        from api.catalog.enums import TrackPreference
 
         creator_category = make_category(
             track_preference=TrackPreference.CREATOR_PREFERRED
@@ -416,9 +471,7 @@ class GetReviewQueueSortingTests(TestCase):
         creator_course = self._submit_in(creator_category)
         self._submit_in(ai_category)
 
-        results = list(
-            course_service.get_review_queue(track_filter="CREATOR_TRACK")
-        )
+        results = list(course_service.get_review_queue(track_filter="CREATOR_TRACK"))
 
         self.assertEqual(results, [creator_course])
 

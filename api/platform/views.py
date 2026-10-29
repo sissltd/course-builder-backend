@@ -1,16 +1,33 @@
-from drf_spectacular.utils import OpenApiExample, OpenApiResponse, extend_schema
+from drf_spectacular.utils import (
+    OpenApiExample,
+    OpenApiParameter,
+    OpenApiResponse,
+    extend_schema,
+)
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from api.platform.serializers import (
     AdminOverviewSerializer,
+    CreatorOverviewSerializer,
     PlatformSettingsSerializer,
     PlatformSettingsUpdateSerializer,
+    ReviewerActivityOverviewSerializer,
+    ReviewerOverviewSerializer,
+    TestEmailSerializer,
 )
-from api.platform.services import admin_overview_service, platform_settings_service
-from api.users.permissions import IsAdminOrSuperAdminRole, IsMFAVerifiedForSession
+from api.platform.services import (
+    admin_overview_service,
+    creator_overview_service,
+    platform_settings_service,
+    reviewer_overview_service,
+)
+from api.authorization import codenames
+from api.authorization.permissions import Perm
+from api.authorization.services import permission_service
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
+from shared.spectacular.responses import inline_error_response
 
 _SETTINGS_EXAMPLE = {
     "id": "2e9c4a71-58b3-4d06-9f27-6a1e8c0b5d34",
@@ -19,14 +36,14 @@ _SETTINGS_EXAMPLE = {
     "course_module_count_max": 12,
     "course_lessons_per_module_min": 3,
     "course_lessons_per_module_max": 8,
-    "course_learning_objectives_min": 2,
-    "course_learning_objectives_max": 5,
+    "course_learning_objectives_min": 5,
+    "course_learning_objectives_max": 10,
+    "lesson_learning_objectives_min": 2,
+    "lesson_learning_objectives_max": 5,
     "course_description_word_min": 100,
     "course_description_word_max": 500,
     "lesson_script_word_min": 500,
     "lesson_script_word_max": 1500,
-    "lesson_quiz_questions_min": 3,
-    "lesson_quiz_questions_max": 5,
     "course_duration_min_minutes": 120,
     "course_duration_max_minutes": 480,
     "course_final_assessment_min_questions": 15,
@@ -40,17 +57,16 @@ class PlatformSettingsView(APIView):
 
     GET is open to any authenticated user - the frontend needs to display
     live thresholds (e.g. "4-12 modules required") without hardcoding them.
-    PATCH is Admin/Super Admin only (excludes Approver - these thresholds
-    affect every course on the platform, a higher-stakes action than
-    ordinary admin-tier work) and additionally requires an MFA-verified
-    session - see IsMFAVerifiedForSession.
+    PATCH needs the `platform.edit_settings` permission (Admin and Super
+    Admin by default; not Approver - these thresholds affect every course on
+    the platform).
     """
 
     serializer_class = PlatformSettingsUpdateSerializer  # for schema generation only
 
     def get_permissions(self):
         if self.request.method == "PATCH":
-            return [IsAdminOrSuperAdminRole(), IsMFAVerifiedForSession()]
+            return [Perm(codenames.PLATFORM_EDIT_SETTINGS)()]
         return [IsAuthenticated()]
 
     @extend_schema(
@@ -73,7 +89,7 @@ class PlatformSettingsView(APIView):
             "Values can change at any time without a deploy; do not cache them "
             "across sessions."
         ),
-        tags=["Admin — Platform Settings"],
+        tags=["Creator — Platform Settings"],
         responses={
             200: OpenApiResponse(
                 response=PlatformSettingsSerializer,
@@ -96,9 +112,9 @@ class PlatformSettingsView(APIView):
             "resubmitting the whole form.\n\n"
             "Called from the admin Settings screen when a threshold is "
             "saved.\n\n"
-            "**Auth:** Admin or Super Admin. Approvers are excluded — these "
-            "values affect every course on the platform, which is a higher-"
-            "stakes change than the course approvals Approvers handle.\n\n"
+            "**Auth:** The `platform.edit_settings` permission — Admin and "
+            "Super Admin by default, not Approver: these values affect every "
+            "course on the platform.\n\n"
             "**Prerequisites:** At least one settings field must be present in "
             "the body.\n\n"
             "**Important:** Changes take effect immediately and apply to the "
@@ -106,7 +122,10 @@ class PlatformSettingsView(APIView):
             "keeps the price snapshot it was submitted with, and courses "
             "already approved are never re-validated. Raising a minimum can "
             "therefore make an in-progress draft invalid at submission time. "
-            "An empty body returns 400 rather than silently doing nothing."
+            "An empty body returns 400 rather than silently doing nothing. "
+            "`staged_review_flow_enabled` switches the whole review flow, so "
+            "changing it returns 409 while any course is in review, awaiting "
+            "video or revision, or approved but unpublished."
         ),
         tags=["Admin — Platform Settings"],
         request=PlatformSettingsUpdateSerializer,
@@ -138,6 +157,31 @@ class PlatformSettingsView(APIView):
             **STANDARD_ERROR_RESPONSES["validation"],
             **STANDARD_ERROR_RESPONSES["auth"],
             **STANDARD_ERROR_RESPONSES["permission"],
+            409: inline_error_response(
+                description=(
+                    "`staged_review_flow_enabled` cannot change while courses "
+                    "are in review, awaiting video or revision, or approved "
+                    "but unpublished."
+                ),
+                examples=[
+                    OpenApiExample(
+                        name="Courses in flight",
+                        value={
+                            "errors": [
+                                {
+                                    "type": "client_error",
+                                    "code": "staged_review_flow_in_flight",
+                                    "message": (
+                                        "The review flow cannot be switched "
+                                        "while courses are in review."
+                                    ),
+                                    "field_name": None,
+                                }
+                            ]
+                        },
+                    )
+                ],
+            ),
             **STANDARD_ERROR_RESPONSES["server"],
         },
     )
@@ -153,20 +197,23 @@ class PlatformSettingsView(APIView):
 class AdminOverviewView(APIView):
     """Aggregate counts and money totals for the admin home screen."""
 
-    permission_classes = [IsAdminOrSuperAdminRole]
+    permission_classes = [
+        Perm(codenames.DASHBOARD_VIEW, codenames.DASHBOARD_VIEW_LIMITED)
+    ]
     serializer_class = AdminOverviewSerializer  # for schema generation only
 
     @extend_schema(
         summary="Retrieve the admin dashboard overview",
         description=(
             "Returns the counts an Admin's home screen leads with: users by "
-            "account status, courses by lifecycle status, KYC submissions and "
+            "their account status, courses by lifecycle status, KYC submissions and "
             "withdrawal requests by status, plus platform-wide wallet totals. "
             "It answers 'what needs my attention today?' in one call.\n\n"
             "Called when the admin dashboard loads.\n\n"
-            "**Auth:** Admin or Super Admin.\n\n"
-            "**Prerequisites:** None beyond holding the Admin or Super Admin "
-            "role.\n\n"
+            "**Auth:** `dashboard.view` (View Only — Admin and Super Admin by "
+            "default) or `dashboard.view_limited` (Limited Access). With Limited "
+            "Access, `financials_included` is false and every money figure is null.\n\n"
+            "**Prerequisites:** None.\n\n"
             "**Important:** Counts only — each figure has a dedicated endpoint "
             "behind it (`/review-queue/`, `/users/kyc-review/`, "
             "`/admin/withdrawals/`) and this deliberately does not duplicate "
@@ -175,9 +222,27 @@ class AdminOverviewView(APIView):
             "Figures are computed live on each request and are not cached. "
             "`awaiting_payout` is money already deducted from creator balances "
             "but not yet settled — the platform has no settlement step yet, so "
-            "expect it to accumulate."
+            "expect it to accumulate. `today` carries the headline tiles "
+            "with their period-on-period deltas, and `production_trend` / "
+            "`cost_trend` carry the two charts \u2014 both zero-filled so "
+            "the x-axis stays stable. A delta is null when there is no "
+            "prior period to compare against, which is not the same as 0."
         ),
         tags=["Admin — Overview"],
+        parameters=[
+            OpenApiParameter(
+                name="period",
+                type=str,
+                enum=list(admin_overview_service.TREND_DAYS),
+                required=False,
+                description=(
+                    "Window the trend charts cover, matching the screen's "
+                    "24hrs / 7days / 31days / 6months control. Defaults to "
+                    f"`{admin_overview_service.DEFAULT_PERIOD}`. An unknown "
+                    "value falls back to the default rather than erroring."
+                ),
+            )
+        ],
         responses={
             200: OpenApiResponse(
                 response=AdminOverviewSerializer,
@@ -221,5 +286,330 @@ class AdminOverviewView(APIView):
         },
     )
     def get(self, request):
-        overview = admin_overview_service.get_overview(actor=request.user)
+        overview = admin_overview_service.get_overview(
+            actor=request.user,
+            include_financials=permission_service.user_has_permission(
+                request.user, codenames.DASHBOARD_VIEW
+            ),
+            period=request.query_params.get(
+                "period", admin_overview_service.DEFAULT_PERIOD
+            ),
+        )
         return Response(AdminOverviewSerializer(overview).data)
+
+
+class CreatorOverviewView(APIView):
+    """Aggregate counts and totals for the creator home screen."""
+
+    permission_classes = [IsAuthenticated]
+    serializer_class = CreatorOverviewSerializer  # for schema generation only
+
+    @extend_schema(
+        summary="Retrieve the creator dashboard overview",
+        description=(
+            "Returns the counts a Course Creator's home screen leads with: "
+            "their own courses by lifecycle status, their wallet balance "
+            "with lifetime-earned and pending-payout figures, and how many "
+            "collaboration invites are waiting on them.\n\n"
+            "Called when the course-builder home screen loads.\n\n"
+            "**Auth:** The `courses.create` permission — Course Creator and Writer "
+            "by default (enforced in the service layer, so a caller without it "
+            "gets a clean 403).\n\n"
+            "**Prerequisites:** None beyond being signed in with a creator "
+            "role.\n\n"
+            "**Important:** Counts only - each figure has a dedicated "
+            "endpoint behind it (`/courses/`, `/wallet/`, `/course-invites/"
+            "incoming/`) and this deliberately does not duplicate those "
+            "payloads. Every status key is always present, including zeroes, "
+            "so tiles do not appear and disappear with the data."
+        ),
+        tags=["Creator — Overview"],
+        responses={
+            200: OpenApiResponse(
+                response=CreatorOverviewSerializer,
+                description="The creator's own counts and wallet totals.",
+                examples=[
+                    OpenApiExample(
+                        name="Success",
+                        value={
+                            "courses": {
+                                "DRAFT": 3,
+                                "SUBMITTED": 1,
+                                "IN_REVIEW": 0,
+                                "NEEDS_REVISION": 0,
+                                "APPROVED": 2,
+                                "PUBLISHED": 5,
+                                "ARCHIVED": 0,
+                                "REJECTED": 0,
+                            },
+                            "wallet": {
+                                "balance": "240.00",
+                                "currency": "USD",
+                                "total_earned": "480.00",
+                                "pending_balance": "120.00",
+                            },
+                            "pending_invites": 2,
+                        },
+                    )
+                ],
+            ),
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
+    def get(self, request):
+        overview = creator_overview_service.get_overview(actor=request.user)
+        return Response(CreatorOverviewSerializer(overview).data)
+
+
+class ReviewerOverviewView(APIView):
+    """Aggregate counts for the reviewer home screen."""
+
+    permission_classes = [IsAuthenticated]
+    serializer_class = ReviewerOverviewSerializer  # for schema generation only
+
+    @extend_schema(
+        summary="Retrieve the reviewer dashboard overview",
+        description=(
+            "Returns the counts a Creator Reviewer's home screen leads "
+            "with: how many actionable courses are sitting in each reviewable "
+            "state (Submitted / In Review), plus the reviewer's own lifetime "
+            "and today's decision counts. Queue counts use the same reviewer "
+            "role, seat, track, availability and four-eyes rules as the review "
+            "queue itself.\n\n"
+            "Called when the reviewer dashboard loads.\n\n"
+            "**Auth:** Creator Reviewer or Verifier (role enforced in the "
+            "service layer).\n\n"
+            "**Prerequisites:** None beyond being signed in with a reviewer "
+            "role.\n\n"
+            "**Important:** Counts only - the queue itself is at "
+            "`/review-queue/`. Both queue keys are always present, including "
+            "zeroes. `courses_in_queue` now matches the actionable queue for "
+            "this reviewer; a course visible to another review seat is not "
+            "counted here. `courses_reviewed` and "
+            "`escalations_resolved` are the three dashboard tiles; "
+            "`queue`/`my_decisions` are the same data broken down, kept for "
+            "existing clients. The dashboard chart is a separate call to "
+            "`/api/v1/reviewer/activity-overview/`."
+        ),
+        tags=["Reviewer — Dashboard"],
+        responses={
+            200: OpenApiResponse(
+                response=ReviewerOverviewSerializer,
+                description="Queue depth and the reviewer's own decision counts.",
+                examples=[
+                    OpenApiExample(
+                        name="Success",
+                        value={
+                            "queue": {"SUBMITTED": 4, "IN_REVIEW": 2},
+                            "my_decisions": {"approved": 31, "today": 3},
+                            "courses_reviewed": 245,
+                            "courses_in_queue": 6,
+                            "escalations_resolved": 12,
+                        },
+                    )
+                ],
+            ),
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
+    def get(self, request):
+        overview = reviewer_overview_service.get_overview(actor=request.user)
+        return Response(ReviewerOverviewSerializer(overview).data)
+
+
+class ReviewerActivityOverviewView(APIView):
+    """Daily activity series behind the reviewer dashboard chart."""
+
+    permission_classes = [IsAuthenticated]
+    serializer_class = ReviewerActivityOverviewSerializer  # schema generation only
+
+    @extend_schema(
+        summary="Retrieve the reviewer activity chart series",
+        description=(
+            "Returns the reviewer's own Escalated / Approved / Rejected "
+            "counts per day, for the Activity Overview chart on the "
+            "dashboard.\n\n"
+            "Called when the dashboard loads and again whenever the period "
+            "dropdown changes.\n\n"
+            "**Auth:** Creator Reviewer or Verifier (role enforced in the "
+            "service layer).\n\n"
+            "**Prerequisites:** None beyond being signed in with a reviewer "
+            "role.\n\n"
+            "**Important:** Every day in range is present including zeroes, "
+            "so the chart has a stable x-axis - do not fill gaps client "
+            "side. Scoped to the calling reviewer only. `all_time` runs from "
+            "their first recorded activity; a reviewer with no activity gets "
+            "a single zeroed day rather than an empty series. An unknown "
+            "`period` falls back to `today` rather than erroring."
+        ),
+        tags=["Reviewer — Dashboard"],
+        parameters=[
+            OpenApiParameter(
+                name="period",
+                type=str,
+                enum=list(reviewer_overview_service.ACTIVITY_PERIODS),
+                required=False,
+                description=(
+                    "Range to cover. Defaults to `today`. Matches the "
+                    "dashboard dropdown: All time / Today / This week / "
+                    "This month."
+                ),
+            )
+        ],
+        responses={
+            200: OpenApiResponse(
+                response=ReviewerActivityOverviewSerializer,
+                description="Daily activity counts for the selected period.",
+                examples=[
+                    OpenApiExample(
+                        name="This week",
+                        value={
+                            "period": "this_week",
+                            "start_date": "2026-08-31",
+                            "end_date": "2026-09-01",
+                            "totals": {
+                                "escalated": 3,
+                                "approved": 12,
+                                "rejected": 4,
+                            },
+                            "series": [
+                                {
+                                    "date": "2026-08-31",
+                                    "escalated": 1,
+                                    "approved": 7,
+                                    "rejected": 2,
+                                },
+                                {
+                                    "date": "2026-09-01",
+                                    "escalated": 2,
+                                    "approved": 5,
+                                    "rejected": 2,
+                                },
+                            ],
+                        },
+                    )
+                ],
+            ),
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
+    def get(self, request):
+        overview = reviewer_overview_service.get_activity_overview(
+            actor=request.user,
+            period=request.query_params.get(
+                "period", reviewer_overview_service.DEFAULT_ACTIVITY_PERIOD
+            ),
+        )
+        return Response(ReviewerActivityOverviewSerializer(overview).data)
+
+
+class TestEmailView(APIView):
+    """Send a test email to verify the configured provider is working.
+
+    Admin-only diagnostic endpoint. Synchronous — waits for the provider
+    (SMTP, Resend, or Cloudflare REST, per `EMAIL_PROVIDER`) before responding.
+    """
+
+    permission_classes = [Perm(codenames.PLATFORM_EDIT_SETTINGS)]
+
+    @extend_schema(
+        summary="Send test email",
+        request=TestEmailSerializer,
+        description=(
+            "Send a test email through the configured `EMAIL_PROVIDER` "
+            "(`smtp` → Cloudflare SMTP, `resend` → Resend REST API, "
+            "`cloudflare` → Cloudflare Email Service REST API) and "
+            "confirm delivery end-to-end.\n\n"
+            "Used from staging to verify email credentials and rendering "
+            "without going through a real signup flow.\n\n"
+            "**Auth:** The `platform.edit_settings` permission — Admin and "
+            "Super Admin by default.\n\n"
+            "**Prerequisites:** `EMAIL_HOST_USER` and `EMAIL_HOST_PASSWORD` "
+            "must be configured when `EMAIL_PROVIDER=smtp`; `RESEND_API_KEY` "
+            "when `EMAIL_PROVIDER=resend`; `CLOUDFLARE_API_TOKEN` and "
+            "`CLOUDFLARE_ACCOUNT_ID` when `EMAIL_PROVIDER=cloudflare`.\n\n"
+            "**Important:** The request body is optional — an empty body "
+            "sends to the authenticated user's own address. `email`, "
+            "`subject`, and `message` override the defaults when provided. "
+            "Synchronous, so the response is only returned after the "
+            "provider accepts or rejects the message."
+        ),
+        tags=["Platform — Diagnostics"],
+        examples=[
+            OpenApiExample(
+                name="Send to a specific address",
+                request_only=True,
+                value={
+                    "email": "qa@scbcoursebuilder.com",
+                    "subject": "Staging SMTP check",
+                    "message": "This is a test from the staging API.",
+                },
+            ),
+        ],
+        responses={
+            200: OpenApiResponse(
+                description="Email sent successfully.",
+                examples=[
+                    OpenApiExample(
+                        "Success",
+                        value={"status": "sent", "recipient": "admin@example.com"},
+                    )
+                ],
+            ),
+            400: OpenApiResponse(
+                description="Invalid email address provided.",
+                examples=[
+                    OpenApiExample(
+                        "Invalid email",
+                        value={"status": "failed", "error": "Invalid email address."},
+                    )
+                ],
+            ),
+            502: OpenApiResponse(
+                description="Provider delivery failed.",
+                examples=[
+                    OpenApiExample(
+                        "SMTP failure",
+                        value={
+                            "status": "failed",
+                            "error": "Connection refused",
+                        },
+                    )
+                ],
+            ),
+            **STANDARD_ERROR_RESPONSES["auth"],
+        },
+    )
+    def post(self, request):
+        from django.utils.html import escape
+
+        from shared.tasks import dispatch_email
+
+        serializer = TestEmailSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        recipient = data.get("email") or request.user.email
+        subject = data.get("subject") or "Test email from SCB backend"
+        message = data.get("message") or (
+            "This is a test email sent from the SCB backend API.\n\n"
+            "If you received this, the configured email provider is working."
+        )
+
+        try:
+            dispatch_email(
+                subject=subject,
+                recipients=[recipient],
+                text_content=message,
+                html_content=f"<html><body><pre>{escape(message)}</pre></body></html>",
+            )
+        except Exception as exc:
+            return Response({"status": "failed", "error": str(exc)}, status=502)
+
+        return Response({"status": "sent", "recipient": recipient})

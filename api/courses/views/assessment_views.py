@@ -9,32 +9,39 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from api.collaborators.services import collaborator_service
-from api.courses.enums import AssessmentLevel, CourseStatus
+from api.courses.enums import AssessmentLevel
 from api.courses.models import Course, Lesson, Module
 from api.courses.serializers import AssessmentSerializer, AssessmentWriteSerializer
-from api.users.permissions import IsCourseCreatorRole
+from api.courses.services import module_lock_service
+from api.authorization import codenames
+from api.authorization.permissions import Perm
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 
 
-_MULTIPLE_CHOICE_QUESTION = {
-    "type": "MULTIPLE_CHOICE",
+_SINGLE_CHOICE_QUESTION = {
+    "type": "SINGLE_CHOICE",
     "question": "Which of these is a valid Python variable name?",
     "points": 10,
-    "options": [
-        {"text": "2var", "explanation": "Identifiers can't start with a digit."},
-        {"text": "var_2", "explanation": "Correct - letters, digits, underscores are fine."},
-        {"text": "var-2", "explanation": "Hyphens aren't allowed in identifiers."},
-    ],
+    "options": ["2var", "var_2", "var-2"],
     "correct_index": 1,
+}
+
+_MULTIPLE_CHOICE_QUESTION = {
+    "type": "MULTIPLE_CHOICE",
+    "question": "Which of these are valid Python collection types?",
+    "points": 10,
+    "options": ["list", "tuple", "function"],
+    "correct_indices": [0, 1],
 }
 
 _ESSAY_QUESTION = {
     "type": "ESSAY",
     "question": "Explain the difference between a list and a tuple.",
     "points": 15,
+    "expected_answer": "Lists are mutable; tuples are immutable.",
     "explanation": (
-        "Model answer guidance: lists are mutable, tuples are immutable; "
-        "both are ordered sequences."
+        "Award full credit when the response identifies mutability as the key "
+        "difference and notes that both are ordered sequences."
     ),
 }
 
@@ -44,10 +51,15 @@ def _assessment_example(level: str) -> dict:
         "id": "d4e5f6a7-b8c9-4d0e-1f2a-3b4c5d6e7f8a",
         "level": level,
         "title": "Variables Quiz",
-        "questions": [_MULTIPLE_CHOICE_QUESTION, _ESSAY_QUESTION],
+        "questions": [
+            _SINGLE_CHOICE_QUESTION,
+            _MULTIPLE_CHOICE_QUESTION,
+            _ESSAY_QUESTION,
+        ],
         "summary": {
-            "total_questions": 2,
-            "total_points": 25,
+            "total_questions": 3,
+            "total_points": 35,
+            "single_choice_count": 1,
             "multiple_choice_count": 1,
             "essay_count": 1,
         },
@@ -56,7 +68,11 @@ def _assessment_example(level: str) -> dict:
 
 _QUESTIONS_SAMPLE = {
     "title": "Variables Quiz",
-    "questions": [_MULTIPLE_CHOICE_QUESTION, _ESSAY_QUESTION],
+    "questions": [
+        _SINGLE_CHOICE_QUESTION,
+        _MULTIPLE_CHOICE_QUESTION,
+        _ESSAY_QUESTION,
+    ],
 }
 
 _DRAFT_ONLY_400 = OpenApiResponse(
@@ -69,7 +85,7 @@ _DRAFT_ONLY_400 = OpenApiResponse(
                     {
                         "type": "validation_error",
                         "code": "invalid",
-                        "message": "Assessments can only be edited while the course is Draft.",
+                        "message": "Assessments can only be edited while the course is Draft or Needs Revision.",
                         "field_name": None,
                     }
                 ]
@@ -105,7 +121,7 @@ class LessonAssessmentView(APIView):
     apply - PUT creates the assessment if absent, otherwise updates it.
     """
 
-    permission_classes = [IsCourseCreatorRole]
+    permission_classes = [Perm(codenames.COURSES_CREATE)]
     serializer_class = (
         AssessmentWriteSerializer  # for schema generation only; not a GenericAPIView
     )
@@ -127,12 +143,12 @@ class LessonAssessmentView(APIView):
             "Returns the quiz attached to a single lesson.\n\n"
             "Called when opening a lesson's assessment editor in the course "
             "builder.\n\n"
-            "**Auth:** Course Creator/Writer with access to the course.\n\n"
+            "**Auth:** The `courses.create` permission (Course Creator and Writer by default), with access to the course.\n\n"
             "**Prerequisites:** The lesson must have an assessment set - "
             "use PUT to create one if it doesn't.\n\n"
             "**Important:** None."
         ),
-        tags=["Quiz"],
+        tags=["Creator — Assessments"],
         parameters=[
             OpenApiParameter("course_pk", str, OpenApiParameter.PATH),
             OpenApiParameter("module_pk", str, OpenApiParameter.PATH),
@@ -166,19 +182,20 @@ class LessonAssessmentView(APIView):
             "exists yet, otherwise overwrites it.\n\n"
             "Called from the lesson assessment editor when the creator "
             "saves questions.\n\n"
-            "**Auth:** Course Creator/Writer with access to the course.\n\n"
+            "**Auth:** The `courses.create` permission (Course Creator and Writer by default), with access to the course.\n\n"
             "**Prerequisites:** The parent course must be `DRAFT`.\n\n"
             "**Important:** Each question's `type` decides which fields "
-            "apply: `MULTIPLE_CHOICE` needs at least 2 `options` (each with "
-            "its own `explanation`) and a `correct_index` within range; "
-            "`ESSAY` needs a top-level `explanation` instead and rejects "
-            "`options`/`correct_index`. Explanations are required on every "
-            "option and essay question (SCCS PRD Section 6.3). Only this "
-            "per-question shape is validated here - the 3-5 "
-            "questions-per-lesson count threshold is enforced separately at "
-            "submit time, not on every save."
+            "apply: `SINGLE_CHOICE` needs 2-6 string `options` and one "
+            "`correct_index`; `MULTIPLE_CHOICE` "
+            "needs 2-6 options and one or more `correct_indices`; "
+            "choice questions may include a top-level `explanation`; "
+            "`ESSAY` needs top-level `expected_answer` and `explanation` fields and rejects "
+            "`options`/correct-answer indexes. Essay questions require top-level "
+            "`expected_answer` and `explanation`. Only this "
+            "per-question shape is validated here. Lesson assessments are "
+            "optional and there is no question-count threshold."
         ),
-        tags=["Quiz"],
+        tags=["Creator — Assessments"],
         parameters=[
             OpenApiParameter("course_pk", str, OpenApiParameter.PATH),
             OpenApiParameter("module_pk", str, OpenApiParameter.PATH),
@@ -186,7 +203,9 @@ class LessonAssessmentView(APIView):
         ],
         request=AssessmentWriteSerializer,
         examples=[
-            OpenApiExample(name="Sample Request", request_only=True, value=_QUESTIONS_SAMPLE)
+            OpenApiExample(
+                name="Sample Request", request_only=True, value=_QUESTIONS_SAMPLE
+            )
         ],
         responses={
             200: OpenApiResponse(
@@ -206,10 +225,13 @@ class LessonAssessmentView(APIView):
     )
     def put(self, request, course_pk, module_pk, lesson_pk):
         lesson = self._get_lesson(course_pk, module_pk, lesson_pk, request.user)
-        if lesson.module.course.status != CourseStatus.DRAFT:
+        if not lesson.module.course.is_editable:
             raise exceptions.ValidationError(
-                "Assessments can only be edited while the course is Draft."
+                "Assessments can only be edited while the course is Draft or Needs Revision."
             )
+        module_lock_service.check_not_locked(
+            module=lesson.module, user=request.user
+        )
 
         assessment = getattr(lesson, "assessment", None)
         serializer = AssessmentWriteSerializer(instance=assessment, data=request.data)
@@ -229,7 +251,7 @@ class LessonAssessmentView(APIView):
 class ModuleAssessmentView(APIView):
     """GET/PUT-upsert the module-level assessment attached to a single Module."""
 
-    permission_classes = [IsCourseCreatorRole]
+    permission_classes = [Perm(codenames.COURSES_CREATE)]
     serializer_class = (
         AssessmentWriteSerializer  # for schema generation only; not a GenericAPIView
     )
@@ -250,12 +272,12 @@ class ModuleAssessmentView(APIView):
             "Returns the module-level quiz attached to a single module.\n\n"
             "Called when opening a module's assessment editor in the course "
             "builder.\n\n"
-            "**Auth:** Course Creator/Writer with access to the course.\n\n"
+            "**Auth:** The `courses.create` permission (Course Creator and Writer by default), with access to the course.\n\n"
             "**Prerequisites:** The module must have an assessment set - "
             "use PUT to create one if it doesn't.\n\n"
             "**Important:** None."
         ),
-        tags=["Quiz"],
+        tags=["Creator — Assessments"],
         parameters=[
             OpenApiParameter("course_pk", str, OpenApiParameter.PATH),
             OpenApiParameter("module_pk", str, OpenApiParameter.PATH),
@@ -288,25 +310,29 @@ class ModuleAssessmentView(APIView):
             "otherwise overwrites it.\n\n"
             "Called from the module assessment editor when the creator "
             "saves questions.\n\n"
-            "**Auth:** Course Creator/Writer with access to the course.\n\n"
+            "**Auth:** The `courses.create` permission (Course Creator and Writer by default), with access to the course.\n\n"
             "**Prerequisites:** The parent course must be `DRAFT`.\n\n"
             "**Important:** Each question's `type` decides which fields "
-            "apply: `MULTIPLE_CHOICE` needs at least 2 `options` (each with "
-            "its own `explanation`) and a `correct_index` within range; "
-            "`ESSAY` needs a top-level `explanation` instead and rejects "
-            "`options`/`correct_index`. Explanations are required on every "
-            "option and essay question (SCCS PRD Section 6.3). Only this "
-            "per-question shape is validated here; count-per-level "
-            "thresholds are enforced separately at submit time."
+            "apply: `SINGLE_CHOICE` needs 2-6 string `options` and one "
+            "`correct_index`; `MULTIPLE_CHOICE` "
+            "needs 2-6 options and one or more `correct_indices`; "
+            "choice questions may include a top-level `explanation`; "
+            "`ESSAY` needs top-level `expected_answer` and `explanation` fields and rejects "
+            "`options`/correct-answer indexes. Essay questions require top-level "
+            "`expected_answer` and `explanation`. Only this "
+            "per-question shape is validated here. A module assessment must "
+            "exist before submission, but its question count is not constrained."
         ),
-        tags=["Quiz"],
+        tags=["Creator — Assessments"],
         parameters=[
             OpenApiParameter("course_pk", str, OpenApiParameter.PATH),
             OpenApiParameter("module_pk", str, OpenApiParameter.PATH),
         ],
         request=AssessmentWriteSerializer,
         examples=[
-            OpenApiExample(name="Sample Request", request_only=True, value=_QUESTIONS_SAMPLE)
+            OpenApiExample(
+                name="Sample Request", request_only=True, value=_QUESTIONS_SAMPLE
+            )
         ],
         responses={
             200: OpenApiResponse(
@@ -326,10 +352,11 @@ class ModuleAssessmentView(APIView):
     )
     def put(self, request, course_pk, module_pk):
         module = self._get_module(course_pk, module_pk, request.user)
-        if module.course.status != CourseStatus.DRAFT:
+        if not module.course.is_editable:
             raise exceptions.ValidationError(
-                "Assessments can only be edited while the course is Draft."
+                "Assessments can only be edited while the course is Draft or Needs Revision."
             )
+        module_lock_service.check_not_locked(module=module, user=request.user)
 
         assessment = getattr(module, "assessment", None)
         serializer = AssessmentWriteSerializer(instance=assessment, data=request.data)
@@ -349,7 +376,7 @@ class ModuleAssessmentView(APIView):
 class CourseAssessmentView(APIView):
     """GET/PUT-upsert the final course-level assessment attached to a Course."""
 
-    permission_classes = [IsCourseCreatorRole]
+    permission_classes = [Perm(codenames.COURSES_CREATE)]
     serializer_class = (
         AssessmentWriteSerializer  # for schema generation only; not a GenericAPIView
     )
@@ -369,12 +396,12 @@ class CourseAssessmentView(APIView):
             "is complete.\n\n"
             "Called when opening the final assessment editor in the course "
             "builder.\n\n"
-            "**Auth:** Course Creator/Writer with access to the course.\n\n"
+            "**Auth:** The `courses.create` permission (Course Creator and Writer by default), with access to the course.\n\n"
             "**Prerequisites:** The course must have a final assessment set "
             "- use PUT to create one if it doesn't.\n\n"
             "**Important:** None."
         ),
-        tags=["Quiz"],
+        tags=["Creator — Assessments"],
         parameters=[OpenApiParameter("course_pk", str, OpenApiParameter.PATH)],
         responses={
             200: OpenApiResponse(
@@ -406,23 +433,27 @@ class CourseAssessmentView(APIView):
             "structural standards require >=15 questions here).\n\n"
             "Called from the final assessment editor in the course "
             "builder.\n\n"
-            "**Auth:** Course Creator/Writer with access to the course.\n\n"
+            "**Auth:** The `courses.create` permission (Course Creator and Writer by default), with access to the course.\n\n"
             "**Prerequisites:** The course must be `DRAFT`.\n\n"
             "**Important:** Each question's `type` decides which fields "
-            "apply: `MULTIPLE_CHOICE` needs at least 2 `options` (each with "
-            "its own `explanation`) and a `correct_index` within range; "
-            "`ESSAY` needs a top-level `explanation` instead and rejects "
-            "`options`/`correct_index`. Explanations are required on every "
-            "option and essay question (SCCS PRD Section 6.3). Only this "
+            "apply: `SINGLE_CHOICE` needs 2-6 string `options` and one "
+            "`correct_index`; `MULTIPLE_CHOICE` "
+            "needs 2-6 options and one or more `correct_indices`; "
+            "choice questions may include a top-level `explanation`; "
+            "`ESSAY` needs top-level `expected_answer` and `explanation` fields and rejects "
+            "`options`/correct-answer indexes. Essay questions require top-level "
+            "`expected_answer` and `explanation`. Only this "
             "per-question shape is validated here; the >=15 questions "
             "threshold is enforced separately at submit time, not on every "
             "save."
         ),
-        tags=["Quiz"],
+        tags=["Creator — Assessments"],
         parameters=[OpenApiParameter("course_pk", str, OpenApiParameter.PATH)],
         request=AssessmentWriteSerializer,
         examples=[
-            OpenApiExample(name="Sample Request", request_only=True, value=_QUESTIONS_SAMPLE)
+            OpenApiExample(
+                name="Sample Request", request_only=True, value=_QUESTIONS_SAMPLE
+            )
         ],
         responses={
             200: OpenApiResponse(
@@ -442,9 +473,9 @@ class CourseAssessmentView(APIView):
     )
     def put(self, request, course_pk):
         course = self._get_course(course_pk, request.user)
-        if course.status != CourseStatus.DRAFT:
+        if not course.is_editable:
             raise exceptions.ValidationError(
-                "Assessments can only be edited while the course is Draft."
+                "Assessments can only be edited while the course is Draft or Needs Revision."
             )
 
         assessment = getattr(course, "final_assessment", None)

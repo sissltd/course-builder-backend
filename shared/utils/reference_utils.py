@@ -5,6 +5,7 @@ This module provides utility functions for generating unique reference codes,
 transaction IDs, audit log IDs, and platform-specific identifiers used across
 the Feexet application.
 """
+
 import random
 import secrets
 import string
@@ -144,7 +145,13 @@ def generate_unique_reference():
     """
     separator = "z"
     now = timezone.now()
-    now_str = str(now).replace(" ", separator).replace("-", "").replace(":", "").replace(".", "")
+    now_str = (
+        str(now)
+        .replace(" ", separator)
+        .replace("-", "")
+        .replace(":", "")
+        .replace(".", "")
+    )
     random_str = "".join(random.choices(string.ascii_lowercase + string.digits, k=6))
     reference_ = f"{now_str[:15]}-{random_str}"
     return reference_

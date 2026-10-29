@@ -1,0 +1,151 @@
+from datetime import timedelta
+
+from django.db import IntegrityError, transaction
+from django.utils import timezone
+from rest_framework import exceptions
+
+from api.catalog.enums import ReservationStatus
+from api.catalog.models import Category, Topic, TopicReservationRequest
+from api.notification.models import Notification
+from api.platform.services import platform_settings_service
+from api.users.models import User
+from api.authorization import codenames
+from api.authorization.services import permission_service
+
+
+def submit_request(
+    *, user: User, name: str, category: Category
+) -> TopicReservationRequest:
+    """Create a Pending TopicReservationRequest for a brand-new topic and
+    notify Admins/Reviewers.
+
+    Unlike the old select-an-existing-topic flow, this never rejects a
+    duplicate name up front - whether "Fundamentals of Programming" already
+    exists is a judgment call left to the reviewing admin/reviewer (see
+    approve_request/reject_request), not an automated check at submit time.
+    """
+
+    request = TopicReservationRequest.objects.create(
+        requested_by=user, name=name, category=category
+    )
+
+    # Whoever can decide the request hears about it.
+    managers = list(
+        permission_service.users_with_permission(codenames.CATALOG_MANAGE_TOPICS)
+    )
+    if managers:
+        Notification.emit_in_app_notification(
+            receivers=managers,
+            title="New topic request",
+            content=f"{user.email} requested a new topic: '{name}'.",
+            metadata={"topic_reservation_request_id": request.id},
+        )
+
+    return request
+
+
+def approve_request(
+    *, request: TopicReservationRequest, actor: User
+) -> TopicReservationRequest:
+    """Approve a Pending request: create the real Topic under the requested
+    category (price inherited from the category), and reserve it to the
+    requester for platform_settings.topic_reservation_expiry_days - all in
+    one step, since the whole point of asking was to claim the topic."""
+
+    if request.status != ReservationStatus.PENDING:
+        raise exceptions.ValidationError(
+            f"Request cannot be approved from status '{request.status}'."
+        )
+
+    expiry_days = platform_settings_service.get_settings().topic_reservation_expiry_days
+
+    try:
+        # The name check is enforced by the database and can race with
+        # another approval. Catching IntegrityError requires its own atomic
+        # block so the surrounding transaction remains usable.
+        with transaction.atomic():
+            topic = Topic.objects.create(
+                category=request.category,
+                name=request.name,
+                # No price overrides: a new topic pays its category's three
+                # prices until a Writer sets its own.
+                reserved_by=request.requested_by,
+                reserved_until=timezone.localdate() + timedelta(days=expiry_days),
+            )
+    except IntegrityError as exc:
+        raise exceptions.ValidationError(
+            "A topic with this name already exists in this category."
+        ) from exc
+
+    request.topic = topic
+    request.status = ReservationStatus.APPROVED
+    request.reviewed_by = actor
+    request.reviewed_at = timezone.now()
+    request.save(
+        update_fields=[
+            "topic",
+            "status",
+            "reviewed_by",
+            "reviewed_at",
+            "updated_datetime",
+        ]
+    )
+    Notification.emit_in_app_notification(
+        receivers=[request.requested_by],
+        title="Topic request approved",
+        content=(
+            f"Your request for '{topic.name}' was approved and the topic is "
+            "reserved for you. You can start a course on it now."
+        ),
+        metadata={"topic_reservation_request_id": request.id, "topic_id": topic.id},
+    )
+    return request
+
+
+def reject_request(
+    *, request: TopicReservationRequest, actor: User, reason: str = ""
+) -> TopicReservationRequest:
+    """Reject a Pending request and tell the requester, in-app, with the
+    reviewer's `reason`. No Topic is created; `reason` is free text, e.g.
+    that the name already matches an existing topic."""
+
+    if request.status != ReservationStatus.PENDING:
+        raise exceptions.ValidationError(
+            f"Request cannot be rejected from status '{request.status}'."
+        )
+
+    request.status = ReservationStatus.REJECTED
+    request.rejection_reason = reason or None
+    request.reviewed_by = actor
+    request.reviewed_at = timezone.now()
+    request.save(
+        update_fields=[
+            "status",
+            "rejection_reason",
+            "reviewed_by",
+            "reviewed_at",
+            "updated_datetime",
+        ]
+    )
+    Notification.emit_in_app_notification(
+        receivers=[request.requested_by],
+        title="Topic request declined",
+        content=(
+            f"Your request for '{request.name}' was declined."
+            + (f" Reason: {reason}" if reason else "")
+        ),
+        metadata={"topic_reservation_request_id": request.id},
+    )
+    return request
+
+
+def release_reservation(*, topic: Topic, actor: User) -> Topic:
+    """Manually clear a topic's active reservation (PRD: "Admin can manually
+    release a reservation if a creator becomes inactive"). A no-op if the
+    topic isn't currently reserved, rather than an error - releasing an
+    already-free topic is a harmless idempotent action."""
+
+    topic.reserved_by = None
+    topic.reserved_until = None
+    topic.save(update_fields=["reserved_by", "reserved_until", "updated_datetime"])
+    return topic

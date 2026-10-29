@@ -2,15 +2,28 @@ import json
 import logging
 import secrets
 import string
+import uuid
+from uuid import UUID
 
+import redis.asyncio as aioredis
 from django.conf import settings
+from django.core.cache import cache
+from django_redis import get_redis_connection
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
+
 def get_redis_client():
-    from django_redis import get_redis_connection
     return get_redis_connection("default")
+
+
+def get_async_redis_client():
+    redis_url = settings.CACHES["default"].get("LOCATION")
+    if not redis_url:
+        return None
+    return aioredis.Redis.from_url(redis_url)
+
 
 # -- centralized Key naming schema (to help across the codebase) --
 
@@ -18,14 +31,18 @@ def get_redis_client():
 Since redis is a flat key-value store, we will use : as the naming convention to stimulate namespacing (e.g otp:value:user@email.com) - which also makes it readable.
 """
 
+
 def _otp_key(email):
     return f"otp:value:{email.lower()}"
+
 
 def _otp_email_rate_key(email):
     return f"rate:otp_req:email:{email.lower()}"
 
+
 def _otp_ip_rate_key(ip):
     return f"rate:otp_req:ip:{ip}"
+
 
 def _otp_failed_key(email):
     return f"rate:otp_fail:{email.lower()}"
@@ -38,6 +55,76 @@ class RedisService:
     def get_redis_client():
         """Get the Redis client connection."""
         return get_redis_client()
+
+    @staticmethod
+    def get_async_redis_client():
+        """Get the asynchronous Redis client connection. Uses the bare-bones
+        Python redis client, not django-redis, for async support."""
+        return get_async_redis_client()
+
+    @staticmethod
+    async def publish_user_notification(user_id: UUID, payload) -> None:
+        """
+        Publish a JSON-serialisable payload to the user's notification channel.
+
+        The payload goes out as-is, so a subscriber's SSE event has exactly
+        the shape that was published. Never raises: a failure is logged.
+        """
+        client = None
+        try:
+            client = RedisService.get_async_redis_client()
+            if client is None:
+                logger.debug("Skipping notification publishing because the default cache has no Redis URL")
+                return
+            channel = f"user:notifications:{user_id}"
+            await client.publish(channel, json.dumps(payload))
+            logger.info(
+                f"Published notification to user {user_id} on channel {channel}"
+            )
+        except Exception as e:
+            logger.error(f"Error publishing notification for user {user_id}: {e}")
+        finally:
+            if client is not None:
+                await client.aclose()
+
+    @staticmethod
+    async def publish_ai_generation_progress(
+        job_id: UUID, user_id: UUID, payload: dict
+    ) -> None:
+        """Publish a best-effort progress event on the owner's Redis channel."""
+        try:
+            client = RedisService.get_async_redis_client()
+        except Exception:
+            logger.exception("Unable to create AI generation Redis client")
+            return
+        if client is None:
+            logger.debug(
+                "Skipping AI generation progress publish because the default "
+                "cache has no Redis URL"
+            )
+            return
+
+        channel = f"user:ai-generations:{user_id}"
+        message = json.dumps(
+            {"job_id": str(job_id), "payload": payload},
+            default=str,
+        )
+        try:
+            await client.publish(channel, message)
+            logger.debug("Published AI generation progress for job %s", job_id)
+        except Exception:
+            logger.exception(
+                "Error publishing AI generation progress for job %s", job_id
+            )
+        finally:
+            try:
+                await client.aclose()
+            except Exception:
+                logger.debug(
+                    "Error closing AI generation Redis client for job %s",
+                    job_id,
+                    exc_info=True,
+                )
 
     # --- Generic Redis Operations ---
     @staticmethod
@@ -54,11 +141,7 @@ class RedisService:
             bool: True if successful, False otherwise
         """
         try:
-            client = get_redis_client()
-            if expiry_seconds:
-                client.setex(key, expiry_seconds, value)
-            else:
-                client.set(key, value)
+            cache.set(key, value, timeout=expiry_seconds)
             logger.info(f"Stored key {key} in Redis")
             return True
         except Exception as e:
@@ -77,8 +160,7 @@ class RedisService:
             str: The value if exists, None otherwise
         """
         try:
-            client = get_redis_client()
-            value = client.get(key)
+            value = cache.get(key)
             if not value:
                 return None
 
@@ -87,7 +169,9 @@ class RedisService:
                 try:
                     return value.decode("utf-8")
                 except UnicodeDecodeError:
-                    logger.warning(f"Redis value for key {key} contains non-UTF8 bytes; returning repr safely")
+                    logger.warning(
+                        f"Redis value for key {key} contains non-UTF8 bytes; returning repr safely"
+                    )
                     return value.decode("utf-8", errors="replace")
             if isinstance(value, str):
                 return value
@@ -110,8 +194,7 @@ class RedisService:
             bool: True if successful, False otherwise
         """
         try:
-            client = get_redis_client()
-            client.delete(key)
+            cache.delete(key)
             logger.info(f"Deleted key {key} from Redis")
             return True
         except Exception as e:
@@ -154,7 +237,9 @@ class RedisService:
                 try:
                     return value.decode("utf-8")
                 except UnicodeDecodeError:
-                    logger.warning(f"OTP value for {email} contains non-UTF8 bytes; returning decode replace")
+                    logger.warning(
+                        f"OTP value for {email} contains non-UTF8 bytes; returning decode replace"
+                    )
                     return value.decode("utf-8", errors="replace")
 
             if isinstance(value, str):
@@ -176,8 +261,7 @@ class RedisService:
             logger.info(f"OTP deleted for {email}")
         except Exception as e:
             logger.error(f"Error deleting OTP for {email}: {e}")
-            
-            
+
     @classmethod
     def store_otp_role(cls, email: str, role: str) -> None:
         """
@@ -185,9 +269,10 @@ class RedisService:
         Uses the same TTL as the OTP so it auto-expires together.
         """
         from django.conf import settings
+
         key = f"otp:role:{email}"
         get_redis_client().setex(key, settings.OTP_TTL_SECONDS, role)
-        
+
     @classmethod
     def get_otp_role(cls, email: str) -> str | None:
         """
@@ -196,15 +281,14 @@ class RedisService:
         key = f"otp:role:{email}"
         value = get_redis_client().get(key)
         return value.decode() if value else None
-    
+
     @classmethod
     def delete_otp_role(cls, email: str) -> None:
         """
         Cleans up the role key after it has been consumed.
         """
         get_redis_client().delete(f"otp:role:{email}")
-        
-        
+
     @staticmethod
     def verify_otp(email: str, otp: str) -> bool:
         """
@@ -242,7 +326,9 @@ class RedisService:
     @staticmethod
     def check_email_rate_limit(email):
         rl = settings.RATE_LIMIT
-        count, ttl = RedisService._atomic_increment(_otp_email_rate_key(email), rl["EMAIL_WINDOW"])
+        count, ttl = RedisService._atomic_increment(
+            _otp_email_rate_key(email), rl["EMAIL_WINDOW"]
+        )
         if count > rl["EMAIL_MAX"]:
             return True, max(ttl, 0)
         return False, 0
@@ -250,7 +336,9 @@ class RedisService:
     @staticmethod
     def check_ip_rate_limit(ip):
         rl = settings.RATE_LIMIT
-        count, ttl = RedisService._atomic_increment(_otp_ip_rate_key(ip), rl["IP_WINDOW"])
+        count, ttl = RedisService._atomic_increment(
+            _otp_ip_rate_key(ip), rl["IP_WINDOW"]
+        )
         if count > rl["IP_MAX"]:
             return True, max(ttl, 0)
         return False, 0
@@ -271,7 +359,9 @@ class RedisService:
     @staticmethod
     def record_failed_attempt(email):
         rl = settings.RATE_LIMIT
-        count, ttl = RedisService._atomic_increment(_otp_failed_key(email), rl["FAILED_WINDOW"])
+        count, ttl = RedisService._atomic_increment(
+            _otp_failed_key(email), rl["FAILED_WINDOW"]
+        )
         return count, max(ttl, 0)
 
     @staticmethod
@@ -300,10 +390,9 @@ class RedisService:
     _BANKS_CACHE_TTL = 24 * 60 * 60  # 24 hours
 
     @classmethod
-    def get_cached_banks(cls) -> dict | None:
+    def get_cached_banks(cls) -> list[dict] | None:
         try:
-            client = get_redis_client()
-            value = client.get(cls._BANKS_CACHE_KEY)
+            value = cache.get(cls._BANKS_CACHE_KEY)
             if not value:
                 return None
             raw = value.decode("utf-8") if isinstance(value, bytes) else value
@@ -313,10 +402,55 @@ class RedisService:
             return None
 
     @classmethod
-    def set_cached_banks(cls, data: dict) -> None:
+    def set_cached_banks(cls, data: list[dict]) -> None:
         try:
-            client = get_redis_client()
-            client.setex(cls._BANKS_CACHE_KEY, cls._BANKS_CACHE_TTL, json.dumps(data))
+            cache.set(
+                cls._BANKS_CACHE_KEY,
+                json.dumps(data),
+                timeout=cls._BANKS_CACHE_TTL,
+            )
             logger.info("Banks list cached in Redis for 24 hours")
         except Exception as e:
             logger.error(f"Error caching banks: {e}")
+
+    @staticmethod
+    def acquire_lock(lock_name: str, expire_seconds: int = 60) -> str | None:
+        """
+        Acquire a distributed lock using Redis.
+        Returns a unique token if the lock is acquired, else None.
+        """
+        token = str(uuid.uuid4())
+        try:
+            client = get_redis_client()
+            acquired = client.set(lock_name, token, nx=True, ex=expire_seconds)
+        except NotImplementedError:
+            acquired = cache.add(lock_name, token, timeout=expire_seconds)
+
+        if not acquired:
+            return None  # Failed to get the lock
+
+        return token
+
+    # ----Lua script for unlocking the lock key----
+    _UNLOCK_SCRIPT = """
+    if redis.call("get", KEYS[1]) == ARGV[1] then
+        return redis.call("del", KEYS[1])
+    else
+        return 0
+    end
+    """
+
+    @staticmethod
+    def release_lock(key, lock_value):
+        """
+        Release the lock if the lock value matches.
+        """
+
+        try:
+            client = get_redis_client()
+            script = client.register_script(RedisService._UNLOCK_SCRIPT)
+            return script(keys=[key], args=[lock_value])
+        except NotImplementedError:
+            if cache.get(key) != lock_value:
+                return 0
+            return int(cache.delete(key))

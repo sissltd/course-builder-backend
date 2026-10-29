@@ -3,7 +3,7 @@ from django.contrib.auth.models import AbstractUser
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
-from api.users.enums import AccountStatus, Sex, UserRole
+from api.users.enums import AccountStatus, QueueTrackFilter, Sex, UserRole
 from api.users.models.manager import CustomUserManager
 from core.mixins import (
     DateHistoryModelMixin,
@@ -32,16 +32,46 @@ class User(
         max_length=20,
         choices=UserRole.choices,
         default=UserRole.COURSE_CREATOR,
-        help_text=_("Primary role used for role-based permission checks."),
+        help_text=_(
+            "Workflow role: decides review seats, MFA mandate, staff roster "
+            "membership and login workspace. Permissions come from access_role."
+        ),
+    )
+    access_role = models.ForeignKey(
+        "authorization.Role",
+        verbose_name=_("Access role"),
+        on_delete=models.PROTECT,
+        related_name="members",
+        help_text=_(
+            "The role whose permissions this user holds. Always has "
+            "base_role equal to `role`; defaults to the built-in role for "
+            "`role` when not set explicitly."
+        ),
+    )
+    assigned_track = models.CharField(
+        verbose_name=_("Assigned Track"),
+        max_length=20,
+        choices=[
+            (choice.value, choice.label)
+            for choice in QueueTrackFilter
+            if choice != QueueTrackFilter.NONE
+        ],
+        null=True,
+        blank=True,
+        help_text=_(
+            "Production track a reviewer is assigned to, set by an admin. "
+            "NONE is deliberately not offered - it is a queue-narrowing "
+            "outcome, not an assignment. Read-only to the reviewer - "
+            "distinct from their own QueueBehaviourPreference toggles, "
+            "which they control."
+        ),
     )
     status = models.CharField(
         verbose_name=_("Account Status"),
         max_length=25,
         choices=AccountStatus.choices,
         default=AccountStatus.PENDING_VERIFICATION,
-        help_text=_(
-            "Account activation/lifecycle status, independent of role."
-        ),
+        help_text=_("Account activation/lifecycle status, independent of role."),
     )
     failed_login_attempts = models.PositiveIntegerField(
         verbose_name=_("Failed Login Attempts"),
@@ -66,6 +96,33 @@ class User(
         default="",
         help_text=_("ISO 3166-1 alpha-2 country code."),
     )
+    state = models.CharField(
+        verbose_name=_("State"),
+        max_length=50,
+        blank=True,
+        default="",
+        help_text=_("State, province or region."),
+    )
+    address = models.CharField(
+        verbose_name=_("Address"),
+        max_length=255,
+        blank=True,
+        default="",
+        help_text=_("Street address, or similar."),
+    )
+    phone_number = models.CharField(
+        verbose_name=_("Phone Number"),
+        max_length=20,
+        blank=True,
+        default="",
+        help_text=_("User's phone number."),
+    )
+    date_of_birth = models.DateField(
+        verbose_name=_("Date of Birth"),
+        null=True,
+        blank=True,
+        help_text=_("User's date of birth."),
+    )
     sex = models.CharField(
         verbose_name=_("Sex"),
         max_length=20,
@@ -87,22 +144,81 @@ class User(
         default="",
         help_text=_("IANA timezone identifier, e.g. 'Africa/Lagos'."),
     )
-    avatar_url = models.URLField(
+    avatar_url = models.CharField(
         verbose_name=_("Avatar URL"),
+        max_length=500,
         blank=True,
         default="",
-        help_text=_("Profile picture URL."),
+        help_text=_(
+            "Profile picture reference. Holds the file_key (or full CDN URL) "
+            "returned by the upload presign endpoint; the value is "
+            "backend-generated, so it may exceed 200 characters."
+        ),
     )
-    mfa_grace_period_ends_at = models.DateTimeField(
-        verbose_name=_("MFA Grace Period Ends At"),
+
+    erased_at = models.DateTimeField(
+        verbose_name=_("Erased at"),
         null=True,
         blank=True,
         help_text=_(
-            "Deadline by which this user must enroll in MFA. Set once, the "
-            "first time this row is saved with role=ADMIN/SUPER_ADMIN - see "
-            "save() below - and never reset, so promoting-then-waiting "
-            "cannot be used to defer enrollment indefinitely."
+            "When this account was deleted and its personal data erased. Set "
+            "once, never cleared: an erased account cannot be restored."
         ),
+    )
+    erased_by = models.ForeignKey(
+        "users.User",
+        verbose_name=_("Erased by"),
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text=_("Administrator who deleted the account."),
+    )
+
+    # >>>>>>>>>>>> KYC-verified identity (authoritative, from NIMC/NIBSS) <<<<<<<<<<
+    # Populated from the KYC NIN/BVN response at verification time — distinct from
+    # the self-entered name/gender above. Drives the admin verification dashboard's
+    # Identity tab.
+    kyc_first_name = models.CharField(max_length=150, blank=True, default="")
+    kyc_last_name = models.CharField(max_length=150, blank=True, default="")
+    kyc_date_of_birth = models.CharField(
+        max_length=50,
+        blank=True,
+        default="",
+        help_text="Date of birth exactly as returned by KYC provider (format varies by source).",
+    )
+    kyc_gender = models.CharField(max_length=20, blank=True, default="")
+    kyc_document_image = models.CharField(
+        max_length=500,
+        blank=True,
+        default="",
+        help_text="Private Spaces object key for the government ID photo; served via presigned GET.",
+    )
+    kyc_phone = models.CharField(
+        max_length=20,
+        blank=True,
+        default="",
+        help_text="Phone number exactly as returned by KYC provider.",
+    )
+    kyc_address = models.JSONField(
+        blank=True,
+        default=dict,
+        help_text="Address exactly as returned by KYC provider.",
+    )
+    liveness_selfie = models.URLField(
+        max_length=500,
+        blank=True,
+        default="",
+        help_text="Public Spaces object key or full CDN URL for the liveness selfie",
+    )
+    liveness_score = models.FloatField(
+        null=True,
+        blank=True,
+        help_text="Liveness score returned by the KYC provider for the selfie.",
+    )
+    liveness_passes = models.BooleanField(
+        default=False,
+        help_text="Indicates whether the liveness selfie is confirmed as live human presence.",
     )
 
     objects = CustomUserManager()
@@ -133,44 +249,45 @@ class User(
 
         return self.email
 
-    def save(self, *args, **kwargs):
-        """Self-healing MFA grace-period trigger: the moment a row holding
-        role=ADMIN/SUPER_ADMIN is saved with no grace period set yet, start
-        the clock. Covers every path that can produce such a row (bootstrap,
-        a future staff-invite extension, a direct admin-site edit) without
-        needing to instrument each call site individually. Idempotent - only
-        fires while mfa_grace_period_ends_at is still None.
+    @classmethod
+    def from_db(cls, db, field_names, values):
+        instance = super().from_db(db, field_names, values)
+        # Remember what was loaded so save() can tell a role change that
+        # came without an explicit access role (which must follow the role)
+        # from one that came with it.
+        loaded = dict(zip(field_names, values, strict=False))
+        instance._loaded_role = loaded.get("role")
+        instance._loaded_access_role_id = loaded.get("access_role_id")
+        return instance
 
-        Local import of platform_settings_service (not module-level) mirrors
-        MeSerializer.get_has_completed_onboarding's rationale: keeps
-        api.users -> api.platform a one-directional runtime dependency
-        rather than a module-level import coupling.
+    def _sync_access_role(self, kwargs):
+        """Point access_role at the built-in role for `role` when it must follow it.
+
+        That is: no access role yet, or `role` changed while access_role was
+        left untouched. An access role set deliberately alongside a role
+        change (a custom role) is kept - the role service checks its base role.
         """
 
-        if self.role in (UserRole.ADMIN, UserRole.SUPER_ADMIN) and (
-            self.mfa_grace_period_ends_at is None
+        role_changed = getattr(self, "_loaded_role", self.role) != self.role
+        access_role_untouched = (
+            getattr(self, "_loaded_access_role_id", self.access_role_id)
+            == self.access_role_id
+        )
+        if self.access_role_id is not None and not (
+            role_changed and access_role_untouched
         ):
-            from datetime import timedelta
+            return
+        from api.authorization.services.role_registry import system_role_id
 
-            from django.utils import timezone
+        self.access_role_id = system_role_id(self.role)
+        update_fields = kwargs.get("update_fields")
+        if update_fields is not None and "access_role" not in update_fields:
+            kwargs["update_fields"] = [*update_fields, "access_role"]
 
-            from api.platform.services import platform_settings_service
+    def save(self, *args, **kwargs):
+        """Keep access_role in step with role."""
 
-            grace_days = (
-                platform_settings_service.get_settings().mfa_enrollment_grace_period_days
-            )
-            self.mfa_grace_period_ends_at = timezone.now() + timedelta(days=grace_days)
-
-            # A caller may have restricted this save to specific columns via
-            # update_fields (e.g. LoginSerializer only persists login-lockout
-            # fields) - without extending that list, Django would compute
-            # mfa_grace_period_ends_at above but silently never write it,
-            # and the next login would recompute a fresh one from "now"
-            # every time, defeating the entire point of a bounded window.
-            update_fields = kwargs.get("update_fields")
-            if update_fields is not None and (
-                "mfa_grace_period_ends_at" not in update_fields
-            ):
-                kwargs["update_fields"] = [*update_fields, "mfa_grace_period_ends_at"]
-
+        self._sync_access_role(kwargs)
         super().save(*args, **kwargs)
+        self._loaded_role = self.role
+        self._loaded_access_role_id = self.access_role_id

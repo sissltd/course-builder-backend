@@ -24,7 +24,7 @@ GATES = [
         ],
         True,
     ),
-    ([PYTHON, "manage.py", "test"], True),
+    ([PYTHON, "-m", "pytest", "-q", "--reuse-db"], True),
 ]
 
 

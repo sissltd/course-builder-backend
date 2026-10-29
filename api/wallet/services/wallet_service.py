@@ -1,6 +1,8 @@
+import logging
 from decimal import Decimal
 
 from django.conf import settings
+from django.contrib.contenttypes.models import ContentType
 from django.db import transaction
 from django.db.models import Q, QuerySet, Sum
 from django.utils import timezone
@@ -8,24 +10,44 @@ from rest_framework import exceptions
 
 from api.authentication.enums import TokenPurpose
 from api.authentication.services import token_service
+from api.authentication.services.activity_service import log_activity
+from api.authorization import codenames
+from api.authorization.services import permission_service
 from api.courses.models import Course
-from api.notification.models import Notification
-from api.platform.services import platform_settings_service
-from api.users.models import User
-from api.users.permissions import (
-    IsAdminOrSuperAdminRole,
-    IsCourseCreatorRole,
-    require_role,
+
+# from api.platform.services import platform_settings_service
+from api.payments.models.bankaccount_models import BankAccount
+from api.payments.models.ledgeraccount_models import InternalAccount
+from api.payments.models.transaction_model import Transaction, generate_reference
+from api.payments.services.transaction_services import (
+    internal_transfer,
 )
-from api.users.services import kyc_service
+from api.platform.services import platform_settings_service
+from api.users.enums import UserActivityActionEnums, UserActivityCategoryEnums
+from api.users.models import User
+from api.users.services.kyc_services import kyc_submission_service
 from api.wallet.enums import (
     TransactionStatus,
     TransactionType,
     WithdrawalRequestStatus,
 )
-from api.wallet.models import PayoutAccount, Transaction, Wallet, WithdrawalRequest
+from api.wallet.models import (
+    Wallet,
+    WithdrawalRequest,
+    _generate_reference,
+)
+from api.wallet.tasks import dispatch_transfer_task
+from core.models import TransferOutboxEvent
+from shared.redis.redis_service import RedisService
+from shared.services.email_service import EmailService
+
+logger = logging.getLogger(__name__)
 
 WITHDRAWAL_OTP_SUBJECT = "Confirm your withdrawal"
+
+# Throttle withdrawal *requests* (not just confirms) to prevent OTP
+# email-bombing: one active request per user per cooldown window.
+_WITHDRAWAL_REQUEST_LOCK_TTL = 30
 
 
 def get_or_create_wallet(*, user: User) -> Wallet:
@@ -36,7 +58,7 @@ def get_or_create_wallet(*, user: User) -> Wallet:
     wallet-detail view).
     """
 
-    wallet, _created = Wallet.objects.get_or_create(user=user)
+    wallet, _ = Wallet.objects.get_or_create(user=user)
     return wallet
 
 
@@ -63,16 +85,13 @@ def get_wallet_totals(*, wallet: Wallet) -> dict:
     }
 
 
-def credit_wallet(
-    *, user: User, amount: Decimal, course: Course | None = None, description: str = ""
-) -> Transaction:
+def credit_wallet(*, user: User, amount: Decimal, course: Course | None = None, description: str = "") -> Transaction:
     """Credit `amount` to `user`'s wallet, creating a COMPLETED Transaction.
 
     Uses select_for_update() inside an atomic transaction so concurrent
     credits to the same wallet cannot produce a lost update. Does not send a
-    notification itself - callers (e.g. review_service.approve_course) are
-    responsible for that, avoiding duplicate notifications when this is one
-    step of a larger workflow.
+    notification itself. Course payouts do not use it: they are ledger
+    transfers from the course-payment account (course_payout_service).
     """
 
     with transaction.atomic():
@@ -80,12 +99,14 @@ def credit_wallet(
         wallet = Wallet.objects.select_for_update().get(pk=wallet.pk)
 
         txn = Transaction.objects.create(
-            wallet=wallet,
+            wallet_id=wallet.id,
+            wallet_type=ContentType.objects.get_for_model(wallet),
             course=course,
             amount=amount,
             type=TransactionType.CREDIT,
             status=TransactionStatus.COMPLETED,
             description=description,
+            reference=_generate_reference(),
         )
         wallet.balance = wallet.balance + amount
         wallet.save(update_fields=["balance", "updated_datetime"])
@@ -99,21 +120,15 @@ def list_transactions(*, user: User) -> QuerySet[Transaction]:
     return Transaction.objects.filter(wallet__user=user)
 
 
-def list_payout_accounts(*, user: User) -> QuerySet[PayoutAccount]:
-    """Return `user`'s payout accounts, newest first."""
-
-    return PayoutAccount.objects.filter(user=user)
-
-
 def list_all_wallets(*, actor: User) -> QuerySet[Wallet]:
     """Return every creator wallet, for the admin finance view.
 
-    Creator-facing wallet endpoints are gated on IsCourseCreatorRole, so an
-    Admin is 403'd from all of them and has no way to answer "what is this
-    creator's balance?" - these admin readers exist to close that.
+    Creator-facing wallet endpoints are gated on `earnings.manage_own`, which
+    staff roles do not hold, so an Admin has no way to answer "what is this
+    creator's balance?" there - these admin readers exist to close that.
     """
 
-    require_role(actor, IsAdminOrSuperAdminRole.allowed_roles)
+    permission_service.require_permission(actor, codenames.CREATORS_VIEW_WALLET)
     return Wallet.objects.select_related("user").order_by("-updated_datetime")
 
 
@@ -125,8 +140,8 @@ def list_all_transactions(*, actor: User) -> QuerySet[Transaction]:
     transaction.
     """
 
-    require_role(actor, IsAdminOrSuperAdminRole.allowed_roles)
-    return Transaction.objects.select_related("wallet__user", "course")
+    permission_service.require_permission(actor, codenames.CREATORS_VIEW_WALLET)
+    return Transaction.objects.select_related("course")  # wallet field is now a GenericForeign key
 
 
 def list_all_withdrawal_requests(*, actor: User) -> QuerySet[WithdrawalRequest]:
@@ -138,64 +153,11 @@ def list_all_withdrawal_requests(*, actor: User) -> QuerySet[WithdrawalRequest]:
     COMPLETED or FAILED yet, so an admin can see the queue but not settle it.
     """
 
-    require_role(actor, IsAdminOrSuperAdminRole.allowed_roles)
-    return WithdrawalRequest.objects.select_related(
-        "user", "payout_account", "transaction"
-    )
+    permission_service.require_permission(actor, codenames.CREATORS_VIEW_WALLET)
+    return WithdrawalRequest.objects.select_related("user", "payout_account", "transaction")
 
 
-def create_payout_account(
-    *,
-    user: User,
-    account_type: str,
-    provider_name: str,
-    account_number: str,
-    account_name: str,
-    is_default: bool = False,
-) -> PayoutAccount:
-    """Add a payout account for `user`.
-
-    The first account a user adds automatically becomes their default
-    (matching the design, where the first-added account shows as selected
-    on Settings -> Payment); explicitly passing is_default=True on a later
-    account demotes any previous default.
-    """
-
-    require_role(user, IsCourseCreatorRole.allowed_roles)
-    has_existing = PayoutAccount.objects.filter(user=user).exists()
-    is_default = is_default or not has_existing
-
-    with transaction.atomic():
-        if is_default:
-            PayoutAccount.objects.filter(user=user, is_default=True).update(
-                is_default=False
-            )
-        return PayoutAccount.objects.create(
-            user=user,
-            account_type=account_type,
-            provider_name=provider_name,
-            account_number=account_number,
-            account_name=account_name,
-            is_default=is_default,
-        )
-
-
-def delete_payout_account(*, user: User, payout_account_id) -> None:
-    """Remove one of `user`'s payout accounts.
-
-    Raises NotFound if it doesn't exist or belongs to someone else.
-    """
-
-    require_role(user, IsCourseCreatorRole.allowed_roles)
-    account = PayoutAccount.objects.filter(user=user, pk=payout_account_id).first()
-    if account is None:
-        raise exceptions.NotFound("Payout account not found.")
-    account.delete()
-
-
-def request_withdrawal(
-    *, user: User, amount: Decimal, payout_account_id
-) -> WithdrawalRequest:
+def request_withdrawal(*, user: User, amount: Decimal, payout_account_id) -> WithdrawalRequest:
     """Validate and create a PENDING_CONFIRMATION WithdrawalRequest, emailing
     an OTP the user must submit via confirm_withdrawal.
 
@@ -205,26 +167,31 @@ def request_withdrawal(
     amount is below the minimum threshold, or exceeds the current balance.
     """
 
-    require_role(user, IsCourseCreatorRole.allowed_roles)
-    kyc_service.require_verified(user=user)
+    permission_service.require_permission(user, codenames.EARNINGS_MANAGE_OWN)
+    platform_settings = platform_settings_service.get_settings()
+    require_kyc = platform_settings.withdrawal_require_verification
+    kyc_submission_service.require_verified(user=user, required=require_kyc)
 
-    minimum_withdrawal_threshold = (
-        platform_settings_service.get_settings().minimum_withdrawal_threshold
-    )
+    minimum_withdrawal_threshold = platform_settings_service.get_settings().minimum_withdrawal_threshold
     if amount < minimum_withdrawal_threshold:
-        raise exceptions.ValidationError(
-            f"Minimum withdrawal amount is {minimum_withdrawal_threshold}."
-        )
+        raise exceptions.ValidationError(f"Minimum withdrawal amount is {minimum_withdrawal_threshold}.")
 
     wallet = get_or_create_wallet(user=user)
     if amount > wallet.balance:
         raise exceptions.ValidationError("Withdrawal amount exceeds available balance.")
 
-    payout_account = PayoutAccount.objects.filter(
-        user=user, pk=payout_account_id
-    ).first()
+    payout_account = BankAccount.objects.filter(user=user, pk=payout_account_id).first()
     if payout_account is None:
         raise exceptions.NotFound("Payout account not found.")
+
+    # Throttle: one withdrawal request (and thus one OTP email) per user per
+    # cooldown window, to prevent OTP email-bombing.
+    lock = RedisService.acquire_lock(f"withdrawal_request:{user.id}", _WITHDRAWAL_REQUEST_LOCK_TTL)
+    if not lock:
+        raise exceptions.Throttled(
+            detail="A withdrawal was requested recently. Please wait before requesting another.",
+            wait=_WITHDRAWAL_REQUEST_LOCK_TTL,
+        )
 
     withdrawal_request = WithdrawalRequest.objects.create(
         user=user,
@@ -238,17 +205,14 @@ def request_withdrawal(
         purpose=TokenPurpose.WITHDRAWAL_CONFIRMATION,
         length=settings.WITHDRAWAL_OTP_LENGTH,
         expiry_minutes=settings.WITHDRAWAL_OTP_EXPIRY_MINUTES,
+        reference_request=withdrawal_request,
     )
-    Notification.emit_email_notification(
-        receivers=[user],
-        subject=WITHDRAWAL_OTP_SUBJECT,
-        template_name="emails/withdrawal_otp",
-        context={
-            "first_name": user.first_name,
-            "code": raw_code,
-            "amount": amount,
-            "expiry_minutes": settings.WITHDRAWAL_OTP_EXPIRY_MINUTES,
-        },
+
+    EmailService.send_withdrawal_otp_email(
+        user_email=user.email,
+        first_name=user.first_name,
+        code=raw_code,
+        amount=amount,
     )
     return withdrawal_request
 
@@ -261,55 +225,116 @@ def confirm_withdrawal(*, user: User, withdrawal_request_id, code: str) -> Trans
     since it may have changed in between. Raises NotFound if the request
     doesn't exist, isn't the caller's, or isn't awaiting confirmation.
 
-    No MFA step-up here: require_role below only ever admits
-    IsCourseCreatorRole.allowed_roles (COURSE_CREATOR/STAFF_WRITER) - an
-    ADMIN/SUPER_ADMIN account can never reach this function at all, so an
-    MFA-mandated-role check would be unreachable dead code. The financial
-    actions an Admin/Super Admin can actually perform in this codebase are
-    PlatformSettings threshold changes and category pricing, both gated by
-    IsMFAVerifiedForSession at the view layer instead.
+    No MFA step-up here: this moves the caller's own earnings to the caller's
+    own verified bank account, behind an emailed OTP, and needs
+    `earnings.manage_own` (Course Creator and Writer by default). Actions on
+    other people's money are gated separately, with MFA.
     """
 
-    require_role(user, IsCourseCreatorRole.allowed_roles)
-    withdrawal_request = WithdrawalRequest.objects.filter(
-        pk=withdrawal_request_id,
-        user=user,
-        status=WithdrawalRequestStatus.PENDING_CONFIRMATION,
-    ).first()
-    if withdrawal_request is None:
-        raise exceptions.NotFound("Withdrawal request not found.")
+    permission_service.require_permission(user, codenames.EARNINGS_MANAGE_OWN)
 
-    token_service.verify_token(
-        user=user, purpose=TokenPurpose.WITHDRAWAL_CONFIRMATION, token=code
-    )
-
+    # Atomically claim the request: only one concurrent confirm can transition
+    # PENDING_CONFIRMATION -> CONFIRMED, which prevents a double-confirm race
+    # from producing two payouts for a single withdrawal request.
     with transaction.atomic():
-        wallet = Wallet.objects.select_for_update().get(pk=withdrawal_request.wallet_id)
-        if withdrawal_request.amount > wallet.balance:
-            raise exceptions.ValidationError(
-                "Withdrawal amount exceeds available balance."
-            )
-
-        payout_account = withdrawal_request.payout_account
-        txn = Transaction.objects.create(
-            wallet=wallet,
-            payout_account=payout_account,
-            amount=withdrawal_request.amount,
-            type=TransactionType.DEBIT,
-            status=TransactionStatus.PENDING,
-            description="Withdrawal request",
-            recipient_account_name=payout_account.account_name,
-            recipient_account_number=payout_account.account_number,
-            recipient_provider_name=payout_account.provider_name,
+        claimed = WithdrawalRequest.objects.filter(
+            pk=withdrawal_request_id,
+            user=user,
+            status=WithdrawalRequestStatus.PENDING_CONFIRMATION,
+        ).update(
+            status=WithdrawalRequestStatus.CONFIRMED,
+            updated_datetime=timezone.now(),
         )
-        wallet.balance = wallet.balance - withdrawal_request.amount
-        wallet.save(update_fields=["balance", "updated_datetime"])
+        if not claimed:
+            raise exceptions.NotFound("Withdrawal request not found.")
 
-        withdrawal_request.status = WithdrawalRequestStatus.CONFIRMED
+        token = token_service.verify_token(user=user, purpose=TokenPurpose.WITHDRAWAL_CONFIRMATION, token=code)
+        if token.reference_request_id is not None and str(token.reference_request_id) != str(withdrawal_request_id):
+            raise exceptions.ValidationError("This code was not issued for this withdrawal request.")
+
+        withdrawal_request = WithdrawalRequest.objects.select_for_update().get(pk=withdrawal_request_id)
+
+        try:
+            wallet = Wallet.objects.get(pk=withdrawal_request.wallet_id)
+            if withdrawal_request.amount > wallet.balance:
+                raise exceptions.ValidationError("Withdrawal amount exceeds available balance.")
+
+            payout_account = withdrawal_request.payout_account
+            account_number = payout_account.account_number
+            bank_name = payout_account.bank_name
+            account_name = payout_account.account_name
+            reference = generate_reference()
+        except Exception as exc:
+            logger.error(f"Error preparing withdrawal confirmation for user {user.email}: {exc}")
+            raise
+
+        # move the amount from the user's wallet into the suspense(transit) account before initiating the transfer to ensure funds are reserved and to prevent double spending in case of retries
+        credit_wallet = InternalAccount.objects.select_for_update().get(code_name="suspense")
+        debit_wallet = Wallet.objects.select_for_update().get(pk=wallet.pk)
+        internal_transfer(
+            amount=withdrawal_request.amount,
+            from_ledger=debit_wallet,
+            to_ledger=credit_wallet,
+            reference=reference,
+            description="Withdrawal Request",
+            fee=None,
+            payout_account_id=payout_account.id,
+            course_id=None,
+            recipient_account_name=account_name,
+            recipient_account_number=account_number,
+            recipient_provider_name=bank_name,
+        )
+
+        platform_settings = platform_settings_service.get_settings()
+        processor = platform_settings.payment_processor
+        outbox_entry = TransferOutboxEvent.objects.create(
+            user=user,
+            amount=withdrawal_request.amount,
+            status="PENDING",
+            reference=reference,
+            wallet=debit_wallet,
+            reason="Wallet Withdrawal",
+            transfer_request=withdrawal_request,
+            transfer_processor=processor,
+            bank_details=payout_account,
+        )
+
+        try:
+            transaction.on_commit(
+                lambda: dispatch_transfer_task.delay(outbox_entry.id)  # type: ignore
+            )
+        except Exception as task_exc:
+            logger.error(f"Error dispatching transfer task for withdrawal {withdrawal_request.id}: {task_exc}")
+            raise
+
+        txn = Transaction.objects.get(reference=reference, type=TransactionType.DEBIT)
         withdrawal_request.transaction = txn
         withdrawal_request.confirmed_at = timezone.now()
         withdrawal_request.save(
-            update_fields=["status", "transaction", "confirmed_at", "updated_datetime"]
+            update_fields=[
+                "transaction",
+                "confirmed_at",
+                "updated_datetime",
+            ]
         )
+
+    try:
+        log_activity(
+            user=user,
+            category=UserActivityCategoryEnums.WALLET,
+            action=UserActivityActionEnums.WITHDRAWAL_CONFIRMED,
+            summary=f"User {user.email} confirmed a withdrawal of {withdrawal_request.amount} Naira.",
+            actor_user=user,
+            details={
+                "user_id": str(user.id),
+                "amount": str(withdrawal_request.amount),
+                "reference": reference,
+                "payout_account_id": str(payout_account.id),
+            },
+        )
+
+    except Exception as audit_exc:
+        # Log the audit error but do not interrupt the main flow of withdrawal confirmation
+        logger.error(f"Error logging audit event for withdrawal confirmation: {audit_exc}")
 
     return txn

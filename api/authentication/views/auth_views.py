@@ -40,6 +40,7 @@ _ME_EXAMPLE = {
     "created_datetime": "2026-07-12T09:30:11.204Z",
     "updated_datetime": "2026-07-12T09:30:11.204Z",
     "has_completed_onboarding": False,
+    "mfa_enabled": False,
 }
 
 _TOKEN_PAIR_EXAMPLE = {
@@ -77,16 +78,17 @@ _LOGIN_RESPONSE_SCHEMA = {
         "workspace": {"type": "string"},
         "mfa_required": {"type": "boolean"},
         "challenge_token": {"type": "string"},
-        "mfa_enrollment_required": {"type": "boolean"},
-        "mfa_grace_period_ends_at": {"type": "string", "format": "date-time"},
-        "mfa_enrollment_overdue": {"type": "boolean"},
     },
 }
 
 
+# Public endpoint: no security requirement, so Swagger's padlock does
+# not attach a bearer token to it.
+@extend_schema(auth=[{}])
 class SignupView(APIView):
     """Create an inactive user and email a signup-verification link."""
 
+    authentication_classes = []  # public: a stale token must not 401 this
     permission_classes = [AllowAny]
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = "signup"
@@ -122,7 +124,6 @@ class SignupView(APIView):
                 value={
                     "email": "jane.doe@example.com",
                     "password": "Rw4$eTn8Kp2q",
-                    "password_confirm": "Rw4$eTn8Kp2q",
                     "first_name": "Jane",
                     "last_name": "Doe",
                     "country": "NG",
@@ -137,7 +138,7 @@ class SignupView(APIView):
                 examples=[OpenApiExample(name="Success", value=_ME_EXAMPLE)],
             ),
             400: OpenApiResponse(
-                description="The email is taken, passwords don't match, or the password is too weak.",
+                description="The email is taken or the password is too weak.",
                 examples=[
                     OpenApiExample(
                         name="Email already taken",
@@ -148,19 +149,6 @@ class SignupView(APIView):
                                     "code": "invalid",
                                     "message": "A user with this email already exists.",
                                     "field_name": "email",
-                                }
-                            ]
-                        },
-                    ),
-                    OpenApiExample(
-                        name="Passwords don't match",
-                        value={
-                            "errors": [
-                                {
-                                    "type": "validation_error",
-                                    "code": "invalid",
-                                    "message": "Passwords do not match.",
-                                    "field_name": "password_confirm",
                                 }
                             ]
                         },
@@ -211,7 +199,6 @@ class ReviewerSignupView(SignupView):
                 value={
                     "email": "jane.doe@example.com",
                     "password": "Rw4$eTn8Kp2q",
-                    "password_confirm": "Rw4$eTn8Kp2q",
                     "first_name": "Jane",
                     "last_name": "Doe",
                     "country": "NG",
@@ -238,9 +225,13 @@ class ReviewerSignupView(SignupView):
         return super().post(request)
 
 
+# Public endpoint: no security requirement, so Swagger's padlock does
+# not attach a bearer token to it.
+@extend_schema(auth=[{}])
 class VerifyEmailView(APIView):
     """Verify a signup link token, activate the account, and auto-issue tokens."""
 
+    authentication_classes = []  # public: a stale token must not 401 this
     permission_classes = [AllowAny]
     serializer_class = (
         VerifyEmailSerializer  # for schema generation only; not a GenericAPIView
@@ -330,9 +321,13 @@ class VerifyEmailView(APIView):
         return Response({**tokens, "user": MeSerializer(user).data}, status=200)
 
 
+# Public endpoint: no security requirement, so Swagger's padlock does
+# not attach a bearer token to it.
+@extend_schema(auth=[{}])
 class ResendVerificationView(APIView):
     """Re-issue a verification link for signup verification or password reset."""
 
+    authentication_classes = []  # public: a stale token must not 401 this
     permission_classes = [AllowAny]
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = "resend_verification"
@@ -397,8 +392,7 @@ class ResendVerificationView(APIView):
                                     "type": "validation_error",
                                     "code": "invalid",
                                     "message": (
-                                        "Please wait before requesting "
-                                        "another link."
+                                        "Please wait before requesting another link."
                                     ),
                                     "field_name": None,
                                 }
@@ -420,9 +414,13 @@ class ResendVerificationView(APIView):
         )
 
 
+# Public endpoint: no security requirement, so Swagger's padlock does
+# not attach a bearer token to it.
+@extend_schema(auth=[{}])
 class LoginView(APIView):
     """Exchange email+password for a JWT access/refresh token pair."""
 
+    authentication_classes = []  # public: a stale token must not 401 this
     permission_classes = [AllowAny]
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = "login"
@@ -444,7 +442,7 @@ class LoginView(APIView):
             "verified, and not suspended, deactivated, or locked out.\n\n"
             "**Important:** An unknown email, a wrong password, a locked "
             "account, and a suspended/deactivated account all return the "
-            "identical generic `\"Invalid email or password.\"` "
+            'identical generic `"Invalid email or password."` '
             "non-field error whenever the submitted password is wrong - "
             "this is a deliberate anti-enumeration choice, do not rely on "
             "distinct error text to tell those cases apart. Only once the "
@@ -454,7 +452,12 @@ class LoginView(APIView):
             "who already knows the password can trigger that, it doesn't "
             "leak account existence to anyone else. `workspace` tells the "
             "frontend which dashboard to route to based on role; `role` is "
-            "also embedded in the access token's claims."
+            "also embedded in the access token's claims. MFA is opt-in for "
+            "every role: an account that has enabled it always gets "
+            "`mfa_required=true` and a `challenge_token` instead of "
+            "tokens, in every environment; complete the login with "
+            "`POST /auth/mfa/verify/`. Every other account, admins "
+            "included, logs straight in."
         ),
         tags=["Auth — Session"],
         request=LoginSerializer,
@@ -599,7 +602,9 @@ class LogoutView(APIView):
             200: OpenApiResponse(
                 response=_DETAIL_SCHEMA,
                 description="Logged out.",
-                examples=[OpenApiExample(name="Success", value={"detail": "Logged out."})],
+                examples=[
+                    OpenApiExample(name="Success", value={"detail": "Logged out."})
+                ],
             ),
             400: OpenApiResponse(
                 description="The refresh token is invalid or already blacklisted.",
@@ -750,9 +755,13 @@ class TokenRefreshView(SimpleJWTTokenRefreshView):
         return super().post(request, *args, **kwargs)
 
 
+# Public endpoint: no security requirement, so Swagger's padlock does
+# not attach a bearer token to it.
+@extend_schema(auth=[{}])
 class ForgotPasswordView(APIView):
     """Request a password-reset link. Never reveals whether the email exists."""
 
+    authentication_classes = []  # public: a stale token must not 401 this
     permission_classes = [AllowAny]
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = "forgot_password"
@@ -774,7 +783,7 @@ class ForgotPasswordView(APIView):
             "this never 404s - a non-existent email silently does nothing "
             "on the backend while still returning 200, by design."
         ),
-        tags=["Auth — Password"],
+        tags=["Auth — Password", "Reviewer Settings — Log in & Security"],
         request=ForgotPasswordSerializer,
         examples=[
             OpenApiExample(
@@ -815,9 +824,13 @@ class ForgotPasswordView(APIView):
         )
 
 
+# Public endpoint: no security requirement, so Swagger's padlock does
+# not attach a bearer token to it.
+@extend_schema(auth=[{}])
 class ResetPasswordView(APIView):
     """Consume a password-reset link token and set a new password."""
 
+    authentication_classes = []  # public: a stale token must not 401 this
     permission_classes = [AllowAny]
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = "reset_password"
@@ -840,7 +853,7 @@ class ResetPasswordView(APIView):
             "returns 404. `new_password` goes through Django's standard "
             "password validators (length, common-password checks, etc.)."
         ),
-        tags=["Auth — Password"],
+        tags=["Auth — Password", "Reviewer Settings — Log in & Security"],
         request=ResetPasswordSerializer,
         examples=[
             OpenApiExample(
@@ -952,7 +965,7 @@ class ChangePasswordView(APIView):
             "active sessions on other devices keep working after this "
             "call."
         ),
-        tags=["Auth — Password"],
+        tags=["Auth — Password", "Reviewer Settings — Log in & Security"],
         request=ChangePasswordSerializer,
         examples=[
             OpenApiExample(
@@ -1030,7 +1043,7 @@ class ChangeEmailRequestView(APIView):
             "`/api/v1/auth/change-email/confirm/` - nothing changes on "
             "this call alone."
         ),
-        tags=["Auth — Email Change"],
+        tags=["Auth — Email Change", "Reviewer Settings — Log in & Security"],
         request=ChangeEmailRequestSerializer,
         examples=[
             OpenApiExample(
@@ -1096,13 +1109,18 @@ class ChangeEmailRequestView(APIView):
     def post(self, request):
         serializer = ChangeEmailRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        auth_service.request_email_change(user=request.user, **serializer.validated_data)
+        auth_service.request_email_change(
+            user=request.user, **serializer.validated_data
+        )
         return Response(
             {"detail": "A confirmation link has been sent to your new email address."},
             status=200,
         )
 
 
+# Public endpoint: no security requirement, so Swagger's padlock does
+# not attach a bearer token to it.
+@extend_schema(auth=[{}])
 class ChangeEmailConfirmView(APIView):
     """Consume an email-change confirmation link token and apply the new email.
 
@@ -1112,6 +1130,7 @@ class ChangeEmailConfirmView(APIView):
     of the new inbox.
     """
 
+    authentication_classes = []  # public: a stale token must not 401 this
     permission_classes = [AllowAny]
     serializer_class = (
         ChangeEmailConfirmSerializer  # for schema generation only; not a GenericAPIView
@@ -1137,7 +1156,7 @@ class ChangeEmailConfirmView(APIView):
             "`User.email` - after this, the *old* email can no longer be "
             "used to log in."
         ),
-        tags=["Auth — Email Change"],
+        tags=["Auth — Email Change", "Reviewer Settings — Log in & Security"],
         request=ChangeEmailConfirmSerializer,
         examples=[
             OpenApiExample(

@@ -5,23 +5,23 @@ thresholds (module/lesson counts, word counts, quiz counts) are derived once
 here rather than re-guessed in every test file.
 """
 
+from datetime import timedelta
 from decimal import Decimal
 from itertools import count
 
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 
-from api.categories.enums import CategoryStatus, TrackPreference
+from api.catalog.enums import CategoryStatus, TrackPreference
+from api.catalog.models import Category, Topic, TopicReservationRequest
 from api.courses.enums import AssessmentLevel
-from api.categories.models import Category
 from api.courses.models import (
     Assessment,
     Course,
     CourseAppeal,
+    CourseVersion,
     Lesson,
     Module,
-    Topic,
-    TopicReservationRequest,
 )
 from api.users.enums import UserRole
 
@@ -46,8 +46,9 @@ def make_category(**kwargs):
     n = next(_sequence)
     defaults = {
         "name": f"Category {n}",
-        "description": "A test category.",
-        "creator_price": Decimal("100.00"),
+        "creator_price_without_video": Decimal("100.00"),
+        "creator_price_with_video": Decimal("100.00"),
+        "creator_price_ai_built": Decimal("100.00"),
         "track_preference": TrackPreference.OPEN,
         "status": CategoryStatus.ACTIVE,
     }
@@ -61,7 +62,9 @@ def make_topic(*, category=None, **kwargs):
     defaults = {
         "category": category,
         "name": f"Topic {n}",
-        "creator_price": Decimal("25.00"),
+        "creator_price_without_video": Decimal("25.00"),
+        "creator_price_with_video": Decimal("25.00"),
+        "creator_price_ai_built": Decimal("25.00"),
         "status": CategoryStatus.ACTIVE,
     }
     defaults.update(kwargs)
@@ -109,7 +112,12 @@ def make_draft_course(*, creator=None, category=None, **kwargs):
         "description": "word "
         * 150,  # 150 words: within COURSE_DESCRIPTION_WORD_MIN/MAX (100-500)
         "preview_video_url": "https://example.com/preview.mp4",
+        "learning_objectives": [f"Course objective {i}" for i in range(1, 6)],
         "terms_accepted_at": timezone.now(),
+        # Past draft_minimum_hold_hours, so tests that submit a course they
+        # just built aren't blocked by it. Pass draft_started_at explicitly
+        # to exercise the hold rule itself.
+        "draft_started_at": timezone.now() - timedelta(days=30),
     }
     defaults.update(kwargs)
     return Course.objects.create(**defaults)
@@ -121,12 +129,7 @@ def make_questions(count_):
             "type": "MULTIPLE_CHOICE",
             "question": f"Question {i}?",
             "points": 10,
-            "options": [
-                {"text": "A", "explanation": "Why A is right or wrong."},
-                {"text": "B", "explanation": "Why B is right or wrong."},
-                {"text": "C", "explanation": "Why C is right or wrong."},
-                {"text": "D", "explanation": "Why D is right or wrong."},
-            ],
+            "options": ["A", "B", "C", "D"],
             "correct_index": 0,
         }
         for i in range(count_)
@@ -140,7 +143,8 @@ def build_compliant_course(
     course_validation_service.validate_structural_standards, so tests that
     need a submittable course don't have to re-derive PRD thresholds."""
 
-    course = make_draft_course(creator=creator, category=category)
+    version, _ = CourseVersion.objects.get_or_create(label="1.0")
+    course = make_draft_course(creator=creator, category=category, version=version)
     script = "word " * 600  # 600 words: within LESSON_SCRIPT_WORD_MIN/MAX (500-1500)
 
     for m in range(module_count):

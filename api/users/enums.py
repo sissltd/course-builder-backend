@@ -34,13 +34,14 @@ class UserRole(models.TextChoices):
     * **Public** - COURSE_CREATOR is what public signup assigns. Anyone can
       obtain it by registering.
     * **Staff** - STAFF_WRITER / STAFF_VERIFIER / STAFF_APPROVER / AI_REVIEWER /
-      QA_REVIEWER are the roles offered in the "Invite a staff" dialog. They
-      are invitation-only: no public route assigns them. They mirror the
-      authoring and review pipelines and are deliberately kept distinct from
-      the public roles so a self-registered user is never mistaken for hired
-      staff in permissions, reporting, or the Teams page.
+      QA_REVIEWER / CREATOR_REVIEWER. "Staff" and "Teams" name the same group:
+      one roster, one set of accounts, managed through either the Staff or
+      the Teams permissions. CREATOR_REVIEWER is the one staff role that can
+      also be self-registered (the reviewer signup routes), which is why it
+      stays in registry.PUBLIC_ROLES for permission-grant purposes.
     * **Privileged** - ADMIN and SUPER_ADMIN. SUPER_ADMIN is bootstrap-only and
-      unique platform-wide; it is the only role that can invite staff.
+      unique platform-wide. Privileged accounts are managed only through the
+      Staff permissions, never the Teams ones.
     """
 
     COURSE_CREATOR = "COURSE_CREATOR", "Course Creator"
@@ -55,20 +56,37 @@ class UserRole(models.TextChoices):
 
 
 #: Roles a Super Admin may hand out via the "Invite a staff" dialog, in the
-#: order the dropdown shows them. SUPER_ADMIN is absent by design - the seat is
-#: unique and claimable only through the bootstrap endpoint - and so are the
-#: public roles, which are not staff positions.
+#: order the dropdown shows them. ADMIN is here so a Super Admin can appoint
+#: Admins - otherwise no API path grants it. MFA is opt-in, so an invited
+#: Admin may enrol themselves but is not required to. SUPER_ADMIN is absent by
+#: design - the seat is unique and claimable only through the bootstrap
+#: endpoint - and so is COURSE_CREATOR, which is not a staff position.
+#: CREATOR_REVIEWER is last so the positions existing clients already list
+#: keep their order.
 INVITABLE_STAFF_ROLES = (
     UserRole.STAFF_WRITER,
     UserRole.STAFF_VERIFIER,
     UserRole.STAFF_APPROVER,
     UserRole.AI_REVIEWER,
     UserRole.QA_REVIEWER,
+    UserRole.ADMIN,
+    UserRole.CREATOR_REVIEWER,
 )
 
-#: Every role that counts as staff for the Teams page: the invitable roles plus
-#: the privileged roles, which are staff too but are not handed out by invite.
-STAFF_ROLES = INVITABLE_STAFF_ROLES + (UserRole.ADMIN, UserRole.SUPER_ADMIN)
+#: Every staff (equivalently, team) role: the invitable roles plus the Super
+#: Admin, which is staff too but is never handed out by invite.
+STAFF_ROLES = INVITABLE_STAFF_ROLES + (UserRole.SUPER_ADMIN,)
+
+#: Staff roles managed only under the Staff permissions. Acting on a peer
+#: Admin - or the platform owner - is an employment decision, not moderation,
+#: so the Teams permissions (held by Admins by default) never reach these
+#: accounts: an Admin cannot disable the tier that supervises them.
+PRIVILEGED_ROLES = (UserRole.ADMIN, UserRole.SUPER_ADMIN)
+
+#: (value, label) choices for fields that accept an invitable staff role.
+INVITABLE_STAFF_ROLE_CHOICES = [
+    (role.value, role.label) for role in INVITABLE_STAFF_ROLES
+]
 
 
 class UserActivityCategoryEnums(models.TextChoices):
@@ -93,6 +111,8 @@ class UserActivityCategoryEnums(models.TextChoices):
     KYC = "KYC", "KYC"
     WALLET = "WALLET", "Wallet"
     PRIVACY = "PRIVACY", "Privacy"
+    PAYMENTS = "PAYMENTS", "Payments"
+    ACHIEVEMENT = "ACHIEVEMENT", "Achievement"
 
 
 class UserActivityActionEnums(models.TextChoices):
@@ -104,6 +124,7 @@ class UserActivityActionEnums(models.TextChoices):
 
     ACCOUNT_CREATED = "ACCOUNT_CREATED", "Account Created"
     LOGIN = "LOGIN", "Login"
+    GOOGLE_IDENTITY_LINKED = "GOOGLE_IDENTITY_LINKED", "Google Identity Linked"
     LOGOUT = "LOGOUT", "Logout"
     LOCKOUT_TRIGGERED = (
         "LOCKOUT_TRIGGERED",
@@ -136,6 +157,22 @@ class UserActivityActionEnums(models.TextChoices):
     COURSE_APPROVED = "COURSE_APPROVED", "Course Approved"
     COURSE_REJECTED = "COURSE_REJECTED", "Course Rejected"
     COURSE_PUBLISHED = "COURSE_PUBLISHED", "Course Published"
+    COURSE_VIDEO_DECIDED = "COURSE_VIDEO_DECIDED", "Course Video Source Chosen"
+    COURSE_VIDEO_SUBMITTED = "COURSE_VIDEO_SUBMITTED", "Course Video Submitted"
+    COURSE_VIDEO_ASSIGNED = "COURSE_VIDEO_ASSIGNED", "Course Video Producer Assigned"
+    COURSE_ARCHIVED = "COURSE_ARCHIVED", "Course Archived"
+    DEVELOPER_SETTINGS_UPDATED = (
+        "DEVELOPER_SETTINGS_UPDATED",
+        "MIE Developer Settings Updated",
+    )
+    PRODUCTION_REQUESTED = "PRODUCTION_REQUESTED", "Production Requested"
+    PRODUCTION_BLOCKED = "PRODUCTION_BLOCKED", "Production Blocked"
+    PRODUCTION_COMPLETED = "PRODUCTION_COMPLETED", "Production Completed"
+    PRODUCTION_FAILED = "PRODUCTION_FAILED", "Production Failed"
+    PRODUCTION_CANCELLED = "PRODUCTION_CANCELLED", "Production Cancelled"
+    PRODUCTION_RETRIED = "PRODUCTION_RETRIED", "Production Retried"
+    CHANNEL_MAPPING_SAVED = "CHANNEL_MAPPING_SAVED", "Channel Mapping Saved"
+    DISTRIBUTION_RECORDED = "DISTRIBUTION_RECORDED", "Distribution Recorded"
     AVAILABILITY_UPDATED = "AVAILABILITY_UPDATED", "Availability Updated"
     NOTIFICATION_PREFERENCES_UPDATED = (
         "NOTIFICATION_PREFERENCES_UPDATED",
@@ -149,8 +186,11 @@ class UserActivityActionEnums(models.TextChoices):
     KYC_SUBMITTED = "KYC_SUBMITTED", "KYC Submitted"
     KYC_APPROVED = "KYC_APPROVED", "KYC Approved"
     KYC_REJECTED = "KYC_REJECTED", "KYC Rejected"
+    KYC_FLAGGED = "KYC_FLAGGED", "KYC Flagged"
     WITHDRAWAL_REQUESTED = "WITHDRAWAL_REQUESTED", "Withdrawal Requested"
     WITHDRAWAL_CONFIRMED = "WITHDRAWAL_CONFIRMED", "Withdrawal Confirmed"
+    WITHDRAWAL_FAILED = "WITHDRAWAL_FAILED", "Withdrawal Failed"
+    WITHDRAWAL_COMPLETED = "WITHDRAWAL_COMPLETED", "Withdrawal Completed"
     APPEAL_SUBMITTED = "APPEAL_SUBMITTED", "Appeal Submitted"
     APPEAL_APPROVED = "APPEAL_APPROVED", "Appeal Approved"
     APPEAL_REJECTED = "APPEAL_REJECTED", "Appeal Rejected"
@@ -163,6 +203,28 @@ class UserActivityActionEnums(models.TextChoices):
         "MFA Recovery Codes Regenerated",
     )
     MFA_RESET_BY_ADMIN = "MFA_RESET_BY_ADMIN", "MFA Reset By Admin"
+    BANK_ACCOUNT_ADDED = "BANK_ACCOUNT_ADDED", "Bank Account Added"
+    BANK_ACCOUNT_DELETED = "BANK_ACCOUNT_DELETED", "Bank Account Deleted"
+    BANK_ACCOUNT_UPDATED = "BANK_ACCOUNT_UPDATED", "Bank Account Updated"
+    BADGE_CREATED = "BADGE_CREATED", "Badge Created"
+    BADGE_UPDATED = "BADGE_UPDATED", "Badge Updated"
+    BADGE_DELETED = "BADGE_DELETED", "Badge Deleted"
+    BADGE_AWARDED = "BADGE_AWARDED", "Badge Awarded"
+    BADGE_REVOKED = "BADGE_REVOKED", "Badge Revoked"
+    ROLE_CREATED = "ROLE_CREATED", "Role Created"
+    ROLE_UPDATED = "ROLE_UPDATED", "Role Updated"
+    ROLE_DELETED = "ROLE_DELETED", "Role Deleted"
+    STAFF_ROLE_CHANGED = "STAFF_ROLE_CHANGED", "Staff Role Changed"
+    PASSWORD_RESET_SENT_BY_ADMIN = (
+        "PASSWORD_RESET_SENT_BY_ADMIN",
+        "Password Reset Sent By Admin",
+    )
+    ACCOUNT_ERASED = "ACCOUNT_ERASED", "Account Erased"
+    COURSE_VERSION_CREATED = "COURSE_VERSION_CREATED", "Course Version Created"
+    COURSE_VERSION_UPDATED = "COURSE_VERSION_UPDATED", "Course Version Updated"
+    COURSE_VERSION_MIGRATED = "COURSE_VERSION_MIGRATED", "Course Version Migrated"
+    WALLET_ADJUSTED = "WALLET_ADJUSTED", "Wallet Adjusted"
+    COURSE_PAYOUT_CREDITED = "COURSE_PAYOUT_CREDITED", "Course Payout Credited"
 
 
 class KYCDocumentType(models.TextChoices):
@@ -172,6 +234,7 @@ class KYCDocumentType(models.TextChoices):
     DRIVERS_LICENSE = "DRIVERS_LICENSE", "Driver's License"
     INTERNATIONAL_PASSPORT = "INTERNATIONAL_PASSPORT", "International Passport"
     VOTERS_ID = "VOTERS_ID", "Voter's ID"
+    BVN = "BVN", "Bank Verification Number (BVN)"
 
 
 class KYCStatus(models.TextChoices):
@@ -180,26 +243,53 @@ class KYCStatus(models.TextChoices):
     PENDING = "PENDING", "Pending"
     APPROVED = "APPROVED", "Approved"
     REJECTED = "REJECTED", "Rejected"
+    FLAGGED = "FLAGGED", "Flagged"
 
 
 class QueueSortOrder(models.TextChoices):
-    """A reviewer's preferred default ordering for the review queue."""
+    """A reviewer's default review-queue view.
 
-    OLDEST_FIRST = "OLDEST_FIRST", "Oldest First"
+    Matches the Queue Behaviour screen's dropdown exactly. The options mix
+    two concerns, which is how the design presents them: ORDERING values
+    change the sort, and the LAST_* values narrow to a recent window and
+    then sort oldest-first. `ALL` is the unfiltered default.
+
+    SLA-urgency ordering is deliberately absent - it is not offered in the
+    design. The capability still exists in
+    course_service.get_review_queue, which accepts a plain string, so it
+    can be re-exposed here without rebuilding it.
+    """
+
+    ALL = "ALL", "All"
     NEWEST_FIRST = "NEWEST_FIRST", "Newest First"
-    SLA_URGENCY = "SLA_URGENCY", "SLA Urgency"
+    OLDEST_FIRST = "OLDEST_FIRST", "Oldest First"
+    LAST_30_DAYS = "LAST_30_DAYS", "Last 30 days"
+    LAST_7_DAYS = "LAST_7_DAYS", "Last 7 days"
+    LAST_24_HOURS = "LAST_24_HOURS", "Last 24 hours"
+
+
+#: Window in days for the date-scoped queue views. Absent keys apply no
+#: date filter at all.
+QUEUE_SORT_WINDOW_DAYS = {
+    QueueSortOrder.LAST_30_DAYS: 30,
+    QueueSortOrder.LAST_7_DAYS: 7,
+    QueueSortOrder.LAST_24_HOURS: 1,
+}
 
 
 class QueueTrackFilter(models.TextChoices):
-    """A reviewer's preferred default track filter for the review queue.
+    """Effective track narrowing derived from a reviewer's three toggles.
 
-    Maps onto api.categories.enums.TrackPreference's CREATOR_PREFERRED /
-    AI_PREFERRED values; ALL applies no filter.
+    No longer stored - QueueBehaviourPreference holds the three booleans
+    the design shows, and derives one of these from them. Retained because
+    course_service.get_review_queue and User.assigned_track both speak in
+    these terms.
     """
 
     ALL = "ALL", "All Tracks"
     CREATOR_TRACK = "CREATOR_TRACK", "Creator Track"
     AI_TRACK = "AI_TRACK", "AI Track"
+    NONE = "NONE", "No Tracks"
 
 
 class UnavailabilityReason(models.TextChoices):

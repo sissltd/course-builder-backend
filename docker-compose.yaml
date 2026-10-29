@@ -27,7 +27,54 @@ services:
       DJANGO_SETTINGS_MODULE: ${DJANGO_SETTINGS_MODULE:-config.settings}
       DJANGO_RUN_MIGRATIONS: 0
       DJANGO_COLLECTSTATIC: 0
-    command: ["celery", "-A", "config", "worker", "--loglevel=info"]
+    # Shared worker: everything except AI generation. AI tasks are routed to
+    # the course_ai queue (config/settings/celery.py) and consumed exclusively
+    # by worker-ai below, so a long generation cannot starve other work.
+    command: ["celery", "-A", "config", "worker", "--loglevel=info", "--queues=celery"]
+    user: appuser
+    networks:
+      - dependencies
+
+  # Dedicated AI worker: consumes only the course_ai queue, one task at a time
+  # (provider calls are slow and metered), and never hoards queued jobs.
+  worker-ai:
+    build:
+      context: .
+      dockerfile: .docker/Dockerfile
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    environment:
+      DJANGO_SETTINGS_MODULE: ${DJANGO_SETTINGS_MODULE:-config.settings}
+      DJANGO_RUN_MIGRATIONS: 0
+      DJANGO_COLLECTSTATIC: 0
+    command: ["celery", "-A", "config", "worker", "--loglevel=info", "--queues=course_ai", "--concurrency=1", "--prefetch-multiplier=1"]
+    user: appuser
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A config inspect ping --timeout=5 | grep -q pong"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - dependencies
+
+  # Production Engine worker: renders lesson videos with ffmpeg, one run at
+  # a time.
+  worker-media:
+    build:
+      context: .
+      dockerfile: .docker/Dockerfile
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    environment:
+      DJANGO_SETTINGS_MODULE: ${DJANGO_SETTINGS_MODULE:-config.settings}
+      DJANGO_RUN_MIGRATIONS: 0
+      DJANGO_COLLECTSTATIC: 0
+    command: ["celery", "-A", "config", "worker", "--loglevel=info", "--queues=production", "--concurrency=1", "--prefetch-multiplier=1"]
+    user: appuser
     networks:
       - dependencies
 
@@ -44,6 +91,7 @@ services:
       DJANGO_RUN_MIGRATIONS: 0
       DJANGO_COLLECTSTATIC: 0
     command: ["celery", "-A", "config", "beat", "--loglevel=info", "--schedule", "/tmp/celerybeat-schedule"]
+    user: appuser
     networks:
       - dependencies
 

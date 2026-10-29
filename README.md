@@ -259,6 +259,135 @@ This project enforces **Conventional Commit** style using a Git `commit-msg` hoo
 
 ---
 
+## 🔍 Pull Request (PR) Guidelines
+
+Every PR **must** include the following sections:
+
+### 1️⃣ What has changed?
+
+A clear, concise summary of what this PR does.
+
+Example:
+
+> Added user login and JWT authentication endpoints.
+
+---
+
+### 2️⃣ Where were the changes done?
+
+List the main areas/files affected.
+
+Example:
+
+- `core/api/views/auth.py`
+- `core/api/serializers/auth.py`
+- `feexeet/settings/base.py`
+
+---
+
+### 3️⃣ What should the reviewer know?
+
+Important context for the reviewer:
+
+- Edge cases
+- Breaking changes
+- Things to pay extra attention to
+- Follow-up work (if any)
+
+Example:
+
+> Token expiry is set to 15 minutes. Refresh token rotation will be added in a follow-up PR.
+
+---
+
+## ✅ PR Checklist (before requesting review)
+
+- [ ] Code follows PEP 8
+- [ ] Commits follow Conventional Commit format
+- [ ] No secrets committed
+- [ ] API changes documented (Swagger updated)
+- [ ] Tests added or updated (where applicable)
+- [ ] PR carries **one** concern (see Engineering Standards below)
+- [ ] PR description filled in — all three sections
+- [ ] Reviewed by someone else before merge
+
+---
+
+## 📐 Engineering Standards
+
+The three rules below exist because each has already cost us something on
+this repo. They are cheap to follow and expensive to skip.
+
+### 1. One concern per PR
+
+**A PR does one thing. A `fix` never carries a `feat`.**
+
+If you find yourself writing "and" in the PR title, it is two PRs.
+
+Why it matters: a PR titled `fix/course-ai-reliability` shipped ~900 lines
+of Google OAuth — a new authentication method with its own model,
+migration and endpoints. The reviewer's attention was set by the title, so
+the part that most needed scrutiny (auth) arrived disguised as a reliability
+patch and went in unexamined.
+
+The cost is not tidiness. It is that **nobody reviews what they were not
+told to look at**, and that a bad `feat` cannot be reverted without also
+reverting the `fix` it rode in on.
+
+- Unrelated work → separate branch, separate PR.
+- Noticed something broken while working? Fix it in its own PR, or open an
+  issue. Do not smuggle it in.
+- A refactor that touches many files is still *one concern* — that is fine.
+  Two unrelated features in five files is not.
+
+### 2. The PR description is not optional
+
+**All three sections, every time. An empty PR body is a blocker, not a
+style nit.**
+
+The template is above. It is short on purpose:
+
+1. **What has changed?** — the summary, in plain language.
+2. **Where were the changes done?** — the files/areas, so a reviewer knows
+   where to look.
+3. **What should the reviewer know?** — breaking changes, edge cases,
+   anything you are unsure about, follow-up work.
+
+Section 3 is the one that earns its keep. If you changed a field every
+other app reads, removed an enum value, or wrote a data migration, that
+belongs there — not in your head, and not only in the diff.
+
+Six months from now the PR description is the only record of *why*. The
+diff shows what changed; it never shows what you decided against.
+
+### 3. Nobody merges their own PR unreviewed
+
+**At least one other engineer approves before merge.** No exceptions for
+"small", "urgent", or "only my own app".
+
+Self-merging is how an MFA bypass reaches `staging`. Not because the author
+was careless — the code was well written and well tested — but because
+**you cannot review your own assumptions**. The reviewer is not checking
+your syntax; they are checking the thing you were too close to see.
+
+If you are genuinely blocked on a reviewer, say so in the PR and tag
+someone. Merging unreviewed and moving on is not the answer.
+
+Also, before requesting review, run the pipeline locally:
+
+```bash
+ruff check .
+python manage.py check
+python manage.py makemigrations --check --dry-run
+python manage.py spectacular --file /tmp/openapi.yaml --validate
+python -m pytest -q --reuse-db
+```
+
+CI runs these anyway. Finding a failure yourself takes minutes; finding it
+after review costs the reviewer a round trip.
+
+---
+
 ## Docker Compose Services
 
 ### `api`
@@ -307,6 +436,22 @@ Simple JWT is configured in `config/settings/jwt.py` with:
 - refresh-token rotation enabled
 - token blacklisting enabled
 
+Google signup and login are available alongside the password flow for Course
+Creators and Creator Reviewers. The web or mobile client obtains a Google ID
+token and sends it to one of these public endpoints:
+
+- `POST /api/v1/auth/signup/google/`
+- `POST /api/v1/auth/reviewer/signup/google/`
+- `POST /api/v1/auth/login/google/`
+- `POST /api/v1/auth/reviewer/login/google/`
+
+Set `GOOGLE_OAUTH_CLIENT_IDS` to a comma-separated allowlist of every web or
+mobile OAuth client ID whose ID tokens the backend should accept. The backend
+verifies the token and then issues the same local JWT/session response as the
+password login flow; it never stores Google access or refresh tokens. New
+Google accounts have an unusable password and may establish one later through
+the existing forgot/reset-password flow.
+
 ### Authentication Extension Point
 
 The scaffold includes an abstract authentication contract in `api/authentication/utils/base_auth.py`:
@@ -323,11 +468,11 @@ Projects can implement OTP, passwordless, social login, or vendor-backed authent
 
 `UserRole` splits into three groups, and the distinction is load-bearing:
 
-| Group          | Roles                                                | How you get it            |
-| -------------- | ---------------------------------------------------- | ------------------------- |
-| **Public**     | `COURSE_CREATOR`                                     | Public signup             |
-| **Staff**      | `STAFF_WRITER`, `STAFF_VERIFIER`, `STAFF_APPROVER`   | Super Admin invitation    |
-| **Privileged** | `ADMIN`, `SUPER_ADMIN`                               | Bootstrap / direct assign |
+| Group          | Roles                                              | How you get it            |
+| -------------- | -------------------------------------------------- | ------------------------- |
+| **Public**     | `COURSE_CREATOR`                                   | Public signup             |
+| **Staff**      | `STAFF_WRITER`, `STAFF_VERIFIER`, `STAFF_APPROVER` | Super Admin invitation    |
+| **Privileged** | `ADMIN`, `SUPER_ADMIN`                             | Bootstrap / direct assign |
 
 The three staff roles are the Writer / Verifier / Approver options in the
 "Invite a staff" dialog and mirror the authoring pipeline (write → verify →
@@ -351,15 +496,9 @@ staff or privileged role is the chain below (implemented in
 1. **Bootstrap the Super Admin** — `POST /api/v1/auth/superadmin/bootstrap/`
 
    Claims the platform's single `SUPER_ADMIN` seat. There is no logged-in user
-   to authorize this yet, so it is gated on a shared secret instead: the
-   request's `bootstrap_token` must match the `SUPERADMIN_BOOTSTRAP_TOKEN`
-   environment variable.
-
-   `SUPERADMIN_BOOTSTRAP_TOKEN` defaults to empty, and empty **disables** the
-   endpoint (403) rather than accepting an empty token — a deployment that
-   forgets the variable is not claimable by whoever finds the URL first. Set it
-   to a long random value (`openssl rand -hex 32`), bootstrap once, then clear
-   it so the secret stops being a live credential.
+   to authorize this yet, so it is enabled by code only for local,
+   development, and staging-like environments. Set `DJANGO_ENV=production`
+   on production deployments to disable the route.
 
    Exactly one `SUPER_ADMIN` can exist. That is enforced by a partial unique
    index (`unique_super_admin` on `api.users.models.User`), not just an
@@ -395,7 +534,7 @@ The Teams page is backed by three more Super Admin endpoints:
 Read `invitation_status` rather than `is_active` when rendering a row: `PENDING`
 and `REVOKED` are both inactive but offer different actions, and they are told
 apart by whether an unconsumed invitation token still exists. An invitation
-revoked *before* acceptance cannot be reactivated — that account has no usable
+revoked _before_ acceptance cannot be reactivated — that account has no usable
 password — so those must be re-invited instead.
 
 Neither revoke nor reactivate can target your own account, and the Super Admin
@@ -404,7 +543,7 @@ could not be replaced through the API.
 
 Django's `is_staff` / `is_superuser` flags are set on the bootstrapped Super
 Admin so it can also reach `/admin/`. Note that `is_superuser` bypasses every
-role check in `api.users.permissions.HasRole` *and* in `require_role`, so a
+role check in `api.users.permissions.HasRole` _and_ in `require_role`, so a
 Django superuser passes as any role — including `IsCourseCreatorRole`. That is
 Django's convention, and it means role checks are not a boundary for such an
 account at all.
@@ -414,16 +553,14 @@ account at all.
 its `COURSE_CREATOR` default, which produced a full-authority account that
 reported itself as a public creator, was routed to the creator dashboard at
 login, and — because the partial unique index only constrains rows whose role
-*is* `SUPER_ADMIN` — escaped the one-seat rule entirely, so any number could
+_is_ `SUPER_ADMIN` — escaped the one-seat rule entirely, so any number could
 exist. Shell-created superusers now fall under the same rule as the bootstrap
 endpoint: the second one fails with a readable message rather than silently
 becoming an invisible co-owner.
 
 The bootstrap endpoint is rate limited to **5 requests per hour per IP**. It is
-authorized by a shared secret rather than a credential, so an unthrottled
-version is a guessing oracle against `SUPERADMIN_BOOTSTRAP_TOKEN`; a genuine
-operator calls it once, so the limit costs nothing. The token comparison is
-constant-time (`secrets.compare_digest`) for the same reason.
+authorized by the deployment environment rather than a credential, so the
+public route remains rate limited to protect account creation.
 
 Two operational notes:
 
@@ -440,7 +577,7 @@ Two operational notes:
   ```
 
   It requires shell access, which is the same trust level as setting
-  `SUPERADMIN_BOOTSTRAP_TOKEN`, and writes a `LOCKOUT_CLEARED` entry to the
+  deployment environment policy, and writes a `LOCKOUT_CLEARED` entry to the
   account's activity log so an unexplained unlock is still visible.
 
 ### Category Access
@@ -453,10 +590,10 @@ hold foreign keys into it, so `categories` is a dependency of `courses` and
 Write access is narrower than everywhere else in the platform and does not
 follow the usual "admins can do anything" shape:
 
-| Action                | Who                       |
-| --------------------- | ------------------------- |
-| List / retrieve       | Any authenticated user    |
-| Create/update/delete  | Writer, Super Admin       |
+| Action               | Who                    |
+| -------------------- | ---------------------- |
+| List / retrieve      | Any authenticated user |
+| Create/update/delete | Writer, Super Admin    |
 
 Admins and Approvers deliberately get **read only** here (`CanManageCategories`
 in `api.users.permissions`), even though they have full course CRUD. Note also
@@ -475,7 +612,7 @@ Two things worth knowing before changing a category:
   `Course.category` is `PROTECT`, so a category with courses cannot be deleted;
   `category_service.delete_category` turns that into a 400 with a usable message
   rather than the 500 an unhandled `ProtectedError` would produce. Creator
-  profiles are `SET_NULL`, so they do *not* block deletion and silently lose
+  profiles are `SET_NULL`, so they do _not_ block deletion and silently lose
   their stated expertise — prefer setting `status` to `INACTIVE` to retire a
   category people have already selected.
 
@@ -493,15 +630,15 @@ administrative tier rather than scoping to `creator`. Two deliberate limits:
 
 - **Submission stays owner-scoped.** Submitting is the author vouching for
   their own work, so an Admin may submit only a course they created.
-- **Workflow rules still apply.** Wider access changes *who* may act, not
-  *what* the workflow allows — an Admin editing a Published course gets the
+- **Workflow rules still apply.** Wider access changes _who_ may act, not
+  _what_ the workflow allows — an Admin editing a Published course gets the
   same "Only Draft courses can be edited" error a creator would.
 
 ### Admin Operations
 
 Two administrative tiers already exist and are kept apart on purpose. The
-Super Admin runs the *organization* — inviting, revoking, and reactivating
-staff through `/api/v1/auth/staff/…` — while Admins run the *platform*. The
+Super Admin runs the _organization_ — inviting, revoking, and reactivating
+staff through `/api/v1/auth/staff/…` — while Admins run the _platform_. The
 endpoints below are the Admin tier's, gated on `IsAdminOrSuperAdminRole`,
 which excludes Approvers: they are invited staff whose job is course
 approvals, not account moderation or platform configuration.
@@ -535,7 +672,7 @@ Four things worth knowing:
   token refresh had always rejected the status, but nothing in the codebase
   ever assigned it, so the policy was unenforceable — the enum value existed
   and no code path produced it. `suspend_user` is now the only writer of it.
-  Suspension also blacklists outstanding refresh tokens, but an *access* token
+  Suspension also blacklists outstanding refresh tokens, but an _access_ token
   already in hand keeps working until it expires, so the cut-off lands at the
   user's next refresh rather than instantly.
 - **The admin wallet reads exist because the creator-facing ones 403 for
@@ -550,7 +687,7 @@ Four things worth knowing:
   transaction, and nothing — here, in the Django admin, or anywhere else —
   advances that to `COMPLETED` or `FAILED`. Payout settlement is not
   implemented, so read `CONFIRMED` as "awaiting a manual bank transfer". A
-  status dropdown was deliberately *not* added to the Django admin: letting an
+  status dropdown was deliberately _not_ added to the Django admin: letting an
   operator mark a payout done without money moving is worse than the gap being
   visible.
 
@@ -560,7 +697,7 @@ the user form because both have service-layer rules behind them (session
 revocation, notifications, activity logging) that a direct database edit would
 skip; `Transaction` and `UserActivityLog` are fully immutable there, since an
 audit log that can be edited from the admin is not an audit log. `TopicAdmin`
-remains the one admin that *writes*, routing through `topic_service` so it
+remains the one admin that _writes_, routing through `topic_service` so it
 cannot bypass the price-snapshot rules.
 
 ## User Model
@@ -710,9 +847,21 @@ A `debug_task` is included as a lightweight smoke-test task for local setup and 
 
 ## Storage and S3
 
-The scaffold includes `config/settings/s3.py` as a reserved settings extension point, but it does not yet ship an active S3 storage implementation or required S3 environment variables.
+Authenticated clients request a presigned PUT from
+`POST /api/v1/uploads/presign/`, upload the raw file directly to the configured
+S3-compatible store using the returned `upload_headers`, and persist
+`file_key` after a successful upload. The response's `file_url` is a temporary
+presigned GET URL for immediate playback; request a fresh presigned GET URL
+when the current one expires. No bucket-public access or separate CDN setting
+is required.
 
-That keeps the base Django scaffold lean. Projects that need file storage can add their preferred storage backend and settings without removing unused defaults.
+To refresh playback access later, call `POST /api/v1/uploads/access/` with the
+stored `file_key`; use the returned `file_url` as the media source.
+
+The endpoint must be browser-accessible over trusted HTTPS. Storage CORS must
+allow the frontend origin, `Content-Type`, and `x-amz-meta-*` on PUT requests,
+while the bucket policy must allow public `GetObject` for `uploads/*` without
+allowing anonymous writes or bucket listing.
 
 ## GitHub Actions Workflows
 
@@ -723,7 +872,7 @@ The repository includes `.github/workflows/ci.yml` and `.github/workflows/cd.yml
 - `lint` — `ruff check` (gate) and `ruff format --check` (informational)
 - `security` — gitleaks, bandit, pip-audit (all informational until triaged)
 - `test` — `manage.py check`, migration drift check, `migrate` from zero, OpenAPI
-  schema validation (`drf-spectacular`), and `manage.py test`, against real
+  schema validation (`drf-spectacular`), and `pytest`, against real
   Postgres/Redis service containers
 - `docker-build` — builds `.docker/Dockerfile` to verify it still builds (no push)
 
@@ -773,3 +922,43 @@ celery -A config beat --loglevel=info --schedule /tmp/celerybeat-schedule
 docker compose up --build
 docker compose down
 ```
+# AI course creation
+
+Creator-facing AI generation runs asynchronously through Celery and stores its
+progress in `AIGenerationJob`. Configure `COURSE_AI_PROVIDER`,
+`OPENAI_API_KEY`, `OPENAI_TEXT_MODEL`, and `OPENAI_IMAGE_MODEL`; model names are
+deployment configuration and are not pinned in application code.
+
+Full-course generation follows the two Figma phases exposed on each progress
+item's `phase` field. `CREATING_CONTENT` generates one compact course outline;
+`PREPARING_DETAILS` expands each module in a separate provider request and then
+creates the final assessment separately. This keeps individual responses
+bounded. Each creator may have one in-flight AI job (course, assist, or
+thumbnail); in the configured deployment, the dedicated AI worker executes one
+job at a time globally. Provider capacity waits and transient retries return the
+job to `QUEUED` with an explanatory stage. Cancellation is cooperative between
+provider/storage operations, not an interruption of the remote request.
+
+Per-task Celery limits are 30 minutes soft / 35 minutes hard for full-course
+generation and 5 minutes soft / 5 minutes 30 seconds hard for assist/thumbnail.
+These bound one task attempt, not total wall-clock time: provider retries, queue
+wait, and rate-limit rescheduling can extend a job. Jobs without a heartbeat for
+six hours are marked stale/failed when a job list, detail, or create request
+triggers stale-job cleanup; this is not an end-to-end SLA.
+
+- `GET /api/v1/course-ai-generations/` lists the creator's in-progress jobs
+  for page-refresh recovery; pass `?status=FAILED` or another concrete status
+  to inspect older terminal jobs.
+- `POST /api/v1/course-ai-generations/` starts a course draft.
+- `GET` or `DELETE /api/v1/course-ai-generations/{id}/` polls or cancels it.
+- `GET /api/v1/course-ai-generations/{id}/stream/` opens an authenticated SSE
+  stream. It sends an initial job snapshot followed by progress events; reconnect
+  with backoff and fall back to polling if the stream closes or Redis is unavailable.
+- `POST /api/v1/course-ai-generations/{id}/retry/` safely resumes a failed or cancelled job.
+- `POST /api/v1/courses/{id}/ai-assists/` drafts a contextual field rewrite;
+  applying remains an explicit creator action.
+- `POST /api/v1/courses/{id}/ai-thumbnail/` creates an opt-in course cover.
+
+AI-generated drafts retain the selected category/topic and are marked
+`AI_GENERATED`. They do not receive creator payouts. A creator must still add
+the preview video and pass the normal quality/submission workflow.

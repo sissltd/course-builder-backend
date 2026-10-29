@@ -1,7 +1,18 @@
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
+from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
-from api.courses.enums import CourseStatus, DifficultyLevel
+from api.courses.constants import COURSE_MEDIA_URL_MAX_LENGTH
+from api.courses.enums import (
+    EDITABLE_COURSE_STATUSES,
+    CourseSourceType,
+    CourseStatus,
+    DifficultyLevel,
+    VideoProvider,
+)
+from api.catalog.enums import CreatorPriceType
+from api.reviews.enums import ReviewStage
 from core.mixins import (
     DateHistoryModelMixin,
     UserHistoryModelMixin,
@@ -26,14 +37,14 @@ class Course(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMi
         help_text=_("Course Creator who owns this course."),
     )
     category = models.ForeignKey(
-        "categories.Category",
+        "catalog.Category",
         verbose_name=_("Category"),
         on_delete=models.PROTECT,
         related_name="courses",
         help_text=_("Category this course belongs to."),
     )
     topic = models.ForeignKey(
-        "courses.Topic",
+        "catalog.Topic",
         verbose_name=_("Topic"),
         on_delete=models.PROTECT,
         null=True,
@@ -50,6 +61,17 @@ class Course(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMi
         max_length=255,
         help_text=_("Course title."),
     )
+    slug = models.SlugField(
+        verbose_name=_("Slug"),
+        max_length=280,
+        unique=True,
+        null=True,
+        blank=True,
+        help_text=_(
+            "Public catalogue address, set once when the course is published "
+            "and never changed, so shared links keep working."
+        ),
+    )
     description = models.TextField(
         verbose_name=_("Description"),
         help_text=_(
@@ -58,10 +80,57 @@ class Course(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMi
     )
     status = models.CharField(
         verbose_name=_("Status"),
-        max_length=12,
+        max_length=16,
         choices=CourseStatus.choices,
         default=CourseStatus.DRAFT,
         help_text=_("Current lifecycle status of the course."),
+    )
+    review_stage = models.CharField(
+        verbose_name=_("Review Stage"),
+        max_length=20,
+        choices=ReviewStage.choices,
+        blank=True,
+        default="",
+        help_text=_(
+            "Content review seat the course is waiting at (Submitted) or held "
+            "in (In Review). Blank outside content review - QA verification "
+            "is tracked by status alone."
+        ),
+    )
+    revision_seat = models.CharField(
+        verbose_name=_("Revision Seat"),
+        max_length=20,
+        choices=ReviewStage.choices,
+        blank=True,
+        default="",
+        help_text=_(
+            "The review seat that sent this course back for revision. A "
+            "resubmission resumes at this seat instead of restarting the "
+            "chain. Set only while the course is Needs Revision (staged "
+            "review flow)."
+        ),
+    )
+    video_provider = models.CharField(
+        verbose_name=_("Video Provider"),
+        max_length=20,
+        choices=VideoProvider.choices,
+        blank=True,
+        default="",
+        help_text=_(
+            "Who supplies this course's video after its text passes the "
+            "first review seat. Decides who may attach the video "
+            "(staged review flow)."
+        ),
+    )
+    video_attached_at = models.DateTimeField(
+        verbose_name=_("Video Attached At"),
+        null=True,
+        blank=True,
+        help_text=_(
+            "When the video was submitted for review (staged review flow). "
+            "Null while the course is still text only: before this is set "
+            "the course may carry no video, after it the video is required."
+        ),
     )
     creator_price_snapshot = models.DecimalField(
         verbose_name=_("Creator Price Snapshot"),
@@ -70,19 +139,57 @@ class Course(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMi
         null=True,
         blank=True,
         help_text=_(
-            "Category creator_price captured at submission time. Null until submitted."
+            "What the creator will be paid: the locked price of the course's "
+            "price type (payout_type). Null until submitted. Changes only if "
+            "the type does (the creator decides who makes the video)."
+        ),
+    )
+    payout_type = models.CharField(
+        verbose_name=_("Payout Type"),
+        max_length=16,
+        choices=CreatorPriceType.choices,
+        blank=True,
+        default="",
+        help_text=_(
+            "Which creator price the course is paid at: AI-built, with video, "
+            "or without video (the Production Engine makes it). Blank until "
+            "submitted."
+        ),
+    )
+    creator_rates_snapshot = models.JSONField(
+        verbose_name=_("Creator Rates Snapshot"),
+        default=dict,
+        blank=True,
+        help_text=_(
+            "The topic's (or category's) three creator prices, locked at "
+            "submission, keyed by CreatorPriceType. A later price change does "
+            "not touch them."
+        ),
+    )
+    creator_paid_at = models.DateTimeField(
+        verbose_name=_("Creator Paid At"),
+        null=True,
+        blank=True,
+        help_text=_(
+            "When the creator's wallet was credited for this course. A course "
+            "is paid once: at Second Review approval when the Production "
+            "Engine makes its video, otherwise at QA approval."
         ),
     )
     preview_video_url = models.URLField(
         verbose_name=_("Preview Video URL"),
+        max_length=COURSE_MEDIA_URL_MAX_LENGTH,
         blank=True,
         default="",
         help_text=_(
-            "1-2 minute course overview video URL, required before submission (BR-015)."
+            "1-2 minute course overview video URL, required before submission "
+            "(BR-015). With the staged review flow it is instead refused at "
+            "submission and required when the video is submitted."
         ),
     )
     thumbnail_url = models.URLField(
         verbose_name=_("Thumbnail URL"),
+        max_length=COURSE_MEDIA_URL_MAX_LENGTH,
         blank=True,
         default="",
         help_text=_(
@@ -96,6 +203,26 @@ class Course(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMi
         blank=True,
         default="",
         help_text=_("Self-reported difficulty level for this course."),
+    )
+    source_type = models.CharField(
+        verbose_name=_("Source Type"),
+        max_length=20,
+        choices=CourseSourceType.choices,
+        default=CourseSourceType.CREATOR_UPLOADED,
+        help_text=_(
+            "Where this course's content originated - the Type badge shown "
+            "on course details."
+        ),
+    )
+    quality_score = models.PositiveSmallIntegerField(
+        verbose_name=_("Quality Score"),
+        null=True,
+        blank=True,
+        help_text=_(
+            "Overall quality score 0-100, rendered as the % bar in the "
+            "course table. Null until the course has been quality-checked."
+        ),
+        validators=[MinValueValidator(0), MaxValueValidator(100)],
     )
     learning_objectives = models.JSONField(
         verbose_name=_("Learning Objectives"),
@@ -125,13 +252,17 @@ class Course(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMi
             "in sync by course_service.recalculate_duration_estimate."
         ),
     )
-    version = models.CharField(
+    version = models.ForeignKey(
+        "courses.CourseVersion",
         verbose_name=_("Version"),
-        max_length=10,
-        default="1.0",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="courses",
         help_text=_(
-            "Course version number (SCCS PRD Section 15). A CourseVersion "
-            "snapshot is recorded at this value when the course is published."
+            "Canonical CourseVersion label this course publishes under (SCCS "
+            "PRD Section 15). Set at publish time; a PublishedCourseSnapshot "
+            "records the course tree at that label."
         ),
     )
     terms_accepted_at = models.DateTimeField(
@@ -152,6 +283,38 @@ class Course(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMi
     rejected_at = models.DateTimeField(
         verbose_name=_("Rejected At"), null=True, blank=True
     )
+    draft_started_at = models.DateTimeField(
+        verbose_name=_("Draft Started At"),
+        null=True,
+        blank=True,
+        default=timezone.now,
+        help_text=_(
+            "When this course first existed as a draft, for the minimum hold "
+            "time. A rejection returns a course to Draft but does not reset "
+            "this, so revisions can be resubmitted without waiting again."
+        ),
+    )
+    sla_red_alerted_at = models.DateTimeField(
+        verbose_name=_("SLA Red Alerted At"),
+        null=True,
+        blank=True,
+        help_text=_(
+            "When admins were alerted that this course breached the review "
+            "SLA. Set once per review cycle so the sweep cannot re-alert."
+        ),
+    )
+    flagged_at = models.DateTimeField(
+        verbose_name=_("Flagged At"),
+        null=True,
+        blank=True,
+        help_text=_(
+            "When this course was auto-flagged for sitting too long without "
+            "a review decision. Advisory only - it blocks nothing."
+        ),
+    )
+    flag_reason = models.CharField(
+        verbose_name=_("Flag Reason"), max_length=255, blank=True, default=""
+    )
 
     class Meta:
         verbose_name = _("Course")
@@ -164,9 +327,21 @@ class Course(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMi
             models.Index(
                 fields=["creator", "status"], name="course_creator_status_idx"
             ),
+            # The Pending screen narrows Submitted courses to the seats the
+            # caller can take, oldest first.
+            models.Index(
+                fields=["status", "review_stage", "submitted_at"],
+                name="course_status_stage_sub_idx",
+            ),
         ]
 
     def __str__(self):
         """Use the course title as the human-readable label."""
 
         return self.title
+
+    @property
+    def is_editable(self) -> bool:
+        """Whether the creator may still change this course's content."""
+
+        return self.status in EDITABLE_COURSE_STATUSES

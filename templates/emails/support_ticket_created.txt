@@ -1,0 +1,8 @@
+Hi {{ first_name }},
+
+You have successfully created a ticket. We'll email you here whenever it is updated.
+
+Subject: {{ ticket_title }}
+Ticket ID: {{ ticket_id }}
+
+{{ description }}

@@ -12,6 +12,12 @@ app = Celery("config")
 app.config_from_object("django.conf:settings", namespace="CELERY")
 app.autodiscover_tasks()
 
+# `shared` is a plain Python package (not a Django app), so
+# autodiscover_tasks() above never finds shared/tasks.py.  Importing it
+# here forces every worker to register the @shared_task functions
+# (send_templated_email_task, send_email_task, write_audit_log, …).
+import shared.tasks  # noqa: F401, E402
+
 
 @app.task(bind=True)
 def debug_task(self):

@@ -1,0 +1,330 @@
+from django.db import IntegrityError
+from drf_spectacular.utils import (
+    OpenApiExample,
+    OpenApiParameter,
+    OpenApiResponse,
+    extend_schema,
+    extend_schema_view,
+)
+from rest_framework import exceptions
+from rest_framework.viewsets import ModelViewSet
+
+from api.quizzes.models import Question, Quiz
+from api.quizzes.serializers import QuestionSerializer
+from api.quizzes.services import quiz_service
+from api.authorization import codenames
+from api.authorization.permissions import Perm
+from api.authorization.services import permission_service
+from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
+
+_SINGLE_CHOICE_QUESTION_EXAMPLE = {
+    "quiz": "4fc7996d-0068-42f7-8f5f-5cf82600a49f",
+    "question_text": "Which keyword defines a Python function?",
+    "question_type": "SINGLE_CHOICE",
+    "points": 5,
+    "model_response_guide": "",
+    "explanation": "`def` is the Python keyword used to declare a function.",
+    "order": 1,
+    "options": [
+        {"option_text": "func", "is_correct": False, "order": 1},
+        {"option_text": "def", "is_correct": True, "order": 2},
+    ],
+}
+
+_MULTIPLE_CHOICE_QUESTION_EXAMPLE = {
+    **_SINGLE_CHOICE_QUESTION_EXAMPLE,
+    "question_type": "MULTIPLE_CHOICE",
+}
+
+_FIGMA_ASSESSMENT_NOTE = (
+    "This is the relational question API for Quiz rows. The Figma Course "
+    "Builder quiz editor should use the assessment endpoints instead. "
+    "Assessment questions use `question`, `type`, `options[].text`, "
+    "`correct_index`, `correct_indices`, `expected_answer`, and `explanation`; "
+    "this endpoint uses `question_text`, `question_type`, "
+    "`options[].option_text`, `is_correct`, `model_response_guide`, and "
+    "top-level `explanation`. "
+    "Relational `SINGLE_CHOICE` and `MULTIPLE_CHOICE` both currently require "
+    "exactly one correct option."
+)
+
+_QUESTION_TYPE_RULES = (
+    "**Rules:**\n"
+    "- `SINGLE_CHOICE` requires `options`; exactly one option must have "
+    "`is_correct: true`.\n"
+    "- `MULTIPLE_CHOICE` also requires `options`; in this relational API it "
+    "currently allows exactly one `is_correct: true` option.\n"
+    "- `ESSAY` must not send `options`; put the expected answer or grading "
+    "guide in `model_response_guide`.\n"
+    "- `explanation` is question-level feedback; do not put explanations "
+    "inside options.\n"
+    "- `order` must be unique within the quiz.\n"
+    "- Each option `order` must be unique within the question.\n"
+    "- Use the course Assessment endpoints for Figma multi-answer questions "
+    "with `correct_indices`."
+)
+
+
+@extend_schema_view(
+    list=extend_schema(
+        summary="List questions",
+        description=(
+            "Returns questions across quizzes, ordered by their position "
+            "within each quiz. Filter with `?quiz=<id>` to scope to one "
+            "quiz.\n\n"
+            "Use this endpoint to populate relational quiz question lists. "
+            f"For the Figma Course Builder quiz editor, use the assessment endpoints.\n\n{_FIGMA_ASSESSMENT_NOTE}\n\n"
+            "**Auth:** `courses.create` with access to the parent course, or "
+            "any course with `courses.view` (reads) / `courses.edit` (changes) - "
+            "Admin, Approver and Super Admin by default.\n\n"
+            "**Prerequisites:** None.\n\n"
+            f"{_QUESTION_TYPE_RULES}\n\n"
+            "**Important:** Results are paginated. `quiz` and `question_type` "
+            "filters may be combined. Relational `SINGLE_CHOICE` and "
+            "`MULTIPLE_CHOICE` both mean a single-correct choice question; "
+            "use course assessments for Figma "
+            "multi-answer questions with `correct_indices`."
+        ),
+        tags=["Creator — Quizzes"],
+        parameters=[
+            OpenApiParameter(
+                name="quiz",
+                type=str,
+                location=OpenApiParameter.QUERY,
+                description="Return questions for this quiz UUID only.",
+            ),
+            OpenApiParameter(
+                name="question_type",
+                type=str,
+                location=OpenApiParameter.QUERY,
+                enum=["SINGLE_CHOICE", "MULTIPLE_CHOICE", "ESSAY"],
+                description=(
+                    "Return questions of this answer type only. Use course "
+                    "assessments for Figma multi-answer questions with "
+                    "`correct_indices`."
+                ),
+            ),
+        ],
+        responses={
+            200: OpenApiResponse(response=QuestionSerializer(many=True)),
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    ),
+    retrieve=extend_schema(
+        summary="Retrieve a question",
+        description=(
+            "Returns a single question with its options nested.\n\n"
+            "Use this when opening a question in the relational quiz editor. "
+            f"For Figma Course Builder quizzes, use the assessment endpoints.\n\n{_FIGMA_ASSESSMENT_NOTE}\n\n"
+            "**Auth:** `courses.create` with access to the parent course, or "
+            "any course with `courses.view` (reads) / `courses.edit` (changes) - "
+            "Admin, Approver and Super Admin by default.\n\n"
+            "**Prerequisites:** The question must exist in an accessible quiz.\n\n"
+            "**Important:** Questions outside the caller's course scope return "
+            "404, the same as an unknown id."
+        ),
+        tags=["Creator — Quizzes"],
+        responses={
+            200: OpenApiResponse(response=QuestionSerializer),
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
+            **STANDARD_ERROR_RESPONSES["not_found"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    ),
+    create=extend_schema(
+        summary="Create a question",
+        description=(
+            "Adds a relational question to a quiz. `SINGLE_CHOICE` and "
+            "`MULTIPLE_CHOICE` questions require nested options; `ESSAY` "
+            "questions must not have any.\n\n"
+            "Call this after the parent quiz has been created.\n\n"
+            f"{_FIGMA_ASSESSMENT_NOTE}\n\n"
+            "**Auth:** `courses.create` with access to the parent course, or "
+            "any course with `courses.view` (reads) / `courses.edit` (changes) - "
+            "Admin, Approver and Super Admin by default.\n\n"
+            "**Prerequisites:** The referenced quiz must exist and be accessible.\n\n"
+            f"{_QUESTION_TYPE_RULES}\n\n"
+            "**Important:** Relational `SINGLE_CHOICE` and `MULTIPLE_CHOICE` "
+            "require exactly one correct option via `options[].is_correct`. "
+            "Put feedback in the question-level `explanation` field; "
+            "`options[].explanation` is deprecated and ignored. "
+            "Do not send Figma assessment fields like "
+            "`type`, `question`, `correct_index`, `correct_indices`, "
+            "`expected_answer`, or `options[].text` to this endpoint. "
+            "Question order must be unique within the quiz, and option orders "
+            "must be unique within the question."
+        ),
+        tags=["Creator — Quizzes"],
+        request=QuestionSerializer,
+        examples=[
+            OpenApiExample(
+                name="Single-choice question",
+                request_only=True,
+                value=_SINGLE_CHOICE_QUESTION_EXAMPLE,
+            ),
+            OpenApiExample(
+                name="Legacy multiple-choice question",
+                request_only=True,
+                value=_MULTIPLE_CHOICE_QUESTION_EXAMPLE,
+            ),
+        ],
+        responses={
+            201: OpenApiResponse(response=QuestionSerializer),
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
+            **STANDARD_ERROR_RESPONSES["validation"],
+            **STANDARD_ERROR_RESPONSES["not_found"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    ),
+    update=extend_schema(
+        summary="Replace a question",
+        description=(
+            "Overwrites a question; supplying `options` replaces the full "
+            "option set.\n\n"
+            "Use this when saving the complete relational question editor "
+            f"form. For Figma Course Builder quizzes, use the assessment endpoints.\n\n{_FIGMA_ASSESSMENT_NOTE}\n\n"
+            "**Auth:** `courses.create` with access to the parent course, or "
+            "any course with `courses.view` (reads) / `courses.edit` (changes) - "
+            "Admin, Approver and Super Admin by default.\n\n"
+            "**Prerequisites:** The question and target quiz must be accessible.\n\n"
+            f"{_QUESTION_TYPE_RULES}\n\n"
+            "**Important:** The same type, correct-option, and unique-order "
+            "rules as creation apply."
+        ),
+        tags=["Creator — Quizzes"],
+        request=QuestionSerializer,
+        examples=[
+            OpenApiExample(
+                name="Replacement question",
+                request_only=True,
+                value=_SINGLE_CHOICE_QUESTION_EXAMPLE,
+            )
+        ],
+        responses={
+            200: OpenApiResponse(response=QuestionSerializer),
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
+            **STANDARD_ERROR_RESPONSES["validation"],
+            **STANDARD_ERROR_RESPONSES["not_found"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    ),
+    partial_update=extend_schema(
+        summary="Update a question",
+        description=(
+            "Updates only the supplied fields.\n\n"
+            "Use this for small relational edits such as changing text, "
+            f"points, or options. For Figma Course Builder quizzes, use the assessment endpoints.\n\n{_FIGMA_ASSESSMENT_NOTE}\n\n"
+            "**Auth:** `courses.create` with access to the parent course, or "
+            "any course with `courses.view` (reads) / `courses.edit` (changes) - "
+            "Admin, Approver and Super Admin by default.\n\n"
+            "**Prerequisites:** The question and target quiz must be accessible.\n\n"
+            f"{_QUESTION_TYPE_RULES}\n\n"
+            "**Important:** If `options` is supplied, it replaces the entire "
+            "option set. Changing to ESSAY requires an empty option set."
+        ),
+        tags=["Creator — Quizzes"],
+        request=QuestionSerializer,
+        examples=[
+            OpenApiExample(
+                name="Update question points",
+                request_only=True,
+                value={"points": 10},
+            )
+        ],
+        responses={
+            200: OpenApiResponse(response=QuestionSerializer),
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
+            **STANDARD_ERROR_RESPONSES["validation"],
+            **STANDARD_ERROR_RESPONSES["not_found"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    ),
+    destroy=extend_schema(
+        summary="Delete a question",
+        description=(
+            "Deletes a question and its options (cascading).\n\n"
+            "Use this when removing a question from a relational quiz. Figma "
+            "Course Builder assessments are replaced by PUTting the desired "
+            f"assessment question list.\n\n{_FIGMA_ASSESSMENT_NOTE}\n\n"
+            "**Auth:** `courses.create` with access to the parent course, or "
+            "any course with `courses.view` (reads) / `courses.edit` (changes) - "
+            "Admin, Approver and Super Admin by default.\n\n"
+            "**Prerequisites:** The question must exist in an accessible quiz.\n\n"
+            "**Important:** Deletion is immediate and also deletes every nested "
+            "option."
+        ),
+        tags=["Creator — Quizzes"],
+        responses={
+            204: OpenApiResponse(description="Question deleted."),
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
+            **STANDARD_ERROR_RESPONSES["not_found"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    ),
+)
+class QuestionViewSet(ModelViewSet):
+    """CRUD for Questions within a Quiz, with nested option management."""
+
+    queryset = Question.objects.all()
+    serializer_class = QuestionSerializer
+    permission_classes = [
+        Perm(codenames.COURSES_CREATE, codenames.COURSES_VIEW, codenames.COURSES_EDIT)
+    ]
+    filterset_fields = ["quiz", "question_type"]
+
+    def _accessible_quizzes(self):
+        # View Course reads every quiz's questions; changing them needs Edit Course.
+        codename = (
+            codenames.COURSES_VIEW
+            if self.action in {"list", "retrieve"}
+            else codenames.COURSES_EDIT
+        )
+        if permission_service.user_has_permission(self.request.user, codename):
+            return Quiz.objects.all()
+        return quiz_service.quizzes_accessible_to(user=self.request.user)
+
+    def get_queryset(self):
+        if getattr(self, "swagger_fake_view", False):
+            return Question.objects.none()
+        return Question.objects.filter(
+            quiz__in=self._accessible_quizzes()
+        ).prefetch_related("options")
+
+    def perform_create(self, serializer):
+        quiz = serializer.validated_data.get("quiz")
+        if not quiz:
+            raise exceptions.ValidationError({"quiz": "This field is required."})
+        if not self._accessible_quizzes().filter(pk=quiz.pk).exists():
+            raise exceptions.NotFound("Quiz not found.")
+        try:
+            serializer.save(created_by=self.request.user, updated_by=self.request.user)
+        except IntegrityError as exc:
+            raise exceptions.ValidationError(
+                {
+                    "non_field_errors": (
+                        "The question conflicts with an existing question or option."
+                    )
+                }
+            ) from exc
+
+    def perform_update(self, serializer):
+        quiz = serializer.validated_data.get("quiz", serializer.instance.quiz)
+        if not self._accessible_quizzes().filter(pk=quiz.pk).exists():
+            raise exceptions.NotFound("Quiz not found.")
+        try:
+            serializer.save(updated_by=self.request.user)
+        except IntegrityError as exc:
+            raise exceptions.ValidationError(
+                {
+                    "non_field_errors": (
+                        "The question conflicts with an existing question or option."
+                    )
+                }
+            ) from exc

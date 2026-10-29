@@ -3,7 +3,12 @@ import io
 
 from django.http import StreamingHttpResponse
 from django_filters.rest_framework import DjangoFilterBackend
-from drf_spectacular.utils import OpenApiExample, OpenApiResponse, extend_schema
+from drf_spectacular.utils import (
+    OpenApiExample,
+    OpenApiResponse,
+    extend_schema,
+    extend_schema_view,
+)
 from rest_framework import filters as drf_filters
 from rest_framework.generics import ListAPIView
 from rest_framework.permissions import IsAuthenticated
@@ -13,11 +18,18 @@ from api.authentication.services import activity_service
 from api.users.enums import UserActivityActionEnums, UserActivityCategoryEnums
 from api.users.filters import AdminUserActivityLogFilter, UserActivityLogFilter
 from api.users.models import UserActivityLog
-from api.users.permissions import IsAdminOrSuperAdminRole
+from api.authorization import codenames
+from api.authorization.permissions import Perm
 from api.users.serializers.activity_log_serializer import UserActivityLogSerializer
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 
 
+@extend_schema_view(
+    get=extend_schema(
+        summary="List my activity log",
+        tags=["Creator — Activity Log", "Reviewer Settings — Data & Privacy"],
+    ),
+)
 class UserActivityLogListView(ListAPIView):
     """List the current authenticated user's own activity log entries.
 
@@ -49,9 +61,9 @@ class UserActivityLogListView(ListAPIView):
         "`/users/me/activity-log/` cannot show them.\n\n"
         "Called from the admin Users screen when opening a user's history, "
         "and from the platform-wide audit view.\n\n"
-        "**Auth:** Admin or Super Admin.\n\n"
-        "**Prerequisites:** None beyond holding the Admin or Super Admin "
-        "role.\n\n"
+        "**Auth:** The `audit.view` permission — Admin and Super Admin by "
+        "default.\n\n"
+        "**Prerequisites:** None.\n\n"
         "**Important:** Unfiltered this is the whole platform's history and "
         "grows without bound — pass `?user=<uuid>` to scope it to one account, "
         "which is how the UI always calls it. Also filterable by `?category=` "
@@ -96,7 +108,7 @@ class AdminUserActivityLogListView(ListAPIView):
     agree).
     """
 
-    permission_classes = [IsAdminOrSuperAdminRole]
+    permission_classes = [Perm(codenames.AUDIT_VIEW)]
     serializer_class = UserActivityLogSerializer
     filterset_class = AdminUserActivityLogFilter
     filter_backends = [DjangoFilterBackend, drf_filters.OrderingFilter]
@@ -106,6 +118,8 @@ class AdminUserActivityLogListView(ListAPIView):
         if getattr(self, "swagger_fake_view", False):
             return UserActivityLog.objects.none()
         return UserActivityLog.objects.select_related("user", "actor_user")
+
+
 def _activity_log_csv_rows(entries):
     """Yield CSV lines for `entries`, header first - one csv.writer row per
     line via an in-memory buffer, the standard Django streaming-CSV idiom."""
@@ -121,7 +135,13 @@ def _activity_log_csv_rows(entries):
     for entry in entries:
         actor = entry.actor_user.email if entry.actor_user_id else ""
         writer.writerow(
-            [entry.category, entry.action, entry.summary, actor, entry.activity_datetime]
+            [
+                entry.category,
+                entry.action,
+                entry.summary,
+                actor,
+                entry.activity_datetime,
+            ]
         )
         yield buffer.getvalue()
         buffer.seek(0)
@@ -138,6 +158,22 @@ class UserActivityLogExportView(APIView):
 
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(
+        summary="Export my activity log as CSV",
+        request=None,
+        responses={(200, "text/csv"): OpenApiResponse(description="CSV file")},
+        description=(
+            "Downloads the current user's own activity log as a CSV file "
+            "(the Data & Privacy screen's 'download activity log').\n\n"
+            "**Auth:** Any authenticated user.\n\n"
+            "**Prerequisites:** None.\n\n"
+            "**Important:** The export event itself is logged *after* the "
+            "entries are materialized, so it never appears inside the file "
+            "it produced. Supports the same `?category=`/`?action=` filters "
+            "as the list endpoint."
+        ),
+        tags=["Creator — Activity Log", "Reviewer Settings — Data & Privacy"],
+    )
     def get(self, request):
         base_queryset = UserActivityLog.objects.filter(
             user=request.user

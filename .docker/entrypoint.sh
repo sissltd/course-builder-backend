@@ -4,7 +4,9 @@ set -e
 
 # Ensure write directories exist with correct ownership (runs as root)
 mkdir -p /app/staticfiles /app/media
-chown appuser:appuser /app/staticfiles /app/media
+if [ "$(id -u)" = "0" ]; then
+    chown appuser:appuser /app/staticfiles /app/media
+fi
 
 python manage.py check
 

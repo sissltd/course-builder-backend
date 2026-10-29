@@ -1,6 +1,7 @@
 from django.utils import timezone
 from rest_framework import serializers
 
+from api.users.enums import QueueTrackFilter
 from api.users.models import User
 
 
@@ -35,6 +36,7 @@ class UserAdminSerializer(serializers.ModelSerializer):
             "first_name",
             "last_name",
             "role",
+            "assigned_track",
             "role_label",
             "status",
             "status_label",
@@ -76,3 +78,21 @@ class UserSuspendSerializer(serializers.Serializer):
 class UserReinstateSerializer(serializers.Serializer):
     """Request body for the admin roster's reinstate action. No fields
     required - restoring an account needs no accompanying data."""
+
+
+class UserAssignTrackSerializer(serializers.Serializer):
+    """Request body for assigning a reviewer to a production track.
+
+    Null clears the assignment. The reviewer sees this on their Account
+    settings screen as read-only - their own queue filter is a separate,
+    self-service preference.
+    """
+
+    assigned_track = serializers.ChoiceField(
+        choices=QueueTrackFilter.choices,
+        allow_null=True,
+        help_text=(
+            "Track to assign, or null to clear it. Distinct from the "
+            "reviewer's own queue track filter."
+        ),
+    )

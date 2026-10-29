@@ -13,6 +13,11 @@ from .auth_views import (
     TokenRefreshView,
     VerifyEmailView,
 )
+from .google_auth_views import (
+    GoogleLoginView,
+    GoogleReviewerSignupView,
+    GoogleSignupView,
+)
 from .mfa_views import (
     MFAAdminResetView,
     MFADisableView,
@@ -27,6 +32,7 @@ from .staff_views import (
     InviteStaffView,
     ReactivateStaffView,
     RevokeStaffView,
+    StaffDetailView,
     StaffListView,
     SuperAdminBootstrapView,
 )
@@ -37,6 +43,9 @@ __all__ = [
     "ChangeEmailRequestView",
     "ChangePasswordView",
     "ForgotPasswordView",
+    "GoogleLoginView",
+    "GoogleReviewerSignupView",
+    "GoogleSignupView",
     "InviteStaffView",
     "LoginView",
     "LogoutAllView",
@@ -54,6 +63,7 @@ __all__ = [
     "ReviewerSignupView",
     "SignupView",
     "StaffListView",
+    "StaffDetailView",
     "SuperAdminBootstrapView",
     "TokenRefreshView",
     "UserSessionListView",

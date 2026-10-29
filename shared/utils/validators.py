@@ -28,15 +28,11 @@ def validate_nigerian_account_number(value: str) -> str:
 
     # Check if it contains only digits
     if not value.isdigit():
-        raise serializers.ValidationError(
-            "Account number must contain only digits."
-        )
+        raise serializers.ValidationError("Account number must contain only digits.")
 
     # Check length (Nigerian NUBAN is exactly 10 digits)
     if len(value) != 10:
-        raise serializers.ValidationError(
-            "Account number must be exactly 10 digits."
-        )
+        raise serializers.ValidationError("Account number must be exactly 10 digits.")
 
     return value
 
@@ -70,14 +66,17 @@ def validate_phone_number(value: str) -> str:
 
     # Check if it contains only digits after cleaning
     if not cleaned.isdigit():
-        raise serializers.ValidationError(
-            "Phone number must contain only digits."
-        )
+        raise serializers.ValidationError("Phone number must contain only digits.")
 
     # Valid formats:
     # 08012345678 (11 digits starting with 0)
     # 2348012345678 (13 digits starting with 234)
-    if len(cleaned) == 11 and cleaned.startswith("0") or len(cleaned) == 13 and cleaned.startswith("234"):
+    if (
+        len(cleaned) == 11
+        and cleaned.startswith("0")
+        or len(cleaned) == 13
+        and cleaned.startswith("234")
+    ):
         return value
     elif len(cleaned) == 10 and not cleaned.startswith("0"):
         # Some systems strip the leading 0

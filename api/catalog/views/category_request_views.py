@@ -1,0 +1,275 @@
+from drf_spectacular.utils import OpenApiExample, OpenApiResponse, extend_schema
+from rest_framework.decorators import action
+from rest_framework.response import Response
+from rest_framework.viewsets import ModelViewSet
+
+from api.catalog.models import CategoryRequest
+from api.catalog.serializers import (
+    CategoryRequestApproveSerializer,
+    CategoryRequestCreateSerializer,
+    CategoryRequestSerializer,
+)
+from api.catalog.services.category_service import PRICE_FIELDS
+from api.catalog.services import category_request_service
+from api.authorization import codenames
+from api.authorization.permissions import Perm
+from api.authorization.services import permission_service
+from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
+
+MANAGE_ACTIONS = {"approve", "reject"}
+
+_REQUEST_EXAMPLE = {
+    "id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+    "name": "Data Science",
+    "description": "Courses about data analysis and machine learning.",
+    "status": "PENDING",
+    "resulting_category": None,
+    "requested_by_email": "creator@example.com",
+    "reviewed_at": None,
+    "created_datetime": "2026-09-01T10:00:00Z",
+}
+
+_APPROVED_EXAMPLE = {
+    **_REQUEST_EXAMPLE,
+    "status": "APPROVED",
+    "resulting_category": {
+        "id": "5f4d3c2b-1a09-48e7-b6a5-9c8d7e6f5a4b",
+        "name": "Data Science",
+    },
+    "reviewed_at": "2026-09-02T14:30:00Z",
+}
+
+_REJECTED_EXAMPLE = {
+    **_REQUEST_EXAMPLE,
+    "status": "REJECTED",
+    "reviewed_at": "2026-09-02T09:15:00Z",
+}
+
+
+@extend_schema(tags=["Creator — Category Requests"])
+class CategoryRequestViewSet(ModelViewSet):
+    """A creator's requests for a Category that does not exist yet, plus
+    the Admin approve/reject surface.
+
+    Approving creates the real Category and emails the requester; the
+    price is set by the approving admin, not the requester. Creators see
+    only their own requests; holders of `catalog.manage_categories` (Writer,
+    Admin, Super Admin by default) see every request and decide them. The
+    view, the queryset and the service all check that one permission, so a
+    caller can never pass the gate and then be refused or 404'd further in.
+    """
+
+    permission_classes = [
+        Perm(codenames.COURSES_CREATE, codenames.CATALOG_MANAGE_CATEGORIES)
+    ]
+    http_method_names = ["get", "post", "head", "options"]
+
+    def get_queryset(self):
+        if getattr(self, "swagger_fake_view", False):
+            return CategoryRequest.objects.none()
+
+        queryset = CategoryRequest.objects.select_related(
+            "requested_by", "resulting_category"
+        )
+        if permission_service.user_has_permission(
+            self.request.user, codenames.CATALOG_MANAGE_CATEGORIES
+        ):
+            return queryset
+        return queryset.filter(requested_by=self.request.user)
+
+    def get_serializer_class(self):
+        if self.action == "create":
+            return CategoryRequestCreateSerializer
+        return CategoryRequestSerializer
+
+    def get_permissions(self):
+        if self.action in MANAGE_ACTIONS:
+            return [Perm(codenames.CATALOG_MANAGE_CATEGORIES)()]
+        return super().get_permissions()
+
+    @extend_schema(
+        summary="Request a new category",
+        description=(
+            "Files a Pending request for a category that does not exist "
+            "yet, and notifies admins in-app.\n\n"
+            "Call this from the \u201ccan't find your preferred category?\u201d "
+            "link on course creation. The category is **not** usable until "
+            "an admin approves it \u2014 the creator is emailed when that "
+            "happens.\n\n"
+            "**Auth:** `courses.create` or `catalog.manage_categories` — Course "
+            "Creator, Writer, Admin and Super Admin by default.\n\n"
+            "**Prerequisites:** None.\n\n"
+            "**Important:** A name matching an existing category is not "
+            "rejected automatically \u2014 whether it is a real duplicate "
+            "is left to the reviewing admin. Nothing is created in the "
+            "catalog at this point."
+        ),
+        request=CategoryRequestCreateSerializer,
+        examples=[
+            OpenApiExample(
+                "Request",
+                request_only=True,
+                value={
+                    "name": "Data Science",
+                    "description": "Courses about data analysis and machine learning.",
+                },
+            )
+        ],
+        responses={
+            201: OpenApiResponse(
+                response=CategoryRequestSerializer,
+                description="The Pending request.",
+                examples=[OpenApiExample("Created", value=_REQUEST_EXAMPLE)],
+            ),
+            **STANDARD_ERROR_RESPONSES["validation"],
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
+    def create(self, request, *args, **kwargs):
+        return super().create(request, *args, **kwargs)
+
+    @extend_schema(
+        summary="List category requests",
+        description=(
+            "Returns category requests, newest first. A Course Creator sees "
+            "only their own; a category manager (Writer, Admin, Super Admin) "
+            "sees every request.\n\n"
+            "Call this to show a creator the state of what they asked for, "
+            "or to populate the admin review queue.\n\n"
+            "**Auth:** Own requests with `courses.create`; every request with "
+            "`catalog.manage_categories` (Writer, Admin, Super Admin by default).\n\n"
+            "**Prerequisites:** None.\n\n"
+            "**Important:** Scoping is server-side \u2014 no query "
+            "parameter lets a creator see another creator's requests."
+        ),
+        responses={
+            200: OpenApiResponse(
+                response=CategoryRequestSerializer(many=True),
+                description="Category requests visible to the caller.",
+                examples=[OpenApiExample("Success", value=[_REQUEST_EXAMPLE])],
+            ),
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
+    def list(self, request, *args, **kwargs):
+        return super().list(request, *args, **kwargs)
+
+    @extend_schema(
+        summary="Retrieve a category request",
+        description=(
+            "Returns one category request.\n\n"
+            "**Auth:** Own requests with `courses.create`; any request with "
+            "`catalog.manage_categories` (Writer, Admin, Super Admin by default).\n\n"
+            "**Prerequisites:** The request must exist and be visible to "
+            "the caller.\n\n"
+            "**Important:** A creator requesting another creator's request "
+            "gets 404, not 403 \u2014 existence is not leaked."
+        ),
+        responses={
+            200: OpenApiResponse(
+                response=CategoryRequestSerializer,
+                examples=[OpenApiExample("Success", value=_REQUEST_EXAMPLE)],
+            ),
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
+            **STANDARD_ERROR_RESPONSES["not_found"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
+    def retrieve(self, request, *args, **kwargs):
+        return super().retrieve(request, *args, **kwargs)
+
+    @extend_schema(
+        summary="Approve a category request",
+        description=(
+            "Approves a Pending request: creates the real Category with the "
+            "supplied rate, links it to the request, and emails the "
+            "requester.\n\n"
+            "Call this from the admin review queue once the request has "
+            "been checked and the payout decided.\n\n"
+            "**Auth:** The `catalog.manage_categories` permission — Writer, Admin and Super Admin by default.\n\n"
+            "**Prerequisites:** The request must be Pending.\n\n"
+            "**Important:** The three creator prices are required and set by "
+            "you, not the requester \u2014 they are what the platform pays "
+            "per approved course in this category: without video (paid at "
+            "Second Review), with video (paid at QA) and AI-built. They need "
+            "`catalog.set_creator_prices` (403 otherwise). A name or slug "
+            "colliding with an existing category "
+            "returns 400 and nothing is created. If the notification email "
+            "fails the approval still stands."
+        ),
+        tags=["Admin — Category Requests"],
+        request=CategoryRequestApproveSerializer,
+        examples=[
+            OpenApiExample(
+                "Approve",
+                request_only=True,
+                value={
+                    "creator_price_without_video": "100000.00",
+                    "creator_price_with_video": "150000.00",
+                    "creator_price_ai_built": "60000.00",
+                },
+            )
+        ],
+        responses={
+            200: OpenApiResponse(
+                response=CategoryRequestSerializer,
+                description="The approved request, with the new category attached.",
+                examples=[OpenApiExample(name="Approved", value=_APPROVED_EXAMPLE)],
+            ),
+            **STANDARD_ERROR_RESPONSES["validation"],
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
+            **STANDARD_ERROR_RESPONSES["not_found"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
+    @action(detail=True, methods=["post"])
+    def approve(self, request, pk=None):
+        serializer = CategoryRequestApproveSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        updated = category_request_service.approve_request(
+            request=self.get_object(),
+            actor=request.user,
+            prices={field: data[field] for field in PRICE_FIELDS},
+            track_preference=data.get("track_preference"),
+        )
+        return Response(CategoryRequestSerializer(updated).data)
+
+    @extend_schema(
+        summary="Reject a category request",
+        description=(
+            "Closes a Pending request without creating a Category.\n\n"
+            "Call this from the admin review queue to decline a request that "
+            "should not become a category.\n\n"
+            "**Auth:** The `catalog.manage_categories` permission — Writer, Admin and Super Admin by default.\n\n"
+            "**Prerequisites:** The request must be Pending.\n\n"
+            "**Important:** No email is sent \u2014 there is no "
+            "rejection-notice screen. The request is retained for history."
+        ),
+        tags=["Admin — Category Requests"],
+        request=None,
+        responses={
+            200: OpenApiResponse(
+                response=CategoryRequestSerializer,
+                description="The rejected request.",
+                examples=[OpenApiExample(name="Rejected", value=_REJECTED_EXAMPLE)],
+            ),
+            **STANDARD_ERROR_RESPONSES["validation"],
+            **STANDARD_ERROR_RESPONSES["auth"],
+            **STANDARD_ERROR_RESPONSES["permission"],
+            **STANDARD_ERROR_RESPONSES["not_found"],
+            **STANDARD_ERROR_RESPONSES["server"],
+        },
+    )
+    @action(detail=True, methods=["post"])
+    def reject(self, request, pk=None):
+        updated = category_request_service.reject_request(
+            request=self.get_object(), actor=request.user
+        )
+        return Response(CategoryRequestSerializer(updated).data)

@@ -1,3 +1,5 @@
+import logging
+
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
@@ -16,7 +18,6 @@ from api.authentication.models import UserSession
 from api.authentication.services import activity_service, session_service, token_service
 from api.authentication.utils.base_auth import TsesAuthenticationInterface
 from api.authentication.utils.links import build_verification_link
-from api.notification.models import Notification
 from api.users.enums import (
     AccountStatus,
     UserActivityActionEnums,
@@ -25,11 +26,52 @@ from api.users.enums import (
 )
 
 User = get_user_model()
+logger = logging.getLogger(__name__)
 
 EMAIL_VERIFICATION_SUBJECT = "Verify your email"
 PASSWORD_RESET_SUBJECT = "Reset your password"
 PASSWORD_RESET_CONFIRMATION_SUBJECT = "Your password was changed"
 EMAIL_CHANGE_SUBJECT = "Confirm your new email address"
+
+
+def _queue_auth_email(
+    *,
+    receivers: list[str],
+    subject: str,
+    template_name: str,
+    context: dict,
+    email_type: str,
+) -> None:
+    """Send an auth email synchronously.
+
+    Auth emails (verification, password reset, lockout) are critical and must
+    be delivered.  Celery async delivery has proven unreliable on Dokploy
+    because the web process and worker may hit different Redis instances, so
+    these emails are sent inline in the request cycle.
+    """
+    from api.notification.services.email_service import send_templated_email
+
+    try:
+        sent_count = send_templated_email(
+            receivers=receivers,
+            subject=subject,
+            template_name=template_name,
+            context=context,
+        )
+        logger.info(
+            "auth_email_sent email_type=%s recipients=%s subject=%s sent_count=%s",
+            email_type,
+            receivers,
+            subject,
+            sent_count,
+        )
+    except Exception:
+        logger.exception(
+            "auth_email_failed email_type=%s recipients=%s subject=%s",
+            email_type,
+            receivers,
+            subject,
+        )
 
 
 class AuthenticationService(TsesAuthenticationInterface):
@@ -69,13 +111,8 @@ class AuthenticationService(TsesAuthenticationInterface):
         """
 
         if User.objects.filter(email__iexact=email).exists():
-            # Generic message deliberately doesn't confirm the email is taken -
-            # avoids the classic signup-enumeration leak of a distinct
-            # "already exists" response (though the 400-vs-201 status code
-            # still technically distinguishes the two cases; only an
-            # accept-and-email-the-existing-user pattern closes that fully).
             raise exceptions.ValidationError(
-                "Unable to create account with the provided details."
+                {"email": "A user with this email already exists."}
             )
 
         with transaction.atomic():
@@ -141,7 +178,7 @@ class AuthenticationService(TsesAuthenticationInterface):
 
         _token, raw_token = token_service.issue_token(user=user, purpose=purpose)
         if purpose == TokenPurpose.PASSWORD_RESET:
-            self._send_password_reset_email(user=user, raw_token=raw_token)
+            self.send_password_reset_email(user=user, raw_token=raw_token)
         else:
             self._send_signup_verification_email(user=user, raw_token=raw_token)
 
@@ -190,8 +227,13 @@ class AuthenticationService(TsesAuthenticationInterface):
             action=UserActivityActionEnums.PASSWORD_CHANGED,
             summary="Password changed.",
         )
+        self._send_password_reset_confirmation_email(
+            user=user, email_type="PASSWORD_CHANGE_CONFIRMATION"
+        )
 
-    def request_email_change(self, *, user: User, new_email: str, password: str) -> None:
+    def request_email_change(
+        self, *, user: User, new_email: str, password: str
+    ) -> None:
         """Start a two-step email change: verify identity, then email a
         confirmation link to the NEW address. User.email is not changed yet -
         only confirm_email_change() applies it, once the new inbox proves
@@ -212,11 +254,12 @@ class AuthenticationService(TsesAuthenticationInterface):
         link = build_verification_link(
             path="/change-email", email=new_email, token=raw_token
         )
-        Notification.emit_email_notification(
+        _queue_auth_email(
             receivers=[new_email],
             subject=EMAIL_CHANGE_SUBJECT,
             template_name="emails/email_change_confirmation",
             context={"first_name": user.first_name, "confirmation_link": link},
+            email_type="EMAIL_CHANGE_CONFIRMATION",
         )
 
     def confirm_email_change(self, *, token: str) -> User:
@@ -301,7 +344,7 @@ class AuthenticationService(TsesAuthenticationInterface):
         _token, raw_token = token_service.issue_token(
             user=user, purpose=TokenPurpose.PASSWORD_RESET
         )
-        self._send_password_reset_email(user=user, raw_token=raw_token)
+        self.send_password_reset_email(user=user, raw_token=raw_token)
 
     @staticmethod
     def _get_user_or_404(email: str) -> User:
@@ -313,10 +356,10 @@ class AuthenticationService(TsesAuthenticationInterface):
     @staticmethod
     def _send_signup_verification_email(*, user: User, raw_token: str) -> None:
         link = build_verification_link(
-            path="/verify-email", email=user.email, token=raw_token
+            path="/auth/verify-email", email=user.email, token=raw_token
         )
-        Notification.emit_email_notification(
-            receivers=[user],
+        _queue_auth_email(
+            receivers=[user.email],
             subject=EMAIL_VERIFICATION_SUBJECT,
             template_name="emails/email_verification",
             context={
@@ -324,15 +367,16 @@ class AuthenticationService(TsesAuthenticationInterface):
                 "verification_link": link,
                 "expiry_minutes": settings.EMAIL_TOKEN_EXPIRY_MINUTES,
             },
+            email_type="SIGNUP_VERIFICATION",
         )
 
     @staticmethod
-    def _send_password_reset_email(*, user: User, raw_token: str) -> None:
+    def send_password_reset_email(*, user: User, raw_token: str) -> None:
         link = build_verification_link(
-            path="/reset-password", email=user.email, token=raw_token
+            path="/auth/reset-password", email=user.email, token=raw_token
         )
-        Notification.emit_email_notification(
-            receivers=[user],
+        _queue_auth_email(
+            receivers=[user.email],
             subject=PASSWORD_RESET_SUBJECT,
             template_name="emails/password_reset",
             context={
@@ -340,15 +384,19 @@ class AuthenticationService(TsesAuthenticationInterface):
                 "reset_link": link,
                 "expiry_minutes": settings.EMAIL_TOKEN_EXPIRY_MINUTES,
             },
+            email_type="PASSWORD_RESET_REQUEST",
         )
 
     @staticmethod
-    def _send_password_reset_confirmation_email(*, user: User) -> None:
-        Notification.emit_email_notification(
-            receivers=[user],
+    def _send_password_reset_confirmation_email(
+        *, user: User, email_type: str = "PASSWORD_RESET_CONFIRMATION"
+    ) -> None:
+        _queue_auth_email(
+            receivers=[user.email],
             subject=PASSWORD_RESET_CONFIRMATION_SUBJECT,
             template_name="emails/password_reset_confirmation",
             context={"first_name": user.first_name},
+            email_type=email_type,
         )
 
 
@@ -366,7 +414,9 @@ _WORKSPACE_BY_ROLE = {
 }
 
 
-def finish_login(*, user: User, request=None, mfa_verified: bool) -> dict:
+def finish_login(
+    *, user: User, request=None, mfa_verified: bool, mfa_challenged: bool = False
+) -> dict:
     """Shared tail of a successful login, called once the caller has already
     decided the account is fully authenticated - either LoginSerializer
     (password-only, no MFA required or not yet enrolled) or the MFA-verify
@@ -374,10 +424,13 @@ def finish_login(*, user: User, request=None, mfa_verified: bool) -> dict:
     UserSession, and assembles the same response shape either way, so a
     client can't tell which path was taken from the shape of the response.
 
-    `mfa_verified` is embedded as a token claim consumed by
-    IsMFAVerifiedForSession - True only when this login actually completed
-    an MFA challenge (or the role never required one), never merely because
-    the account happens to be inside its enrollment grace period.
+    `mfa_verified` is embedded as a token claim: True when this login
+    completed an MFA challenge or the account never enrolled one. Nothing
+    server-side reads it now - IsStrongMFASession reads `mfa_challenged`.
+
+    `mfa_challenged` is stricter: True only when this login passed an MFA
+    challenge. IsStrongMFASession reads it for money and identity actions,
+    which need a real second factor whatever the caller's role.
 
     Local import of LoginSerializer avoids a module-level import cycle:
     login_serializer.py imports this module already.
@@ -392,6 +445,7 @@ def finish_login(*, user: User, request=None, mfa_verified: bool) -> dict:
     )
     refresh["sid"] = str(session.id)
     refresh["mfa_verified"] = mfa_verified
+    refresh["mfa_challenged"] = mfa_challenged
     access = refresh.access_token
 
     activity_service.log_auth_activity(

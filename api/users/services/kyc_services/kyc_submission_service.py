@@ -1,0 +1,286 @@
+import logging
+import uuid
+
+from django.db import transaction
+from django.utils import timezone
+from rest_framework import exceptions
+
+from api.authentication.services import activity_service
+from api.notification.models import Notification
+from api.users.enums import (
+    KYCStatus,
+    UserActivityActionEnums,
+    UserActivityCategoryEnums,
+)
+from api.users.models import KYCVerification, User
+from api.authorization import codenames
+from api.authorization.services import permission_service
+from api.users.tasks import call_sissl_kyc_verification, call_youverify_kyc_verification
+from core.models import KYCOutboxEvent
+from shared.utils.encryption import encrypt_field
+
+logger = logging.getLogger(__name__)
+
+REVIEWABLE_STATUSES = (KYCStatus.PENDING,)
+
+
+def get_latest_verification(*, user: User) -> KYCVerification | None:
+    """Most recent KYC submission for `user`, if any (newest first by Meta.ordering)."""
+
+    return KYCVerification.objects.filter(user=user).first()
+
+
+def is_verified(*, user: User) -> bool:
+    """True if `user`'s latest KYC submission was approved.
+
+    Used by wallet_service to gate withdrawal requests - a rejected or
+    still-pending submission (or no submission at all) means not verified.
+    """
+
+    latest = get_latest_verification(user=user)
+    return latest is not None and latest.status == KYCStatus.APPROVED
+
+
+def submit_verification(
+    *,
+    user: User,
+    country_of_issue: str,
+    document_type: str,
+    id_number: str,
+    first_name: str,
+    last_name: str,
+    address: str,
+    date_of_birth: str,
+) -> KYCVerification:
+    """Create a new PENDING KYC submission for `user`, and alert Admins/Super
+    Admins that a request is waiting for them.
+
+    Raises ValidationError if a PENDING submission is already awaiting review
+    - a user should not be able to queue multiple concurrent submissions
+    (they can resubmit once the current one is APPROVED or REJECTED).
+    """
+
+    latest = get_latest_verification(user=user)
+    if latest is not None and latest.status == KYCStatus.PENDING:
+        raise exceptions.ValidationError("A KYC submission is already pending review.")
+
+    # creating outbox events and enquing tasks within the same transaction to ensure we don't lose events if the transaction rolls back
+    with transaction.atomic():
+        verification = KYCVerification.objects.create(
+            user=user,
+            country_of_issue=country_of_issue,
+            document_type=document_type,
+            id_number=encrypt_field(id_number),
+            date_of_birth=date_of_birth,
+        )
+        
+        # update the user's personal information with the provided data
+        verification.user.first_name = first_name or verification.user.first_name
+        verification.user.last_name = last_name or verification.user.last_name
+        verification.user.address = address or verification.user.address
+        verification.user.date_of_birth = date_of_birth or verification.user.date_of_birth
+        verification.user.save(
+            update_fields=["first_name", "last_name", "address", "date_of_birth", "updated_datetime"]
+        )
+        _notify_admins_of_new_submission(verification)
+
+        outbox_event = KYCOutboxEvent.objects.create(
+            event_type=document_type,
+            kyc_request=verification,
+            payload={
+                "id_number": encrypt_field(id_number),
+            },
+        )
+
+        transaction.on_commit(lambda event_id=outbox_event.id: _enqueue_kyc_verification(event_id=event_id))
+        return verification
+
+
+def _notify_admins_of_new_submission(verification: KYCVerification) -> None:
+    # exclude() rather than filter(kyc_submission_alert=True): an admin with
+    # no NotificationPreference row yet (the common case - it's lazily
+    # created) still gets notified, since only an explicit opt-out excludes
+    # them.
+    admins = permission_service.users_with_permission(
+        codenames.CREATORS_APPROVE_ACCOUNT
+    ).exclude(notification_preference__kyc_submission_alert=False)
+    if not admins:
+        return
+
+    Notification.emit_in_app_notification(
+        receivers=list(admins),
+        title="New KYC verification request",
+        content=f"{verification.user.email} submitted a KYC verification request.",
+        metadata={
+            "kyc_verification_id": verification.id,
+            "user_id": verification.user_id,
+        },
+    )
+
+def _enqueue_kyc_verification(event_id: uuid.UUID) -> None:
+    from api.platform.services.platform_settings_service import get_settings
+
+    kyc_provider = get_settings().kyc_provider
+
+    match kyc_provider:
+        case "SISSL":
+            call_sissl_kyc_verification.apply_async(kwargs={"event_id": event_id})  # type: ignore
+        case "YOUVERIFY":
+            call_youverify_kyc_verification.apply_async(kwargs={"event_id": event_id})  # type: ignore
+        case _:
+            logger.warning(f"Unsupported KYC provider: {kyc_provider}. No verification task enqueued.")
+
+
+def approve_verification(
+    *, verification: KYCVerification, reviewer: User
+) -> KYCVerification:
+    """Approve a PENDING KYC submission.
+
+    Raises ValidationError if the submission isn't awaiting review (prevents
+    double-approval). Notifies the submitting user and logs the reviewer's
+    activity, mirroring review_service.approve_qa.
+    """
+
+    permission_service.require_permission(reviewer, codenames.CREATORS_APPROVE_ACCOUNT)
+    if verification.status not in REVIEWABLE_STATUSES:
+        raise exceptions.ValidationError(
+            f"Submission cannot be approved from status '{verification.status}'."
+        )
+
+    with transaction.atomic():
+        verification.status = KYCStatus.APPROVED
+        verification.reviewed_by = reviewer
+        verification.reviewed_at = timezone.now()
+        verification.save(
+            update_fields=["status", "reviewed_by", "reviewed_at", "updated_datetime"]
+        )
+
+        Notification.emit_in_app_notification(
+            receivers=[verification.user],
+            title="KYC verification approved",
+            content="Your identity verification has been approved.",
+            metadata={"kyc_verification_id": verification.id},
+        )
+        activity_service.log_activity(
+            user=reviewer,
+            category=UserActivityCategoryEnums.KYC,
+            action=UserActivityActionEnums.KYC_APPROVED,
+            summary=f"You approved a KYC submission from {verification.user.email}.",
+            target=verification,
+        )
+
+    return verification
+
+
+def reject_verification(
+    *, verification: KYCVerification, reviewer: User, rejection_reason: str
+) -> KYCVerification:
+    """Reject a PENDING KYC submission with a reason the user can act on.
+
+    Raises ValidationError if the submission isn't awaiting review, or if
+    rejection_reason is empty. Notifies the submitting user (who may then
+    resubmit - see submit_verification) and logs the reviewer's activity.
+    """
+
+    permission_service.require_permission(reviewer, codenames.CREATORS_APPROVE_ACCOUNT)
+    if not rejection_reason:
+        raise exceptions.ValidationError(
+            {"rejection_reason": "A rejection reason is required."}
+        )
+    if verification.status not in REVIEWABLE_STATUSES:
+        raise exceptions.ValidationError(
+            f"Submission cannot be rejected from status '{verification.status}'."
+        )
+
+    with transaction.atomic():
+        verification.status = KYCStatus.REJECTED
+        verification.rejection_reason = rejection_reason
+        verification.reviewed_by = reviewer
+        verification.reviewed_at = timezone.now()
+        verification.save(
+            update_fields=[
+                "status",
+                "rejection_reason",
+                "reviewed_by",
+                "reviewed_at",
+                "updated_datetime",
+            ]
+        )
+
+        Notification.emit_in_app_notification(
+            receivers=[verification.user],
+            title="KYC verification rejected",
+            content=f"Your identity verification was rejected: {rejection_reason}",
+            metadata={"kyc_verification_id": verification.id},
+        )
+        activity_service.log_activity(
+            user=reviewer,
+            category=UserActivityCategoryEnums.KYC,
+            action=UserActivityActionEnums.KYC_REJECTED,
+            summary=f"You rejected a KYC submission from {verification.user.email}.",
+            target=verification,
+        )
+
+    return verification
+
+
+def flag_verification(
+    *, verification: KYCVerification, reviewer: User, flag_reason: str
+) -> KYCVerification:
+    """Flag a PENDING KYC submission for review with an optional reason the user can act on.
+
+    Deliberately saving the `flag_reason` in the verification rejection_reason field to make it visible to the user for corrective action.
+    """
+
+    permission_service.require_permission(reviewer, codenames.CREATORS_APPROVE_ACCOUNT)
+
+    if verification.status not in REVIEWABLE_STATUSES:
+        raise exceptions.ValidationError(
+            f"Submission cannot be flagged from status '{verification.status}'."
+        )
+
+    with transaction.atomic():
+        verification.status = KYCStatus.FLAGGED
+        verification.rejection_reason = flag_reason
+        verification.reviewed_by = reviewer
+        verification.reviewed_at = timezone.now()
+        verification.save(
+            update_fields=[
+                "status",
+                "rejection_reason",
+                "reviewed_by",
+                "reviewed_at",
+                "updated_datetime",
+            ]
+        )
+
+        Notification.emit_in_app_notification(
+            receivers=[verification.user],
+            title="KYC verification flagged",
+            content=f"Your identity verification was flagged: {flag_reason}",
+            metadata={"kyc_verification_id": verification.id},
+        )
+        activity_service.log_activity(
+            user=reviewer,
+            category=UserActivityCategoryEnums.KYC,
+            action=UserActivityActionEnums.KYC_FLAGGED,
+            summary=f"You flagged a KYC submission from {verification.user.email}.",
+            target=verification,
+        )
+
+    return verification
+
+
+
+def require_verified(*, user: User, required: bool=True) -> None:
+    """Raise ValidationError if `user` has not completed KYC verification 
+    and the calling operation requires completed KYC verification. If the 
+    requires no KYC verification, the check for verification is skipped
+    
+    The default is deliberately set to `True`, so existing implemntations do not break
+    """
+
+    if required and not is_verified(user=user):
+        raise exceptions.ValidationError(
+            "Complete KYC verification before withdrawing funds."
+        )

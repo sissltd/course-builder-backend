@@ -1,20 +1,27 @@
+import logging
 from datetime import timedelta
 
 from django.utils import timezone
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
-from api.authentication.services import activity_service, authentication_service, mfa_service
+from api.authentication.services import (
+    activity_service,
+    authentication_service,
+    mfa_service,
+)
 from api.notification.models import Notification
 from api.users.enums import UserActivityActionEnums, AccountStatus
 from api.users.models import User, UserActivityLog
-from api.users.permissions import IsAdminOrSuperAdminRole
+from api.authorization import codenames
+from api.authorization.services import permission_service
 
 MAX_FAILED_LOGIN_ATTEMPTS = 5
 LOCKOUT_DURATION_MINUTES = 15
 #: Second and later lockout within this window escalates to an Admin alert -
 #: one lockout is "forgot my password", several in a row looks like an attack.
 REPEATED_LOCKOUT_WINDOW_HOURS = 24
+logger = logging.getLogger(__name__)
 
 
 class LoginSerializer(TokenObtainPairSerializer):
@@ -42,9 +49,7 @@ class LoginSerializer(TokenObtainPairSerializer):
         # Wrong email and wrong password are reported identically (a
         # non-field error) so neither response tells an attacker which part
         # was wrong - the classic enumeration vector this replaces.
-        invalid_credentials = serializers.ValidationError(
-            "Invalid email or password."
-        )
+        invalid_credentials = serializers.ValidationError("Invalid email or password.")
         if user is None:
             raise invalid_credentials
 
@@ -59,7 +64,9 @@ class LoginSerializer(TokenObtainPairSerializer):
             user.locked_until = None
             user.save(update_fields=["failed_login_attempts", "locked_until"])
 
-        currently_locked = bool(user.locked_until and user.locked_until > timezone.now())
+        currently_locked = bool(
+            user.locked_until and user.locked_until > timezone.now()
+        )
 
         # The password check happens before any account-status check, and
         # every status (suspended/deactivated, locked out, unknown email) is
@@ -104,29 +111,18 @@ class LoginSerializer(TokenObtainPairSerializer):
 
         request = self.context.get("request")
 
-        # MFA gate - only ADMIN/SUPER_ADMIN are ever required to have it.
-        # Everyone else's password check above is the entire login.
-        if user.role in mfa_service.MFA_MANDATED_ROLES:
-            if mfa_service.is_mfa_enabled(user=user):
-                # Do not mint tokens yet - hand back a challenge instead.
-                # POST /auth/mfa/verify/ completes the login on success.
-                challenge_token = mfa_service.create_challenge(user=user)
-                return {"mfa_required": True, "challenge_token": challenge_token}
+        # MFA gate. Anyone who has enrolled a device is always challenged, in
+        # every environment: permissions that move money or erase accounts can
+        # be granted to any staff role, and they need a session that actually
+        # passed a second factor.
+        if mfa_service.is_mfa_enabled(user=user):
+            # Do not mint tokens yet - hand back a challenge instead.
+            # POST /auth/mfa/verify/ completes the login on success.
+            challenge_token = mfa_service.create_challenge(user=user)
+            return {"mfa_required": True, "challenge_token": challenge_token}
 
-            data = authentication_service.finish_login(
-                user=user, request=request, mfa_verified=False
-            )
-            if mfa_service.is_within_grace_period(user=user):
-                data["mfa_enrollment_required"] = True
-                data["mfa_grace_period_ends_at"] = user.mfa_grace_period_ends_at
-            else:
-                # Grace period has lapsed - login itself still succeeds (no
-                # support-desk lockout spiral), but mfa_verified=False means
-                # IsMFAVerifiedForSession-gated actions stay blocked until
-                # they enroll.
-                data["mfa_enrollment_overdue"] = True
-            return data
-
+        # MFA is opt-in for every role: an account that never enrolled a
+        # device is authenticated by the password check above alone.
         return authentication_service.finish_login(
             user=user, request=request, mfa_verified=True
         )
@@ -162,15 +158,31 @@ class LoginSerializer(TokenObtainPairSerializer):
             request=request,
         )
 
-        Notification.emit_email_notification(
-            receivers=[user],
-            subject="Your account was temporarily locked",
-            template_name="emails/account_locked",
-            context={
-                "first_name": user.first_name,
-                "lock_minutes": LOCKOUT_DURATION_MINUTES,
-            },
-        )
+        from api.notification.services.email_service import send_templated_email
+
+        try:
+            sent_count = send_templated_email(
+                receivers=[user.email],
+                subject="Your account was temporarily locked",
+                template_name="emails/account_locked",
+                context={
+                    "first_name": user.first_name,
+                    "lock_minutes": LOCKOUT_DURATION_MINUTES,
+                },
+            )
+            logger.info(
+                "auth_email_sent email_type=ACCOUNT_LOCKED recipients=%s subject=%s "
+                "sent_count=%s",
+                [user.email],
+                "Your account was temporarily locked",
+                sent_count,
+            )
+        except Exception:
+            logger.exception(
+                "auth_email_failed email_type=ACCOUNT_LOCKED recipients=%s subject=%s",
+                [user.email],
+                "Your account was temporarily locked",
+            )
 
         window_start = timezone.now() - timedelta(hours=REPEATED_LOCKOUT_WINDOW_HOURS)
         lockout_count = UserActivityLog.objects.filter(
@@ -179,13 +191,18 @@ class LoginSerializer(TokenObtainPairSerializer):
             activity_datetime__gte=window_start,
         ).count()
         if lockout_count >= 2:
-            admins = User.objects.filter(role__in=IsAdminOrSuperAdminRole.allowed_roles)
-            Notification.emit_in_app_notification(
-                receivers=list(admins),
-                title="Repeated login lockouts",
-                content=(
-                    f"{user.email} has been locked out {lockout_count} times in "
-                    f"the last {REPEATED_LOCKOUT_WINDOW_HOURS} hours."
-                ),
-                metadata={"user_id": user.id, "lockout_count": lockout_count},
+            # Whoever can read the audit trail can investigate the lockouts.
+            admins = list(
+                permission_service.users_with_permission(codenames.AUDIT_VIEW)
             )
+            if admins:
+                Notification.emit_in_app_notification(
+                    receivers=admins,
+                    title="Repeated login lockouts",
+                    content=(
+                        f"{user.email} has been locked out {lockout_count} times in "
+                        f"the last {REPEATED_LOCKOUT_WINDOW_HOURS} hours."
+                    ),
+                    metadata={"user_id": user.id, "lockout_count": lockout_count},
+                    critical=True,
+                )

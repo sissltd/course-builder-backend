@@ -5,10 +5,12 @@ from rest_framework import exceptions
 from api.authentication.services import activity_service
 from api.courses.enums import AppealStatus, CourseStatus
 from api.courses.models import Course, CourseAppeal
+from api.courses.services import course_service
 from api.notification.models import Notification
 from api.users.enums import UserActivityActionEnums, UserActivityCategoryEnums
 from api.users.models import User
-from api.users.permissions import IsAdminOrSuperAdminRole, IsCourseCreatorRole, require_role
+from api.authorization import codenames
+from api.authorization.services import permission_service
 
 
 def submit_appeal(
@@ -26,15 +28,16 @@ def submit_appeal(
 
     Only the creator who owns the course may appeal it, and only while it's
     sitting in the just-rejected state (Course.rejected_at set, status back
-    at DRAFT - see review_service.reject_course). A second appeal can't be
+    at DRAFT, or NEEDS_REVISION with the staged review flow - see
+    review_service.reject_course). A second appeal can't be
     opened while one is still Pending, mirroring the single-open-request
     idiom used by TopicReservationRequest.
     """
 
-    require_role(user, IsCourseCreatorRole.allowed_roles)
+    permission_service.require_permission(user, codenames.COURSES_CREATE)
     if course.creator_id != user.id:
         raise exceptions.PermissionDenied("You can only appeal your own course.")
-    if course.status != CourseStatus.DRAFT or course.rejected_at is None:
+    if not course.is_editable or course.rejected_at is None:
         raise exceptions.ValidationError("This course has not been rejected.")
     if CourseAppeal.objects.filter(course=course, status=AppealStatus.PENDING).exists():
         raise exceptions.ValidationError(
@@ -50,7 +53,13 @@ def submit_appeal(
         description=description,
     )
 
-    admins = list(User.objects.filter(role__in=IsAdminOrSuperAdminRole.allowed_roles))
+    # exclude() rather than filter(creator_feedback=True): the preference row
+    # is created lazily, and an admin without one must still be told.
+    admins = list(
+        permission_service.users_with_permission(
+            codenames.COURSES_DECIDE_APPEALS
+        ).exclude(notification_preference__creator_feedback=False)
+    )
     if admins:
         Notification.emit_in_app_notification(
             receivers=admins,
@@ -69,12 +78,19 @@ def submit_appeal(
     return appeal
 
 
-def approve_appeal(*, appeal: CourseAppeal, actor: User, notes: str = "") -> CourseAppeal:
-    """Approve a Pending appeal: reopen the course for review (status ->
-    SUBMITTED) and notify the creator. Decision is final per the PRD - once
-    decided, this appeal can't be re-decided."""
+def approve_appeal(
+    *, appeal: CourseAppeal, actor: User, notes: str = ""
+) -> CourseAppeal:
+    """Approve a Pending appeal: reopen the course for review and notify the
+    creator. A Draft course restarts the review chain at First Review with
+    every seat cleared (course_service.start_review_cycle), exactly as a
+    fresh submission does. A Needs Revision course (staged review flow)
+    returns to the seat that rejected it with only that seat cleared
+    (course_service.resume_at_revision_seat), since the appeal says that
+    rejection was wrong. Decision is final per the PRD - once decided, this
+    appeal can't be re-decided."""
 
-    require_role(actor, IsAdminOrSuperAdminRole.allowed_roles)
+    permission_service.require_permission(actor, codenames.COURSES_DECIDE_APPEALS)
     if appeal.status != AppealStatus.PENDING:
         raise exceptions.ValidationError(
             f"Appeal cannot be approved from status '{appeal.status}'."
@@ -96,9 +112,12 @@ def approve_appeal(*, appeal: CourseAppeal, actor: User, notes: str = "") -> Cou
         )
 
         course = appeal.course
-        course.status = CourseStatus.SUBMITTED
         course.updated_by = actor
-        course.save(update_fields=["status", "updated_by", "updated_datetime"])
+        course.save(update_fields=["updated_by", "updated_datetime"])
+        if course.status == CourseStatus.NEEDS_REVISION:
+            course_service.resume_at_revision_seat(course=course, actor=actor)
+        else:
+            course_service.start_review_cycle(course=course)
 
         Notification.emit_in_app_notification(
             receivers=[appeal.submitted_by],
@@ -117,11 +136,13 @@ def approve_appeal(*, appeal: CourseAppeal, actor: User, notes: str = "") -> Cou
     return appeal
 
 
-def reject_appeal(*, appeal: CourseAppeal, actor: User, notes: str = "") -> CourseAppeal:
+def reject_appeal(
+    *, appeal: CourseAppeal, actor: User, notes: str = ""
+) -> CourseAppeal:
     """Reject a Pending appeal. Decision is final per the PRD - the course
     is left untouched (still Draft)."""
 
-    require_role(actor, IsAdminOrSuperAdminRole.allowed_roles)
+    permission_service.require_permission(actor, codenames.COURSES_DECIDE_APPEALS)
     if appeal.status != AppealStatus.PENDING:
         raise exceptions.ValidationError(
             f"Appeal cannot be rejected from status '{appeal.status}'."

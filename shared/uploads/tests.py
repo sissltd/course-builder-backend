@@ -10,7 +10,11 @@ class UploadPresignApiTests(APITestCase):
     def test_requires_authentication(self):
         response = self.client.post(
             "/api/v1/uploads/presign/",
-            {"filename": "avatar.jpg", "content_type": "image/jpeg", "folder": "profiles"},
+            {
+                "filename": "avatar.jpg",
+                "content_type": "image/jpeg",
+                "folder": "profiles",
+            },
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
@@ -25,15 +29,34 @@ class UploadPresignApiTests(APITestCase):
 
         response = self.client.post(
             "/api/v1/uploads/presign/",
-            {"filename": "avatar.jpg", "content_type": "image/jpeg", "folder": "profiles"},
+            {
+                "filename": "avatar.jpg",
+                "content_type": "image/jpeg",
+                "folder": "profiles",
+            },
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIn("upload_url", response.data)
+        self.assertEqual(
+            response.data["upload_headers"], {"Content-Type": "image/jpeg"}
+        )
         self.assertIn("file_url", response.data)
         self.assertIn("file_key", response.data)
         self.assertIn("expires_in", response.data)
         self.assertTrue(response.data["file_key"].startswith("uploads/profiles/"))
+
+        self.assertEqual(mock_get_client.return_value.generate_presigned_url.call_count, 2)
+        self.assertEqual(
+            mock_get_client.return_value.generate_presigned_url.call_args_list[1]
+            .args[0],
+            "get_object",
+        )
+
+        params = mock_get_client.return_value.generate_presigned_url.call_args.kwargs[
+            "Params"
+        ]
+        self.assertNotIn("ACL", params)
 
     def test_invalid_content_type_rejected(self):
         user = make_user()
@@ -64,3 +87,74 @@ class UploadPresignApiTests(APITestCase):
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    @patch("shared.services.storage_service._get_s3_client")
+    def test_course_document_import_presign_accepts_csv(self, mock_get_client):
+        mock_get_client.return_value.generate_presigned_url.return_value = (
+            "https://bucket.example.com/uploads/course-imports/abc123.csv?signature=xyz"
+        )
+        user = make_user()
+        self.client.force_authenticate(user)
+
+        response = self.client.post(
+            "/api/v1/uploads/presign/",
+            {
+                "filename": "outline.csv",
+                "content_type": "text/csv",
+                "folder": "course-imports",
+                "size": 1024,
+                "purpose": "COURSE_DOCUMENT_IMPORT",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data["file_key"].startswith("uploads/course-imports/"))
+        self.assertEqual(response.data["upload_headers"]["Content-Type"], "text/csv")
+
+
+    @patch("shared.services.storage_service._get_s3_client")
+    def test_course_document_import_presign_accepts_template_files(self, mock_get_client):
+        mock_get_client.return_value.generate_presigned_url.return_value = (
+            "https://bucket.example.com/uploads/course-imports/abc123?signature=xyz"
+        )
+        self.client.force_authenticate(make_user())
+
+        for filename, content_type in (
+            (
+                "course.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            ),
+            ("course.json", "application/json"),
+        ):
+            with self.subTest(filename=filename):
+                response = self.client.post(
+                    "/api/v1/uploads/presign/",
+                    {
+                        "filename": filename,
+                        "content_type": content_type,
+                        "folder": "course-imports",
+                        "size": 1024,
+                        "purpose": "COURSE_DOCUMENT_IMPORT",
+                    },
+                    format="json",
+                )
+                self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+class UploadAccessApiTests(APITestCase):
+    @patch("shared.uploads.views.StorageService.generate_presigned_get")
+    def test_returns_fresh_private_file_url(self, mock_generate):
+        mock_generate.return_value = "https://storage.example.com/signed-read-url"
+        user = make_user()
+        self.client.force_authenticate(user)
+
+        response = self.client.post(
+            "/api/v1/uploads/access/",
+            {"file_key": "uploads/videos/video.mp4"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["file_url"], mock_generate.return_value)
+        self.assertEqual(response.data["expires_in"], 600)
+        mock_generate.assert_called_once_with("uploads/videos/video.mp4")
