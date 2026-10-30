@@ -31,6 +31,9 @@ Layout of the returned object, in the order a developer reads it:
     faq                  the questions we actually get asked
 """
 
+import hashlib
+import json
+
 from django.conf import settings
 from django.utils import timezone
 
@@ -68,8 +71,6 @@ from api.mie.serializers.course_push_serializer import (
 from api.mie.services import (
     idempotency_service,
     developer_journey_service,
-    studio_review_service,
-    studio_upload_service,
     webhook_dispatcher,
 )
 from api.mie.services.course_push_service import MIE_UPLOAD_PURPOSES
@@ -210,7 +211,9 @@ SAMPLE_COURSE_PUSH = {
 }
 """A full push body. Placeholders in <angle brackets> stand for content."""
 
-SAMPLE_STUDIO_MEDIA_URL = "https://storage.soludeskscb.com/uploads/courses/3b9f0c2e.mp4"
+STUDIO_SCHEMA_VERSION = "studio.review.v1"
+
+SAMPLE_STUDIO_STORAGE = "https://storage.soludeskscb.com/uploads/courses"
 
 SAMPLE_STUDIO_TEXT_CONTENT = {
     "title": SAMPLE_TITLE,
@@ -221,7 +224,7 @@ SAMPLE_STUDIO_TEXT_CONTENT = {
     "category": SAMPLE_CATEGORY_ID,
     "version": SAMPLE_VERSION_ID,
     "difficulty_level": DifficultyLevel.ADVANCED.value,
-    "thumbnail_url": "https://storage.soludeskscb.com/uploads/courses/cover.jpg",
+    "thumbnail_url": f"{SAMPLE_STUDIO_STORAGE}/cover.jpg",
     "learning_objectives": [
         "Design ownership-safe APIs",
         "Profile and optimise async services",
@@ -256,32 +259,22 @@ SAMPLE_STUDIO_TEXT_CONTENT = {
                             "block_type": "NUMBERED_LIST",
                             "text_content": "Each value has an owner\nThere is one owner at a time\nThe value is dropped with its owner",
                         },
-                        {
-                            "order": 5,
-                            "block_type": "BULLETED_LIST",
-                            "text_content": "Moves\nBorrows\nClones",
-                        },
+                        {"order": 5, "block_type": "BULLETED_LIST", "text_content": "Moves\nBorrows\nClones"},
                         {"order": 6, "block_type": "BLOCKQUOTE", "text_content": "Fight the borrow checker once, not every day."},
                         {"order": 7, "block_type": "DIVIDER"},
-                        {"order": 8, "block_type": "IMAGE", "media_url": "https://storage.soludeskscb.com/uploads/courses/ownership.png"},
-                        {"order": 9, "block_type": "EMBED", "media_url": "https://play.rust-lang.org/?gist=abc123"},
+                        {"order": 8, "block_type": "IMAGE", "media_url": f"{SAMPLE_STUDIO_STORAGE}/ownership.png"},
                     ],
                 },
                 {
                     "order": 2,
                     "title": "Borrowing walkthrough",
-                    "lesson_type": LessonContentType.VIDEO.value,
+                    "lesson_type": LessonContentType.TEXT.value,
                     "script": "Narration: today we borrow a String twice...",
-                    "video_script_file": "https://storage.soludeskscb.com/uploads/courses/borrowing.srt",
                     "learning_objectives": ["Borrow immutably", "Borrow mutably"],
                     "duration_minutes": 15,
                     "requirements": [
                         {"text": "Finished 'Why ownership exists'", "order": 1},
                         {"text": "A Rust toolchain installed", "order": 2},
-                    ],
-                    "content_blocks": [
-                        {"order": 1, "block_type": "PARAGRAPH", "text_content": "Watch, then try the exercise."},
-                        {"order": 2, "block_type": "VIDEO", "media_url": "https://www.youtube.com/watch?v=abc123"},
                     ],
                     "assessment": {
                         "title": "Quick check",
@@ -332,52 +325,64 @@ SAMPLE_STUDIO_TEXT_CONTENT = {
         ],
     },
 }
-"""A Studio text delivery's `content` using every field and block type once.
+"""A Studio text review's `content` using every field a text review may
+carry, every allowed block type and every question type once.
 
 Structurally complete, not submit-complete: a real course needs at least the
 module, lesson, word and question counts from /mie/v1/course-requirements/.
-The VIDEO lesson carries no video_url: Studio sends it in the video delivery.
+Every lesson is TEXT and nothing in it is video: the video review turns each
+lesson into a video lesson.
 """
 
+SAMPLE_STUDIO_SOURCE_MAP = [
+    {
+        "id": "mod_ownership",
+        "order": 1,
+        "lessons": [
+            {"id": "les_why_ownership", "order": 1},
+            {"id": "les_borrowing", "order": 2},
+        ],
+    }
+]
+
 SAMPLE_STUDIO_VIDEO_CONTENT = {
-    "preview_video_url": SAMPLE_STUDIO_MEDIA_URL,
+    "preview_video_url": f"{SAMPLE_STUDIO_STORAGE}/preview-3b9f0c2e.mp4",
     "lessons": [
-        {"module_order": 1, "lesson_order": 2, "video_url": SAMPLE_STUDIO_MEDIA_URL},
+        {
+            "module_order": 1,
+            "lesson_order": order,
+            "video_url": f"{SAMPLE_STUDIO_STORAGE}/lesson-1-{order}.mp4",
+            "captions_url": f"{SAMPLE_STUDIO_STORAGE}/lesson-1-{order}.srt",
+            "transcript": "Every value in Rust has exactly one owner...",
+        }
+        for order in (1, 2)
     ],
 }
-"""The matching video delivery's `content`: the preview video plus one entry
-per VIDEO lesson, addressed by the orders of the text delivery."""
+"""The matching video review's `content`: the preview video plus video,
+captions and transcript for every lesson of the accepted text, addressed by
+its module and lesson orders. Every URL is a `media_url` from POST
+/mie/v1/studio/uploads/."""
 
 
 def studio_delivery_example(kind: str) -> dict:
     """A whole `studio.review.v1` envelope around the sample content of
-    `kind`, with its real content_hash."""
+    `kind`. Send it with an `Idempotency-Key` header."""
 
     content = (
         SAMPLE_STUDIO_TEXT_CONTENT if kind == "text" else SAMPLE_STUDIO_VIDEO_CONTENT
     )
+    canonical = json.dumps(
+        content, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    )
     return {
-        "schema_version": studio_review_service.SCHEMA_VERSION,
+        "schema_version": STUDIO_SCHEMA_VERSION,
         "submission_id": SAMPLE_SUBMISSION_ID,
         "course_id": SAMPLE_COURSE_ID,
         "revision": 1,
         "kind": kind,
-        "content_hash": studio_review_service.content_hash(content),
+        "content_hash": hashlib.sha256(canonical.encode("utf-8")).hexdigest(),
         "content": content,
-        "source_map": (
-            [
-                {
-                    "id": "mod_ownership",
-                    "order": 1,
-                    "lessons": [
-                        {"id": "les_why_ownership", "order": 1},
-                        {"id": "les_borrowing", "order": 2},
-                    ],
-                }
-            ]
-            if kind == "text"
-            else []
-        ),
+        "source_map": SAMPLE_STUDIO_SOURCE_MAP,
     }
 
 
@@ -2086,78 +2091,101 @@ def _endpoints(base_url: str) -> list[dict]:
             ],
         },
         {
-            "name": "Studio: get upload URLs for course media",
+            "name": "Studio: reserve or resume a media upload",
             "method": "POST",
             "path": f"{API_ROOT}/mie/v1/studio/uploads/",
             "url": f"{prefix}/mie/v1/studio/uploads/",
             "auth": f"{API_KEY_HEADER} (or Bearer session token)",
-            "rate_limit": _rate("mie_upload"),
+            "rate_limit": _rate("mie_studio_upload"),
             "purpose": (
-                "A signed storage URL per file for one approved idea, keyed by "
-                "your own asset_id, and the media_url to reference it by in a "
-                "Studio video delivery. Ask again with the same asset_id to "
-                "resume."
+                "One signed storage upload for one file of a Studio video "
+                "review, keyed by your asset_id. Ask again with the same "
+                "asset_id and metadata to resume it."
             ),
             "request_body": {
                 "submission_id": "uuid, required, your approved idea",
-                "files": (
-                    f"array of 1-{studio_upload_service.MAX_FILES_PER_GRANT}: "
-                    "{asset_id, filename, content_type, purpose, size, width?, "
-                    "height?, codec?, duration_seconds?} - the presign fields "
-                    "plus your asset_id"
-                ),
+                "asset_id": "uuid, required, your id for this file; reuse it only to resume",
+                "purpose": "COURSE_PREVIEW_VIDEO | LESSON_VIDEO | SUBTITLE, required",
+                "filename": "string, required",
+                "content_type": "string, required, allowed for the purpose",
+                "size": "integer bytes, required, 1 to 100 MB",
+                "sha256": "string, required, lowercase hex SHA-256 of the file's bytes",
+                "width / height / codec / duration_seconds": "required for videos, as for /mie/v1/uploads/presign/",
+            },
+            "request_example": {
+                "submission_id": SAMPLE_SUBMISSION_ID,
+                "asset_id": "5f0e8c1a-2b3d-4e5f-8a9b-0c1d2e3f4a5b",
+                "purpose": "LESSON_VIDEO",
+                "filename": "lesson-1-1.mp4",
+                "content_type": "video/mp4",
+                "size": 48000000,
+                "sha256": "<sha256 of the file>",
+                "width": 1920,
+                "height": 1080,
+                "codec": "h264",
+                "duration_seconds": 720,
             },
             "success_status": 200,
             "errors": [
-                {"status": 400, "when": "A file breaks an upload rule. Nothing is granted."},
+                {"status": 400, "when": "The file breaks an upload rule, or the purpose is not one of the three."},
                 {"status": 401, "when": "Missing, invalid, suspended, or inactive credentials."},
                 {"status": 404, "when": "The idea is not yours."},
-                {"status": 409, "when": "idea_not_approved: the idea is not APPROVED. asset_already_stored: that asset_id is stored with another size or type."},
+                {"status": 409, "when": "studio_review_conflict: the course is not waiting for your video (assigned to DEVELOPER, AWAITING_VIDEO or NEEDS_REVISION), the asset_id was used with other metadata, or the stored file failed its integrity check."},
             ],
             "notes": [
-                "PUT each file to upload_url with upload_headers only. Never send your X-MIE-Api-Key to storage.",
-                "status stored means the file is already there; no upload needed.",
+                "The answer is the presign result {upload_url, upload_headers, file_url, file_key, expires_in, media_url}: PUT the bytes to upload_url with upload_headers only. Never send your X-MIE-Api-Key to storage.",
+                "Once the file is stored and its size, type and sha256 match, the same request answers {persisted: true, media_url} instead.",
+                "Use media_url in the video review.",
             ],
         },
         {
-            "name": "Studio: deliver course text or video",
+            "name": "Studio: deliver course text or video for review",
             "method": "POST",
             "path": f"{API_ROOT}/mie/v1/studio/reviews/",
             "url": f"{prefix}/mie/v1/studio/reviews/",
-            "auth": f"{API_KEY_HEADER} (or Bearer session token)",
+            "auth": f"{API_KEY_HEADER} (or Bearer session token), plus an Idempotency-Key header",
             "rate_limit": _rate("mie_course_push"),
             "purpose": (
-                f"One {studio_review_service.SCHEMA_VERSION} delivery: the "
-                "course text (kind text) or its video (kind video), sent into "
-                "review. Answers with a receipt."
+                f"One {STUDIO_SCHEMA_VERSION} review: the course text (kind "
+                "text) or its video (kind video), sent into review. Answers "
+                "with a receipt."
             ),
             "request_body": {
-                "schema_version": f"string, required, {studio_review_service.SCHEMA_VERSION}",
+                "schema_version": f"string, required, {STUDIO_SCHEMA_VERSION}",
                 "submission_id": "uuid, required, your approved idea",
                 "course_id": "uuid, required, the course_id from SUBMISSION_APPROVED",
-                "revision": "integer >= 1, required, per idea and kind",
+                "revision": "integer >= 1, required, higher than the last accepted revision of this kind",
                 "kind": "text | video, required",
-                "content_hash": "string, required, lowercase hex SHA-256 of content as canonical JSON",
+                "content_hash": "string, required, lowercase hex SHA-256 of content as canonical JSON (studio.envelope.content_hash); a mismatch is 400",
                 "content": (
                     "object, required. text: the whole course in the Course "
-                    "Builder editor's shape, field by field in course_schema "
-                    "(studio.content_structure has the outline). video: "
+                    "Builder editor's shape, every lesson TEXT (see "
+                    "studio.content_structure and course_schema). video: "
                     "{preview_video_url, lessons: [{module_order, "
-                    "lesson_order, video_url | embedded_link}]}."
+                    "lesson_order, video_url, captions_url, transcript}]}."
                 ),
-                "source_map": "array, optional: [{id, order, lessons: [{id, order}]}], your ids by our orders",
+                "source_map": "array, required: [{id, order, lessons: [{id, order}]}] covering every module and lesson",
             },
             "request_example": studio_delivery_example("text"),
-            "success_status": 201,
+            "success_status": 200,
+            "response_example": {
+                "accepted": True,
+                "receipt_id": "5b1f0c9e-2a7d-4c3e-8f6a-9d0e1b2c3a4f",
+                "course_id": SAMPLE_COURSE_ID,
+                "revision": 1,
+                "kind": "text",
+                "content_hash": studio_delivery_example("text")["content_hash"],
+                "media_persisted": False,
+            },
             "errors": [
-                {"status": 400, "when": "The envelope or content is invalid, content_hash does not match, or media_not_stored. Nothing is stored."},
+                {"status": 400, "when": "The Idempotency-Key is missing, content_hash does not match content, the envelope or content is invalid, a list block breaks the list format, the source map does not match, the text carries video, or a video file is not stored and verified. Nothing is stored."},
                 {"status": 401, "when": "Missing, invalid, suspended, or inactive credentials."},
                 {"status": 404, "when": "The idea is not yours."},
-                {"status": 409, "when": "course_id_mismatch, revision_conflict, stale_revision, plus every 409 of the course or video push."},
+                {"status": 409, "when": "studio_review_conflict (wrong course_id, a revision that does not advance, a reused Idempotency-Key with other content, video not matching the accepted text, or the platform not reviewing text before video), plus every 409 of the course or video push."},
             ],
             "notes": [
-                "The same revision with the same hash returns the original receipt with 200 and duplicate true.",
-                "See the studio section for hashing, revisions and receipts, and studio.examples for a video delivery.",
+                "Retrying with the same Idempotency-Key and the same body returns the original receipt and changes nothing.",
+                "See the studio section for the flow, the content structure and full text and video examples.",
             ],
         },
         {
@@ -2820,6 +2848,22 @@ def _rate_limits() -> dict:
                 "advice": "Presign when you are ready to PUT; an unused URL still counts.",
             },
             {
+                "endpoint": f"POST {API_ROOT}/mie/v1/studio/reviews/",
+                "limit": _rate("mie_course_push"),
+                "why": "A text review builds and submits a whole course, like a course push, and shares its budget.",
+                "advice": "Retrying a review with its Idempotency-Key still counts.",
+            },
+            {
+                "endpoint": f"POST {API_ROOT}/mie/v1/studio/uploads/",
+                "limit": _rate("mie_studio_upload"),
+                "why": (
+                    "Its own budget, apart from reviews: a video review "
+                    "uploads a preview plus a video and captions for every "
+                    "lesson."
+                ),
+                "advice": "Asking again to resume an upload counts too.",
+            },
+            {
                 "endpoint": f"POST {API_ROOT}/mie/v1/submissions/",
                 "limit": (
                     f"{settings.MIE_SYSTEM_DAILY_SUBMISSION_CAP} per rolling "
@@ -3458,7 +3502,11 @@ def _course_schema() -> dict:
                 "`text_content`; media blocks (IMAGE, VIDEO, EMBED) need "
                 "`media_url`; DIVIDER carries nothing. QUIZ is not accepted."
             ),
-            "text_content": "string. Only on text blocks.",
+            "text_content": (
+                "string. Only on text blocks. On NUMBERED_LIST and "
+                "BULLETED_LIST, one item per line with no bullet or number "
+                "typed in; Studio text reviews refuse anything else."
+            ),
             "media_url": f"string. Only on media blocks; any URL or our `media_url`. Up to {COURSE_MEDIA_URL_MAX_LENGTH} characters.",
         },
         "assessment": {
@@ -3612,108 +3660,103 @@ def _media(base_url: str) -> dict:
 
 
 def _studio() -> dict:
-    version = studio_review_service.SCHEMA_VERSION
     return {
         "summary": (
             f"Soludesk Studio sends generated course text and video as "
-            f"{version} deliveries to one endpoint, POST /mie/v1/studio/reviews/, "
-            "told apart by `kind`. Each delivery wraps the same body as the "
-            "course push (text) or video push (video), so it meets the same "
-            "rules and joins the same review flow, webhooks and payouts."
+            f"{STUDIO_SCHEMA_VERSION} reviews to one endpoint, POST "
+            "/mie/v1/studio/reviews/, told apart by `kind`. Text goes in "
+            "first and is reviewed before any video exists; the video then "
+            "arrives for exactly the lessons of the accepted text, every file "
+            "uploaded to platform storage first. Both run through the course "
+            "and video push, so a Studio course joins the same review flow, "
+            "webhooks and payouts."
         ),
         "flow": [
             "SUBMISSION_APPROVED arrives with submission.id and submission.course_id.",
-            "POST /mie/v1/studio/reviews/ with kind text and revision 1.",
+            "POST /mie/v1/studio/reviews/ with kind text, revision 1, an Idempotency-Key header and a source_map of your module and lesson ids.",
             "Wait for COURSE_TEXT_APPROVED (or COURSE_VIDEO_ASSIGNED with video_producer DEVELOPER).",
-            "POST /mie/v1/studio/uploads/ for the videos, then PUT each file to its upload_url.",
-            "POST /mie/v1/studio/reviews/ with kind video.",
-            "After COURSE_REJECTED / COURSE_REVISION_REQUESTED, send the fixed content under the next revision.",
+            "For each file (preview video, each lesson video, each lesson's captions): POST /mie/v1/studio/uploads/, then PUT the bytes to upload_url.",
+            "POST /mie/v1/studio/reviews/ with kind video, the same source_map, and the media_urls.",
+            "After COURSE_REVISION_REQUESTED, send the fixed content under a higher revision and a new Idempotency-Key.",
+        ],
+        "requirements": [
+            "The platform must review text before video; otherwise every review is 409.",
+            "Uploads open once the course waits for your video: assigned to DEVELOPER and AWAITING_VIDEO (or NEEDS_REVISION).",
         ],
         "envelope": {
-            "schema_version": f"Always {version}.",
+            "schema_version": f"Always {STUDIO_SCHEMA_VERSION}.",
             "submission_id": "The approved idea's id.",
-            "course_id": "The course_id from SUBMISSION_APPROVED. Anything else is 409 course_id_mismatch.",
-            "revision": "1 or more, counted per idea and kind. Raise it whenever content changes.",
+            "course_id": "The course_id from SUBMISSION_APPROVED. Anything else is 409.",
+            "revision": "1 or more, counted per idea and kind; each new review must be higher than the last accepted one.",
             "kind": "text or video.",
-            "content_hash": "Lowercase hex SHA-256 of content as canonical JSON.",
-            "content": (
-                "text: the whole course in the Course Builder editor's shape "
-                "(content_structure below; every field's rules in "
-                "course_schema). video: the video-push body."
+            "content_hash": (
+                "Lowercase hex SHA-256 of content as canonical JSON: keys "
+                "sorted at every level, no whitespace (separators , and :), "
+                "non-ASCII characters as UTF-8 rather than \\u escapes, "
+                "whole numbers without a decimal point. We hash the content "
+                "we receive the same way; a mismatch is 400 on content_hash "
+                "and nothing is stored."
             ),
-            "source_map": "Optional: your module and lesson ids by the orders in content. Stored and echoed.",
+            "content": "text: the course (content_structure.text). video: the media (content_structure.video).",
+            "source_map": "Required. Your id for every module and lesson, by our orders, covering the whole curriculum. The video review sends the same map as the accepted text.",
+            "Idempotency-Key (header)": "Required, up to 200 characters, one per review. Retrying with the same key and body returns the original receipt; the same key with another body is 409.",
         },
         "content_structure": {
             "summary": (
-                "A text delivery's content is the course exactly as a creator "
-                "builds it in the Course Builder editor, and is checked with "
-                "the editor's own rules: the same fields, nesting, block "
-                "types and question types. Numeric limits (modules, lessons, "
-                "words, questions, minutes) are live at GET "
+                "A text review's content is the course exactly as a creator "
+                "builds it in the Course Builder editor, checked with the "
+                "editor's own rules: the same fields, nesting, block types and "
+                "question types. Numeric limits (modules, lessons, words, "
+                "questions, minutes) are live at GET "
                 "/mie/v1/course-requirements/. Unknown keys are ignored."
             ),
             "text": [
                 "course: title, description, category, version, difficulty_level, thumbnail_url, learning_objectives[], tags[], duration_hours, duration_minutes, duration_seconds, terms_accepted",
                 "  modules[]: order, title, description, learning_objectives[], assessment (the module quiz)",
-                "    lessons[]: order, title, lesson_type (TEXT | VIDEO | QUIZ), script, video_script_file, learning_objectives[], duration_minutes, lesson_requirement or requirements[{text, order}], assessment (optional lesson quiz)",
-                "      content_blocks[]: order, block_type, text_content (HEADING_1, HEADING_2, PARAGRAPH, NUMBERED_LIST, BULLETED_LIST, BLOCKQUOTE) or media_url (IMAGE, VIDEO, EMBED); DIVIDER carries nothing",
+                "    lessons[]: order, title, lesson_type TEXT, script, learning_objectives[], duration_minutes, lesson_requirement or requirements[{text, order}], assessment (optional lesson quiz)",
+                "      content_blocks[]: order, block_type, text_content (HEADING_1, HEADING_2, PARAGRAPH, NUMBERED_LIST, BULLETED_LIST, BLOCKQUOTE) or media_url (IMAGE); DIVIDER carries nothing",
                 "  final_assessment: title, questions[]",
                 "question: type (SINGLE_CHOICE | MULTIPLE_CHOICE | ESSAY), question, points, options[] with correct_index (single) or correct_indices[] (multiple), or expected_answer and explanation (essay); explanation optional on choice questions",
             ],
-            "video": [
-                "preview_video_url",
-                "lessons[]: module_order, lesson_order, video_url or embedded_link - one per VIDEO lesson of the text delivery",
-            ],
-            "video_lessons_in_text": (
-                "In the text delivery a VIDEO lesson carries its script but no "
-                "video_url, embedded_link or preview video: those come in the "
-                "video delivery, addressed by the same orders."
+            "list_items": (
+                "NUMBERED_LIST and BULLETED_LIST blocks hold one item per "
+                "line of text_content, separated by \\n, with no blank "
+                "lines and no bullet or number typed into the item (no "
+                "\"- \", \"* \", \"1. \" or \"1) \"): the block type "
+                "sets it. Anything else is 400."
             ),
-            "field_rules": "Every field's type, limits and allowed values: course_schema.",
+            "text_carries_no_video": (
+                "Every lesson is TEXT, with no video_url, embedded_link or "
+                "preview_video_url and no VIDEO or EMBED blocks. The video "
+                "review turns each lesson into a video lesson."
+            ),
+            "video": [
+                "preview_video_url: a media_url uploaded as COURSE_PREVIEW_VIDEO",
+                "lessons[]: module_order, lesson_order, video_url (LESSON_VIDEO media_url), captions_url (SUBTITLE media_url), transcript - one for every lesson of the accepted text",
+            ],
+            "field_rules": "Every course field's type, limits and allowed values: course_schema.",
         },
         "examples": {
             "text": studio_delivery_example("text"),
             "video": studio_delivery_example("video"),
             "note": (
-                "These use every field and block type once. They are "
-                "structurally complete, not submit-complete: a real course "
-                "needs the counts from /mie/v1/course-requirements/."
+                "These use every field, block type and question type a text "
+                "review may carry. They are structurally complete, not "
+                "submit-complete: a real course needs the counts from "
+                "/mie/v1/course-requirements/."
             ),
         },
-        "content_hash": {
-            "rule": (
-                "SHA-256 over the UTF-8 bytes of content serialized with keys "
-                "sorted at every level, no whitespace, and non-ASCII characters "
-                "left as they are. Send integers as integers."
-            ),
-            "python": (
-                "hashlib.sha256(json.dumps(content, sort_keys=True, "
-                "separators=(',', ':'), ensure_ascii=False).encode()).hexdigest()"
-            ),
-            "javascript": (
-                "Serialize with keys sorted recursively and JSON.stringify's "
-                "default separators, then sha256 the UTF-8 bytes."
-            ),
-        },
-        "retries": [
-            "The same revision with the same content_hash returns the original receipt with 200 and duplicate true. Nothing runs again.",
-            "The same revision with a different content_hash is 409 revision_conflict.",
-            "A revision lower than one already accepted for that kind is 409 stale_revision.",
-            "A delivery that fails writes nothing, so it can be retried under the same revision.",
-        ],
         "receipt": (
-            "201 with receipt_id, the accepted revision and hash, course_id, "
-            "course_status after the delivery, your source_map and, for video, "
-            "media: each URL with stored true only once the file was found in "
-            "our storage at its declared size. External URLs are accepted and "
-            "reported stored false, source external."
+            "200 with accepted, receipt_id, course_id, revision, kind, "
+            "content_hash and media_persisted, which is true for a video "
+            "review: every file was found in our storage with its declared "
+            "size, type and sha256."
         ),
         "uploads": [
-            "Ask POST /mie/v1/studio/uploads/ for a grant per file, keyed by your asset_id.",
+            "POST /mie/v1/studio/uploads/ once per file, keyed by your asset_id (a UUID), with its sha256.",
             "PUT the bytes to upload_url with upload_headers only. Never send your X-MIE-Api-Key to storage.",
-            "Asking again with the same asset_id resumes: a fresh URL if the file is missing, status stored if it is there.",
-            "A video delivery may reference our storage only through these grants, after the PUT has finished (else 400 media_not_stored).",
-            f"Up to {studio_upload_service.MAX_FILES_PER_GRANT} files per request.",
+            "Asking again with the same asset_id and metadata resumes: the same URL while it is valid, a fresh one after it expires, or {persisted: true, media_url} once the file is stored and verified.",
+            "The same asset_id with other metadata is 409.",
         ],
     }
 

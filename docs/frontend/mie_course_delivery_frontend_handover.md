@@ -1,8 +1,9 @@
 # MIE Course Delivery — Frontend Handover
 
-What changed on the MIE side across two backend changes: PR #100 (video
-assignment, archive, the course id at approval) and this one (the Studio
-delivery endpoints and each developer's journey stage). **No breaking
+What changed on the MIE side across three backend changes:
+- PR #100: video assignment, archive, and the course id at approval
+- PR #102: the Studio review endpoints, built by Benneth
+- this PR: each developer's journey stage, plus the Studio docs and Swagger **No breaking
 changes.** Everything you already built keeps working. To build:
 - three new admin actions
 - a journey stage on every developer account, for both admins and the
@@ -133,9 +134,16 @@ keeps their stage. Show both.
 ### Soludesk Studio (new, nothing to build)
 
 Studio is an AI course generator that acts as an ordinary MIE developer
-account with its own API key. It now has its own two endpoints for sending
-course text and video. Behind them sit the same push code every developer
-uses. That means:
+account with its own API key. It has its own two endpoints, added in PR
+#102: one for sending course text and video for review, and one for
+uploading its video files. Behind them sits the same push code every
+developer uses. Two things are specific to Studio:
+- It only works while the platform reviews text before video.
+- Its text arrives with every lesson as TEXT. Its video review then turns
+  each lesson into a video lesson, carrying the video, captions and
+  transcript.
+
+For the frontend, that means:
 
 - A Studio course is an ordinary course. It shows `source_type = DEVELOPER_API`
   like any other developer course and goes through the same review seats,
@@ -284,7 +292,7 @@ hard-coded the list anywhere, switch it to the endpoint.
 ### 6. The developer docs page has a new section
 
 `GET /api/v1/mie/v1/documentation/` is now version `3.3.0`, with a new
-top-level `studio` section (the Studio delivery contract) and two new entries
+top-level `studio` section (the Studio review contract) and two new entries
 in the endpoint list. If your docs page renders known sections by key, add
 `studio`. Title it **"Soludesk Studio Deliveries"**, the same as the PDF. If it
 renders whatever keys come back, the only thing to check is the rendering
@@ -296,33 +304,47 @@ What's inside `studio`, and how to render it:
 |---|---|---|
 | `summary` | string | Intro paragraph. |
 | `flow` | list of strings | Numbered steps. |
-| `envelope` | object, field → description | Two-column table. |
+| `requirements` | list of strings | Bullets, as a callout. |
+| `envelope` | object, field → description (includes the `Idempotency-Key (header)` row) | Two-column table. |
 | `content_structure.summary` | string | Paragraph. |
 | `content_structure.text`, `.video` | lists of strings, indented with leading spaces | **Monospace block, keeping the spaces.** The indentation is the nesting (course > modules > lessons > blocks). |
-| `content_structure.video_lessons_in_text`, `.field_rules` | strings | Paragraphs. |
-| `examples.text`, `examples.video` | whole JSON deliveries (the text one is large) | Pretty-printed JSON code blocks, collapsible, with a copy button. |
+| `content_structure.list_items`, `.text_carries_no_video`, `.field_rules` | strings | Paragraphs. |
+| `examples.text`, `examples.video` | whole JSON reviews (the text one is large) | Pretty-printed JSON code blocks, collapsible, with a copy button. |
 | `examples.note` | string | Caption under the examples. |
-| `content_hash` | `{rule, python, javascript}` | Paragraph plus two code snippets. |
-| `retries`, `uploads` | lists of strings | Bullets. |
 | `receipt` | string | Paragraph. |
+| `uploads` | list of strings | Bullets. |
 
 Other docs changes that reach this page:
 
-- The endpoint entry **"Studio: deliver course text or video"** now has a
-  `request_example`: the same large text delivery. Render it the way you
-  already render other endpoints' request examples.
+- The endpoint entries **"Studio: reserve or resume a media upload"** and
+  **"Studio: deliver course text or video for review"** have a
+  `request_example` (the review's is the same large text review) and, for
+  the review, a `response_example`. Render them the way you already render
+  other endpoints' examples.
 - `your_account` gains `journey`, `journey_stages` and `journey_rule` (see 8).
+- `rate_limits.limits` gains two rows, one per Studio endpoint. Uploads now
+  have their own limit, apart from reviews. Render them like the others.
+- `course_schema.content_block.text_content` now defines the list format:
+  `NUMBERED_LIST` and `BULLETED_LIST` hold **one item per line** (`\n`), with
+  no blank lines and no bullet or number typed in (`- `, `* `, `1. `). Studio
+  text reviews refuse anything else. **Please check the course editor** saves
+  TipTap `orderedList` / `bulletList` this way, so editor courses and Studio
+  courses store lists alike. The editor's own save isn't checked, so nothing
+  breaks if it differs, but lists would render differently.
 - `course_schema.question.explanation` now says it is **required for ESSAY**
   questions. The backend has always enforced this; only the docs were wrong.
   If the course editor lets a creator save an essay question with no
   explanation, the save fails with `400 explanation`. Worth checking that the
   editor marks the field as required for essays.
 
-Swagger also changed: the Studio delivery body is now two typed schemas,
-picked by `kind` (`StudioReviewDeliveryRequest`, which is either
-`StudioTextDeliveryRequest` or `StudioVideoDeliveryRequest`). The frontend
-never calls this endpoint. This only matters if you generate a client from
-the whole schema.
+Swagger also changed: the Studio review body is now two typed schemas,
+picked by `kind`. `StudioReviewRequest` is either
+`StudioTextReviewSchemaRequest` or `StudioVideoReviewSchemaRequest`, and the
+`Idempotency-Key` header is documented as required. The frontend never calls
+this endpoint. This only matters if you generate a client from the whole
+schema. The upload `purpose` enums keep the names they had before #102
+(`UploadRequestPurposeEnum`, `MieUploadRequestPurposeEnum`); staging briefly
+called the first one `PurposeFedEnum`.
 
 ### 7. Show the journey stage, admin side
 

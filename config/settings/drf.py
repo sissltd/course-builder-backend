@@ -52,6 +52,10 @@ REST_FRAMEWORK = {
         # MIE course-media presign - per developer account. A course can
         # carry a video per lesson, so this is sized for a full course.
         "mie_upload": "120/hour",
+        # Studio media upload grants - per developer account, separate from
+        # the reviews. A video review uploads a preview plus a video and
+        # captions per lesson, and resuming a grant counts too.
+        "mie_studio_upload": "600/hour",
         # MIE open self-registration - per client IP, since no account exists
         # yet. Tight, because it creates rows pre-auth.
         "mie_register": "5/hour",
@@ -474,12 +478,7 @@ SPECTACULAR_SETTINGS = {
         "CourseStatusEnum": "api.courses.enums.CourseStatus",
         "ProductionRunStatusEnum": "api.production.enums.ProductionRunStatus",
         "ProductionRunKindEnum": "api.production.enums.RunKind",
-        "StudioReviewKindEnum": "api.mie.enums.StudioReviewKind",
         "DeveloperJourneyStageEnum": "api.mie.enums.DeveloperJourneyStage",
-        # The presign and the Studio upload grant take the same purposes.
-        "MieUploadRequestPurposeEnum": (
-            "api.mie.services.course_push_service.MIE_UPLOAD_PURPOSES"
-        ),
         # Course.review_stage and Course.revision_seat draw on the same seats.
         "ReviewStageEnum": "api.reviews.enums.ReviewStage",
         "TransactionStatusEnum": "api.wallet.enums.TransactionStatus",
@@ -508,6 +507,10 @@ SPECTACULAR_SETTINGS = {
         # A third choice set on fields named source_type (next to
         # CourseSourceType and MediaSource below), so it must be pinned too.
         "MieSourceTypeEnum": "api.mie.enums.MieSourceType",
+        # Upload "purpose": the creator presign (shared by the Studio upload)
+        # and MIE's course-media subset are different choice sets.
+        "UploadRequestPurposeEnum": "shared.serializers.storage_serializer.UPLOAD_PURPOSES",
+        "MieUploadRequestPurposeEnum": "api.mie.services.course_push_service.MIE_UPLOAD_PURPOSES",
         # KYCStatus has identical PENDING/APPROVED/REJECTED choices and is
         # already covered by RequestStatusEnum (CategoryRequestStatus) above.
         # Do NOT add a second override for it — drf-spectacular flags

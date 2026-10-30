@@ -2,15 +2,18 @@ from copy import deepcopy
 from unittest.mock import patch
 from uuid import uuid4
 
+from django.core.cache import cache
 
 from api.courses.models import Course, Lesson
 from api.courses.tests.factories import make_user
 from api.mie.enums import WebhookEventType
 from api.mie.models import StudioReviewReceipt, WebhookEvent
+from api.mie.services.studio_review_service import content_hash
 from api.mie.services.submission_admin_service import decide_submission
 from api.mie.tests.factories import make_approved_developer
 from api.mie.tests.test_course_push_api import CoursePushTestCase
 from api.mie.tests.test_staged_course_video_api import _text_body, _review
+from api.mie.throttling import MieDeveloperRateThrottle
 from api.platform.services import platform_settings_service
 from api.users.enums import UserRole
 from shared.services.storage_service import StorageService
@@ -47,15 +50,18 @@ class StudioReviewTests(CoursePushTestCase):
             "course_id": str(self.idea.reserved_course_id),
             "revision": 1,
             "kind": "text",
-            "content_hash": "a" * 64,
+            "content_hash": content_hash(self.content),
             "content": self.content,
             "source_map": self.source,
         }
 
-    def send(self, body=None, key=None, idem="delivery-1"):
+    def send(self, body=None, key=None, idem="delivery-1", rehash=True):
+        body = deepcopy(body or self.envelope)
+        if rehash:
+            body["content_hash"] = content_hash(body["content"])
         return self.client.post(
             REVIEW,
-            body or self.envelope,
+            body,
             format="json",
             HTTP_X_MIE_API_KEY=key or self.key,
             HTTP_IDEMPOTENCY_KEY=idem,
@@ -99,6 +105,55 @@ class StudioReviewTests(CoursePushTestCase):
             self.assertIn(self.send(body).status_code, (400, 409))
             self.assertFalse(Course.objects.exists())
             self.assertFalse(StudioReviewReceipt.objects.exists())
+
+    def test_content_hash_must_match_the_content(self):
+        body = deepcopy(self.envelope)
+        body["content"]["title"] = "Changed after hashing"
+
+        response = self.send(body, rehash=False)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertTrue(
+            any(e["field_name"] == "content_hash" for e in response.data["errors"])
+        )
+        self.assertFalse(Course.objects.exists())
+        self.assertFalse(StudioReviewReceipt.objects.exists())
+
+    def test_list_blocks_hold_one_unmarked_item_per_line(self):
+        def with_list(text):
+            body = deepcopy(self.envelope)
+            body["content"]["modules"][0]["lessons"][0]["content_blocks"] = [
+                {"order": 1, "block_type": "BULLETED_LIST", "text_content": text}
+            ]
+            return body
+
+        for text in ("Moves\n\nBorrows", "- Moves\n- Borrows", "1. Moves\n2. Borrows"):
+            self.assertEqual(self.send(with_list(text)).status_code, 400, text)
+        self.assertFalse(Course.objects.exists())
+        self.assertEqual(self.send(with_list("Moves\nBorrows")).status_code, 200)
+
+    def test_uploads_do_not_draw_on_the_review_budget(self):
+        rates = {
+            **MieDeveloperRateThrottle.THROTTLE_RATES,
+            "mie_course_push": "1/hour",
+        }
+        upload = {
+            "submission_id": str(self.idea.id),
+            "asset_id": str(uuid4()),
+            "filename": "captions.srt",
+            "purpose": "SUBTITLE",
+            "size": 10,
+            "sha256": "d" * 64,
+            "content_type": "application/x-subrip",
+        }
+        cache.clear()
+        with patch.object(MieDeveloperRateThrottle, "THROTTLE_RATES", rates):
+            self.assertEqual(self.send().status_code, 200)
+            self.assertEqual(self.send(idem="delivery-2").status_code, 429)
+            response = self.client.post(
+                UPLOAD, upload, format="json", HTTP_X_MIE_API_KEY=self.key
+            )
+        self.assertEqual(response.status_code, 409)
 
     def test_staged_review_must_be_enabled(self):
         platform_settings_service.update_settings(staged_review_flow_enabled=False)
@@ -151,7 +206,6 @@ class StudioReviewTests(CoursePushTestCase):
         self.assertEqual(feedback["reason"], "Clarify the worked example.")
         repaired = deepcopy(self.envelope)
         repaired["revision"] = 2
-        repaired["content_hash"] = "c" * 64
         repaired["content"]["modules"][0]["lessons"][1]["script"] = "clarified " * 600
         self.assertEqual(self.send(repaired, idem="repair-2").status_code, 200)
 
@@ -216,7 +270,6 @@ class StudioReviewTests(CoursePushTestCase):
         body = {
             **self.envelope,
             "kind": "video",
-            "content_hash": "b" * 64,
             "content": {
                 "preview_video_url": preview,
                 "lessons": [

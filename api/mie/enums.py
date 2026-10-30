@@ -135,13 +135,6 @@ class WebhookDeliveryStatus(models.TextChoices):
     FAILED = "FAILED", "Failed"
 
 
-class StudioReviewKind(models.TextChoices):
-    """What a Studio delivery (`studio.review.v1`) carries."""
-
-    TEXT = "text", "Text"
-    VIDEO = "video", "Video"
-
-
 class DeveloperJourneyStage(models.TextChoices):
     """The furthest point a developer account has reached on the way from
     registration to a published course, worked out from its account, ideas
