@@ -126,7 +126,7 @@ def accept_review(*, developer, data, idempotency_key):
         raise ReviewConflict(
             "Review revision must advance; retry with the original key."
         )
-    if not platform_settings_service.is_staged_review_flow_enabled():
+    if not platform_settings_service.uses_staged_review(submission.resulting_course):
         raise ReviewConflict("Studio requires platform text-before-video review.")
     media = []
     if data["kind"] == "text":

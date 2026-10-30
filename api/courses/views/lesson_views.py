@@ -427,7 +427,7 @@ class LessonViewSet(ModelViewSet):
         context = super().get_serializer_context()
         if self.action in {"create", "update", "partial_update"}:
             context["staged_review_flow"] = (
-                platform_settings_service.is_staged_review_flow_enabled()
+                platform_settings_service.uses_staged_review(self._get_module().course)
             )
         return context
 
