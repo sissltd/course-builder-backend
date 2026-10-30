@@ -94,3 +94,15 @@ Awaiting Video after the default flips. Full Ruff passes; migration consistency
 passes. Existing product-wide seven-pillar gaps remain as previously recorded.
 Live read-only preflight: 28 courses, 8 in-flight, all three workers idle; no live
 setting, course, assignment or deployment has changed for this feature yet.
+
+Release rehearsal for candidate `63898a0`: encrypted database backup restored into
+an isolated database; migration preserved all 28 Course records (excluding the new
+field), all ReviewAssignment/ReviewAction records and platform settings. Previous
+image remained compatible before activation. Evidence is retained privately under
+`/root/scb-review-flow-releases/63898a0/rehearsal-evidence.json`.
+Full CI on that candidate reported 2,277 passes and one Staff Writer global-search
+scope regression. Corrected Writer search to include only owned legacy courses
+and staged courses at visible seats. The failing authorization test, all search
+tests and mixed-mode regressions now pass locally (21 tests, including both default
+values). Full CI is rerunning on the correction; deployment/activation remains
+pending. CI stops at the first failure while still running every test on success.

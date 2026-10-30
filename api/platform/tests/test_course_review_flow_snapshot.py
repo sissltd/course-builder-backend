@@ -4,11 +4,45 @@ import pytest
 
 from api.courses.enums import CourseStatus
 from api.courses.models import Course
-from api.courses.tests.factories import build_compliant_course
+from api.courses.tests.factories import build_compliant_course, make_draft_course
 from api.platform.services import platform_settings_service as settings
 from api.reviews.enums import ReviewStage
 from api.reviews.services import quality_check_service, review_service
 from api.users.enums import UserRole
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("default", [False, True])
+def test_writer_search_preserves_legacy_ownership_and_staged_seat_scope(
+    api_client, make_user, default
+):
+    settings.update_settings(staged_review_flow_enabled=default)
+    owner = make_user(role=UserRole.COURSE_CREATOR)
+    writer = make_user(role=UserRole.STAFF_WRITER)
+    own = make_draft_course(creator=writer, title="Zebra own draft")
+    legacy = make_draft_course(
+        creator=owner, title="Zebra legacy", status=CourseStatus.SUBMITTED
+    )
+    first = make_draft_course(
+        creator=owner,
+        title="Zebra first",
+        status=CourseStatus.SUBMITTED,
+        review_stage=ReviewStage.CONTENT,
+    )
+    verification = make_draft_course(
+        creator=owner,
+        title="Zebra verification",
+        status=CourseStatus.SUBMITTED,
+        review_stage=ReviewStage.VERIFICATION,
+    )
+    for course, staged in ((legacy, False), (first, True), (verification, True)):
+        course.staged_review_flow = staged
+        course.save(update_fields=["staged_review_flow"])
+    api_client.force_authenticate(writer)
+    response = api_client.get("/api/v1/global-search/", {"q": "Zebra"})
+    assert response.status_code == 200
+    seen = {row["id"] for row in response.data["results"]["courses"]["results"]}
+    assert seen == {str(own.pk), str(first.pk)}
 
 
 @pytest.mark.django_db
