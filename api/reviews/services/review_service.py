@@ -58,10 +58,10 @@ STAGED_SEAT_ROLES = {
 APPROVER_ROLES = (UserRole.STAFF_APPROVER, UserRole.SUPER_ADMIN)
 
 
-def seat_roles() -> dict:
+def seat_roles(course: Course | None = None) -> dict:
     """Who may take each content seat under the review flow now in force."""
 
-    if platform_settings_service.is_staged_review_flow_enabled():
+    if platform_settings_service.uses_staged_review(course):
         return STAGED_SEAT_ROLES
     return SEAT_ROLES
 
@@ -94,12 +94,14 @@ def require_qa_seat_access(*, user: User) -> None:
         )
 
 
-def claimable_seats(*, user: User) -> tuple:
+def claimable_seats(*, user: User, course: Course | None = None) -> tuple:
     """The content seats `user`'s role may take, in chain order."""
 
     if is_admin_tier(user):
         return CONTENT_REVIEW_SEATS
-    return tuple(seat for seat, roles in seat_roles().items() if user.role in roles)
+    return tuple(
+        seat for seat, roles in seat_roles(course).items() if user.role in roles
+    )
 
 
 def decided_seats(*, user: User) -> QuerySet[ReviewAssignment]:
@@ -139,9 +141,6 @@ def seat_visibility_q(*, user: User) -> Q | None:
 
     if user.is_superuser or user.role == UserRole.SUPER_ADMIN:
         return None
-    if not platform_settings_service.is_staged_review_flow_enabled():
-        return None
-
     seats = [seat for seat, roles in STAGED_SEAT_ROLES.items() if user.role in roles]
     sits_qa = user.role in QA_SEAT_ROLES
     visible = Q(status=CourseStatus.PUBLISHED)
@@ -159,10 +158,26 @@ def seat_visibility_q(*, user: User) -> Q | None:
         visible |= Q(status=CourseStatus.QA_VERIFICATION)
     if user.role in APPROVER_ROLES:
         visible |= Q(status=CourseStatus.APPROVED)
-    return visible
+    return platform_settings_service.review_flow_q(staged=False) | (
+        platform_settings_service.review_flow_q(staged=True) & visible
+    )
 
 
-def restrict_to_seat_role(queryset: QuerySet[Course], *, user: User) -> QuerySet[Course]:
+def claimable_courses_q(*, user: User) -> Q:
+    """Filter mixed queues in SQL; rights are evaluated per course mode."""
+    allowed = Q(pk__in=[])
+    for staged, roles_by_seat in ((False, SEAT_ROLES), (True, STAGED_SEAT_ROLES)):
+        seats = [seat for seat, roles in roles_by_seat.items() if user.role in roles]
+        at_seat = Q(review_stage__in=seats)
+        if ReviewStage.CONTENT in seats:
+            at_seat |= Q(review_stage="")
+        allowed |= platform_settings_service.review_flow_q(staged=staged) & at_seat
+    return allowed
+
+
+def restrict_to_seat_role(
+    queryset: QuerySet[Course], *, user: User
+) -> QuerySet[Course]:
     """`queryset` narrowed to the courses `user` may see (seat_visibility_q).
 
     The narrowing is in the query, so a hidden course is a 404 on its detail
@@ -339,7 +354,7 @@ def assignable_reviewers(*, actor: User, course: Course) -> list[dict]:
 
     permission_service.require_permission(actor, codenames.COURSES_ASSIGN)
     seat = _seat_for_assignment(course)
-    roles = QA_SEAT_ROLES if seat == ReviewStage.QA else seat_roles()[seat]
+    roles = QA_SEAT_ROLES if seat == ReviewStage.QA else seat_roles(course)[seat]
     may_review = RolePermission.objects.filter(
         role_id=OuterRef("access_role_id"),
         codename__in=(codenames.COURSES_APPROVE, codenames.COURSES_REJECT),
@@ -392,14 +407,14 @@ def release_open_seats(*, user: User) -> int:
 def release_seats_after_role_change(*, user: User) -> int:
     """Release the undecided seats `user` held that their new role cannot sit."""
 
-    seats = claimable_seats(user=user)
     may_sit_qa = user.role in QA_SEAT_ROLES or is_admin_tier(user)
     return _release_seats(
         user=user,
         keep=lambda assignment: (
             may_sit_qa
             if assignment.stage == ReviewStage.QA
-            else assignment.stage in seats
+            else assignment.stage
+            in claimable_seats(user=user, course=assignment.course)
         ),
     )
 
@@ -440,8 +455,8 @@ def require_seat_access(*, course: Course, seat: str, user: User) -> None:
     """
 
     label = ReviewStage(seat).label
-    if seat not in claimable_seats(user=user):
-        roles = " or ".join(role.label for role in seat_roles()[seat])
+    if seat not in claimable_seats(user=user, course=course):
+        roles = " or ".join(role.label for role in seat_roles(course)[seat])
         raise exceptions.PermissionDenied(f"The {label} seat is for a {roles}.")
 
     earlier_seats = CONTENT_REVIEW_SEATS[: CONTENT_REVIEW_SEATS.index(seat)]
@@ -538,7 +553,7 @@ def _return_for_revision(*, course: Course, seat: str) -> str:
     """
 
     course.review_stage = ""
-    if platform_settings_service.is_staged_review_flow_enabled():
+    if platform_settings_service.uses_staged_review(course):
         course.status = CourseStatus.NEEDS_REVISION
         course.revision_seat = seat
         return "Needs Revision"
@@ -807,7 +822,7 @@ def approve_content(
         # it parks the course until its video is attached.
         awaiting_video = (
             seat == ReviewStage.CONTENT
-            and platform_settings_service.is_staged_review_flow_enabled()
+            and platform_settings_service.uses_staged_review(course)
         )
         if awaiting_video:
             course.status = CourseStatus.AWAITING_VIDEO
@@ -940,11 +955,14 @@ def approve_qa(
             )
             if course.creator_id:
                 award_service.schedule_evaluation(
-                    creator_id=course.creator_id, criterion=BadgeCriterion.COURSES_APPROVED
+                    creator_id=course.creator_id,
+                    criterion=BadgeCriterion.COURSES_APPROVED,
                 )
         except Exception as e:
             # Log the exception but do not prevent the transaction from committing
-            logger.error(f"Error occurred while logging activity or scheduling award: {e}")
+            logger.error(
+                f"Error occurred while logging activity or scheduling award: {e}"
+            )
     return action
 
 
@@ -983,7 +1001,9 @@ def reject_qa(
         assignment.reviewer = reviewer
         assignment.claimed_at = assignment.claimed_at or timezone.now()
         assignment.completed_at = timezone.now()
-        assignment.save(update_fields=["reviewer", "claimed_at", "completed_at", "updated_datetime"])
+        assignment.save(
+            update_fields=["reviewer", "claimed_at", "completed_at", "updated_datetime"]
+        )
         returned_to = _return_for_revision(course=course, seat=ReviewStage.QA)
         course.rejected_at = timezone.now()
         course.updated_by = reviewer
@@ -1015,7 +1035,9 @@ def reject_qa(
             content=f"'{course.title}' failed QA and was returned to {returned_to}.",
         )
         _notify_mie_revision(course=course, review_action=action)
-        production_service.handle_rejection(course=course, review_action=action, reviewer=reviewer)
+        production_service.handle_rejection(
+            course=course, review_action=action, reviewer=reviewer
+        )
         activity_service.log_activity(
             user=reviewer,
             category=UserActivityCategoryEnums.APPROVAL,

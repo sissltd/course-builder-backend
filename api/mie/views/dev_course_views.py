@@ -25,7 +25,6 @@ from api.mie.views.idempotency import (
     idempotency_conflict_response,
     respond_idempotently,
 )
-from api.platform.services import platform_settings_service
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 from shared.serializers.storage_serializer import (
     UploadRequestSerializer,
@@ -205,16 +204,16 @@ class MieCoursePushView(APIView):
         },
     )
     def post(self, request, submission_id):
-        return respond_idempotently(
-            request, lambda: self._push(request, submission_id)
-        )
+        return respond_idempotently(request, lambda: self._push(request, submission_id))
 
     def _push(self, request, submission_id):
         serializer = CoursePushSerializer(
             data=request.data,
             context={
                 "staged_review_flow": (
-                    platform_settings_service.is_staged_review_flow_enabled()
+                    course_push_service.review_flow_for_submission(
+                        developer=request.auth, submission_id=submission_id
+                    )
                 )
             },
         )

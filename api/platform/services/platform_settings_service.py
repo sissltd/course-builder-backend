@@ -1,3 +1,6 @@
+from django.db import transaction
+from django.db.models import Q
+
 from api.courses.enums import IN_FLIGHT_COURSE_STATUSES
 from api.courses.models import Course
 from api.platform.exceptions import StagedReviewFlowInFlight
@@ -56,17 +59,47 @@ def is_staged_review_flow_enabled() -> bool:
     return get_settings().staged_review_flow_enabled
 
 
-def update_settings(**fields) -> PlatformSettings:
+def uses_staged_review(course: Course | None) -> bool:
+    """A saved course owns its workflow; the setting is only a default."""
+    if course is not None and course.staged_review_flow is not None:
+        return course.staged_review_flow
+    return is_staged_review_flow_enabled()
+
+
+def review_flow_q(*, staged: bool) -> Q:
+    selected = Q(staged_review_flow=staged)
+    if is_staged_review_flow_enabled() == staged:
+        selected |= Q(staged_review_flow__isnull=True)
+    return selected
+
+
+def freeze_review_flow(*, course: Course) -> None:
+    """Called under the course submission transaction and course row lock."""
+    if course.staged_review_flow is None:
+        settings_row = get_settings()
+        settings_row = PlatformSettings.objects.select_for_update().get(
+            pk=settings_row.pk
+        )
+        course.staged_review_flow = settings_row.staged_review_flow_enabled
+        course.save(update_fields=["staged_review_flow"])
+
+
+@transaction.atomic
+def update_settings(*, actor=None, reason="", **fields) -> PlatformSettings:
     """Apply whichever settings fields were provided (all optional)."""
 
     settings_row = get_settings()
+    settings_row = PlatformSettings.objects.select_for_update().get(pk=settings_row.pk)
     update_fields = ["updated_datetime"]
 
+    previous_flow = settings_row.staged_review_flow_enabled
     new_flow = fields.get("staged_review_flow_enabled")
     if (
         new_flow is not None
         and new_flow != settings_row.staged_review_flow_enabled
-        and Course.objects.filter(status__in=IN_FLIGHT_COURSE_STATUSES).exists()
+        and Course.objects.filter(
+            status__in=IN_FLIGHT_COURSE_STATUSES, staged_review_flow__isnull=True
+        ).exists()
     ):
         raise StagedReviewFlowInFlight()
 
@@ -78,4 +111,21 @@ def update_settings(**fields) -> PlatformSettings:
     if len(update_fields) > 1:
         settings_row.save(update_fields=update_fields)
 
+    if actor is not None and previous_flow != settings_row.staged_review_flow_enabled:
+        from api.authentication.services import activity_service
+        from api.users.enums import UserActivityActionEnums, UserActivityCategoryEnums
+
+        activity_service.log_activity(
+            user=actor,
+            category=UserActivityCategoryEnums.CONFIGURATION,
+            action=UserActivityActionEnums.PLATFORM_REVIEW_DEFAULT_UPDATED,
+            summary="Changed the default review mode for future course submissions.",
+            target=settings_row,
+            details={
+                "previous": previous_flow,
+                "current": settings_row.staged_review_flow_enabled,
+                "reason": reason,
+                "existing_courses_unchanged": True,
+            },
+        )
     return settings_row

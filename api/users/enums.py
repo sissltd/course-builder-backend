@@ -161,6 +161,10 @@ class UserActivityActionEnums(models.TextChoices):
     COURSE_VIDEO_SUBMITTED = "COURSE_VIDEO_SUBMITTED", "Course Video Submitted"
     COURSE_VIDEO_ASSIGNED = "COURSE_VIDEO_ASSIGNED", "Course Video Producer Assigned"
     COURSE_ARCHIVED = "COURSE_ARCHIVED", "Course Archived"
+    PLATFORM_REVIEW_DEFAULT_UPDATED = (
+        "PLATFORM_REVIEW_DEFAULT_UPDATED",
+        "Platform Review Default Updated",
+    )
     DEVELOPER_SETTINGS_UPDATED = (
         "DEVELOPER_SETTINGS_UPDATED",
         "MIE Developer Settings Updated",

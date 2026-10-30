@@ -193,6 +193,7 @@ class CourseListSerializer(serializers.ModelSerializer):
     class Meta:
         model = Course
         fields = [
+            "staged_review_flow",
             "id",
             "title",
             "course_id",

@@ -59,6 +59,7 @@ from api.users.models import User
 from api.authorization.services import permission_service
 from api.users.services import reviewer_availability_service
 
+
 def _category_track_q(track_filter) -> Q | None:
     """Category-level TrackPreference constraint for a reviewer's
     QueueTrackFilter preference. ALL means "no filter" (None).
@@ -84,6 +85,7 @@ def _category_track_q(track_filter) -> Q | None:
             )
         )
     return None
+
 
 DRAFT_EDITABLE_FIELDS = {
     "title",
@@ -272,6 +274,7 @@ def delete_draft_course(*, course: Course, actor: User) -> None:
     course.delete()
 
 
+@transaction.atomic
 def submit_course(
     *, course: Course, actor: User, skip_draft_hold: bool = False
 ) -> Course:
@@ -299,10 +302,13 @@ def submit_course(
     permission_service.require_any_permission(
         actor, (codenames.COURSES_CREATE, codenames.COURSES_EDIT)
     )
+    Course.objects.select_for_update().only("pk").get(pk=course.pk)
+    course.refresh_from_db()
     if course.creator_id != actor.id:
         raise exceptions.ValidationError(
             "Only the course creator can submit this course."
         )
+    platform_settings_service.freeze_review_flow(course=course)
     if course.status == CourseStatus.NEEDS_REVISION:
         return _resubmit_after_revision(course=course, actor=actor)
     if course.status != CourseStatus.DRAFT:
@@ -592,7 +598,9 @@ def submit_video(*, course: Course, actor: User) -> Course:
         actor, (codenames.COURSES_CREATE, codenames.COURSES_EDIT)
     )
     if course.creator_id != actor.id:
-        raise exceptions.ValidationError("Only the course creator can submit its video.")
+        raise exceptions.ValidationError(
+            "Only the course creator can submit its video."
+        )
     if course.status != CourseStatus.AWAITING_VIDEO:
         raise CourseNotAwaitingVideo()
     if course.video_provider not in (VideoProvider.CREATOR, VideoProvider.DEVELOPER):
@@ -634,7 +642,9 @@ def deliver_video(*, course: Course, actor: User) -> Course:
     if course.status != CourseStatus.AWAITING_VIDEO:
         raise CourseNotAwaitingVideo()
     if course.video_provider != VideoProvider.PRODUCTION_ENGINE:
-        raise VideoProviderConflict("Only a course whose video the engine makes can receive it.")
+        raise VideoProviderConflict(
+            "Only a course whose video the engine makes can receive it."
+        )
     _send_video_to_review(course=course, actor=actor)
     Notification.emit_in_app_notification(
         receivers=[course.creator],
@@ -819,14 +829,14 @@ def _build_course_snapshot(course: Course) -> dict:
     }
 
 
-def require_approver(*, actor: User) -> None:
+def require_approver(*, actor: User, course: Course) -> None:
     """Refuse (403) a caller who may not price or publish a course.
 
     A no-op with the staged review flow off, where the permission alone
     decides. With it on, only the Approver (and the Super Admin) may.
     """
 
-    if not platform_settings_service.is_staged_review_flow_enabled():
+    if not platform_settings_service.uses_staged_review(course):
         return
     if not (actor.is_superuser or actor.role in review_service.APPROVER_ROLES):
         raise exceptions.PermissionDenied(
@@ -842,7 +852,7 @@ def save_distribution_channels(
     With the staged review flow on, only the Approver may set prices
     (require_approver)."""
 
-    require_approver(actor=actor)
+    require_approver(actor=actor, course=course)
     if course.status != CourseStatus.APPROVED:
         raise exceptions.ValidationError(
             f"Course prices cannot be saved from status '{course.status}'."
@@ -872,7 +882,9 @@ def catalogue_slug(course: Course) -> str:
 
     base = slugify(course.title)[: SLUG_MAX_LENGTH - 10] or "course"
     taken = set(
-        Course.objects.filter(slug__startswith=base).exclude(pk=course.pk).values_list("slug", flat=True)
+        Course.objects.filter(slug__startswith=base)
+        .exclude(pk=course.pk)
+        .values_list("slug", flat=True)
     )
     if base not in taken:
         return base
@@ -904,7 +916,7 @@ def publish_course(
     """
 
     permission_service.require_permission(actor, codenames.COURSES_PUBLISH)
-    require_approver(actor=actor)
+    require_approver(actor=actor, course=course)
     if course.status != CourseStatus.APPROVED:
         raise exceptions.ValidationError(
             f"Course cannot be published from status '{course.status}'."
@@ -1059,14 +1071,7 @@ def get_review_queue(
     # Both conditions ride in the same SQL (the lockout is a subquery), so
     # the queue's query count doesn't grow with the rows it returns.
     if seats_for is not None and not review_service.is_admin_tier(seats_for):
-        seats = review_service.claimable_seats(user=seats_for)
-        at_a_claimable_seat = Q(review_stage__in=seats)
-        if ReviewStage.CONTENT in seats:
-            # A course sitting in review with no seat recorded has not started
-            # the chain. It belongs at First Review rather than nowhere -
-            # without this it would be invisible to every reviewer, which is
-            # also the fallback the course serializer reports for it.
-            at_a_claimable_seat |= Q(review_stage="")
+        at_a_claimable_seat = review_service.claimable_courses_q(user=seats_for)
         queryset = queryset.filter(at_a_claimable_seat).exclude(
             pk__in=review_service.decided_seats(user=seats_for).values("course_id")
         )
