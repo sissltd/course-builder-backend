@@ -2,6 +2,15 @@ from rest_framework import serializers
 
 # >>>>>>>>>>>>>>>>>>>> Upload Request <<<<<<<<<<<<<<<<<<<<<<
 
+UPLOAD_PURPOSES = [
+    "COURSE_THUMBNAIL",
+    "LESSON_IMAGE",
+    "LESSON_VIDEO",
+    "COURSE_PREVIEW_VIDEO",
+    "SUBTITLE",
+    "COURSE_DOCUMENT_IMPORT",
+]
+
 
 class UploadRequestSerializer(serializers.Serializer):
     """
@@ -45,14 +54,7 @@ class UploadRequestSerializer(serializers.Serializer):
         ),
     )
     purpose = serializers.ChoiceField(
-        choices=[
-            "COURSE_THUMBNAIL",
-            "LESSON_IMAGE",
-            "LESSON_VIDEO",
-            "COURSE_PREVIEW_VIDEO",
-            "SUBTITLE",
-            "COURSE_DOCUMENT_IMPORT",
-        ],
+        choices=UPLOAD_PURPOSES,
         required=False,
         help_text="Required for creator course media; selects its PRD validation rules.",
     )

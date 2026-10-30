@@ -133,3 +133,30 @@ class WebhookDeliveryStatus(models.TextChoices):
     PENDING = "PENDING", "Pending"
     DELIVERED = "DELIVERED", "Delivered"
     FAILED = "FAILED", "Failed"
+
+
+class DeveloperJourneyStage(models.TextChoices):
+    """The furthest point a developer account has reached on the way from
+    registration to a published course, worked out from its account, ideas
+    and courses (developer_journey_service). Listed in order; each stage
+    implies every one before it.
+
+    REGISTERED       -> not approved yet (or rejected before approval).
+    ONBOARDED        -> approved, no idea submitted yet.
+    IDEA_SUBMITTED   -> at least one idea sent.
+    IDEA_APPROVED    -> at least one idea approved, no course delivered.
+    COURSE_DELIVERED -> at least one course pushed (including archived ones).
+    TEXT_APPROVED    -> a course passed content review: waiting for its video
+                        or in QA verification.
+    QA_PASSED        -> a course passed QA verification (the payout point).
+    PUBLISHED        -> a course is published.
+    """
+
+    REGISTERED = "REGISTERED", "Registered"
+    ONBOARDED = "ONBOARDED", "Onboarded"
+    IDEA_SUBMITTED = "IDEA_SUBMITTED", "Idea Submitted"
+    IDEA_APPROVED = "IDEA_APPROVED", "Idea Approved"
+    COURSE_DELIVERED = "COURSE_DELIVERED", "Course Delivered"
+    TEXT_APPROVED = "TEXT_APPROVED", "Text Approved"
+    QA_PASSED = "QA_PASSED", "QA Passed"
+    PUBLISHED = "PUBLISHED", "Published"

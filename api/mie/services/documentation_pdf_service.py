@@ -54,6 +54,7 @@ SECTION_TITLES = {
     "course_schema": "Course Schema",
     "media": "Course Media",
     "course_lifecycle": "Course Lifecycle",
+    "studio": "Soludesk Studio Deliveries",
     "plan_and_payouts": "Plan And Payouts",
     "endpoints": "Endpoint Reference",
     "webhooks": "Webhooks",
