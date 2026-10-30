@@ -138,7 +138,9 @@ class PlatformSettings(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
     )
     liveness_threshold = models.PositiveSmallIntegerField(
         verbose_name=_("Liveness Threshold"),
-        help_text=_("Score (0 - 100) at or above which a 'real' liveness result passes"),
+        help_text=_(
+            "Score (0 - 100) at or above which a 'real' liveness result passes"
+        ),
         validators=[MinValueValidator(0), MaxValueValidator(100)],
         blank=True,
         default=80,
@@ -154,13 +156,13 @@ class PlatformSettings(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin):
         verbose_name=_("Staged Review Flow Enabled"),
         default=False,
         help_text=_(
-            "Switches course review to the staged flow: courses are "
+            "Sets the default for future course submissions: courses are "
             "submitted as text only, the first seat reviews the text, the "
             "video is attached afterwards and reviewed at the second seat, "
             "and a rejection returns the course to Needs Revision and "
             "resumes at the rejecting seat. Only the Approver may price and "
-            "publish. Off keeps the original single-pass review. Cannot be "
-            "changed while any course is in review."
+            "publish. Existing courses retain their saved review mode. "
+            "In-flight courses without snapshots block a default change."
         ),
     )
     production_enabled = models.BooleanField(

@@ -97,6 +97,17 @@ LESSON_FIELDS = (
 # >>>>>>>>>>>>>>>>>>>> Push <<<<<<<<<<<<<<<<<<<<<<
 
 
+def review_flow_for_submission(*, developer: DeveloperAccount, submission_id) -> bool:
+    submission = (
+        CourseSubmission.objects.select_related("resulting_course")
+        .filter(developer=developer, pk=submission_id)
+        .first()
+    )
+    return platform_settings_service.uses_staged_review(
+        submission.resulting_course if submission else None
+    )
+
+
 def push_course(*, developer: DeveloperAccount, submission_id, data: dict) -> Course:
     """Build (or rebuild) and submit the course for one approved idea.
 

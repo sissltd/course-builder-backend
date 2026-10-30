@@ -63,3 +63,46 @@ Local resolution evidence: full Ruff and migration consistency passed; 322 tests
 and 45 subtests passed on fresh disposable PostgreSQL. Application/configuration/
 migration content is unchanged from staging parent `8b85178`; main ancestry is
 reconciled by the merge. GitHub CI on the pushed merge remains a separate check.
+
+## Course-specific review mode migration — 2026-10-30
+
+P5/P6/P7: courses now own a read-only review-mode snapshot. The additive courses
+0023 migration backfills every existing course from the current platform default
+without changing status, seat, assignments, feedback, pricing or content. New courses
+freeze their mode in the first successful submission transaction under course and
+settings row locks. Failed submissions roll the snapshot back. Platform default
+changes refuse unsnapshotted in-flight courses, while fully migrated courses keep
+their modes. Reviewer access/visibility, assignment, role-change seat release,
+rejection/resubmission, quality checks, MIE serializers, lesson editing, pricing and
+publication use the course's mode. API settings advertise snapshot capability;
+course responses expose the read-only snapshot.
+
+Activation uses the existing permission-checked settings API, or the audited
+set_course_review_default management command with an active permitted actor and
+reason. The users action-choice migration and platform help-text migration are
+additive metadata changes. Do not activate on an old API/worker fleet. Before any
+activation, verify every pre-existing course and reviewer assignment is unchanged
+apart from its new mode field, the migration is complete, all app/worker services
+run this revision, and backup recovery has been rehearsed. An old-image rollback is
+safe before activation; after a staged course exists, retain compatible code or
+reconcile all staged courses before reverting to code that ignores snapshots.
+
+Local evidence: 463 tests plus 20 subtests passed across platform, review, course,
+MIE and production suites; migration regression preserves states/assignments for
+both original defaults. Mixed HTTP approvals retain legacy Second Review and staged
+Awaiting Video after the default flips. Full Ruff passes; migration consistency
+passes. Existing product-wide seven-pillar gaps remain as previously recorded.
+Live read-only preflight: 28 courses, 8 in-flight, all three workers idle; no live
+setting, course, assignment or deployment has changed for this feature yet.
+
+Release rehearsal for candidate `63898a0`: encrypted database backup restored into
+an isolated database; migration preserved all 28 Course records (excluding the new
+field), all ReviewAssignment/ReviewAction records and platform settings. Previous
+image remained compatible before activation. Evidence is retained privately under
+`/root/scb-review-flow-releases/63898a0/rehearsal-evidence.json`.
+Full CI on that candidate reported 2,277 passes and one Staff Writer global-search
+scope regression. Corrected Writer search to include only owned legacy courses
+and staged courses at visible seats. The failing authorization test, all search
+tests and mixed-mode regressions now pass locally (21 tests, including both default
+values). Full CI is rerunning on the correction; deployment/activation remains
+pending. CI stops at the first failure while still running every test on success.

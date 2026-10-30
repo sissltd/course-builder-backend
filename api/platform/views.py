@@ -123,9 +123,9 @@ class PlatformSettingsView(APIView):
             "already approved are never re-validated. Raising a minimum can "
             "therefore make an in-progress draft invalid at submission time. "
             "An empty body returns 400 rather than silently doing nothing. "
-            "`staged_review_flow_enabled` switches the whole review flow, so "
-            "changing it returns 409 while any course is in review, awaiting "
-            "video or revision, or approved but unpublished."
+            "`staged_review_flow_enabled` sets the default for future first "
+            "submissions. Existing courses keep their saved review mode. "
+            "Changing it returns 409 if an in-flight course lacks a snapshot."
         ),
         tags=["Admin — Platform Settings"],
         request=PlatformSettingsUpdateSerializer,
@@ -159,9 +159,8 @@ class PlatformSettingsView(APIView):
             **STANDARD_ERROR_RESPONSES["permission"],
             409: inline_error_response(
                 description=(
-                    "`staged_review_flow_enabled` cannot change while courses "
-                    "are in review, awaiting video or revision, or approved "
-                    "but unpublished."
+                    "The default cannot change while an in-flight course lacks "
+                    "a review-mode snapshot. Complete the migration first."
                 ),
                 examples=[
                     OpenApiExample(
@@ -172,8 +171,7 @@ class PlatformSettingsView(APIView):
                                     "type": "client_error",
                                     "code": "staged_review_flow_in_flight",
                                     "message": (
-                                        "The review flow cannot be switched "
-                                        "while courses are in review."
+                                        "An in-flight course lacks its review-mode snapshot."
                                     ),
                                     "field_name": None,
                                 }
@@ -189,7 +187,7 @@ class PlatformSettingsView(APIView):
         serializer = PlatformSettingsUpdateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         settings_row = platform_settings_service.update_settings(
-            **serializer.validated_data
+            actor=request.user, **serializer.validated_data
         )
         return Response(PlatformSettingsSerializer(settings_row).data)
 
