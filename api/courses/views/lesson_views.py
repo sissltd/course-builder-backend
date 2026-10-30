@@ -20,6 +20,7 @@ from api.courses.services import (
     lesson_service,
     module_lock_service,
     ordering_service,
+    video_optimization_service,
 )
 from api.authorization import codenames
 from api.authorization.permissions import Perm
@@ -71,12 +72,15 @@ _TEXT_LESSON_REQUEST_EXAMPLE = {
 }
 
 _MEDIA_URL_NOTICE = (
-    "**Notice:** Uploaded video/read URLs can be long because object storage "
-    "adds signed query parameters. `video_url`, `embedded_link`, course media "
-    "URLs, and lesson media paths accept up to 2000 characters. Prefer storing "
-    "the durable `file_key` returned by `/api/v1/uploads/presign/`; if a signed "
-    "`file_url` expires or playback is slow after waiting, call "
-    "`/api/v1/uploads/access/` with that `file_key` to get a fresh playback URL."
+    "**Notice:** Send the `file_url` from `/api/v1/uploads/presign/` as "
+    "`video_url` (or a block's `media_url`); it is stored in a form that "
+    "never expires. Responses always return our own media as a fresh signed "
+    "URL that plays for 4 hours, so use the URL from the latest response and "
+    "reload the lesson or course to refresh it. Links to other hosts are "
+    "returned unchanged. `video_url`, `embedded_link`, course media URLs and "
+    "lesson media paths accept up to 2000 characters. After a new upload, "
+    "`video_processing_status` is `PENDING` while the file is rewritten to "
+    "start faster, then `READY` (or `FAILED`, which still plays)."
 )
 
 _LESSON_WRITE_RESPONSE_EXAMPLE = {
@@ -543,6 +547,9 @@ class LessonViewSet(ModelViewSet):
             requirements=requirements,
             actor=self.request.user,
         )
+        video_optimization_service.queue_if_changed(
+            instance=lesson, field="video_url", previous=""
+        )
         course_service.recalculate_duration_estimate(course=module.course)
         return lesson
 
@@ -564,6 +571,7 @@ class LessonViewSet(ModelViewSet):
         requirements = serializer.validated_data.pop(
             "requirements", requirements_marker
         )
+        previous_video_url = serializer.instance.video_url
         try:
             with transaction.atomic():
                 lesson = serializer.save(updated_by=self.request.user)
@@ -582,6 +590,9 @@ class LessonViewSet(ModelViewSet):
                 requirements=requirements,
                 actor=self.request.user,
             )
+        video_optimization_service.queue_if_changed(
+            instance=lesson, field="video_url", previous=previous_video_url
+        )
         course_service.recalculate_duration_estimate(course=module.course)
         return lesson
 

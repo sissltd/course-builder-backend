@@ -9,6 +9,7 @@ from api.courses.enums import (
     CourseSourceType,
     CourseStatus,
     DifficultyLevel,
+    VideoProcessingStatus,
     VideoProvider,
 )
 from api.catalog.enums import CreatorPriceType
@@ -193,6 +194,17 @@ class Course(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMi
             "1-2 minute course overview video URL, required before submission "
             "(BR-015). With the staged review flow it is instead refused at "
             "submission and required when the video is submitted."
+        ),
+    )
+    preview_video_processing_status = models.CharField(
+        verbose_name=_("Preview Video Processing Status"),
+        max_length=10,
+        choices=VideoProcessingStatus.choices,
+        blank=True,
+        default="",
+        editable=False,
+        help_text=_(
+            "Streaming optimisation of preview_video_url when it is one of our uploads (see VideoProcessingStatus)."
         ),
     )
     thumbnail_url = models.URLField(

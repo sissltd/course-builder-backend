@@ -2,7 +2,7 @@ from django.db import models
 from django.utils.translation import gettext_lazy as _
 
 from api.courses.constants import COURSE_MEDIA_URL_MAX_LENGTH
-from api.courses.enums import LessonContentType
+from api.courses.enums import LessonContentType, VideoProcessingStatus
 from core.mixins import (
     DateHistoryModelMixin,
     UserHistoryModelMixin,
@@ -64,6 +64,17 @@ class Lesson(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMi
         help_text=_(
             "Pasted embed link for external players (Vimeo, YouTube, "
             "Wistia, Typeform, etc.) from the 'Add Media' block."
+        ),
+    )
+    video_processing_status = models.CharField(
+        verbose_name=_("Video Processing Status"),
+        max_length=10,
+        choices=VideoProcessingStatus.choices,
+        blank=True,
+        default="",
+        editable=False,
+        help_text=_(
+            "Streaming optimisation of video_url when it is one of our uploads (see VideoProcessingStatus)."
         ),
     )
     video_transcript = models.TextField(blank=True, default="")

@@ -91,6 +91,69 @@ class StorageServiceTests(TestCase):
         self.assertEqual(key, "uploads/courses/video.mp4")
 
 
+class PlayableMediaTests(TestCase):
+    """Every stored form of our object resolves to it; nothing else does."""
+
+    KEY = "uploads/courses/video.mp4"
+
+    def setUp(self):
+        for name, value in (
+            ("ACCESS_KEY_ID", "access-key"),
+            ("ACCESS_SECRET_KEY", "secret-key"),
+            ("BUCKET_NAME", "coursebuilder"),
+            ("BUCKET_URL", "https://coursebuilder.lon1.digitaloceanspaces.com"),
+        ):
+            patcher = patch.object(storage_service, name, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def test_every_stored_form_of_our_object_resolves_to_its_key(self):
+        service = storage_service.StorageService
+        for value in (
+            self.KEY,
+            service.public_url(self.KEY),
+            service.generate_presigned_get(self.KEY),
+        ):
+            with self.subTest(value=value):
+                self.assertEqual(storage_service.own_media_key(value), self.KEY)
+
+    def test_other_links_and_text_are_not_ours(self):
+        for value in (
+            "",
+            "https://cdn.example.com/uploads/courses/video.mp4",
+            "https://lon1.digitaloceanspaces.com/otherbucket/uploads/video.mp4",
+            '<iframe src="https://player.example.com/1"></iframe>',
+            "dQw4w9WgXcQ",
+        ):
+            with self.subTest(value=value):
+                self.assertIsNone(storage_service.own_media_key(value))
+
+    def test_playable_url_signs_ours_for_playback_and_passes_others_through(self):
+        service = storage_service.StorageService
+        signed = urlsplit(service.playable_url(service.public_url(self.KEY)))
+        query = parse_qs(signed.query)
+
+        self.assertEqual(signed.path, f"/coursebuilder/{self.KEY}")
+        self.assertIn("X-Amz-Signature", query)
+        self.assertEqual(
+            query["X-Amz-Expires"], [str(storage_service.PLAYBACK_URL_SECONDS)]
+        )
+        self.assertEqual(
+            service.playable_url("https://youtu.be/abc"), "https://youtu.be/abc"
+        )
+        self.assertEqual(service.playable_url(""), "")
+
+    def test_durable_media_ref_drops_the_expiring_signature(self):
+        service = storage_service.StorageService
+        signed = service.generate_presigned_get(self.KEY)
+
+        self.assertEqual(service.durable_media_ref(signed), service.public_url(self.KEY))
+        self.assertEqual(service.durable_media_ref(self.KEY), self.KEY)
+        self.assertEqual(
+            service.durable_media_ref("https://youtu.be/abc"), "https://youtu.be/abc"
+        )
+
+
 class StudioStoredIntegrityTests(TestCase):
     def test_verifies_actual_bytes_and_rejects_wrong_hash_size_and_type(self):
         import hashlib

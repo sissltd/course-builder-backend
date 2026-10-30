@@ -14,7 +14,7 @@ from api.courses.enums import (
     AIGenerationStatus,
 )
 from api.courses.models import AIGenerationJob
-from api.courses.services import ai_generation_service
+from api.courses.services import ai_generation_service, video_optimization_service
 from shared.services.storage_service import StorageService
 
 logger = logging.getLogger(__name__)
@@ -470,3 +470,16 @@ def generate_ai_thumbnail(self, job_id):
     except Exception as exc:
         _fail_job(job=job, exc=exc)
         raise
+
+
+@shared_task(
+    soft_time_limit=COURSE_TASK_SOFT_TIME_LIMIT_SECONDS,
+    time_limit=COURSE_TASK_HARD_TIME_LIMIT_SECONDS,
+)
+def optimize_creator_video(model_label, pk, field, file_key):
+    """Rewrite a creator's uploaded video so it starts fast in the browser
+    (see video_optimization_service)."""
+
+    video_optimization_service.optimize(
+        model_label=model_label, pk=pk, field=field, file_key=file_key
+    )

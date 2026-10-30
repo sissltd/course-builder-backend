@@ -30,7 +30,11 @@ from api.courses.enums import (
     VideoProvider,
 )
 from api.courses.exceptions import CourseNotAwaitingVideo, VideoProviderConflict
-from api.courses.services import course_update_alert_service, production_engine
+from api.courses.services import (
+    course_update_alert_service,
+    production_engine,
+    video_optimization_service,
+)
 from api.payments.services import course_payout_service
 from api.production.services import production_service
 from api.courses.models import (
@@ -239,6 +243,9 @@ def create_draft_course(
         award_service.schedule_evaluation(
             creator_id=creator.id, criterion=BadgeCriterion.COURSES_CREATED
         )
+        video_optimization_service.queue_if_changed(
+            instance=course, field="preview_video_url", previous=""
+        )
 
     return course
 
@@ -257,12 +264,19 @@ def update_draft_course(*, course: Course, actor: User, data: dict) -> Course:
         category = data.get("category", course.category)
         _validate_topic_matches_category(topic=data["topic"], category=category)
 
+    previous_preview_video_url = course.preview_video_url
     for field, value in data.items():
         if field in DRAFT_EDITABLE_FIELDS:
             setattr(course, field, value)
 
     course.updated_by = actor
-    course.save()
+    with transaction.atomic():
+        course.save()
+        video_optimization_service.queue_if_changed(
+            instance=course,
+            field="preview_video_url",
+            previous=previous_preview_video_url,
+        )
     return course
 
 

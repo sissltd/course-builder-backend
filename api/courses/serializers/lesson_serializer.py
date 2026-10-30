@@ -10,6 +10,10 @@ from api.courses.models import (
 )
 from api.courses.models.lesson_requirement import LESSON_REQUIREMENT_MAX_LENGTH
 from api.courses.serializers.assessment_serializer import AssessmentSerializer
+from shared.serializers.media_serializer import (
+    MediaFieldsMixin,
+    PlayableMediaOutputMixin,
+)
 
 
 _LESSON_REQUIREMENT_MAX_LENGTH_MESSAGE = (
@@ -55,8 +59,10 @@ def _lesson_requirement_text(requirements: list[dict]) -> str:
     )
 
 
-class LessonContentBlockSerializer(serializers.ModelSerializer):
+class LessonContentBlockSerializer(MediaFieldsMixin, serializers.ModelSerializer):
     """Representation of one block in a lesson's body editor."""
+
+    media_fields = ("media_url",)
 
     class Meta:
         model = LessonContentBlock
@@ -162,8 +168,10 @@ class LessonMiniSerializer(serializers.ModelSerializer):
 
 
 @extend_schema_serializer(deprecate_fields=("content_type",))
-class LessonSerializer(serializers.ModelSerializer):
+class LessonSerializer(PlayableMediaOutputMixin, serializers.ModelSerializer):
     """Read-only representation of a Lesson, including its assessment if set."""
+
+    media_fields = ("video_url",)
 
     lesson_type = serializers.ChoiceField(
         source="content_type",
@@ -212,6 +220,7 @@ class LessonSerializer(serializers.ModelSerializer):
             "content_type",
             "script",
             "video_url",
+            "video_processing_status",
             "embedded_link",
             "video_script_file",
             "video_transcript",
@@ -242,7 +251,7 @@ class LessonSerializer(serializers.ModelSerializer):
 
 
 @extend_schema_serializer(deprecate_fields=("content_type",))
-class LessonWriteSerializer(serializers.ModelSerializer):
+class LessonWriteSerializer(MediaFieldsMixin, serializers.ModelSerializer):
     """Create/update serializer for a Lesson.
 
     Validates only the shape of learning_objectives (a list of non-empty
@@ -250,6 +259,8 @@ class LessonWriteSerializer(serializers.ModelSerializer):
     quality_check_service and enforced at submit time. Includes read-only
     `id` so a client can immediately use it to set the lesson's assessment.
     """
+
+    media_fields = ("video_url",)
 
     lesson_type = serializers.ChoiceField(
         source="content_type",
@@ -303,6 +314,7 @@ class LessonWriteSerializer(serializers.ModelSerializer):
             "content_type",
             "script",
             "video_url",
+            "video_processing_status",
             "embedded_link",
             "video_script_file",
             "learning_objectives",

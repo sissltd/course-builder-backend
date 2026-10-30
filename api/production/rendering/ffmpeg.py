@@ -180,6 +180,44 @@ def extract_speech(*, source: Path, out: Path) -> None:
     run(["ffmpeg", "-y", "-v", "error", "-i", str(source), "-vn", "-ac", "1", "-ar", "16000", "-b:a", "32k", str(out)])
 
 
+def is_faststart(path: Path) -> bool:
+    """Whether the MP4's index (moov) comes before its media data (mdat), so
+    a browser can start playing before it has the whole file. Reads only the
+    top-level box headers."""
+
+    with path.open("rb") as handle:
+        while header := handle.read(8):
+            if len(header) < 8:
+                return False
+            size, kind = int.from_bytes(header[:4], "big"), header[4:]
+            if kind == b"moov":
+                return True
+            if kind == b"mdat":
+                return False
+            if size == 1:
+                size = int.from_bytes(handle.read(8), "big") - 8
+            elif size == 0:
+                return False
+            if size < 8:
+                return False
+            handle.seek(size - 8, 1)
+    return False
+
+
+def optimize_for_streaming(*, source: Path, out: Path, transcode: bool) -> None:
+    """Rewrite `source` for web playback: the index moved to the front
+    (`+faststart`). The streams are copied untouched unless `transcode`,
+    which re-encodes to H.264/AAC for a video in a codec browsers can't
+    rely on."""
+
+    codecs = (
+        ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "160k"]
+        if transcode
+        else ["-c", "copy"]
+    )
+    run(["ffmpeg", "-y", "-v", "error", "-i", str(source), *codecs, "-movflags", "+faststart", str(out)])
+
+
 @dataclass(frozen=True)
 class Measurements:
     width: int

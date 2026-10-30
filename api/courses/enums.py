@@ -58,6 +58,16 @@ class VideoProvider(models.TextChoices):
     DEVELOPER = "DEVELOPER", "Developer"
 
 
+class VideoProcessingStatus(models.TextChoices):
+    """Where an uploaded video is in its streaming optimisation. Blank when
+    there is no video of ours to optimise (none set, or an external link).
+    Playback works in every state; READY only means it now starts fast."""
+
+    PENDING = "PENDING", "Optimising"
+    READY = "READY", "Ready"
+    FAILED = "FAILED", "Not optimised"
+
+
 class AssessmentLevel(models.TextChoices):
     """Which course entity an Assessment (quiz) belongs to."""
 

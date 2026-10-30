@@ -33,7 +33,11 @@ from api.operations.enums import PipelineStage
 from api.production.enums import AssetKind, DeliveryMethod, PACKAGE_ASSET_KINDS
 from api.production.services import asset_store, channel_mapping_service
 from api.production.services.run_ledger import RunLedger, alert
-from shared.services.storage_service import StorageService
+from shared.services.storage_service import (
+    PRESIGN_EXPIRY,
+    StorageService,
+    own_media_key,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -93,18 +97,14 @@ def disclosure_for(course: Course) -> dict:
 
 
 def _ours(url: str) -> bool:
-    return bool(url) and url.startswith(StorageService.public_url(""))
+    return own_media_key(url) is not None
 
 
 def _link(value: str) -> str:
     """A link an outside system can fetch: our private files are signed,
     anything else passes through."""
 
-    if not value:
-        return ""
-    if value.startswith(("http://", "https://")) and not _ours(value):
-        return value
-    return StorageService.generate_presigned_get(value, expires_in=MEDIA_LINK_SECONDS) or ""
+    return StorageService.playable_url(value, expires_in=MEDIA_LINK_SECONDS)
 
 
 def _captions(course: Course) -> dict:
@@ -674,8 +674,4 @@ def package_downloads(*, course: Course) -> dict:
 
 
 def _signed_now(value: str) -> str:
-    if not value:
-        return ""
-    if value.startswith(("http://", "https://")) and not _ours(value):
-        return value
-    return StorageService.generate_presigned_get(value) or ""
+    return StorageService.playable_url(value, expires_in=PRESIGN_EXPIRY)

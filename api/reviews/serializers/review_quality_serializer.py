@@ -7,6 +7,7 @@ from api.reviews.models import (
     ReviewAssignment,
     ReviewComment,
 )
+from shared.serializers.media_serializer import MediaFieldsMixin
 
 
 class ReviewerMiniSerializer(serializers.Serializer):
@@ -126,7 +127,8 @@ class ReviewCommentCreateSerializer(serializers.ModelSerializer):
         return attrs
 
 
-class MediaAssetSerializer(serializers.ModelSerializer):
+class MediaAssetSerializer(MediaFieldsMixin, serializers.ModelSerializer):
+    media_fields = ("url", "subtitle_url")
     verified_by = ReviewerMiniSerializer(read_only=True)
 
     class Meta:
