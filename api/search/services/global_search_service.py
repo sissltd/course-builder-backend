@@ -9,6 +9,7 @@ from api.authorization.services import permission_service
 from api.catalog.models import Category, Topic
 from api.courses.enums import CourseStatus
 from api.courses.models import Course
+from api.platform.services import platform_settings_service
 from api.reviews.services import review_service
 from api.users.enums import UserRole
 from api.users.models import User
@@ -117,7 +118,10 @@ def _course_scope(*, actor: User) -> QuerySet[Course] | None:
         # courses they find the ones at the seats they sit.
         seat_visible = review_service.seat_visibility_q(user=actor)
         if actor.role == UserRole.STAFF_WRITER and seat_visible is not None:
-            return Course.objects.filter(Q(creator=actor) | seat_visible)
+            return Course.objects.filter(
+                Q(creator=actor)
+                | (platform_settings_service.review_flow_q(staged=True) & seat_visible)
+            )
         return Course.objects.filter(creator=actor)
     return None
 

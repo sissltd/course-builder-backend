@@ -176,6 +176,14 @@ class Course(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMi
             "Engine makes its video, otherwise at QA approval."
         ),
     )
+    staged_review_flow = models.BooleanField(
+        null=True,
+        default=None,
+        editable=False,
+        help_text=_(
+            "Review mode frozen at first submission. Existing courses retain their migrated mode."
+        ),
+    )
     preview_video_url = models.URLField(
         verbose_name=_("Preview Video URL"),
         max_length=COURSE_MEDIA_URL_MAX_LENGTH,

@@ -9,6 +9,10 @@ from api.platform.models import PlatformSettings
 class PlatformSettingsSerializer(serializers.ModelSerializer):
     """Read-only representation of the platform's current settings."""
 
+    course_review_flow_snapshots_enabled = serializers.BooleanField(
+        read_only=True, default=True
+    )
+
     class Meta:
         model = PlatformSettings
         fields = [
@@ -40,6 +44,7 @@ class PlatformSettingsSerializer(serializers.ModelSerializer):
             "liveness_threshold",
             "withdrawal_require_verification",
             "staged_review_flow_enabled",
+            "course_review_flow_snapshots_enabled",
             "production_enabled",
             "production_course_budget",
             "production_min_caption_accuracy",
@@ -188,10 +193,9 @@ class PlatformSettingsUpdateSerializer(serializers.Serializer):
     staged_review_flow_enabled = serializers.BooleanField(
         required=False,
         help_text=(
-            "Switch course review to the staged flow (text first, video "
-            "second, resume at the rejecting seat). Refused with 409 while "
-            "any course is in review, awaiting video or revision, or "
-            "approved but unpublished."
+            "Default review mode for future first submissions: text first, video "
+            "second, resume at the rejecting seat. Existing courses retain their "
+            "saved mode. Refused with 409 if any in-flight course lacks a snapshot."
         ),
     )
 
@@ -279,7 +283,9 @@ class AdminTodayTilesSerializer(serializers.Serializer):
 
     courses_created_today = serializers.IntegerField()
     courses_created_change_percent = serializers.DecimalField(
-        max_digits=8, decimal_places=2, allow_null=True,
+        max_digits=8,
+        decimal_places=2,
+        allow_null=True,
         help_text="Movement vs yesterday. Null when yesterday had none.",
     )
     published_last_24h = serializers.IntegerField()
@@ -338,7 +344,8 @@ class AdminOverviewSerializer(serializers.Serializer):
         help_text="Withdrawal request counts keyed by WithdrawalRequestStatus. Null for Limited Access.",
     )
     wallet_totals = AdminOverviewWalletTotalsSerializer(
-        allow_null=True, help_text="Platform-wide wallet money figures. Null for Limited Access."
+        allow_null=True,
+        help_text="Platform-wide wallet money figures. Null for Limited Access.",
     )
     period = serializers.CharField(
         help_text="Window the trend series cover, echoing the request."

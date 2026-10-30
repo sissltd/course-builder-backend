@@ -6,6 +6,7 @@ from .studio_media_upload import StudioMediaUpload
 from .studio_review_receipt import StudioReviewReceipt
 from .webhook_endpoint import WebhookEndpoint
 from .webhook_event import WebhookEvent
+from .studio_review_receipt import StudioReviewReceipt, StudioMediaUpload
 
 __all__ = [
     "CourseSubmission",
@@ -16,4 +17,6 @@ __all__ = [
     "SubmissionRejectionReason",
     "WebhookEndpoint",
     "WebhookEvent",
+    "StudioReviewReceipt",
+    "StudioMediaUpload",
 ]

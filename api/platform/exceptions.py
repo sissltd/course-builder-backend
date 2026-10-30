@@ -16,7 +16,7 @@ class StagedReviewFlowInFlight(APIException):
     status_code = status.HTTP_409_CONFLICT
     default_code = "staged_review_flow_in_flight"
     default_detail = (
-        "The review flow cannot be switched while courses are in review, "
-        "awaiting video, awaiting revision or approved but unpublished. "
-        "Wait for them to finish or be returned to Draft."
+        "An in-flight course lacks its review-mode snapshot. Complete the "
+        "review-flow migration before changing the default. Existing course "
+        "snapshots must be preserved."
     )

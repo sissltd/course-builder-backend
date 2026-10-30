@@ -121,6 +121,21 @@ class CoursePushTestCase(APITestCase):
 
 
 class CoursePushSuccessTests(CoursePushTestCase):
+    def test_first_course_push_uses_identity_issued_at_topic_approval(self):
+        from api.mie.services.submission_admin_service import decide_submission
+
+        self.idea.category = self.category
+        self.idea.save(update_fields=["category"])
+        self.idea = decide_submission(
+            actor=make_user(role=UserRole.SUPER_ADMIN), submission=self.idea, approve=True
+        )
+        issued = self.idea.reserved_course_id
+        self.assertIsNotNone(issued)
+        self.assertFalse(Course.objects.filter(pk=issued).exists())
+        response = self._push()
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.assertEqual(str(response.data["course_id"]), str(issued))
+
     def test_push_builds_the_course_and_submits_it_for_review(self):
         response = self._push()
 
@@ -620,6 +635,7 @@ class CoursePushRevisionTests(CoursePushTestCase):
         from api.courses.tests.factories import build_compliant_course
         from api.courses.services import course_service
 
+        existing_events = set(WebhookEvent.objects.values_list("id", flat=True))
         creator = make_user()
         course = course_service.submit_course(
             course=build_compliant_course(creator=creator, category=self.category),
@@ -628,7 +644,9 @@ class CoursePushRevisionTests(CoursePushTestCase):
 
         self._reject_in_content_review(course.id)
 
-        self.assertFalse(WebhookEvent.objects.exists())
+        self.assertEqual(
+            set(WebhookEvent.objects.values_list("id", flat=True)), existing_events
+        )
 
     def test_the_webhook_hook_costs_a_creators_course_no_query(self):
         # The hook runs on every creator rejection and publication, so for

@@ -205,7 +205,7 @@ def validate_structural_standards(course: Course) -> list[str]:
             f"{platform_settings.course_duration_max_minutes} minutes (has {duration_minutes})."
         )
 
-    if not platform_settings.staged_review_flow_enabled:
+    if not platform_settings_service.uses_staged_review(course):
         if not course.preview_video_url:
             failures.append(
                 "Course must have a preview video before submission (BR-015)."

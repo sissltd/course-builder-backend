@@ -66,6 +66,7 @@ class Lesson(UUIDPrimaryKeyModelMixin, DateHistoryModelMixin, UserHistoryModelMi
             "Wistia, Typeform, etc.) from the 'Add Media' block."
         ),
     )
+    video_transcript = models.TextField(blank=True, default="")
     video_script_file = models.CharField(
         verbose_name=_("Video Script File"),
         blank=True,

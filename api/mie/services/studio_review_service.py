@@ -1,132 +1,226 @@
-"""Soludesk Studio deliveries (`studio.review.v1`): generated course text and
-video, sent to one endpoint and told apart by `kind`.
-
-A delivery is an envelope around the bodies every developer already pushes:
-`content` of a text delivery is a course push (course_push_service.push_course)
-and `content` of a video delivery is a video push (push_video). So a Studio
-course goes through exactly the review flow, webhooks and payouts of any
-pushed course; this module adds what the envelope promises on top.
-
-* `content_hash` must be the SHA-256 of `content` as canonical JSON
-  (content_hash), so both sides agree on what was delivered.
-* `course_id` must be the id the idea was given at approval.
-* A revision is accepted once per idea and kind. The same revision with the
-  same hash is a retry and gets its receipt back without pushing again; with
-  a different hash it is refused (RevisionConflict), and a revision below
-  the newest accepted one is refused too (StaleRevision).
-* A video delivery's platform-storage media must be stored first
-  (studio_upload_service.verify_media).
-
-The push and the receipt are written in one transaction, so a refused push
-leaves no receipt and a receipt always means the platform took the content.
-"""
+"""Versioned Studio transport over the existing course submission services."""
 
 import hashlib
 import json
+from urllib.parse import urlsplit
 
 from django.db import transaction
-from django.db.models import Max
+from rest_framework import exceptions
 
-from api.mie.enums import StudioReviewKind
-from api.mie.exceptions import CourseIdMismatch, RevisionConflict, StaleRevision
-from api.mie.models import DeveloperAccount, StudioReviewReceipt
-from api.mie.services import course_push_service, studio_upload_service
-
-SCHEMA_VERSION = "studio.review.v1"
-
-
-def content_hash(content) -> str:
-    """SHA-256 hex of `content` as canonical JSON: keys sorted, no
-    whitespace (`,` and `:` separators), non-ASCII left as UTF-8."""
-
-    canonical = json.dumps(
-        content, sort_keys=True, separators=(",", ":"), ensure_ascii=False
-    )
-    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+from api.mie.models import CourseSubmission, StudioReviewReceipt
+from api.mie.serializers.course_push_serializer import CoursePushSerializer
+from api.mie.serializers.studio_review_serializer import StudioVideoSerializer
+from api.mie.services import course_push_service
+from api.platform.services import platform_settings_service
+from shared.services.storage_service import StorageService
 
 
-def deliver(
-    *, developer: DeveloperAccount, envelope: dict
-) -> tuple[StudioReviewReceipt, bool]:
-    """Take one delivery. Returns the receipt and whether it is a replay of
-    one already accepted.
-
-    `envelope` is StudioReviewEnvelopeSerializer.validated_data, whose
-    `content` is the validated push body for its kind. Raises NotFound for
-    an idea that is not the caller's, CourseIdMismatch, RevisionConflict and
-    StaleRevision (409), MediaNotStored (400), and every error the push
-    itself raises. On any of those nothing is written.
-    """
-
-    kind = envelope["kind"]
-    revision = envelope["revision"]
-    with transaction.atomic():
-        submission = course_push_service.lock_own_submission(
-            developer=developer, submission_id=envelope["submission_id"]
-        )
-        if submission.stable_course_id != envelope["course_id"]:
-            raise CourseIdMismatch()
-
-        receipts = StudioReviewReceipt.objects.filter(submission=submission, kind=kind)
-        accepted = receipts.filter(revision=revision).first()
-        if accepted is not None:
-            if accepted.content_hash != envelope["content_hash"]:
-                raise RevisionConflict()
-            return accepted, True
-        newest = receipts.aggregate(newest=Max("revision"))["newest"]
-        if newest is not None and revision < newest:
-            raise StaleRevision(
-                f"Revision {newest} of this {kind} was already accepted; "
-                f"revision {revision} is older."
-            )
-
-        media = []
-        if kind == StudioReviewKind.VIDEO:
-            media = studio_upload_service.verify_media(
-                submission=submission, content=envelope["content"]
-            )
-            course = course_push_service.push_video(
-                developer=developer,
-                submission_id=submission.id,
-                data=envelope["content"],
-            )
-        else:
-            course = course_push_service.push_course(
-                developer=developer,
-                submission_id=submission.id,
-                data=envelope["content"],
-            )
-
-        receipt = StudioReviewReceipt.objects.create(
-            developer=developer,
-            submission=submission,
-            course=course,
-            schema_version=envelope["schema_version"],
-            kind=kind,
-            revision=revision,
-            content_hash=envelope["content_hash"],
-            source_map=envelope.get("source_map", []),
-            media=media,
-            course_status=course.status,
-        )
-    return receipt, False
+class ReviewConflict(exceptions.APIException):
+    status_code = 409
+    default_code = "studio_review_conflict"
 
 
-def receipt_payload(*, receipt: StudioReviewReceipt, duplicate: bool) -> dict:
-    """The StudioReviewReceiptSerializer shape for one receipt."""
-
+def _receipt(row):
     return {
-        "receipt_id": receipt.id,
-        "schema_version": receipt.schema_version,
-        "submission_id": receipt.submission_id,
-        "course_id": receipt.course_id,
-        "kind": receipt.kind,
-        "revision": receipt.revision,
-        "content_hash": receipt.content_hash,
-        "status": "accepted",
-        "course_status": receipt.course_status,
-        "source_map": receipt.source_map,
-        "media": receipt.media,
-        "duplicate": duplicate,
-        "received_at": receipt.created_datetime,
+        "accepted": True,
+        "receipt_id": str(row.id),
+        "course_id": str(row.course_id),
+        "revision": row.revision,
+        "kind": row.kind,
+        "content_hash": row.content_hash,
+        "media_persisted": row.kind == "video",
     }
+
+
+def _source_map(source, content):
+    """Bind external IDs to the exact ordered curriculum, never by title."""
+    modules = content.get("modules", [])
+    if len(modules) != len(source):
+        raise exceptions.ValidationError("Source map must cover the full curriculum.")
+    seen = set()
+    for position, (module, mapped) in enumerate(zip(modules, source), 1):
+        if mapped["order"] != module.get("order", position):
+            raise exceptions.ValidationError("Source module order does not match.")
+        if len(mapped["lessons"]) != len(module.get("lessons", [])):
+            raise exceptions.ValidationError("Source map must cover every lesson.")
+        items = [(mapped, module, position)] + [
+            (a, b, i)
+            for i, (a, b) in enumerate(zip(mapped["lessons"], module["lessons"]), 1)
+        ]
+        for external, internal, order in items:
+            if external["id"] in seen or external["order"] != internal.get(
+                "order", order
+            ):
+                raise exceptions.ValidationError(
+                    "Source IDs and orders must be unique and match."
+                )
+            seen.add(external["id"])
+
+
+def _owned_media(url, submission, purpose):
+    """A receipt must never attest persistence of expiring producer URLs.
+
+    Producers use the existing authenticated upload-presign route and upload
+    the bytes first. Only existing objects under the platform storage origin
+    can become accepted video references.
+    """
+    parsed = urlsplit(url)
+    marker = "/uploads/"
+    if (
+        parsed.scheme != "https"
+        or parsed.query
+        or parsed.fragment
+        or marker not in parsed.path
+    ):
+        raise exceptions.ValidationError(
+            "Upload video and captions to platform storage first."
+        )
+    key = "uploads/" + parsed.path.split(marker, 1)[1]
+    if ".." in key.split("/") or StorageService.public_url(key) != url:
+        raise exceptions.ValidationError("Media must use the platform storage origin.")
+    from api.mie.models import StudioMediaUpload
+
+    grant = StudioMediaUpload.objects.filter(
+        submission=submission, file_key=key, purpose=purpose
+    ).first()
+    if grant is None:
+        raise exceptions.ValidationError(
+            "Media was not uploaded for this submission and purpose."
+        )
+    if not grant.descriptor or not StorageService.verify_file(key, **grant.descriptor):
+        raise exceptions.ValidationError("Platform media upload is missing.")
+    return key
+
+
+@transaction.atomic
+def accept_review(*, developer, data, idempotency_key):
+    if not idempotency_key or len(idempotency_key) > 200:
+        raise exceptions.ValidationError("A bounded Idempotency-Key is required.")
+    # One lock serializes first delivery and uncertain-response retries, including
+    # different keys for the same version. Scope before disclosing any receipt.
+    submission = (
+        CourseSubmission.objects.select_for_update(of=("self",))
+        .filter(pk=data["submission_id"], developer=developer)
+        .first()
+    )
+    if submission is None:
+        raise exceptions.NotFound()
+    fingerprint = hashlib.sha256(
+        json.dumps(data, sort_keys=True, separators=(",", ":"), default=str).encode()
+    ).hexdigest()
+    existing = submission.studio_receipts.filter(
+        idempotency_key=idempotency_key
+    ).first()
+    if existing:
+        if existing.request_hash != fingerprint:
+            raise ReviewConflict("Idempotency key was used for different content.")
+        return _receipt(existing)
+    if submission.reserved_course_id != data["course_id"]:
+        raise ReviewConflict("Course identity does not match the approved topic.")
+    previous = (
+        submission.studio_receipts.filter(kind=data["kind"])
+        .order_by("-revision")
+        .first()
+    )
+    if previous and data["revision"] <= previous.revision:
+        raise ReviewConflict(
+            "Review revision must advance; retry with the original key."
+        )
+    if not platform_settings_service.uses_staged_review(submission.resulting_course):
+        raise ReviewConflict("Studio requires platform text-before-video review.")
+    media = []
+    if data["kind"] == "text":
+        serializer = CoursePushSerializer(
+            data=data["content"], context={"staged_review_flow": True}
+        )
+        serializer.is_valid(raise_exception=True)
+        _source_map(data["source_map"], data["content"])
+        if data["content"].get("preview_video_url") or any(
+            lesson.get("video_url")
+            or lesson.get("embedded_link")
+            or lesson.get("lesson_type", lesson.get("content_type", "TEXT")) != "TEXT"
+            or any(
+                b.get("block_type") in ("VIDEO", "EMBED")
+                for b in lesson.get("content_blocks", [])
+            )
+            for module in data["content"].get("modules", [])
+            for lesson in module.get("lessons", [])
+        ):
+            raise exceptions.ValidationError(
+                "Text review must not include video production."
+            )
+        course = course_push_service.push_course(
+            developer=developer,
+            submission_id=submission.id,
+            data=serializer.validated_data,
+        )
+    else:
+        text = (
+            submission.studio_receipts.filter(kind="text").order_by("-revision").first()
+        )
+        if not text or text.source_map != data["source_map"]:
+            raise ReviewConflict("Video must address the accepted text curriculum.")
+        serializer = StudioVideoSerializer(data=data["content"])
+        serializer.is_valid(raise_exception=True)
+        expected = {
+            (m["order"], lesson["order"])
+            for m in text.source_map
+            for lesson in m["lessons"]
+        }
+        supplied = {
+            (lesson["module_order"], lesson["lesson_order"])
+            for lesson in serializer.validated_data.get("lessons", [])
+        }
+        if supplied != expected:
+            raise exceptions.ValidationError(
+                "Video must cover every accepted text lesson."
+            )
+        media.append(
+            {
+                "role": "preview",
+                "key": _owned_media(
+                    serializer.validated_data["preview_video_url"],
+                    submission,
+                    "COURSE_PREVIEW_VIDEO",
+                ),
+            }
+        )
+        for lesson in serializer.validated_data["lessons"]:
+            if (
+                not lesson.get("transcript")
+                or not lesson.get("captions_url")
+                or not lesson.get("video_url")
+            ):
+                raise exceptions.ValidationError(
+                    "Every lesson needs video, transcript and captions."
+                )
+            media.append(
+                {
+                    "module_order": lesson["module_order"],
+                    "lesson_order": lesson["lesson_order"],
+                    "video_key": _owned_media(
+                        lesson["video_url"], submission, "LESSON_VIDEO"
+                    ),
+                    "captions_key": _owned_media(
+                        lesson["captions_url"], submission, "SUBTITLE"
+                    ),
+                    "transcript": lesson["transcript"],
+                }
+            )
+        course = course_push_service.push_video(
+            developer=developer,
+            submission_id=submission.id,
+            data={**serializer.validated_data, "promote_text_lessons": True},
+        )
+    row = StudioReviewReceipt.objects.create(
+        submission=submission,
+        idempotency_key=idempotency_key,
+        request_hash=fingerprint,
+        course_id=course.id,
+        kind=data["kind"],
+        revision=data["revision"],
+        content_hash=data["content_hash"],
+        source_map=data["source_map"],
+        media=media,
+    )
+    return _receipt(row)

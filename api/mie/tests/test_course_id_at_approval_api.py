@@ -148,6 +148,8 @@ def test_approval_reserves_a_course_id_and_sends_it(
         "title": "Rust",
         "category_id": str(category.id),
         "course_id": str(idea.reserved_course_id),
+        "category": {"id": str(category.id), "name": category.name, "status": category.status},
+        "course": {"id": str(idea.reserved_course_id), "status": "RESERVED"},
     }
 
 
