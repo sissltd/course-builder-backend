@@ -80,11 +80,7 @@ def public_media(value: str) -> str:
     """A link anyone can open: our private files signed for an hour, other
     links as they are."""
 
-    if not value:
-        return ""
-    if value.startswith(("http://", "https://")) and not value.startswith(StorageService.public_url("")):
-        return value
-    return StorageService.generate_presigned_get(value, expires_in=PUBLIC_MEDIA_SECONDS) or ""
+    return StorageService.playable_url(value, expires_in=PUBLIC_MEDIA_SECONDS)
 
 
 def json_ld(course: Course) -> dict:

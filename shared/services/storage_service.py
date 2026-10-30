@@ -1,6 +1,8 @@
 import hashlib
 import logging
+import re
 import uuid
+from functools import lru_cache
 from urllib.parse import urlsplit
 
 import boto3
@@ -164,6 +166,15 @@ COURSE_UPLOAD_RULES = {
 # Presigned URL expiry (seconds)
 PRESIGN_EXPIRY = 600  # 10 minutes
 
+PLAYBACK_URL_SECONDS = 4 * 60 * 60
+"""How long a read URL served by the API stays valid. Long enough that a
+lesson watched with pauses and seeks keeps working; reloading the course or
+lesson serves a fresh one."""
+
+_OBJECT_KEY = re.compile(r"[\w\-.!*'()/]+")
+"""What a bare object key looks like, so a key stored in a media field can be
+told apart from other text there (an embed snippet)."""
+
 
 def max_size_for(content_type: str):
     """Byte cap for a MIME type's category, or None if uncapped."""
@@ -199,22 +210,61 @@ class FileNotFound(Exception):
 
 def _get_s3_client():
     """
-    Creates and returns a boto3 client configured for S3-compatible storage.
+    Returns a boto3 client configured for S3-compatible storage.
 
     The bucket service is S3-compatible, so the standard boto3 client can be
-    used with its endpoint.
+    used with its endpoint. Building a client costs tens of milliseconds and
+    a course response signs one URL per video, so clients are reused; boto3
+    clients are thread-safe.
     """
+    return _cached_s3_client(
+        storage_region(), storage_endpoint(), ACCESS_KEY_ID, ACCESS_SECRET_KEY
+    )
+
+
+@lru_cache(maxsize=4)
+def _cached_s3_client(region, endpoint, access_key_id, secret_access_key):
     return boto3.client(
         "s3",
-        region_name=storage_region(),
-        endpoint_url=storage_endpoint(),
-        aws_access_key_id=ACCESS_KEY_ID,
-        aws_secret_access_key=ACCESS_SECRET_KEY,
+        region_name=region,
+        endpoint_url=endpoint,
+        aws_access_key_id=access_key_id,
+        aws_secret_access_key=secret_access_key,
         config=Config(
             signature_version="s3v4",
             s3={"addressing_style": "path"},
         ),
     )
+
+
+def own_media_key(value):
+    """The object key when `value` points at our bucket, else None.
+
+    Accepts a bare key, the stable public_url(), or a presigned URL in either
+    addressing style (the query string is ignored), so every form a client
+    may have stored resolves to the same object.
+    """
+    if not value:
+        return None
+    if not value.startswith(("http://", "https://")):
+        key = value.lstrip("/")
+        return key if "/" in key and _OBJECT_KEY.fullmatch(key) else None
+
+    url = value.split("?", 1)[0]
+    public_base = StorageService.public_url("")
+    if url.startswith(public_base):
+        key = url[len(public_base) :]
+    else:
+        # A presigned URL names the bucket in its path on the shared
+        # regional endpoint, which serves other buckets too.
+        try:
+            signed_base = f"{storage_endpoint()}/{BUCKET_NAME}/"
+        except StorageError:
+            return None
+        if not url.startswith(signed_base):
+            return None
+        key = url[len(signed_base) :]
+    return key or None
 
 
 # >>>>>>>>>>>>>>>>>>>> Storage Service <<<<<<<<<<<<<<<<<<<<<<
@@ -244,6 +294,39 @@ class StorageService:
     def public_url(file_key):
         """Return the stable public URL for an object stored under file_key."""
         return f"{_public_base_url()}/{file_key.lstrip('/')}"
+
+    @staticmethod
+    def playable_url(value, expires_in=PLAYBACK_URL_SECONDS):
+        """A URL a browser can open now.
+
+        Our own objects - stored as a key, a public_url() or an old presigned
+        URL - get a fresh signature, since the bucket is private; any other
+        link (YouTube, a developer's CDN) passes through unchanged. Signing
+        is local, so this is cheap enough to run per field on every read.
+        Falls back to the stored value if signing fails.
+        """
+        key = own_media_key(value)
+        if key is None:
+            return value or ""
+        try:
+            signed = StorageService.generate_presigned_get(key, expires_in=expires_in)
+        except StorageError as e:
+            logger.error(f"[<>Storage<>] playable URL failed for {key}: {e}")
+            signed = None
+        return signed or value
+
+    @staticmethod
+    def durable_media_ref(value):
+        """The form of a media reference that is safe to store.
+
+        A presigned URL of our own expires, so it is stored as the object's
+        public_url() instead and signed again on every read (playable_url).
+        Bare keys and other links are already durable and are returned as is.
+        """
+        if not value or not value.startswith(("http://", "https://")):
+            return value
+        key = own_media_key(value)
+        return StorageService.public_url(key) if key else value
 
     @staticmethod
     def request_upload(
@@ -501,20 +584,35 @@ class StorageService:
         return file_key
 
     @staticmethod
-    def upload_file(path, *, file_key, content_type):
+    def upload_file(path, *, file_key, content_type, metadata=None):
         """Upload a local file under a key the caller chooses (the Production
         Engine names its files by content hash). Large files go up in parts.
         The object takes the bucket's default (private) access, like browser
-        uploads; read it through generate_presigned_get()."""
+        uploads; read it through generate_presigned_get(). `metadata` is
+        stored as the object's x-amz-meta-* values."""
 
+        extra_args = {"ContentType": content_type}
+        if metadata:
+            extra_args["Metadata"] = metadata
         try:
             _get_s3_client().upload_file(
-                str(path), BUCKET_NAME, file_key, ExtraArgs={"ContentType": content_type}
+                str(path), BUCKET_NAME, file_key, ExtraArgs=extra_args
             )
         except ClientError as e:
             logger.error(f"[<>Storage<>] upload_file failed for {file_key}: {e}")
             raise StorageError("Failed to store the file. Please try again.")
         return file_key
+
+    @staticmethod
+    def object_metadata(file_key):
+        """The object's x-amz-meta-* values (what the uploader declared)."""
+
+        try:
+            response = _get_s3_client().head_object(Bucket=BUCKET_NAME, Key=file_key)
+        except ClientError as e:
+            logger.error(f"[<>Storage<>] head_object failed for {file_key}: {e}")
+            raise StorageError("Failed to read the stored file. Please try again.")
+        return response.get("Metadata", {})
 
     @staticmethod
     def download_file(file_key, path):

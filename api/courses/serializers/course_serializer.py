@@ -17,6 +17,10 @@ from api.reviews.serializers import (
 from api.courses.services import course_service
 from api.reviews.enums import ReviewActionType, ReviewStage
 from api.reviews.serializers import ReviewActionSerializer  # noqa: F401 (re-export)
+from shared.serializers.media_serializer import (
+    DurableMediaInputMixin,
+    PlayableMediaOutputMixin,
+)
 
 
 _SOURCE_LABELS = {
@@ -641,8 +645,10 @@ class ReviewAndPublishSerializer(serializers.Serializer):
         return value
 
 
-class CourseDetailSerializer(serializers.ModelSerializer):
+class CourseDetailSerializer(PlayableMediaOutputMixin, serializers.ModelSerializer):
     """Full Course representation, including nested modules/lessons/assessments."""
+
+    media_fields = ("preview_video_url", "thumbnail_url")
 
     category = CategoryMiniSerializer(read_only=True)
     topic = TopicMiniSerializer(read_only=True)
@@ -680,6 +686,7 @@ class CourseDetailSerializer(serializers.ModelSerializer):
             "payout_type",
             "creator_paid_at",
             "preview_video_url",
+            "preview_video_processing_status",
             "thumbnail_url",
             "terms_accepted_at",
             "submitted_at",
@@ -903,7 +910,7 @@ class ReviewerCourseDetailSerializer(CourseDetailSerializer):
         return f"{', '.join(labels[:-1])} & {labels[-1]}"
 
 
-class CourseCreateSerializer(serializers.ModelSerializer):
+class CourseCreateSerializer(DurableMediaInputMixin, serializers.ModelSerializer):
     """Write serializer for creating a Draft course.
 
     Delegates persistence to course_service.create_draft_course so BR-005
@@ -911,6 +918,7 @@ class CourseCreateSerializer(serializers.ModelSerializer):
     consistency all live in one place.
     """
 
+    media_fields = ("preview_video_url", "thumbnail_url")
     terms_accepted = serializers.BooleanField(write_only=True)
     duration_hours = serializers.IntegerField(
         required=False, default=0, min_value=0, write_only=True
@@ -981,7 +989,7 @@ class CourseCreateSerializer(serializers.ModelSerializer):
         return CourseDetailSerializer(instance, context=self.context).data
 
 
-class CourseUpdateSerializer(serializers.ModelSerializer):
+class CourseUpdateSerializer(DurableMediaInputMixin, serializers.ModelSerializer):
     """Write serializer for updating a Draft course.
 
     Delegates to course_service.update_draft_course, which enforces that only
@@ -993,6 +1001,7 @@ class CourseUpdateSerializer(serializers.ModelSerializer):
     (missing ones treated as 0 for that call).
     """
 
+    media_fields = ("preview_video_url", "thumbnail_url")
     version = serializers.PrimaryKeyRelatedField(
         queryset=CourseVersion.objects.filter(is_active=True),
         required=False,

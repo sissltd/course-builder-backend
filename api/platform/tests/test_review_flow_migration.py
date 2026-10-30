@@ -28,8 +28,10 @@ def test_migration_preserves_existing_states_and_assignments(enabled):
     executor = MigrationExecutor(connection)
     try:
         executor.migrate([("courses", "0022_lesson_video_transcript")])
+        # Forward to the latest state, not just 0023: the current Course
+        # model is used to read the row back, and later migrations add columns.
         executor = MigrationExecutor(connection)
-        executor.migrate([("courses", "0023_course_review_flow_snapshot")])
+        executor.migrate(executor.loader.graph.leaf_nodes())
         after = Course.objects.filter(pk=course.pk).values().get()
         assert after.pop("staged_review_flow") is enabled
         assert after == before

@@ -22,7 +22,7 @@ from api.courses.serializers.lesson_serializer import (
     LessonImageSerializer,
     LessonRequirementSerializer,
 )
-from api.courses.services import module_lock_service
+from api.courses.services import module_lock_service, video_optimization_service
 from api.authorization import codenames
 from api.authorization.permissions import Perm
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
@@ -151,6 +151,23 @@ class LessonContentBlockViewSet(_BaseLessonSubResourceViewSet):
     serializer_class = LessonContentBlockSerializer
     editable_noun = "Content blocks"
 
+    @transaction.atomic
+    def perform_create(self, serializer):
+        super().perform_create(serializer)
+        video_optimization_service.queue_if_changed(
+            instance=serializer.instance, field="media_url", previous=""
+        )
+
+    @transaction.atomic
+    def perform_update(self, serializer):
+        previous_media_url = serializer.instance.media_url
+        super().perform_update(serializer)
+        video_optimization_service.queue_if_changed(
+            instance=serializer.instance,
+            field="media_url",
+            previous=previous_media_url,
+        )
+
     @extend_schema(
         summary="Replace a lesson's whole body in one request",
         description=(
@@ -203,7 +220,9 @@ class LessonContentBlockViewSet(_BaseLessonSubResourceViewSet):
         serializer.is_valid(raise_exception=True)
 
         with transaction.atomic():
-            LessonContentBlock.objects.filter(lesson=lesson).delete()
+            existing = LessonContentBlock.objects.filter(lesson=lesson)
+            previous_media_urls = set(existing.values_list("media_url", flat=True))
+            existing.delete()
             blocks = LessonContentBlock.objects.bulk_create(
                 [
                     LessonContentBlock(
@@ -215,6 +234,15 @@ class LessonContentBlockViewSet(_BaseLessonSubResourceViewSet):
                     for block in serializer.validated_data
                 ]
             )
+            # Every save resends the whole body: only a video that was not
+            # in the lesson before is new.
+            for block in blocks:
+                is_new = block.media_url not in previous_media_urls
+                video_optimization_service.queue_if_changed(
+                    instance=block,
+                    field="media_url",
+                    previous="" if is_new else block.media_url,
+                )
 
         blocks.sort(key=lambda block: block.order)
         return Response(LessonContentBlockSerializer(blocks, many=True).data)

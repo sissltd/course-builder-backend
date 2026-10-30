@@ -23,6 +23,9 @@ CELERY_TASK_ROUTES = {
     # Video production renders with ffmpeg for hours at a time: its own
     # worker (worker-media), with ffmpeg and fonts installed.
     "api.production.tasks.run_production": {"queue": "production"},
+    # Rewriting a creator's upload for streaming needs ffmpeg too: its own
+    # worker (worker-video), so an upload never waits behind a render.
+    "api.courses.tasks.optimize_creator_video": {"queue": "media"},
 }
 
 # One beat entry per recurring job. The MIE webhook sweep is deliberately a
