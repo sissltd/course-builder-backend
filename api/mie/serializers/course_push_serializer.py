@@ -95,7 +95,10 @@ class PushLessonSerializer(LessonWriteSerializer):
 
     class Meta(LessonWriteSerializer.Meta):
         fields = [
-            field for field in LessonWriteSerializer.Meta.fields if field != "id"
+            field
+            for field in LessonWriteSerializer.Meta.fields
+            # Set by the server, not by a push.
+            if field not in {"id", "video_processing_status"}
         ] + ["content_blocks", "assessment"]
         read_only_fields = []
         extra_kwargs = {

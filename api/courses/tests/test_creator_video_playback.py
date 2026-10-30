@@ -61,7 +61,9 @@ def lesson(course):
 
 def _lesson_url(lesson):
     module = lesson.module
-    return f"/api/v1/courses/{module.course_id}/modules/{module.id}/lessons/{lesson.id}/"
+    return (
+        f"/api/v1/courses/{module.course_id}/modules/{module.id}/lessons/{lesson.id}/"
+    )
 
 
 def _signed_for(url, key=KEY):
@@ -76,7 +78,9 @@ def _signed_for(url, key=KEY):
 
 
 @pytest.mark.django_db
-def test_a_lesson_video_stored_as_its_public_url_is_served_signed(api_client, creator, lesson):
+def test_a_lesson_video_stored_as_its_public_url_is_served_signed(
+    api_client, creator, lesson
+):
     Lesson.objects.filter(pk=lesson.pk).update(video_url=PUBLIC_URL)
     api_client.force_authenticate(creator)
 
@@ -112,7 +116,9 @@ def test_an_external_video_link_is_served_unchanged(api_client, creator, lesson)
 
 
 @pytest.mark.django_db
-def test_the_course_detail_signs_the_preview_video_and_its_lessons(api_client, creator, course, lesson):
+def test_the_course_detail_signs_the_preview_video_and_its_lessons(
+    api_client, creator, course, lesson
+):
     course.preview_video_url = PUBLIC_URL
     course.save(update_fields=["preview_video_url"])
     Lesson.objects.filter(pk=lesson.pk).update(video_url=PUBLIC_URL)
@@ -156,7 +162,9 @@ def test_an_external_link_is_not_queued(
     api_client.force_authenticate(creator)
 
     with django_capture_on_commit_callbacks(execute=True):
-        api_client.patch(_lesson_url(lesson), {"video_url": EXTERNAL_URL}, format="json")
+        api_client.patch(
+            _lesson_url(lesson), {"video_url": EXTERNAL_URL}, format="json"
+        )
 
     lesson.refresh_from_db()
     assert lesson.video_url == EXTERNAL_URL
@@ -203,7 +211,9 @@ def stored(tmp_path):
         mock.patch.object(StorageService, "download_file", download_file),
         mock.patch.object(StorageService, "upload_file", upload_file),
         mock.patch.object(
-            StorageService, "object_metadata", return_value={"upload-purpose": "LESSON_VIDEO"}
+            StorageService,
+            "object_metadata",
+            return_value={"upload-purpose": "LESSON_VIDEO"},
         ),
     ):
         yield uploads
@@ -250,7 +260,9 @@ def test_a_file_with_its_index_at_the_end_is_rewritten_in_place(pending_lesson, 
     with (
         mock.patch.object(ffmpeg, "probe", return_value=_probe("h264")),
         mock.patch.object(ffmpeg, "is_faststart", return_value=False),
-        mock.patch.object(ffmpeg, "optimize_for_streaming", side_effect=rewrite) as call,
+        mock.patch.object(
+            ffmpeg, "optimize_for_streaming", side_effect=rewrite
+        ) as call,
     ):
         _optimize(pending_lesson)
 
@@ -276,7 +288,9 @@ def test_a_video_not_in_h264_is_reencoded(pending_lesson, stored):
 
 
 @pytest.mark.django_db
-def test_a_file_ffmpeg_cannot_read_is_marked_failed_without_raising(pending_lesson, stored):
+def test_a_file_ffmpeg_cannot_read_is_marked_failed_without_raising(
+    pending_lesson, stored
+):
     with mock.patch.object(ffmpeg, "probe", side_effect=ffmpeg.MediaError("bad file")):
         _optimize(pending_lesson)
 
@@ -301,8 +315,22 @@ def _box(kind, payload=b""):
 @pytest.mark.parametrize(
     ("boxes", "expected"),
     [
-        ([_box(b"ftyp", b"isom"), _box(b"moov", b"x" * 16), _box(b"mdat", b"y" * 32)], True),
-        ([_box(b"ftyp", b"isom"), _box(b"mdat", b"y" * 32), _box(b"moov", b"x" * 16)], False),
+        (
+            [
+                _box(b"ftyp", b"isom"),
+                _box(b"moov", b"x" * 16),
+                _box(b"mdat", b"y" * 32),
+            ],
+            True,
+        ),
+        (
+            [
+                _box(b"ftyp", b"isom"),
+                _box(b"mdat", b"y" * 32),
+                _box(b"moov", b"x" * 16),
+            ],
+            False,
+        ),
     ],
 )
 def test_faststart_is_read_from_the_box_order(tmp_path, boxes, expected):
