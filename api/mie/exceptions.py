@@ -128,3 +128,63 @@ class CourseArchived(APIException):
         "This idea's course was archived by the platform and cannot be "
         "pushed again."
     )
+
+
+class CourseIdMismatch(APIException):
+    """A Studio delivery named a course id other than the one the idea was
+    given at approval."""
+
+    status_code = status.HTTP_409_CONFLICT
+    default_code = "course_id_mismatch"
+    default_detail = (
+        "course_id is not this idea's course. Use the course_id from "
+        "SUBMISSION_APPROVED or your submission queue."
+    )
+
+
+class RevisionConflict(APIException):
+    """A Studio delivery reused a revision number with different content.
+
+    409 rather than 400: the new content may be valid; it conflicts with the
+    content already accepted under that revision.
+    """
+
+    status_code = status.HTTP_409_CONFLICT
+    default_code = "revision_conflict"
+    default_detail = (
+        "This revision was already delivered with different content. Send "
+        "changed content under a new revision number."
+    )
+
+
+class StaleRevision(APIException):
+    """A Studio delivery arrived with a revision older than one already
+    accepted for the same idea and kind."""
+
+    status_code = status.HTTP_409_CONFLICT
+    default_code = "stale_revision"
+    default_detail = "A newer revision of this content was already accepted."
+
+
+class MediaNotStored(APIException):
+    """A video delivery referenced platform storage that does not hold the
+    file it was granted for."""
+
+    status_code = status.HTTP_400_BAD_REQUEST
+    default_code = "media_not_stored"
+    default_detail = (
+        "A media URL points at platform storage, but no completed upload "
+        "from POST /mie/v1/studio/uploads/ matches it."
+    )
+
+
+class AssetAlreadyStored(APIException):
+    """An upload grant was asked again for an asset already stored with
+    different size or type."""
+
+    status_code = status.HTTP_409_CONFLICT
+    default_code = "asset_already_stored"
+    default_detail = (
+        "This asset_id is already stored with a different size or content "
+        "type. Use a new asset_id for a different file."
+    )

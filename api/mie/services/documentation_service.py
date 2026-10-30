@@ -37,6 +37,7 @@ from django.utils import timezone
 from api.mie.authentication import API_KEY_HEADER
 from api.mie.enums import (
     DeveloperAccountStatus,
+    DeveloperJourneyStage,
     MiePlanType,
     WEBHOOK_ALL_EVENTS,
     SubmissionStatus,
@@ -64,7 +65,13 @@ from api.mie.serializers.course_push_serializer import (
     MAX_PUSH_LESSONS_PER_MODULE,
     MAX_PUSH_MODULES,
 )
-from api.mie.services import idempotency_service, webhook_dispatcher
+from api.mie.services import (
+    idempotency_service,
+    developer_journey_service,
+    studio_review_service,
+    studio_upload_service,
+    webhook_dispatcher,
+)
 from api.mie.services.course_push_service import MIE_UPLOAD_PURPOSES
 from api.mie.services.key_service import API_KEY_PREFIX
 from api.mie.services.reference import REFERENCE_SUFFIXES
@@ -82,7 +89,7 @@ from shared.services.storage_service import (
     MIN_MEDIA_WIDTH,
 )
 
-DOCUMENTATION_VERSION = "3.2.0"
+DOCUMENTATION_VERSION = "3.3.0"
 """Bump when the shape of this document changes, not when values change."""
 
 API_ROOT = "/api/v1"
@@ -188,6 +195,7 @@ SAMPLE_COURSE_PUSH = {
                         "type": QuestionType.ESSAY.value,
                         "question": "When would you reach for Rc<RefCell<T>>?",
                         "expected_answer": "Shared ownership with interior mutability in single-threaded code.",
+                        "explanation": "Rc shares ownership; RefCell moves the borrow check to run time.",
                         "points": 3,
                     },
                 ],
@@ -201,6 +209,176 @@ SAMPLE_COURSE_PUSH = {
     },
 }
 """A full push body. Placeholders in <angle brackets> stand for content."""
+
+SAMPLE_STUDIO_MEDIA_URL = "https://storage.soludeskscb.com/uploads/courses/3b9f0c2e.mp4"
+
+SAMPLE_STUDIO_TEXT_CONTENT = {
+    "title": SAMPLE_TITLE,
+    "description": (
+        "A hands-on course for backend engineers moving to Rust: ownership, "
+        "async services and shipping to production."
+    ),
+    "category": SAMPLE_CATEGORY_ID,
+    "version": SAMPLE_VERSION_ID,
+    "difficulty_level": DifficultyLevel.ADVANCED.value,
+    "thumbnail_url": "https://storage.soludeskscb.com/uploads/courses/cover.jpg",
+    "learning_objectives": [
+        "Design ownership-safe APIs",
+        "Profile and optimise async services",
+        "Ship a production Rust service",
+    ],
+    "tags": ["rust", "backend"],
+    "duration_hours": 6,
+    "duration_minutes": 30,
+    "duration_seconds": 0,
+    "terms_accepted": True,
+    "modules": [
+        {
+            "order": 1,
+            "title": "Ownership in practice",
+            "description": "Borrowing, lifetimes and the patterns that avoid fighting them.",
+            "learning_objectives": ["Explain ownership", "Refactor borrow errors"],
+            "lessons": [
+                {
+                    "order": 1,
+                    "title": "Why ownership exists",
+                    "lesson_type": LessonContentType.TEXT.value,
+                    "script": "Every value in Rust has exactly one owner...",
+                    "learning_objectives": ["Describe a move", "Describe a borrow"],
+                    "duration_minutes": 12,
+                    "lesson_requirement": "Comfortable reading Rust function signatures.",
+                    "content_blocks": [
+                        {"order": 1, "block_type": "HEADING_1", "text_content": "Ownership"},
+                        {"order": 2, "block_type": "PARAGRAPH", "text_content": "Every value has one owner."},
+                        {"order": 3, "block_type": "HEADING_2", "text_content": "The three rules"},
+                        {
+                            "order": 4,
+                            "block_type": "NUMBERED_LIST",
+                            "text_content": "Each value has an owner\nThere is one owner at a time\nThe value is dropped with its owner",
+                        },
+                        {
+                            "order": 5,
+                            "block_type": "BULLETED_LIST",
+                            "text_content": "Moves\nBorrows\nClones",
+                        },
+                        {"order": 6, "block_type": "BLOCKQUOTE", "text_content": "Fight the borrow checker once, not every day."},
+                        {"order": 7, "block_type": "DIVIDER"},
+                        {"order": 8, "block_type": "IMAGE", "media_url": "https://storage.soludeskscb.com/uploads/courses/ownership.png"},
+                        {"order": 9, "block_type": "EMBED", "media_url": "https://play.rust-lang.org/?gist=abc123"},
+                    ],
+                },
+                {
+                    "order": 2,
+                    "title": "Borrowing walkthrough",
+                    "lesson_type": LessonContentType.VIDEO.value,
+                    "script": "Narration: today we borrow a String twice...",
+                    "video_script_file": "https://storage.soludeskscb.com/uploads/courses/borrowing.srt",
+                    "learning_objectives": ["Borrow immutably", "Borrow mutably"],
+                    "duration_minutes": 15,
+                    "requirements": [
+                        {"text": "Finished 'Why ownership exists'", "order": 1},
+                        {"text": "A Rust toolchain installed", "order": 2},
+                    ],
+                    "content_blocks": [
+                        {"order": 1, "block_type": "PARAGRAPH", "text_content": "Watch, then try the exercise."},
+                        {"order": 2, "block_type": "VIDEO", "media_url": "https://www.youtube.com/watch?v=abc123"},
+                    ],
+                    "assessment": {
+                        "title": "Quick check",
+                        "questions": [
+                            {
+                                "type": QuestionType.SINGLE_CHOICE.value,
+                                "question": "Can two mutable borrows of one value coexist?",
+                                "options": ["Yes", "No"],
+                                "correct_index": 1,
+                                "points": 1,
+                                "explanation": "Only one mutable borrow may be live at a time.",
+                            }
+                        ],
+                    },
+                },
+            ],
+            "assessment": {
+                "title": "Ownership check",
+                "questions": [
+                    {
+                        "type": QuestionType.MULTIPLE_CHOICE.value,
+                        "question": "Which of these move a String?",
+                        "options": ["take(s)", "len(&s)", "let t = s;"],
+                        "correct_indices": [0, 2],
+                        "points": 2,
+                    },
+                    {
+                        "type": QuestionType.ESSAY.value,
+                        "question": "When would you reach for Rc<RefCell<T>>?",
+                        "expected_answer": "Shared ownership with interior mutability in single-threaded code.",
+                        "explanation": "Rc shares ownership; RefCell moves the borrow check to run time.",
+                        "points": 3,
+                    },
+                ],
+            },
+        },
+    ],
+    "final_assessment": {
+        "title": "Final exam",
+        "questions": [
+            {
+                "type": QuestionType.SINGLE_CHOICE.value,
+                "question": "What happens to a value when its owner goes out of scope?",
+                "options": ["It leaks", "It is dropped", "It is copied"],
+                "correct_index": 1,
+                "points": 1,
+            },
+        ],
+    },
+}
+"""A Studio text delivery's `content` using every field and block type once.
+
+Structurally complete, not submit-complete: a real course needs at least the
+module, lesson, word and question counts from /mie/v1/course-requirements/.
+The VIDEO lesson carries no video_url: Studio sends it in the video delivery.
+"""
+
+SAMPLE_STUDIO_VIDEO_CONTENT = {
+    "preview_video_url": SAMPLE_STUDIO_MEDIA_URL,
+    "lessons": [
+        {"module_order": 1, "lesson_order": 2, "video_url": SAMPLE_STUDIO_MEDIA_URL},
+    ],
+}
+"""The matching video delivery's `content`: the preview video plus one entry
+per VIDEO lesson, addressed by the orders of the text delivery."""
+
+
+def studio_delivery_example(kind: str) -> dict:
+    """A whole `studio.review.v1` envelope around the sample content of
+    `kind`, with its real content_hash."""
+
+    content = (
+        SAMPLE_STUDIO_TEXT_CONTENT if kind == "text" else SAMPLE_STUDIO_VIDEO_CONTENT
+    )
+    return {
+        "schema_version": studio_review_service.SCHEMA_VERSION,
+        "submission_id": SAMPLE_SUBMISSION_ID,
+        "course_id": SAMPLE_COURSE_ID,
+        "revision": 1,
+        "kind": kind,
+        "content_hash": studio_review_service.content_hash(content),
+        "content": content,
+        "source_map": (
+            [
+                {
+                    "id": "mod_ownership",
+                    "order": 1,
+                    "lessons": [
+                        {"id": "les_why_ownership", "order": 1},
+                        {"id": "les_borrowing", "order": 2},
+                    ],
+                }
+            ]
+            if kind == "text"
+            else []
+        ),
+    }
 
 
 def _sample_reference(status: SubmissionStatus) -> str:
@@ -567,6 +745,7 @@ def build_documentation(account, *, request=None) -> dict:
         "course_schema": _course_schema(),
         "media": _media(base_url),
         "course_lifecycle": _course_lifecycle(),
+        "studio": _studio(),
         "plan_and_payouts": _plan_and_payouts(account),
         "endpoints": _endpoints(base_url),
         "webhooks": _webhooks(account),
@@ -642,6 +821,23 @@ def _your_account(account, base_url: str) -> dict:
         "api_key_last_used_at": _iso(account.api_key_last_used_at),
         "registered_at": _iso(account.created_datetime),
         "decided_at": _iso(account.decided_at),
+        "journey": developer_journey_service.journey_payload(account=account),
+        "journey_stages": [
+            {
+                "step": step,
+                "stage": stage.value,
+                "label": stage.label,
+                "next_step": developer_journey_service.NEXT_STEPS[stage],
+            }
+            for step, stage in enumerate(DeveloperJourneyStage, start=1)
+        ],
+        "journey_rule": (
+            "Your stage is the furthest any of your ideas or courses has "
+            "reached, worked out on every read: one published course makes "
+            "you PUBLISHED however many other ideas are still in review. It "
+            "can move back if that course does, for example when a reviewer "
+            "sends it back. GET /mie/v1/me/ returns it as `journey`."
+        ),
         "signing_secret_source": (
             f"GET {base_url}{API_ROOT}/mie/v1/me/ returns your signing "
             "secret in full. It verifies our messages to you; it never "
@@ -848,12 +1044,14 @@ def _integration_flow() -> list[dict]:
                 "The idea is approved or rejected. Rejection always carries "
                 "a reason label from a managed taxonomy, plus an optional "
                 "free-text note. Decisions are reversible from any state "
-                "and every flip re-fires the matching event."
+                "and every flip re-fires the matching event. Approval gives "
+                "the idea its course_id, which the course keeps for life."
             ),
             "your_move": (
                 "Handle SUBMISSION_APPROVED / SUBMISSION_REJECTED. Treat "
                 "the newest event for a reference as current - never assume "
-                "the first decision is the last."
+                "the first decision is the last. Store submission.course_id "
+                "from SUBMISSION_APPROVED."
             ),
             "you_can_authenticate": True,
             "webhook_fired": "SUBMISSION_APPROVED or SUBMISSION_REJECTED",
@@ -872,7 +1070,9 @@ def _integration_flow() -> list[dict]:
             "your_move": (
                 "Read /mie/v1/course-requirements/, host or upload your "
                 "media, then POST /mie/v1/submissions/<id>/course/. See "
-                "course_upload."
+                "course_upload. Soludesk Studio sends the same body as a "
+                "kind text delivery to POST /mie/v1/studio/reviews/ "
+                "instead; see studio."
             ),
             "you_can_authenticate": True,
             "webhook_fired": WebhookEventType.COURSE_SUBMITTED.value,
@@ -896,7 +1096,11 @@ def _integration_flow() -> list[dict]:
                 "the course and push the complete course again to the same "
                 f"idea. On {WebhookEventType.COURSE_TEXT_APPROVED.value} or "
                 f"{WebhookEventType.COURSE_VIDEO_ASSIGNED.value} with "
-                "video_producer DEVELOPER, send the video. Otherwise, wait."
+                "video_producer DEVELOPER, send the video: POST "
+                "/mie/v1/submissions/<id>/course/video/, or for Studio, "
+                "upload through POST /mie/v1/studio/uploads/ and send a "
+                "kind video delivery to POST /mie/v1/studio/reviews/. "
+                "Otherwise, wait."
             ),
             "you_can_authenticate": True,
             "webhook_fired": (
@@ -1882,6 +2086,81 @@ def _endpoints(base_url: str) -> list[dict]:
             ],
         },
         {
+            "name": "Studio: get upload URLs for course media",
+            "method": "POST",
+            "path": f"{API_ROOT}/mie/v1/studio/uploads/",
+            "url": f"{prefix}/mie/v1/studio/uploads/",
+            "auth": f"{API_KEY_HEADER} (or Bearer session token)",
+            "rate_limit": _rate("mie_upload"),
+            "purpose": (
+                "A signed storage URL per file for one approved idea, keyed by "
+                "your own asset_id, and the media_url to reference it by in a "
+                "Studio video delivery. Ask again with the same asset_id to "
+                "resume."
+            ),
+            "request_body": {
+                "submission_id": "uuid, required, your approved idea",
+                "files": (
+                    f"array of 1-{studio_upload_service.MAX_FILES_PER_GRANT}: "
+                    "{asset_id, filename, content_type, purpose, size, width?, "
+                    "height?, codec?, duration_seconds?} - the presign fields "
+                    "plus your asset_id"
+                ),
+            },
+            "success_status": 200,
+            "errors": [
+                {"status": 400, "when": "A file breaks an upload rule. Nothing is granted."},
+                {"status": 401, "when": "Missing, invalid, suspended, or inactive credentials."},
+                {"status": 404, "when": "The idea is not yours."},
+                {"status": 409, "when": "idea_not_approved: the idea is not APPROVED. asset_already_stored: that asset_id is stored with another size or type."},
+            ],
+            "notes": [
+                "PUT each file to upload_url with upload_headers only. Never send your X-MIE-Api-Key to storage.",
+                "status stored means the file is already there; no upload needed.",
+            ],
+        },
+        {
+            "name": "Studio: deliver course text or video",
+            "method": "POST",
+            "path": f"{API_ROOT}/mie/v1/studio/reviews/",
+            "url": f"{prefix}/mie/v1/studio/reviews/",
+            "auth": f"{API_KEY_HEADER} (or Bearer session token)",
+            "rate_limit": _rate("mie_course_push"),
+            "purpose": (
+                f"One {studio_review_service.SCHEMA_VERSION} delivery: the "
+                "course text (kind text) or its video (kind video), sent into "
+                "review. Answers with a receipt."
+            ),
+            "request_body": {
+                "schema_version": f"string, required, {studio_review_service.SCHEMA_VERSION}",
+                "submission_id": "uuid, required, your approved idea",
+                "course_id": "uuid, required, the course_id from SUBMISSION_APPROVED",
+                "revision": "integer >= 1, required, per idea and kind",
+                "kind": "text | video, required",
+                "content_hash": "string, required, lowercase hex SHA-256 of content as canonical JSON",
+                "content": (
+                    "object, required. text: the whole course in the Course "
+                    "Builder editor's shape, field by field in course_schema "
+                    "(studio.content_structure has the outline). video: "
+                    "{preview_video_url, lessons: [{module_order, "
+                    "lesson_order, video_url | embedded_link}]}."
+                ),
+                "source_map": "array, optional: [{id, order, lessons: [{id, order}]}], your ids by our orders",
+            },
+            "request_example": studio_delivery_example("text"),
+            "success_status": 201,
+            "errors": [
+                {"status": 400, "when": "The envelope or content is invalid, content_hash does not match, or media_not_stored. Nothing is stored."},
+                {"status": 401, "when": "Missing, invalid, suspended, or inactive credentials."},
+                {"status": 404, "when": "The idea is not yours."},
+                {"status": 409, "when": "course_id_mismatch, revision_conflict, stale_revision, plus every 409 of the course or video push."},
+            ],
+            "notes": [
+                "The same revision with the same hash returns the original receipt with 200 and duplicate true.",
+                "See the studio section for hashing, revisions and receipts, and studio.examples for a video delivery.",
+            ],
+        },
+        {
             "name": "Your account",
             "method": "GET",
             "path": f"{API_ROOT}/mie/v1/me/",
@@ -1898,6 +2177,19 @@ def _endpoints(base_url: str) -> list[dict]:
                 "status": DeveloperAccountStatus.APPROVED.value,
                 "plan_type": MiePlanType.PAID_PER_SUBMISSION.value,
                 "requires_video_assignment": False,
+                "journey": {
+                    "stage": DeveloperJourneyStage.IDEA_APPROVED.value,
+                    "label": DeveloperJourneyStage.IDEA_APPROVED.label,
+                    "step": 4,
+                    "total_steps": len(DeveloperJourneyStage),
+                    "next_step": developer_journey_service.NEXT_STEPS[
+                        DeveloperJourneyStage.IDEA_APPROVED
+                    ],
+                    "ideas_submitted": 3,
+                    "ideas_approved": 1,
+                    "courses_delivered": 0,
+                    "courses_published": 0,
+                },
                 "webhook_endpoints": [SAMPLE_ALL_EVENTS_ENDPOINT],
                 "api_key_preview": f"{API_KEY_PREFIX}a1b2c3d...",
                 "api_key_last_used_at": "2026-08-24T15:30:00Z",
@@ -1912,6 +2204,7 @@ def _endpoints(base_url: str) -> list[dict]:
                 "The API key is always masked here. The full key was shown once, at approval.",
                 "The signing secret IS returned in full - it only verifies our messages to you and cannot authenticate anything on your behalf.",
                 "A 200 from this endpoint is the cheapest possible credentials check.",
+                "journey is your stage from registration to a published course, with what to do next. See your_account.journey_stages.",
             ],
         },
         *_webhook_endpoint_routes(prefix),
@@ -3184,7 +3477,7 @@ def _course_schema() -> dict:
             "correct_index": "integer, the 0-based correct option for SINGLE_CHOICE.",
             "correct_indices": "list of 0-based indexes for MULTIPLE_CHOICE.",
             "expected_answer": "string, required for ESSAY only.",
-            "explanation": "string, optional. Shown after answering.",
+            "explanation": "string. Shown after answering. Required for ESSAY, optional otherwise.",
         },
         "example": SAMPLE_COURSE_PUSH,
     }
@@ -3315,6 +3608,113 @@ def _media(base_url: str) -> dict:
                 "blurry or broken video is a revision request."
             ),
         },
+    }
+
+
+def _studio() -> dict:
+    version = studio_review_service.SCHEMA_VERSION
+    return {
+        "summary": (
+            f"Soludesk Studio sends generated course text and video as "
+            f"{version} deliveries to one endpoint, POST /mie/v1/studio/reviews/, "
+            "told apart by `kind`. Each delivery wraps the same body as the "
+            "course push (text) or video push (video), so it meets the same "
+            "rules and joins the same review flow, webhooks and payouts."
+        ),
+        "flow": [
+            "SUBMISSION_APPROVED arrives with submission.id and submission.course_id.",
+            "POST /mie/v1/studio/reviews/ with kind text and revision 1.",
+            "Wait for COURSE_TEXT_APPROVED (or COURSE_VIDEO_ASSIGNED with video_producer DEVELOPER).",
+            "POST /mie/v1/studio/uploads/ for the videos, then PUT each file to its upload_url.",
+            "POST /mie/v1/studio/reviews/ with kind video.",
+            "After COURSE_REJECTED / COURSE_REVISION_REQUESTED, send the fixed content under the next revision.",
+        ],
+        "envelope": {
+            "schema_version": f"Always {version}.",
+            "submission_id": "The approved idea's id.",
+            "course_id": "The course_id from SUBMISSION_APPROVED. Anything else is 409 course_id_mismatch.",
+            "revision": "1 or more, counted per idea and kind. Raise it whenever content changes.",
+            "kind": "text or video.",
+            "content_hash": "Lowercase hex SHA-256 of content as canonical JSON.",
+            "content": (
+                "text: the whole course in the Course Builder editor's shape "
+                "(content_structure below; every field's rules in "
+                "course_schema). video: the video-push body."
+            ),
+            "source_map": "Optional: your module and lesson ids by the orders in content. Stored and echoed.",
+        },
+        "content_structure": {
+            "summary": (
+                "A text delivery's content is the course exactly as a creator "
+                "builds it in the Course Builder editor, and is checked with "
+                "the editor's own rules: the same fields, nesting, block "
+                "types and question types. Numeric limits (modules, lessons, "
+                "words, questions, minutes) are live at GET "
+                "/mie/v1/course-requirements/. Unknown keys are ignored."
+            ),
+            "text": [
+                "course: title, description, category, version, difficulty_level, thumbnail_url, learning_objectives[], tags[], duration_hours, duration_minutes, duration_seconds, terms_accepted",
+                "  modules[]: order, title, description, learning_objectives[], assessment (the module quiz)",
+                "    lessons[]: order, title, lesson_type (TEXT | VIDEO | QUIZ), script, video_script_file, learning_objectives[], duration_minutes, lesson_requirement or requirements[{text, order}], assessment (optional lesson quiz)",
+                "      content_blocks[]: order, block_type, text_content (HEADING_1, HEADING_2, PARAGRAPH, NUMBERED_LIST, BULLETED_LIST, BLOCKQUOTE) or media_url (IMAGE, VIDEO, EMBED); DIVIDER carries nothing",
+                "  final_assessment: title, questions[]",
+                "question: type (SINGLE_CHOICE | MULTIPLE_CHOICE | ESSAY), question, points, options[] with correct_index (single) or correct_indices[] (multiple), or expected_answer and explanation (essay); explanation optional on choice questions",
+            ],
+            "video": [
+                "preview_video_url",
+                "lessons[]: module_order, lesson_order, video_url or embedded_link - one per VIDEO lesson of the text delivery",
+            ],
+            "video_lessons_in_text": (
+                "In the text delivery a VIDEO lesson carries its script but no "
+                "video_url, embedded_link or preview video: those come in the "
+                "video delivery, addressed by the same orders."
+            ),
+            "field_rules": "Every field's type, limits and allowed values: course_schema.",
+        },
+        "examples": {
+            "text": studio_delivery_example("text"),
+            "video": studio_delivery_example("video"),
+            "note": (
+                "These use every field and block type once. They are "
+                "structurally complete, not submit-complete: a real course "
+                "needs the counts from /mie/v1/course-requirements/."
+            ),
+        },
+        "content_hash": {
+            "rule": (
+                "SHA-256 over the UTF-8 bytes of content serialized with keys "
+                "sorted at every level, no whitespace, and non-ASCII characters "
+                "left as they are. Send integers as integers."
+            ),
+            "python": (
+                "hashlib.sha256(json.dumps(content, sort_keys=True, "
+                "separators=(',', ':'), ensure_ascii=False).encode()).hexdigest()"
+            ),
+            "javascript": (
+                "Serialize with keys sorted recursively and JSON.stringify's "
+                "default separators, then sha256 the UTF-8 bytes."
+            ),
+        },
+        "retries": [
+            "The same revision with the same content_hash returns the original receipt with 200 and duplicate true. Nothing runs again.",
+            "The same revision with a different content_hash is 409 revision_conflict.",
+            "A revision lower than one already accepted for that kind is 409 stale_revision.",
+            "A delivery that fails writes nothing, so it can be retried under the same revision.",
+        ],
+        "receipt": (
+            "201 with receipt_id, the accepted revision and hash, course_id, "
+            "course_status after the delivery, your source_map and, for video, "
+            "media: each URL with stored true only once the file was found in "
+            "our storage at its declared size. External URLs are accepted and "
+            "reported stored false, source external."
+        ),
+        "uploads": [
+            "Ask POST /mie/v1/studio/uploads/ for a grant per file, keyed by your asset_id.",
+            "PUT the bytes to upload_url with upload_headers only. Never send your X-MIE-Api-Key to storage.",
+            "Asking again with the same asset_id resumes: a fresh URL if the file is missing, status stored if it is there.",
+            "A video delivery may reference our storage only through these grants, after the PUT has finished (else 400 media_not_stored).",
+            f"Up to {studio_upload_service.MAX_FILES_PER_GRANT} files per request.",
+        ],
     }
 
 

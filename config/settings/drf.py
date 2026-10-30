@@ -474,6 +474,12 @@ SPECTACULAR_SETTINGS = {
         "CourseStatusEnum": "api.courses.enums.CourseStatus",
         "ProductionRunStatusEnum": "api.production.enums.ProductionRunStatus",
         "ProductionRunKindEnum": "api.production.enums.RunKind",
+        "StudioReviewKindEnum": "api.mie.enums.StudioReviewKind",
+        "DeveloperJourneyStageEnum": "api.mie.enums.DeveloperJourneyStage",
+        # The presign and the Studio upload grant take the same purposes.
+        "MieUploadRequestPurposeEnum": (
+            "api.mie.services.course_push_service.MIE_UPLOAD_PURPOSES"
+        ),
         # Course.review_stage and Course.revision_seat draw on the same seats.
         "ReviewStageEnum": "api.reviews.enums.ReviewStage",
         "TransactionStatusEnum": "api.wallet.enums.TransactionStatus",

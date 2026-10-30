@@ -8,6 +8,8 @@ from api.mie.views import (
     MieCourseVideoView,
     MieCourseRequirementsView,
     MieUploadPresignView,
+    MieStudioReviewView,
+    MieStudioUploadView,
     MieDeveloperAdminViewSet,
     MieDeveloperMeView,
     MieDocumentationDownloadView,
@@ -71,6 +73,8 @@ urlpatterns = router.urls + [
         name="mie-course-requirements",
     ),
     path("mie/v1/uploads/presign/", MieUploadPresignView.as_view(), name="mie-upload-presign"),
+    path("mie/v1/studio/reviews/", MieStudioReviewView.as_view(), name="mie-studio-reviews"),
+    path("mie/v1/studio/uploads/", MieStudioUploadView.as_view(), name="mie-studio-uploads"),
     path("mie/v1/me/", MieDeveloperMeView.as_view(), name="mie-developer-me"),
     path(
         "mie/v1/webhooks/",

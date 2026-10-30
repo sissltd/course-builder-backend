@@ -18,6 +18,7 @@ from django.test import SimpleTestCase
 
 from api.mie.enums import (
     DeveloperAccountStatus,
+    DeveloperJourneyStage,
     MiePlanType,
     SubmissionStatus,
     WebhookDeliveryStatus,
@@ -58,6 +59,12 @@ def _account(**overrides):
         "api_key_last_used_at": datetime(2026, 8, 30, 12, 0, tzinfo=dt_timezone.utc),
         "created_datetime": datetime(2026, 8, 20, 10, 0, tzinfo=dt_timezone.utc),
         "decided_at": datetime(2026, 8, 21, 9, 0, tzinfo=dt_timezone.utc),
+        # The developer_journey_service.with_journey annotations.
+        "journey_stage": DeveloperJourneyStage.ONBOARDED,
+        "ideas_submitted": 0,
+        "ideas_approved": 0,
+        "courses_delivered": 0,
+        "courses_published": 0,
     }
     defaults.update(overrides)
     return SimpleNamespace(**defaults)

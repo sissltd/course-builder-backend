@@ -109,7 +109,7 @@ def push_course(*, developer: DeveloperAccount, submission_id, data: dict) -> Co
     """
 
     with transaction.atomic():
-        submission = _lock_own_submission(
+        submission = lock_own_submission(
             developer=developer, submission_id=submission_id
         )
         _check_gate(submission=submission, data=data)
@@ -154,7 +154,7 @@ def push_video(*, developer: DeveloperAccount, submission_id, data: dict) -> Cou
     """
 
     with transaction.atomic():
-        submission = _lock_own_submission(
+        submission = lock_own_submission(
             developer=developer, submission_id=submission_id
         )
         course = submission.resulting_course
@@ -247,7 +247,7 @@ def video_provider_for(*, course: Course) -> str:
     return VideoProvider.DEVELOPER
 
 
-def _lock_own_submission(*, developer, submission_id) -> CourseSubmission:
+def lock_own_submission(*, developer, submission_id) -> CourseSubmission:
     """The caller's submission, row-locked so two pushes for the same idea
     run one after the other. Another developer's idea is a 404, never a
     403, so ids cannot be probed."""

@@ -3,8 +3,9 @@ from rest_framework import serializers
 
 from api.mie.enums import MiePlanType, MieSourceType
 from api.mie.models import DeveloperAccount
+from api.mie.serializers.developer_journey_serializer import DeveloperJourneySerializer
 from api.mie.serializers.webhook_endpoint_serializer import WebhookEndpointSerializer
-from api.mie.services import webhook_endpoint_service
+from api.mie.services import developer_journey_service, webhook_endpoint_service
 
 
 class DeveloperRegisterSerializer(serializers.Serializer):
@@ -42,7 +43,8 @@ class DeveloperAccountAdminSerializer(serializers.ModelSerializer):
 
     `webhook_endpoints` reads the `live_webhook_endpoints` prefetch when the
     queryset declares it (see MieDeveloperAdminViewSet), so a list costs the
-    same however many accounts it shows.
+    same however many accounts it shows. `journey` does the same with the
+    developer_journey_service.with_journey annotations.
     """
 
     webhook_endpoints = serializers.SerializerMethodField(
@@ -50,6 +52,13 @@ class DeveloperAccountAdminSerializer(serializers.ModelSerializer):
     )
     api_key_preview = serializers.SerializerMethodField(
         help_text="Masked prefix of the current API key, or null before issuance."
+    )
+    journey = serializers.SerializerMethodField(
+        help_text=(
+            "How far the developer has got from registration to a published "
+            "course, with the counts behind it. Filter the list on it with "
+            "?journey_stage=."
+        )
     )
     # Declared rather than inferred: the model field is editable=False, so a
     # ModelSerializer would fall back to a bare read-only string and the
@@ -73,6 +82,7 @@ class DeveloperAccountAdminSerializer(serializers.ModelSerializer):
             "status",
             "plan_type",
             "requires_video_assignment",
+            "journey",
             "source_type",
             "api_key_preview",
             "api_key_issued_at",
@@ -89,6 +99,12 @@ class DeveloperAccountAdminSerializer(serializers.ModelSerializer):
         if endpoints is None:
             endpoints = webhook_endpoint_service.live_endpoints(developer=obj)
         return WebhookEndpointSerializer(endpoints, many=True).data
+
+    @extend_schema_field(DeveloperJourneySerializer)
+    def get_journey(self, obj) -> dict:
+        return DeveloperJourneySerializer(
+            developer_journey_service.journey_payload(account=obj)
+        ).data
 
     def get_api_key_preview(self, obj) -> str | None:
         if not obj.api_key_prefix:

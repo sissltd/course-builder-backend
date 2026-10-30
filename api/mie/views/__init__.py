@@ -26,6 +26,7 @@ from .dev_webhook_views import (
     MieWebhookEventTypesView,
 )
 from .rejection_reason_views import RejectionReasonAdminViewSet
+from .studio_views import MieStudioReviewView, MieStudioUploadView
 
 __all__ = [
     "MieAdminCourseArchiveView",
@@ -35,6 +36,8 @@ __all__ = [
     "MieCourseVideoView",
     "MieCourseRequirementsView",
     "MieUploadPresignView",
+    "MieStudioReviewView",
+    "MieStudioUploadView",
     "MieDeveloperAdminViewSet",
     "MieDeveloperMeView",
     "MieDocumentationDownloadView",

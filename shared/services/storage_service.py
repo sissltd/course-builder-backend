@@ -620,3 +620,13 @@ class StorageService:
 
         except ClientError:
             return False
+
+    @staticmethod
+    def object_size(file_key):
+        """Byte size of the stored object, or None when it does not exist."""
+
+        try:
+            head = _get_s3_client().head_object(Bucket=BUCKET_NAME, Key=file_key)
+        except ClientError:
+            return None
+        return head["ContentLength"]

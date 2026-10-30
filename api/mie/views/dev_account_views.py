@@ -33,7 +33,8 @@ class MieDeveloperMeView(APIView):
             "Return the authenticated developer's account details: current "
             "lifecycle status, payout plan, webhook URL, masked API key "
             "preview, the signing secret used to verify inbound webhooks, "
-            "and key usage timestamps.\n\n"
+            "key usage timestamps, and your journey: how far you have got "
+            "from registration to a published course and what to do next.\n\n"
 
             "Call this to verify credentials are working or to retrieve the "
             "signing secret before building a webhook receiver. A 200 "
@@ -62,6 +63,21 @@ class MieDeveloperMeView(APIView):
                             "email": "dev@studio.io",
                             "status": "APPROVED",
                             "plan_type": "PAID_PER_SUBMISSION",
+                            "journey": {
+                                "stage": "COURSE_DELIVERED",
+                                "label": "Course Delivered",
+                                "step": 5,
+                                "total_steps": 8,
+                                "next_step": (
+                                    "Your course is in content review. On "
+                                    "COURSE_REVISION_REQUESTED, fix it and deliver it "
+                                    "again; otherwise wait for COURSE_TEXT_APPROVED."
+                                ),
+                                "ideas_submitted": 3,
+                                "ideas_approved": 1,
+                                "courses_delivered": 1,
+                                "courses_published": 0,
+                            },
                             "webhook_endpoints": [
                                 {
                                     "id": "5b1f0c9e-2d4a-4f7e-9a3b-8c6d1e2f3a4b",
