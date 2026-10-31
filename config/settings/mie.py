@@ -24,3 +24,20 @@ MIE_BREAKER_REJECTION_RATE = config(
 )
 MIE_BREAKER_WINDOW_DAYS = config("MIE_BREAKER_WINDOW_DAYS", default=7, cast=int)
 MIE_BREAKER_MIN_DECISIONS = config("MIE_BREAKER_MIN_DECISIONS", default=10, cast=int)
+
+# Studio receipt callbacks (studio.receipt.v1). Receipts are recorded only
+# for the Studio developer account, and only while its id is set here; they
+# are sent only once the receiver URL, signing secret and CA file are set too.
+# Secrets come from the vault, never from code or Git.
+STUDIO_RECEIPT_DEVELOPER_ACCOUNT_ID = config(
+    "STUDIO_RECEIPT_DEVELOPER_ACCOUNT_ID", default=""
+)
+STUDIO_RECEIPT_URL = config("STUDIO_RECEIPT_URL", default="")
+STUDIO_RECEIPT_ENVIRONMENT = config("STUDIO_RECEIPT_ENVIRONMENT", default="demo")
+STUDIO_RECEIPT_KEY_ID = config("STUDIO_RECEIPT_KEY_ID", default="")
+STUDIO_RECEIPT_SECRET = config("STUDIO_RECEIPT_SECRET", default="")
+# The private CA that signs the receiver's certificate. TLS is always verified.
+STUDIO_RECEIPT_CA_FILE = config("STUDIO_RECEIPT_CA_FILE", default="")
+# Optional client certificate for mutual TLS.
+STUDIO_RECEIPT_CLIENT_CERT = config("STUDIO_RECEIPT_CLIENT_CERT", default="")
+STUDIO_RECEIPT_CLIENT_KEY = config("STUDIO_RECEIPT_CLIENT_KEY", default="")

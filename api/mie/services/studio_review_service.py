@@ -11,7 +11,7 @@ from rest_framework import exceptions
 from api.mie.models import CourseSubmission, StudioReviewReceipt
 from api.mie.serializers.course_push_serializer import CoursePushSerializer
 from api.mie.serializers.studio_review_serializer import StudioVideoSerializer
-from api.mie.services import course_push_service
+from api.mie.services import course_push_service, studio_receipt_service
 from api.platform.services import platform_settings_service
 from shared.services.storage_service import StorageService
 
@@ -125,7 +125,7 @@ def _owned_media(url, submission, purpose):
 
 
 @transaction.atomic
-def accept_review(*, developer, data, idempotency_key):
+def accept_review(*, developer, data, idempotency_key, studio=None):
     if not idempotency_key or len(idempotency_key) > 200:
         raise exceptions.ValidationError("A bounded Idempotency-Key is required.")
     # One lock serializes first delivery and uncertain-response retries, including
@@ -137,6 +137,10 @@ def accept_review(*, developer, data, idempotency_key):
     )
     if submission is None:
         raise exceptions.NotFound()
+    if studio is not None and studio.revision != data["revision"]:
+        raise exceptions.ValidationError(
+            {studio_receipt_service.CONTENT_REVISION_HEADER: "Must equal revision."}
+        )
     if content_hash(data["content"]) != data["content_hash"]:
         raise exceptions.ValidationError(
             {"content_hash": "Does not match the SHA-256 of content as canonical JSON."}
@@ -260,4 +264,14 @@ def accept_review(*, developer, data, idempotency_key):
         source_map=data["source_map"],
         media=media,
     )
+    if studio is not None:
+        # In this transaction, after the push and (for video) every media
+        # check, so a receipt exists only for a stored delivery.
+        studio_receipt_service.record(
+            delivery=studio,
+            submission=submission,
+            kind=data["kind"],
+            course=course,
+            source_map=data["source_map"],
+        )
     return _receipt(row)

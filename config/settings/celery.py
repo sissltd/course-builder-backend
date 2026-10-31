@@ -45,6 +45,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "api.mie.tasks.dispatch_due_webhooks_task",
         "schedule": 60.0,
     },
+    "mie-send-studio-receipts": {
+        "task": "api.mie.tasks.send_studio_receipts_task",
+        "schedule": 60.0,
+    },
     # Keys live 24 hours and an expired key is ignored on use anyway, so an
     # hourly sweep only keeps the table small.
     "mie-purge-idempotency-keys": {

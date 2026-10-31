@@ -1727,15 +1727,16 @@ def _endpoints(base_url: str) -> list[dict]:
                 "created_datetime": "When we received it.",
             },
             "errors": [
-                {"status": 400, "when": "Missing title, empty title, title over 255 characters, a non-string or over-long confidence_note or description, an unknown difficulty_level, a negative or non-integer searches_per_month, or a non-object body."},
+                {"status": 400, "when": "Missing title, empty title, title over 255 characters, a non-string or over-long confidence_note or description, an unknown difficulty_level, a negative or non-integer searches_per_month, or a non-object body. For Studio: an X-Studio-Delivery-Id that is not a UUID, or an X-Studio-Payload-SHA256 that is missing or does not match the body."},
                 {"status": 401, "when": "Missing, invalid, suspended, or inactive credentials."},
-                {"status": 409, "when": "idempotency_key_reused - the Idempotency-Key was used for a different request; idempotency_request_in_progress - the first request with it is still running."},
+                {"status": 409, "when": "idempotency_key_reused - the Idempotency-Key was used for a different request; idempotency_request_in_progress - the first request with it is still running. For Studio: studio_delivery_conflict - the X-Studio-Delivery-Id was already used for a different body."},
                 {"status": 429, "when": "Ingest rate limit exceeded, or - for platform-owned accounts only - the rolling 24-hour submission cap. Either way, wait the seconds in Retry-After."},
             ],
             "notes": [
                 "201 means 'received and classified', NOT 'queued'. Always branch on `status`.",
                 "A webhook for the outcome is recorded before the response is returned, and dispatched within a minute.",
                 "Every POST without an Idempotency-Key creates a new row - retrying a timed-out request that way may create a duplicate submission that then dedups against the first. Send an Idempotency-Key and a retry returns the first response instead.",
+                "Studio only: send X-Studio-Delivery-Id and X-Studio-Payload-SHA256 to get a signed topic receipt once the idea is stored (studio.receipts). Retrying with the same delivery id and body returns the first response with Idempotent-Replayed: true.",
             ],
         },
         {
@@ -2143,7 +2144,7 @@ def _endpoints(base_url: str) -> list[dict]:
             "method": "POST",
             "path": f"{API_ROOT}/mie/v1/studio/reviews/",
             "url": f"{prefix}/mie/v1/studio/reviews/",
-            "auth": f"{API_KEY_HEADER} (or Bearer session token), plus an Idempotency-Key header",
+            "auth": f"{API_KEY_HEADER} (or Bearer session token), plus an Idempotency-Key header; Studio also sends X-Studio-Delivery-Id, X-Studio-Payload-SHA256 and X-Studio-Content-Revision",
             "rate_limit": _rate("mie_course_push"),
             "purpose": (
                 f"One {STUDIO_SCHEMA_VERSION} review: the course text (kind "
@@ -2178,13 +2179,14 @@ def _endpoints(base_url: str) -> list[dict]:
                 "media_persisted": False,
             },
             "errors": [
-                {"status": 400, "when": "The Idempotency-Key is missing, content_hash does not match content, the envelope or content is invalid, a list block breaks the list format, the source map does not match, the text carries video, or a video file is not stored and verified. Nothing is stored."},
+                {"status": 400, "when": "The Idempotency-Key is missing, a Studio delivery header is malformed (X-Studio-Payload-SHA256 not matching the body, X-Studio-Content-Revision missing or not equal to revision), content_hash does not match content, the envelope or content is invalid, a list block breaks the list format, the source map does not match, the text carries video, or a video file is not stored and verified. Nothing is stored."},
                 {"status": 401, "when": "Missing, invalid, suspended, or inactive credentials."},
                 {"status": 404, "when": "The idea is not yours."},
-                {"status": 409, "when": "studio_review_conflict (wrong course_id, a revision that does not advance, a reused Idempotency-Key with other content, video not matching the accepted text, or the platform not reviewing text before video), plus every 409 of the course or video push."},
+                {"status": 409, "when": "studio_delivery_conflict (the X-Studio-Delivery-Id was used for another delivery), studio_review_conflict (wrong course_id, a revision that does not advance, a reused Idempotency-Key with other content, video not matching the accepted text, or the platform not reviewing text before video), plus every 409 of the course or video push."},
             ],
             "notes": [
                 "Retrying with the same Idempotency-Key and the same body returns the original receipt and changes nothing.",
+                "With the Studio delivery headers, a signed text or video receipt follows once the review is stored (studio.receipts). It confirms storage only; the review decision comes by webhook as before.",
                 "See the studio section for the flow, the content structure and full text and video examples.",
             ],
         },
@@ -3757,6 +3759,13 @@ def _studio() -> dict:
             "PUT the bytes to upload_url with upload_headers only. Never send your X-MIE-Api-Key to storage.",
             "Asking again with the same asset_id and metadata resumes: the same URL while it is valid, a fresh one after it expires, or {persisted: true, media_url} once the file is stored and verified.",
             "The same asset_id with other metadata is 409.",
+        ],
+        "receipts": [
+            "Studio sends X-Studio-Delivery-Id (its job UUID) and X-Studio-Payload-SHA256 (lowercase hex SHA-256 of the exact request body bytes) on POST /mie/v1/submissions/ and POST /mie/v1/studio/reviews/, plus X-Studio-Content-Revision (equal to revision) on reviews.",
+            "A hash that does not match the body, or a missing or different revision, is 400 and nothing is stored.",
+            "Once the topic, text or video is stored, a signed studio.receipt.v1 callback confirms it to Studio's private receiver: kind, submission_id, payload_sha256, received_at, and for text and video course_id, revision, module_count and lesson_count; video adds media_persisted: true.",
+            "A receipt confirms storage only. Review, video production and publication carry on as before.",
+            "Retrying a topic with the same delivery id and body returns the original answer (Idempotent-Replayed: true); the same delivery id with another body is 409.",
         ],
     }
 

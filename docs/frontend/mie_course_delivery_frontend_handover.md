@@ -313,6 +313,7 @@ What's inside `studio`, and how to render it:
 | `examples.note` | string | Caption under the examples. |
 | `receipt` | string | Paragraph. |
 | `uploads` | list of strings | Bullets. |
+| `receipts` | list of strings | Bullets. |
 
 Other docs changes that reach this page:
 
