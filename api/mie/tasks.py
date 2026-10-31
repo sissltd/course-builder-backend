@@ -3,6 +3,7 @@ import logging
 from celery import shared_task
 
 from api.mie.services.idempotency_service import purge_expired
+from api.mie.services.studio_receipt_sender import send_due_receipts
 from api.mie.services.webhook_dispatcher import dispatch_due_events
 
 logger = logging.getLogger(__name__)
@@ -21,6 +22,21 @@ def dispatch_due_webhooks_task():
     report = dispatch_due_events()
     if report.delivered or report.retried or report.failed:
         logger.info("mie webhook dispatch: %s", report)
+    return str(report)
+
+
+@shared_task
+def send_studio_receipts_task():
+    """Send due studio.receipt.v1 callbacks to Studio.
+
+    Scheduled every minute via CELERY_BEAT_SCHEDULE. Does nothing until the
+    receiver is configured. An overlapping pass can at worst send a receipt
+    twice, which Studio treats as a harmless duplicate.
+    """
+
+    report = send_due_receipts()
+    if report.delivered or report.retried or report.held:
+        logger.info("studio receipt send: %s", report)
     return str(report)
 
 

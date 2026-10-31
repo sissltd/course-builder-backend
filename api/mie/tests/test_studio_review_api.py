@@ -22,7 +22,10 @@ REVIEW = "/api/v1/mie/v1/studio/reviews/"
 UPLOAD = "/api/v1/mie/v1/studio/uploads/"
 
 
-class StudioReviewTests(CoursePushTestCase):
+class StudioReviewTestCase(CoursePushTestCase):
+    """An approved Studio idea with a valid text review, plus helpers to
+    pass the text and upload video media."""
+
     def setUp(self):
         super().setUp()
         platform_settings_service.update_settings(staged_review_flow_enabled=True)
@@ -67,6 +70,61 @@ class StudioReviewTests(CoursePushTestCase):
             HTTP_IDEMPOTENCY_KEY=idem,
         )
 
+    def _approve(self):
+        self.assertEqual(self.send().status_code, 200)
+        course = Course.objects.get(pk=self.idea.reserved_course_id)
+        _review(self.client, course, make_user(role=UserRole.STAFF_WRITER))
+        event = WebhookEvent.objects.filter(
+            event_type=WebhookEventType.COURSE_TEXT_APPROVED
+        ).latest("created_datetime")
+        self.assertEqual(
+            event.payload["submission"]["course"]["video_assignment"]["producer"],
+            "studio",
+        )
+        return course
+
+    def _upload(self, purpose, filename):
+        asset = str(uuid4())
+        body = {
+            "submission_id": str(self.idea.id),
+            "asset_id": asset,
+            "filename": filename,
+            "purpose": purpose,
+            "size": 1024,
+            "sha256": "d" * 64,
+            "content_type": "application/x-subrip"
+            if purpose == "SUBTITLE"
+            else "video/mp4",
+        }
+        if purpose != "SUBTITLE":
+            body.update(width=1280, height=720, codec="h264", duration_seconds=90)
+        file_key = f"uploads/courses/{asset}/{filename}"
+        grant = {
+            "upload_url": "https://storage.example.test/signed",
+            "upload_headers": {},
+            "file_url": "https://storage.example.test/read",
+            "file_key": file_key,
+            "expires_in": 900,
+        }
+        with patch.object(StorageService, "request_upload", return_value=grant):
+            response = self.client.post(
+                UPLOAD, body, format="json", HTTP_X_MIE_API_KEY=self.key
+            )
+        self.assertEqual(response.status_code, 200, response.data)
+        with (
+            patch.object(StorageService, "file_exists", return_value=True),
+            patch.object(StorageService, "verify_file", return_value=True),
+            patch.object(StorageService, "request_upload") as presign,
+        ):
+            repeated = self.client.post(
+                UPLOAD, body, format="json", HTTP_X_MIE_API_KEY=self.key
+            )
+            self.assertTrue(repeated.data["persisted"])
+            presign.assert_not_called()
+        return response.data["media_url"]
+
+
+class StudioReviewTests(StudioReviewTestCase):
     def test_text_receipt_replays_without_rebuilding_or_duplicate_events(self):
         response = self.send()
         self.assertEqual(response.status_code, 200, response.data)
@@ -208,59 +266,6 @@ class StudioReviewTests(CoursePushTestCase):
         repaired["revision"] = 2
         repaired["content"]["modules"][0]["lessons"][1]["script"] = "clarified " * 600
         self.assertEqual(self.send(repaired, idem="repair-2").status_code, 200)
-
-    def _approve(self):
-        self.assertEqual(self.send().status_code, 200)
-        course = Course.objects.get(pk=self.idea.reserved_course_id)
-        _review(self.client, course, make_user(role=UserRole.STAFF_WRITER))
-        event = WebhookEvent.objects.filter(
-            event_type=WebhookEventType.COURSE_TEXT_APPROVED
-        ).latest("created_datetime")
-        self.assertEqual(
-            event.payload["submission"]["course"]["video_assignment"]["producer"],
-            "studio",
-        )
-        return course
-
-    def _upload(self, purpose, filename):
-        asset = str(uuid4())
-        body = {
-            "submission_id": str(self.idea.id),
-            "asset_id": asset,
-            "filename": filename,
-            "purpose": purpose,
-            "size": 1024,
-            "sha256": "d" * 64,
-            "content_type": "application/x-subrip"
-            if purpose == "SUBTITLE"
-            else "video/mp4",
-        }
-        if purpose != "SUBTITLE":
-            body.update(width=1280, height=720, codec="h264", duration_seconds=90)
-        file_key = f"uploads/courses/{asset}/{filename}"
-        grant = {
-            "upload_url": "https://storage.example.test/signed",
-            "upload_headers": {},
-            "file_url": "https://storage.example.test/read",
-            "file_key": file_key,
-            "expires_in": 900,
-        }
-        with patch.object(StorageService, "request_upload", return_value=grant):
-            response = self.client.post(
-                UPLOAD, body, format="json", HTTP_X_MIE_API_KEY=self.key
-            )
-        self.assertEqual(response.status_code, 200, response.data)
-        with (
-            patch.object(StorageService, "file_exists", return_value=True),
-            patch.object(StorageService, "verify_file", return_value=True),
-            patch.object(StorageService, "request_upload") as presign,
-        ):
-            repeated = self.client.post(
-                UPLOAD, body, format="json", HTTP_X_MIE_API_KEY=self.key
-            )
-            self.assertTrue(repeated.data["persisted"])
-            presign.assert_not_called()
-        return response.data["media_url"]
 
     def test_video_requires_owned_persisted_media_and_keeps_transcripts(self):
         course = self._approve()

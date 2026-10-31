@@ -18,8 +18,10 @@ from api.mie.serializers.studio_review_serializer import (
     StudioVideoReviewSchemaSerializer,
 )
 from api.mie.services.documentation_service import studio_delivery_example
+from api.mie.services import studio_receipt_service
 from api.mie.services.studio_review_service import accept_review
 from api.mie.throttling import MieDeveloperRateThrottle
+from api.mie.views.studio_delivery import REVIEW_DELIVERY_PARAMETERS
 from shared.serializers.storage_serializer import UploadRequestSerializer
 from shared.services.storage_service import (
     InvalidFileType,
@@ -105,7 +107,8 @@ class MieStudioReviewView(APIView):
                     "body returns the original receipt; the same key with "
                     "another body is 409."
                 ),
-            )
+            ),
+            *REVIEW_DELIVERY_PARAMETERS,
         ],
         request=STUDIO_REVIEW_SCHEMA,
         examples=[
@@ -123,6 +126,8 @@ class MieStudioReviewView(APIView):
         responses={200: StudioReviewReceiptSerializer},
     )
     def post(self, request):
+        # Before request.data: the Studio payload hash is over the raw bytes.
+        studio = studio_receipt_service.read_delivery(request, needs_revision=True)
         serializer = StudioReviewSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:
@@ -131,6 +136,7 @@ class MieStudioReviewView(APIView):
                     developer=request.auth,
                     data=serializer.validated_data,
                     idempotency_key=request.headers.get("Idempotency-Key", ""),
+                    studio=studio,
                 )
             )
         except StorageError as exc:

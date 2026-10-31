@@ -8,13 +8,18 @@ from django.utils import timezone
 from rest_framework import exceptions
 
 from api.courses.enums import DifficultyLevel
-from api.mie.enums import MieSourceType, SubmissionStatus, WebhookEventType
+from api.mie.enums import (
+    MieSourceType,
+    StudioReceiptKind,
+    SubmissionStatus,
+    WebhookEventType,
+)
 from api.mie.models import CourseSubmission, DeveloperAccount, WebhookEvent
 from api.mie.models.course_submission import (
     CONFIDENCE_NOTE_MAX_LENGTH,
     DESCRIPTION_MAX_LENGTH,
 )
-from api.mie.services import webhook_endpoint_service
+from api.mie.services import studio_receipt_service, webhook_endpoint_service
 from api.mie.services.dedup_service import DedupOutcome, evaluate_title, normalize_title
 
 DAILY_CAP_WINDOW = timedelta(hours=24)
@@ -66,7 +71,9 @@ def validate_idea_payload(payload: dict) -> str:
     return normalize_title(title)
 
 
-def submit_idea(*, developer, payload: dict) -> tuple[CourseSubmission, bool]:
+def submit_idea(
+    *, developer, payload: dict, studio=None
+) -> tuple[CourseSubmission, bool]:
     """Ingest one course idea (Endpoint 1).
 
     Runs the ordered dedup checks, persists the submission in the outcome
@@ -78,19 +85,22 @@ def submit_idea(*, developer, payload: dict) -> tuple[CourseSubmission, bool]:
     SYSTEM accounts are also held to a rolling 24-hour cap: over it,
     nothing is stored and DailySubmissionCapReached is raised. External
     developers never reach that check.
+
+    `studio` is the checked Studio delivery (studio_receipt_service), when
+    there is one: its receipt is recorded in the same transaction.
     """
 
     fields = _extract_fields(payload)
 
     if developer.source_type != MieSourceType.SYSTEM:
-        submission = _persist_submission(developer, payload, fields)
+        submission = _persist_submission(developer, payload, fields, studio)
     else:
         # Count and insert share one transaction behind a lock on the
         # account row, so two concurrent crawler requests cannot both read
         # "19 of 20" and both get in.
         with transaction.atomic():
             _enforce_daily_cap(developer)
-            submission = _persist_submission(developer, payload, fields)
+            submission = _persist_submission(developer, payload, fields, studio)
 
     return submission, submission.status == SubmissionStatus.PENDING_REVIEW
 
@@ -111,7 +121,9 @@ def record_event(submission: CourseSubmission) -> list[WebhookEvent]:
     )
 
 
-def _persist_submission(developer, payload, fields: dict) -> CourseSubmission:
+def _persist_submission(
+    developer, payload, fields: dict, studio=None
+) -> CourseSubmission:
     """Dedup, store and record the event, resolving a lost queue race.
 
     The inner atomic becomes a savepoint whenever the caller already holds
@@ -135,10 +147,11 @@ def _persist_submission(developer, payload, fields: dict) -> CourseSubmission:
                     queued_at=submission.created_datetime
                 )
             record_event(submission)
+            _record_receipt(studio, submission)
     except IntegrityError:
         # Lost a race against the partial unique index on pending titles;
         # another developer enqueued this exact title mid-transaction.
-        submission = _record_lost_race(developer, payload, fields)
+        submission = _record_lost_race(developer, payload, fields, studio)
     return submission
 
 
@@ -269,7 +282,9 @@ def _extract_searches_per_month(payload: dict):
     return raw
 
 
-def _record_lost_race(developer, payload, fields: dict) -> CourseSubmission:
+def _record_lost_race(
+    developer, payload, fields: dict, studio=None
+) -> CourseSubmission:
     """Re-evaluate after an index race and persist without re-checking.
 
     The unique index guarantees exactly one PENDING_REVIEW row per title,
@@ -285,7 +300,17 @@ def _record_lost_race(developer, payload, fields: dict) -> CourseSubmission:
             **fields,
         )
         record_event(submission)
+        _record_receipt(studio, submission)
     return submission
+
+
+def _record_receipt(studio, submission: CourseSubmission) -> None:
+    """Record Studio's topic receipt alongside the stored idea, if it sent one."""
+
+    if studio is not None:
+        studio_receipt_service.record(
+            delivery=studio, submission=submission, kind=StudioReceiptKind.TOPIC
+        )
 
 
 def event_submission_body(submission: CourseSubmission) -> dict:

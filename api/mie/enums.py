@@ -160,3 +160,25 @@ class DeveloperJourneyStage(models.TextChoices):
     TEXT_APPROVED = "TEXT_APPROVED", "Text Approved"
     QA_PASSED = "QA_PASSED", "QA Passed"
     PUBLISHED = "PUBLISHED", "Published"
+
+
+class StudioReceiptKind(models.TextChoices):
+    """What a Studio delivery carried (studio.receipt.v1 `kind`)."""
+
+    TOPIC = "topic", "Topic"
+    TEXT = "text", "Text"
+    VIDEO = "video", "Video"
+
+
+class StudioReceiptStatus(models.TextChoices):
+    """Where a receipt callback to Studio stands.
+
+    PENDING   -> waiting for its first or next attempt.
+    DELIVERED -> Studio answered 2xx; nothing more to send.
+    HELD      -> stopped for manual reconciliation: Studio refused it
+                 (400, 401, 403, 404, 409, 413) or retries ran out.
+    """
+
+    PENDING = "PENDING", "Pending"
+    DELIVERED = "DELIVERED", "Delivered"
+    HELD = "HELD", "Held"

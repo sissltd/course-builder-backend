@@ -21,14 +21,16 @@ from api.mie.serializers.submission_serializer import (
     SubmissionIngestResponseSerializer,
     SubmissionIngestSerializer,
 )
-from api.mie.services import submission_service
+from api.mie.services import studio_receipt_service, submission_service
 from api.mie.throttling import MieDeveloperRateThrottle
 from api.mie.views.idempotency import (
     IDEMPOTENCY_KEY_PARAMETER,
     INVALID_KEY_EXAMPLE,
+    REPLAYED_HEADER,
     idempotency_conflict_response,
     respond_idempotently,
 )
+from api.mie.views.studio_delivery import TOPIC_DELIVERY_PARAMETERS
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
 
 QUEUE_FILTER_PARAMETERS = [
@@ -144,9 +146,11 @@ class MieSubmissionIngestView(APIView):
             "leaves the window. External developer accounts are never "
             "subject to that cap. Send an `Idempotency-Key` to make retries "
             "safe: a retry with the same key and body returns the first "
-            "response and stores no second submission."
+            "response and stores no second submission. Studio also sends "
+            "`X-Studio-Delivery-Id` and `X-Studio-Payload-SHA256` to get a "
+            "signed receipt callback once the idea is stored."
         ),
-        parameters=[IDEMPOTENCY_KEY_PARAMETER],
+        parameters=[IDEMPOTENCY_KEY_PARAMETER, *TOPIC_DELIVERY_PARAMETERS],
         request=SubmissionIngestSerializer,
         examples=[
             OpenApiExample(
@@ -193,9 +197,11 @@ class MieSubmissionIngestView(APIView):
         },
     )
     def post(self, request):
-        return respond_idempotently(request, lambda: self._ingest(request))
+        # Before request.data: the Studio payload hash is over the raw bytes.
+        studio = studio_receipt_service.read_delivery(request, needs_revision=False)
+        return respond_idempotently(request, lambda: self._ingest(request, studio))
 
-    def _ingest(self, request):
+    def _ingest(self, request, studio):
         if not isinstance(request.data, dict):
             return Response(
                 {"title": ["Submission body must be a JSON object."]},
@@ -203,9 +209,20 @@ class MieSubmissionIngestView(APIView):
             )
         serializer = SubmissionIngestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        previous = studio and studio_receipt_service.previous_topic(studio)
+        if previous:
+            # Studio retried a delivery we already stored: answer as before.
+            response = Response(
+                SubmissionIngestResponseSerializer(
+                    previous, context={"request": request}
+                ).data,
+                status=status.HTTP_201_CREATED,
+            )
+            response[REPLAYED_HEADER] = "true"
+            return response
         try:
             submission, _queued = submission_service.submit_idea(
-                developer=request.auth, payload=dict(request.data)
+                developer=request.auth, payload=dict(request.data), studio=studio
             )
         except submission_service.DailySubmissionCapReached as exc:
             # The same 429 + Retry-After the per-minute throttle answers
