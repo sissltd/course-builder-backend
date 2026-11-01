@@ -17,6 +17,7 @@ from api.users.exceptions import (
     SISSLAuthError,
     SISSLBVNNotFound,
     SISSLError,
+    SISSLInvalidInput,
     SISSLLivenessFailed,
     SISSLNINNotFound,
 )
@@ -40,6 +41,40 @@ logger = logging.getLogger(__name__)
 #: user cannot act on — reuses this so the response never hints at which
 #: internal failure occurred.
 VENDOR_UNAVAILABLE_MESSAGE = "Verification service is temporarily unavailable. Please try again."
+
+
+#: Keys that have been seen (or documented) to carry SISSL's boolean liveness
+#: verdict. The vendor's own provider docstring documents `result: "real" |
+#: "fake"` while the payloads that prompted this code carried `passes`/`live`,
+#: so all spellings are accepted rather than betting on one.
+_LIVENESS_VERDICT_KEYS = ("passes", "live")
+
+#: Values of a string `result` field that mean "this is a live human".
+_LIVENESS_TRUTHY_RESULTS = frozenset({"real", "live", "pass", "passed", "true"})
+
+
+def _liveness_verdict(raw: dict[str, Any]) -> bool | None:
+    """Pull SISSL's live/not-live verdict out of a liveness response.
+
+    Returns True/False when a recognised key is present, and None when the
+    response carries no verdict we understand — which callers must treat as a
+    failure, not as a pass.
+
+    Checks for key *presence* rather than truthiness, so an explicit
+    `{"passes": false}` is read as a genuine "not live" instead of falling
+    through to the next spelling.
+    """
+    for key in _LIVENESS_VERDICT_KEYS:
+        if key in raw:
+            return bool(raw[key])
+
+    result = raw.get("result")
+    if isinstance(result, str):
+        return result.strip().lower() in _LIVENESS_TRUTHY_RESULTS
+    if isinstance(result, bool):
+        return result
+
+    return None
 
 
 @dataclass
@@ -223,6 +258,17 @@ class SisslProvider:
                     f"SISSL_API_TOKEN is missing, expired, revoked, or for the wrong environment"
                 )
                 raise SISSLAuthError(VENDOR_UNAVAILABLE_MESSAGE)
+
+            # A 400/422 means the vendor could not use what we sent — in
+            # practice the user's own selfie or ID number. They can fix that
+            # and retry now, so it must not be dressed up as a vendor outage.
+            # The vendor's wording is actionable here, so forward it.
+            if response.status_code in (400, 422):
+                logger.info(
+                    f"[<>SISSLProvider<>] input rejected on {kind}: "
+                    f"HTTP {response.status_code} | {message}"
+                )
+                raise SISSLInvalidInput(message)
 
             logger.warning(
                 f"[<!>SISSLProvider<!>] non-2xx on {kind}: {response.status_code} | {message}"
@@ -521,8 +567,18 @@ class SISSLServices:
         # [3] Apply threshold
         score = Decimal(str(raw.get("score") or 0))
         threshold = SISSLServices._liveness_threshold()
-        is_live = raw.get("passes") or raw.get("live")  # Documentation is not clear
-        is_real = bool(is_live) and score >= threshold
+        verdict = _liveness_verdict(raw)
+        if verdict is None:
+            # No recognised verdict key. Fail closed below (never pass an
+            # identity check on a response we could not read), but say so
+            # loudly — silently failing every check looks identical to every
+            # user suddenly taking bad selfies.
+            logger.error(
+                f"[<!>SISSLService<!>] UNRECOGNISED liveness response shape — no "
+                f"verdict key among {sorted(_LIVENESS_VERDICT_KEYS)}/'result'. "
+                f"Every check will fail until this is mapped. keys={sorted(raw.keys())}"
+            )
+        is_real = bool(verdict) and score >= threshold
 
         # [4] Persist the outcome of every completed check (pass or fail) so
         # the user and admin review can read it back. Vendor errors above

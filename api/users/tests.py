@@ -24,7 +24,12 @@ from api.users.enums import (
     UserActivityActionEnums,
     UserRole,
 )
-from api.users.exceptions import SISSLAuthError, SISSLError, SISSLLivenessFailed
+from api.users.exceptions import (
+    SISSLAuthError,
+    SISSLError,
+    SISSLInvalidInput,
+    SISSLLivenessFailed,
+)
 from api.users.models import KYCVerification, ReviewerAvailability, UserActivityLog
 from api.users.services import (
     reviewer_availability_service,
@@ -952,6 +957,23 @@ class LivenessVerificationApiTests(APITestCase):
     @patch("api.users.views.kyc_views.persist_liveness_avatar")
     @patch(
         "api.users.views.kyc_views.SISSLServices.liveness",
+        side_effect=SISSLInvalidInput("There are some issues with the image"),
+    )
+    def test_unusable_image_returns_bad_request_not_service_unavailable(self, liveness, persist_avatar):
+        """Observed live from SISSL as a 422. The user can retake the photo, so
+        telling them the service is unavailable sends them away to wait."""
+        response = self.client.post(self.endpoint, {"photo": "https://example.com/selfie.jpg"}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            response.data["errors"][0]["message"], "There are some issues with the image"
+        )
+        self.assertEqual(response.data["errors"][0]["type"], "validation_error")
+        persist_avatar.assert_not_called()
+
+    @patch("api.users.views.kyc_views.persist_liveness_avatar")
+    @patch(
+        "api.users.views.kyc_views.SISSLServices.liveness",
         side_effect=SISSLAuthError("Verification service is temporarily unavailable. Please try again."),
     )
     def test_vendor_credential_rejection_returns_bad_gateway(self, liveness, persist_avatar):
@@ -1049,6 +1071,37 @@ class SISSLLivenessServiceTests(TestCase):
         self.assertEqual(self.user.liveness_score, 50.0)
         self.assertFalse(self.user.liveness_passes)
 
+    def test_documented_result_key_passes_end_to_end(self, provider, *_):
+        """Regression: with only `passes`/`live` read, a vendor response using
+        the documented `result: "real"` spelling failed every check even at a
+        perfect score."""
+        provider.return_value.liveness.return_value = {"result": "real", "score": 92}
+
+        result = self._liveness()
+
+        self.assertTrue(result.is_real)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.liveness_passes)
+
+    def test_documented_fake_result_fails(self, provider, *_):
+        provider.return_value.liveness.return_value = {"result": "fake", "score": 92}
+
+        with self.assertRaises(SISSLLivenessFailed):
+            self._liveness()
+
+        self.user.refresh_from_db()
+        self.assertFalse(self.user.liveness_passes)
+
+    def test_unrecognised_response_shape_fails_closed(self, provider, *_):
+        """A response we cannot read must never pass an identity check."""
+        provider.return_value.liveness.return_value = {"score": 99, "confidence": "high"}
+
+        with self.assertRaises(SISSLLivenessFailed):
+            self._liveness()
+
+        self.user.refresh_from_db()
+        self.assertFalse(self.user.liveness_passes)
+
     def test_vendor_error_keeps_previous_result(self, provider, *_):
         self.user.liveness_score = 90.0
         self.user.liveness_passes = True
@@ -1127,16 +1180,53 @@ class SisslProviderErrorTranslationTests(TestCase):
         with self.assertRaises(SISSLError):
             provider.liveness({"photo": "https://example.com/selfie.jpg"})
 
-    def test_non_auth_non_2xx_still_raises_plain_sissl_error_with_vendor_message(self):
-        """Only 401/403 are reclassified — other vendor errors keep today's
-        behaviour so genuinely useful vendor detail is not swallowed."""
-        provider = self._provider_returning(status_code=422, body={"message": "photo is required"})
+    def test_vendor_422_on_a_bad_image_is_invalid_input_not_an_outage(self):
+        """Observed live: SISSL answers 422 "There are some issues with the
+        image". The user can retake the photo, so this must not surface as a
+        vendor outage telling them to wait."""
+        provider = self._provider_returning(
+            status_code=422, body={"message": "There are some issues with the image"}
+        )
+
+        with self.assertRaises(SISSLInvalidInput) as ctx:
+            provider.liveness({"photo": "x"})
+
+        # The vendor's wording is actionable here, unlike "Unauthenticated."
+        self.assertEqual(str(ctx.exception), "There are some issues with the image")
+
+    def test_vendor_400_is_also_invalid_input(self):
+        provider = self._provider_returning(status_code=400, body={"message": "id is invalid"})
+
+        with self.assertRaises(SISSLInvalidInput):
+            provider.bvn_verification({"id": "nope"})
+
+    def test_invalid_input_is_catchable_as_sissl_error(self):
+        """The service layer's audit-and-reraise blocks catch SISSLError."""
+        provider = self._provider_returning(status_code=422, body={"message": "bad"})
+
+        with self.assertRaises(SISSLError):
+            provider.liveness({"photo": "x"})
+
+    def test_invalid_input_is_not_confused_with_auth_failure(self):
+        provider = self._provider_returning(status_code=422, body={"message": "bad"})
+
+        with self.assertRaises(SISSLInvalidInput) as ctx:
+            provider.liveness({"photo": "x"})
+
+        self.assertNotIsInstance(ctx.exception, SISSLAuthError)
+
+    def test_other_non_2xx_still_raises_plain_sissl_error_with_vendor_message(self):
+        """Only 401/403 and 400/422 are reclassified. A vendor 500 is a real
+        upstream fault and keeps the generic SISSLError -> 503 path, with the
+        vendor's detail preserved for the logs."""
+        provider = self._provider_returning(status_code=500, body={"message": "internal error"})
 
         with self.assertRaises(SISSLError) as ctx:
             provider.liveness({"photo": "x"})
 
         self.assertNotIsInstance(ctx.exception, SISSLAuthError)
-        self.assertEqual(str(ctx.exception), "photo is required")
+        self.assertNotIsInstance(ctx.exception, SISSLInvalidInput)
+        self.assertEqual(str(ctx.exception), "internal error")
 
     def test_html_outage_page_is_not_classified_as_auth(self):
         provider = self._provider_returning(
@@ -1150,6 +1240,49 @@ class SisslProviderErrorTranslationTests(TestCase):
 
         self.assertNotIsInstance(ctx.exception, SISSLAuthError)
         self.assertNotIn("<html>", str(ctx.exception))
+
+
+class LivenessVerdictParsingTests(TestCase):
+    """
+    Which key carries SISSL's live/not-live verdict.
+
+    The provider docstring documents `result: "real" | "fake"`, while the
+    payloads this code was written against carried `passes`/`live` — and the
+    original implementation read only the latter two. If the vendor actually
+    sends `result`, reading only `passes`/`live` yields None for every
+    response and fails every check regardless of score, which is
+    indistinguishable from "all our users take bad selfies".
+    """
+
+    def _verdict(self, raw):
+        from api.users.services.kyc_services.sissl_service import _liveness_verdict
+
+        return _liveness_verdict(raw)
+
+    def test_reads_passes_key(self):
+        self.assertIs(self._verdict({"passes": True, "score": 92}), True)
+        self.assertIs(self._verdict({"passes": False, "score": 92}), False)
+
+    def test_reads_live_key(self):
+        self.assertIs(self._verdict({"live": True, "score": 92}), True)
+        self.assertIs(self._verdict({"live": False, "score": 92}), False)
+
+    def test_reads_documented_result_key(self):
+        """The spelling the provider docstring actually documents."""
+        self.assertIs(self._verdict({"result": "real", "score": 92}), True)
+        self.assertIs(self._verdict({"result": "fake", "score": 92}), False)
+
+    def test_result_matching_is_case_and_whitespace_insensitive(self):
+        self.assertIs(self._verdict({"result": "  REAL "}), True)
+
+    def test_explicit_false_is_not_overridden_by_a_later_spelling(self):
+        """Key presence wins over truthiness — an explicit `passes: false`
+        is a real "not live", not a reason to go looking for another key."""
+        self.assertIs(self._verdict({"passes": False, "result": "real"}), False)
+
+    def test_unrecognised_shape_returns_none_so_callers_fail_closed(self):
+        self.assertIsNone(self._verdict({"score": 99, "confidence": "high"}))
+        self.assertIsNone(self._verdict({}))
 
 
 class ErrorEnvelopeStatusClassificationTests(TestCase):

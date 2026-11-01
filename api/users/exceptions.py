@@ -45,6 +45,24 @@ class SISSLAuthError(SISSLError):
     """
 
 
+class SISSLInvalidInput(SISSLError):
+    """
+    SISSL rejected the data we sent as unusable — a 400/422 from the vendor.
+
+    Nothing is down and no credential is wrong: the payload itself cannot be
+    processed. In practice this is the user's own input, e.g. a selfie the
+    vendor cannot read ("There are some issues with the image") or an ID
+    number that fails the vendor's format checks.
+
+    Unlike SISSLAuthError, the vendor's message here IS useful to the person
+    who submitted it, so it is forwarded rather than genericised.
+
+    Views should translate this to HTTP 400 — the caller can fix it and retry
+    immediately. Reporting it as 503 tells someone to wait for a service that
+    is working fine, instead of retaking their photo.
+    """
+
+
 class SISSLBVNNotFound(Exception):
     """
     SISSL returned status != 'found' for the supplied BVN.
