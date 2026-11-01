@@ -23,7 +23,12 @@ from api.users.enums import (
     UserActivityActionEnums,
     UserActivityCategoryEnums,
 )
-from api.users.exceptions import SISSLAuthError, SISSLError, SISSLLivenessFailed
+from api.users.exceptions import (
+    SISSLAuthError,
+    SISSLError,
+    SISSLInvalidInput,
+    SISSLLivenessFailed,
+)
 from api.users.filters import KYCReviewQueueFilter
 from api.users.models import KYCVerification, User
 from api.authorization import codenames
@@ -440,7 +445,9 @@ class LivenessVerificationView(APIView):
                 ip=ip,
                 user_agent=ua,
             )
-        except SISSLLivenessFailed as exc:
+        # Both mean the user can fix this and retry right now: either the
+        # selfie did not pass, or the vendor could not read it at all.
+        except (SISSLLivenessFailed, SISSLInvalidInput) as exc:
             return custom_error_response(
                 status=status.HTTP_400_BAD_REQUEST,
                 message=str(exc),
