@@ -2,8 +2,9 @@ from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from api.mie.models import DeveloperAccount
+from api.mie.serializers.developer_journey_serializer import DeveloperJourneySerializer
 from api.mie.serializers.webhook_endpoint_serializer import WebhookEndpointSerializer
-from api.mie.services import webhook_endpoint_service
+from api.mie.services import developer_journey_service, webhook_endpoint_service
 
 
 class DeveloperMeSerializer(serializers.ModelSerializer):
@@ -27,6 +28,12 @@ class DeveloperMeSerializer(serializers.ModelSerializer):
             "each takes. Manage them at /mie/v1/webhooks/."
         )
     )
+    journey = serializers.SerializerMethodField(
+        help_text=(
+            "How far you have got from registration to a published course, "
+            "what to do next, and the counts behind it."
+        )
+    )
 
     class Meta:
         model = DeveloperAccount
@@ -35,6 +42,7 @@ class DeveloperMeSerializer(serializers.ModelSerializer):
             "status",
             "plan_type",
             "requires_video_assignment",
+            "journey",
             "webhook_endpoints",
             "api_key_preview",
             "api_key_last_used_at",
@@ -48,6 +56,12 @@ class DeveloperMeSerializer(serializers.ModelSerializer):
     def get_webhook_endpoints(self, obj) -> list[dict]:
         return WebhookEndpointSerializer(
             webhook_endpoint_service.live_endpoints(developer=obj), many=True
+        ).data
+
+    @extend_schema_field(DeveloperJourneySerializer)
+    def get_journey(self, obj) -> dict:
+        return DeveloperJourneySerializer(
+            developer_journey_service.journey_payload(account=obj)
         ).data
 
     def get_api_key_preview(self, obj) -> str | None:

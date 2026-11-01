@@ -3,10 +3,12 @@ from django.contrib import admin
 from api.mie.models import (
     CourseSubmission,
     DeveloperAccount,
+    StudioDeliveryReceipt,
     SubmissionRejectionReason,
     WebhookEndpoint,
     WebhookEvent,
 )
+from api.mie.services import studio_receipt_sender
 
 
 class WebhookEndpointInline(admin.TabularInline):
@@ -71,3 +73,32 @@ class WebhookEventAdmin(admin.ModelAdmin):
         "endpoint__url",
     )
     list_select_related = ("submission", "endpoint")
+
+
+@admin.register(StudioDeliveryReceipt)
+class StudioDeliveryReceiptAdmin(admin.ModelAdmin):
+    """The reconciliation queue: HELD receipts need a person to look at them."""
+
+    list_display = (
+        "kind",
+        "delivery_id",
+        "submission",
+        "status",
+        "attempts",
+        "last_response_code",
+        "delivered_at",
+        "created_datetime",
+    )
+    list_filter = ("status", "kind")
+    search_fields = ("delivery_id", "submission__title")
+    list_select_related = ("submission",)
+    readonly_fields = [field.name for field in StudioDeliveryReceipt._meta.fields]
+    actions = ["requeue"]
+
+    def has_add_permission(self, request):
+        return False
+
+    @admin.action(description="Requeue held receipts (same id and payload)")
+    def requeue(self, request, queryset):
+        count = studio_receipt_sender.requeue(queryset)
+        self.message_user(request, f"{count} receipt(s) requeued.")

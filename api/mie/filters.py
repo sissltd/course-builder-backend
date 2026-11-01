@@ -1,8 +1,8 @@
 import django_filters
 from django.db.models import Q
 
-from api.mie.enums import MieSourceType
-from api.mie.models import CourseSubmission
+from api.mie.enums import DeveloperJourneyStage, MieSourceType
+from api.mie.models import CourseSubmission, DeveloperAccount
 
 
 class AdminSubmissionFilterSet(django_filters.FilterSet):
@@ -49,3 +49,18 @@ class AdminSubmissionFilterSet(django_filters.FilterSet):
                 Q(title__icontains=search) | Q(developer__email__icontains=search)
             )
         return queryset.order_by("-created_datetime")
+
+
+class AdminDeveloperFilterSet(django_filters.FilterSet):
+    """Filters for the admin developer directory. `journey_stage` matches the
+    developer_journey_service.with_journey annotation, so the viewset's
+    queryset must carry it."""
+
+    journey_stage = django_filters.ChoiceFilter(
+        choices=DeveloperJourneyStage.choices,
+        help_text="Filter to developers at one journey stage.",
+    )
+
+    class Meta:
+        model = DeveloperAccount
+        fields = ["status", "plan_type", "journey_stage"]

@@ -12,7 +12,8 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from api.mie.enums import DeveloperAccountStatus, MiePlanType
+from api.mie.enums import DeveloperAccountStatus, DeveloperJourneyStage, MiePlanType
+from api.mie.filters import AdminDeveloperFilterSet
 from api.mie.models import DeveloperAccount, WebhookEndpoint
 from api.mie.serializers.developer_admin_serializer import (
     DeveloperAccountAdminSerializer,
@@ -21,7 +22,7 @@ from api.mie.serializers.developer_admin_serializer import (
     DeveloperRegisterSerializer,
     VideoAssignmentSettingSerializer,
 )
-from api.mie.services import developer_service
+from api.mie.services import developer_journey_service, developer_service
 from api.authorization import codenames
 from api.authorization.permissions import Perm
 from includes.spectacular.responses import STANDARD_ERROR_RESPONSES
@@ -47,8 +48,17 @@ class MieDeveloperAdminViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = DeveloperAccountAdminSerializer
     permission_classes = [Perm(codenames.MIE_MANAGE_CONSOLE)]
     lookup_field = "id"
-    filterset_fields = ["status", "plan_type"]
+    filterset_class = AdminDeveloperFilterSet
     search_fields = ["email"]
+
+    def get_queryset(self):
+        # Only reads carry the journey annotations: an action changes the
+        # account after loading it, and its response works the stage out
+        # afresh (developer_journey_service.journey_payload).
+        queryset = super().get_queryset()
+        if self.action in {"list", "retrieve"}:
+            return developer_journey_service.with_journey(queryset)
+        return queryset
 
     @extend_schema(
         summary="List developers",
@@ -61,10 +71,13 @@ class MieDeveloperAdminViewSet(viewsets.ReadOnlyModelViewSet):
             "the list.\n\n"
             "**Auth:** The `mie.manage_console` permission — Super Admin by default.\n\n"
             "**Prerequisites:** None.\n\n"
-            "**Important:** Results are paginated. Use `?status=` and "
-            "`?plan_type=` to narrow results; use `?search=` to filter "
-            "by email substring. The `api_key_preview` field is always "
-            "masked or null \u2014 the raw key is never exposed here."
+            "**Important:** Results are paginated. Use `?status=`, "
+            "`?plan_type=` and `?journey_stage=` to narrow results; use "
+            "`?search=` to filter by email substring. `journey` is worked "
+            "out from the developer's ideas and courses on every read: the "
+            "furthest stage any of them has reached. The `api_key_preview` "
+            "field is always masked or null \u2014 the raw key is never "
+            "exposed here."
         ),
         parameters=[
             OpenApiParameter(
@@ -82,6 +95,18 @@ class MieDeveloperAdminViewSet(viewsets.ReadOnlyModelViewSet):
                 required=False,
                 enum=[p.value for p in MiePlanType],
                 description="Filter by payout plan type.",
+            ),
+            OpenApiParameter(
+                name="journey_stage",
+                type=str,
+                location=OpenApiParameter.QUERY,
+                required=False,
+                enum=[stage.value for stage in DeveloperJourneyStage],
+                description=(
+                    "Filter by journey stage: the furthest any of the "
+                    "developer's ideas or courses has reached. An unknown "
+                    "value is a 400."
+                ),
             ),
             OpenApiParameter(
                 name="search",
@@ -113,6 +138,21 @@ class MieDeveloperAdminViewSet(viewsets.ReadOnlyModelViewSet):
                                 ],
                                 "status": "APPROVED",
                                 "plan_type": "PAID_PER_SUBMISSION",
+                                "journey": {
+                                    "stage": "COURSE_DELIVERED",
+                                    "label": "Course Delivered",
+                                    "step": 5,
+                                    "total_steps": 8,
+                                    "next_step": (
+                                        "Your course is in content review. On "
+                                        "COURSE_REVISION_REQUESTED, fix it and deliver it "
+                                        "again; otherwise wait for COURSE_TEXT_APPROVED."
+                                    ),
+                                    "ideas_submitted": 3,
+                                    "ideas_approved": 1,
+                                    "courses_delivered": 1,
+                                    "courses_published": 0,
+                                },
                                 "source_type": "EXTERNAL",
                                 "api_key_preview": "scb_live_a1b2c3d4...",
                                 "api_key_issued_at": "2026-07-01T10:00:00Z",

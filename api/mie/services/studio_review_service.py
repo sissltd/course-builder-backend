@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import re
 from urllib.parse import urlsplit
 
 from django.db import transaction
@@ -10,14 +11,27 @@ from rest_framework import exceptions
 from api.mie.models import CourseSubmission, StudioReviewReceipt
 from api.mie.serializers.course_push_serializer import CoursePushSerializer
 from api.mie.serializers.studio_review_serializer import StudioVideoSerializer
-from api.mie.services import course_push_service
+from api.mie.services import course_push_service, studio_receipt_service
 from api.platform.services import platform_settings_service
 from shared.services.storage_service import StorageService
+
+
+LIST_BLOCKS = ("NUMBERED_LIST", "BULLETED_LIST")
+# Numbering and bullets come from the block type, never from the item text.
+LIST_MARKER = re.compile(r"^(?:[-*+\u2022]|\d+[.)])\s")
 
 
 class ReviewConflict(exceptions.APIException):
     status_code = 409
     default_code = "studio_review_conflict"
+
+
+def content_hash(content):
+    """SHA-256 of `content` as canonical JSON: sorted keys, no whitespace, UTF-8."""
+    canonical = json.dumps(
+        content, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def _receipt(row):
@@ -57,6 +71,24 @@ def _source_map(source, content):
             seen.add(external["id"])
 
 
+def _list_items(content):
+    """A list block's text_content holds one item per line, unmarked."""
+    for module in content.get("modules", []):
+        for lesson in module.get("lessons", []):
+            for block in lesson.get("content_blocks", []):
+                if block.get("block_type") not in LIST_BLOCKS:
+                    continue
+                items = (block.get("text_content") or "").split("\n")
+                if any(not item.strip() for item in items):
+                    raise exceptions.ValidationError(
+                        "List blocks hold one item per line, with no blank lines."
+                    )
+                if any(LIST_MARKER.match(item.strip()) for item in items):
+                    raise exceptions.ValidationError(
+                        "List items carry no bullet or number; the block type sets it."
+                    )
+
+
 def _owned_media(url, submission, purpose):
     """A receipt must never attest persistence of expiring producer URLs.
 
@@ -93,7 +125,7 @@ def _owned_media(url, submission, purpose):
 
 
 @transaction.atomic
-def accept_review(*, developer, data, idempotency_key):
+def accept_review(*, developer, data, idempotency_key, studio=None):
     if not idempotency_key or len(idempotency_key) > 200:
         raise exceptions.ValidationError("A bounded Idempotency-Key is required.")
     # One lock serializes first delivery and uncertain-response retries, including
@@ -105,6 +137,14 @@ def accept_review(*, developer, data, idempotency_key):
     )
     if submission is None:
         raise exceptions.NotFound()
+    if studio is not None and studio.revision != data["revision"]:
+        raise exceptions.ValidationError(
+            {studio_receipt_service.CONTENT_REVISION_HEADER: "Must equal revision."}
+        )
+    if content_hash(data["content"]) != data["content_hash"]:
+        raise exceptions.ValidationError(
+            {"content_hash": "Does not match the SHA-256 of content as canonical JSON."}
+        )
     fingerprint = hashlib.sha256(
         json.dumps(data, sort_keys=True, separators=(",", ":"), default=str).encode()
     ).hexdigest()
@@ -135,6 +175,7 @@ def accept_review(*, developer, data, idempotency_key):
         )
         serializer.is_valid(raise_exception=True)
         _source_map(data["source_map"], data["content"])
+        _list_items(data["content"])
         if data["content"].get("preview_video_url") or any(
             lesson.get("video_url")
             or lesson.get("embedded_link")
@@ -223,4 +264,14 @@ def accept_review(*, developer, data, idempotency_key):
         source_map=data["source_map"],
         media=media,
     )
+    if studio is not None:
+        # In this transaction, after the push and (for video) every media
+        # check, so a receipt exists only for a stored delivery.
+        studio_receipt_service.record(
+            delivery=studio,
+            submission=submission,
+            kind=data["kind"],
+            course=course,
+            source_map=data["source_map"],
+        )
     return _receipt(row)

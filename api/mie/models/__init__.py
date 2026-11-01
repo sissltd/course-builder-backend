@@ -5,6 +5,7 @@ from .rejection_reason import SubmissionRejectionReason
 from .webhook_endpoint import WebhookEndpoint
 from .webhook_event import WebhookEvent
 from .studio_review_receipt import StudioReviewReceipt, StudioMediaUpload
+from .studio_delivery_receipt import StudioDeliveryReceipt
 
 __all__ = [
     "CourseSubmission",
@@ -15,4 +16,5 @@ __all__ = [
     "WebhookEvent",
     "StudioReviewReceipt",
     "StudioMediaUpload",
+    "StudioDeliveryReceipt",
 ]
