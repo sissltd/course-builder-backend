@@ -25,12 +25,39 @@ class KYCUserDataSerializer(serializers.Serializer):
     phone = serializers.CharField(allow_null=True, read_only=True)
 
 
+class LivenessStatusSerializer(serializers.Serializer):
+    """The shape of `SISSLServices.get_liveness_status()`.
+
+    Declared once and reused by both the liveness endpoint's own schema and
+    the `liveness` block nested in KYC payloads, so the two can never drift.
+    """
+
+    has_done_liveness = serializers.BooleanField(
+        read_only=True,
+        help_text="True once any liveness check has completed, pass OR fail.",
+    )
+    is_real = serializers.BooleanField(
+        read_only=True,
+        help_text="Whether that check passed. Meaningless until has_done_liveness is true.",
+    )
+    score = serializers.FloatField(
+        read_only=True, allow_null=True, help_text="0-100 score, null until a check completes."
+    )
+    liveness_threshold = serializers.FloatField(
+        read_only=True, help_text="The score a check must meet to pass."
+    )
+    liveness_selfie = serializers.URLField(
+        read_only=True, allow_null=True, help_text="The captured selfie, null until a check passes."
+    )
+
+
 class KYCVerificationSerializer(serializers.ModelSerializer):
     """Read-only representation of a KYC submission (the submitter's own view)."""
 
     first_name = serializers.CharField(source="user.first_name", read_only=True)
     last_name = serializers.CharField(source="user.last_name", read_only=True)
     kyc_user_data = serializers.SerializerMethodField(read_only=True)
+    liveness = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = KYCVerification
@@ -49,8 +76,20 @@ class KYCVerificationSerializer(serializers.ModelSerializer):
             "kyc_user_data",
             "kyc_provider",
             "kyc_entity_id",
+            "liveness",
         ]
         read_only_fields = fields
+
+    @extend_schema_field(LivenessStatusSerializer)
+    def get_liveness(self, obj):
+        """Whether the submitter has completed a liveness check, and how it went.
+
+        Liveness lives on the User, not on the submission, so it is the same
+        answer regardless of which submission is being read. Delegates to the
+        service rather than reading the user fields directly so this block and
+        GET /users/me/kyc/liveness/ always agree.
+        """
+        return SISSLServices.get_liveness_status(obj.user)
 
     @extend_schema_field(KYCUserDataSerializer)
     def get_kyc_user_data(self, obj):

@@ -7,6 +7,8 @@ etc.) are untouched — this is a shared starting point for new pytest-style
 tests, not a rewrite of the suite.
 """
 
+from unittest.mock import patch
+
 import pytest
 from django.test import TransactionTestCase
 from rest_framework.test import APIClient
@@ -26,6 +28,32 @@ if not hasattr(TransactionTestCase, "_fixture_teardown_original"):
         TransactionTestCase._fixture_teardown
     )
     TransactionTestCase._fixture_teardown = transaction_teardown_with_reseed
+
+
+@pytest.fixture(autouse=True)
+def _never_call_sissl_for_real():
+    """Stop the test suite from making live, billable calls to the SISSL vendor.
+
+    KYC submission dispatches `call_sissl_kyc_verification`, and tests run with
+    `CELERY_TASK_ALWAYS_EAGER`, so every test that submits KYC runs the vendor
+    lookup inline. Until now that was harmless only by accident: `.env` had no
+    `SISSL_BASE_URL`, so the provider's "is it configured?" guard aborted each
+    call before any socket was opened. The moment a developer sets a real base
+    URL, the same tests start POSTing real identity lookups to the vendor — at
+    ~35s of connect/read timeout each, and billed.
+
+    Blanking the base URL for the duration of each test keeps the behaviour the
+    suite already depends on, but makes it a deliberate property of the test
+    environment rather than a side effect of a missing variable.
+
+    Tests that construct `SisslProvider(base_url=...)` explicitly are unaffected,
+    which is how the provider's own HTTP-translation tests still work.
+    """
+    with patch(
+        "api.users.services.kyc_services.sissl_service.SISSL_BASE_URL",
+        "",
+    ):
+        yield
 
 
 @pytest.fixture
