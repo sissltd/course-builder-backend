@@ -23,7 +23,7 @@ from api.users.enums import (
     UserActivityActionEnums,
     UserActivityCategoryEnums,
 )
-from api.users.exceptions import SISSLError, SISSLLivenessFailed
+from api.users.exceptions import SISSLAuthError, SISSLError, SISSLLivenessFailed
 from api.users.filters import KYCReviewQueueFilter
 from api.users.models import KYCVerification, User
 from api.authorization import codenames
@@ -35,7 +35,11 @@ from api.users.serializers import (
     KYCVerificationSerializer,
     KYCVerificationSubmitSerializer,
 )
-from api.users.serializers.kyc_serializer import KYCReviewFlagSerializer, LivenessSerializer
+from api.users.serializers.kyc_serializer import (
+    KYCReviewFlagSerializer,
+    LivenessSerializer,
+    LivenessStatusSerializer,
+)
 from api.users.services.kyc_services import kyc_submission_service
 from api.users.services.kyc_services.sissl_service import SISSLServices
 from api.users.services.kyc_services.utils import persist_liveness_avatar
@@ -303,16 +307,9 @@ class LivenessVerificationView(APIView):
         ),
         responses={
             200: OpenApiResponse(
-                response=inline_serializer(
-                    name="LivenessStatusResult",
-                    fields={
-                        "has_done_liveness": serializers.BooleanField(),
-                        "is_real": serializers.BooleanField(),
-                        "score": serializers.FloatField(allow_null=True),
-                        "liveness_threshold": serializers.FloatField(),
-                        "liveness_selfie": serializers.URLField(allow_null=True),
-                    },
-                ),
+                # Same serializer as the `liveness` block in KYC payloads —
+                # one declaration so the two shapes cannot drift apart.
+                response=LivenessStatusSerializer,
                 description="Liveness status retrieved",
                 examples=[
                     OpenApiExample(
@@ -400,6 +397,31 @@ class LivenessVerificationView(APIView):
                     ),
                 ],
             ),
+            502: OpenApiResponse(
+                response=ErrorEnvelopeSerializer,
+                description=(
+                    "SISSL rejected our API credential (vendor 401/403). A server-side "
+                    "configuration fault, not a problem with the caller's own session — "
+                    "do NOT sign the user out or redirect them to login on this. The "
+                    "message is deliberately generic; the cause is in the server logs."
+                ),
+                examples=[
+                    OpenApiExample(
+                        name="Vendor credential rejected",
+                        response_only=True,
+                        value={
+                            "errors": [
+                                {
+                                    "type": "server_error",
+                                    "code": "bad_gateway",
+                                    "message": "Verification service is temporarily unavailable. Please try again.",
+                                    "field_name": None,
+                                }
+                            ]
+                        },
+                    ),
+                ],
+            ),
             503: OpenApiResponse(description="SISSL temporarily unavailable or rate-limit hit"),
         },
         tags=["Creator — KYC"],
@@ -421,6 +443,15 @@ class LivenessVerificationView(APIView):
         except SISSLLivenessFailed as exc:
             return custom_error_response(
                 status=status.HTTP_400_BAD_REQUEST,
+                message=str(exc),
+            )
+        # Must precede the SISSLError branch — SISSLAuthError subclasses it.
+        # Separated from the 503 below because the cause is our own expired /
+        # revoked SISSL_API_TOKEN, not a vendor outage: it does not resolve on
+        # its own and needs an operator, so it should page differently.
+        except SISSLAuthError as exc:
+            return custom_error_response(
+                status=status.HTTP_502_BAD_GATEWAY,
                 message=str(exc),
             )
         except SISSLError as exc:

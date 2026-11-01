@@ -14,6 +14,7 @@ from api.authentication.services.activity_service import log_activity
 from api.platform.enums import KYCProvider
 from api.platform.services.platform_settings_service import get_settings
 from api.users.exceptions import (
+    SISSLAuthError,
     SISSLBVNNotFound,
     SISSLError,
     SISSLLivenessFailed,
@@ -33,6 +34,12 @@ from shared.constants.kyc import (
 from shared.redis.redis_service import RedisService
 
 logger = logging.getLogger(__name__)
+
+#: The single user-facing wording for "we could not get an answer out of the
+#: vendor". Every such path — outage page, bad credential, anything else the
+#: user cannot act on — reuses this so the response never hints at which
+#: internal failure occurred.
+VENDOR_UNAVAILABLE_MESSAGE = "Verification service is temporarily unavailable. Please try again."
 
 
 @dataclass
@@ -197,12 +204,25 @@ class SisslProvider:
         if not 200 <= response.status_code < 300:
             content_type = response.headers.get("Content-Type", "")
             if "text/html" in content_type or response.text.strip().startswith("<"):
-                message = "Verification service is temporarily unavailable. Please try again."
+                message = VENDOR_UNAVAILABLE_MESSAGE
             else:
                 try:
                     message = response.json().get("message") or response.text
                 except ValueError:
                     message = f"SISSL {kind} returned HTTP {response.status_code}"
+
+            # A 401/403 is OUR bad credential, not a vendor outage, and the
+            # vendor's wording for it ("Unauthenticated.") describes the
+            # server-to-server call — handing that to the end user makes it
+            # look like they were signed out. Log the detail at error level so
+            # it is actionable, and raise the generic message instead.
+            if response.status_code in (401, 403):
+                logger.error(
+                    f"[<!>SISSLProvider<!>] AUTH REJECTED on {kind}: "
+                    f"HTTP {response.status_code} | vendor said: {message!r} — "
+                    f"SISSL_API_TOKEN is missing, expired, revoked, or for the wrong environment"
+                )
+                raise SISSLAuthError(VENDOR_UNAVAILABLE_MESSAGE)
 
             logger.warning(
                 f"[<!>SISSLProvider<!>] non-2xx on {kind}: {response.status_code} | {message}"

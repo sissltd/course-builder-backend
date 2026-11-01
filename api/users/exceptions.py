@@ -23,6 +23,28 @@ class SISSLError(Exception):
     ('Verification service temporarily unavailable.').
     """
 
+class SISSLAuthError(SISSLError):
+    """
+    SISSL rejected OUR credential — a 401/403 from the vendor.
+
+    A subclass of SISSLError on purpose: the service layer's `except
+    SISSLError` audit-and-reraise blocks keep working unchanged, while views
+    that care can catch this first and respond differently.
+
+    This is NOT a user-facing auth problem. The caller authenticated with us
+    perfectly well; it is the server-to-server call to SISSL that was refused,
+    which means SISSL_API_TOKEN is missing, expired, revoked, or pointed at
+    the wrong vendor environment. The vendor's own wording for it is
+    "Unauthenticated." — forwarding that to the end user reads as if THEY had
+    been signed out, so the message raised here is deliberately generic and
+    the actionable detail is logged instead.
+
+    Views should translate this to HTTP 502 — the upstream gave us an
+    unusable response because of our own misconfiguration, which is a
+    different operational problem from "the vendor is down" (503).
+    """
+
+
 class SISSLBVNNotFound(Exception):
     """
     SISSL returned status != 'found' for the supplied BVN.
